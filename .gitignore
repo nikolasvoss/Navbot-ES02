@@ -1,0 +1,11 @@
+# Local Arduino build output
+build/
+src/ES-02/OllieFOCdrive/build/
+
+# Captured serial traces and local analysis artifacts
+*.log
+*-diagnose-*.md
+
+# Python cache files
+__pycache__/
+*.py[cod]
