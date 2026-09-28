@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_system.h>
 #include <SimpleFOC.h>
 #include <Preferences.h>  // This library is used for key-value data storage and retrieval in ESP32, enabling data persistence
 #include "SlotCalibration.h"
@@ -23,6 +24,15 @@ Commander command = Commander(Serial);
 #define SwitchUser SWITCH_USER_MODE_SPEED_MODE                               // 0: view encoder position and direction  1: sample motor 1 torque compensation data  2: sample motor 2 torque compensation data  3: torque  4: speed  5: angle mode
 #define CurrentUser CURRENT_LOOP_OFF                                         // 1: enable current loop
 #define M2CurrentUser CURRENT_LOOP_OFF                                       // 1: enable current loop for motor 2
+
+// Safe bring-up: read sensors and receiver without energizing wheels or servos.
+// Set to 0 only after the diagnostic readings and power supply are checked.
+#define SENSOR_DIAGNOSTIC_MODE 0
+
+// Tuned two-wheel drive defaults, including corrected wheel-speed timing and
+// CH3 scaling. Apply them at startup and through a CH5 switch transition.
+// Set to 0 to restore the repository's mode-dependent defaults.
+#define DIAGNOSTIC_LIVE_TUNING_DEFAULTS 1
 
 #define AdjusParameter ADJUST_BALANCE_SPEED_YAW_ROLL        // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
 #define SwitchingPattern SWITCHING_PATTERN_TWO_WHEEL_MODE   // 0: two-wheel  1: four-wheel  switching mode
@@ -83,6 +93,9 @@ Commander command = Commander(Serial);
 #define SERIAL_PACKET_HEADER_BYTE_2 34
 #define SERIAL_PACKET_END_BYTE 0
 #define SERIAL_BAUD_RATE 2000000
+#define DIAGNOSTIC_SERIAL_BAUD_RATE 115200
+#define LIVE_TUNING_SERIAL_BAUD_RATE 115200
+#define DIAGNOSTIC_PLOT_INTERVAL_MS 50
 // -------------------------------------
 
 // Body
@@ -130,6 +143,7 @@ int LED_dt = 100;
 int sensorValue = 0;              // value read from the pot
 biquadFilter_t VoltageFilterLPF;  // Second-order low-pass filter
 uint16_t VoltageADC = 0;          // Battery voltage ADC data
+uint16_t VoltageADCMin = 0;       // Lowest raw battery reading since the last balance trace row
 float VoltageADCf = 0;            // Battery voltage ADC data
 float Voltage = 0;                // Battery voltage
 
@@ -212,6 +226,10 @@ bool pid_gains_mode_is_enabled(int mode) {
 
 //  Create ServoControl object, pass in the custom pin
 ServoControl servoControl(CUSTOM_SERVO_1_PIN, CUSTOM_SERVO_2_PIN, CUSTOM_SERVO_3_PIN, CUSTOM_SERVO_4_PIN);
+int servoTraceAngle[4] = { 0, 0, 0, 0 };  // Last angle arguments sent to the four servos
+int servoTraceMin[4] = { 0, 0, 0, 0 };
+int servoTraceMax[4] = { 0, 0, 0, 0 };
+bool servoTraceWindowStarted = false;
 
 // Remote control
 FUTABA_SBUS sBus;
@@ -230,7 +248,7 @@ float sbus_top_ball_y_smoothed = 0;
 float Select = 0;             // Select the data to print
 float CalibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Calibrate gyroscope  2: Calibrate Euler angle  3: Calibrate servo
 
-float PidParameterTuning = 0;  // 0: Disable parameter tuning  1: Enable parameter tuning
+float PidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
 
 PIDController AnglePid(0, 0, 0, 0, 0);          // 4 22 0.08   (Kp, Ki, Kd ,ramp ,limit)
 PIDController SpeedPid(0.1, 0.1, 0, 0, 50);     //
@@ -240,6 +258,8 @@ PIDController TouchXPid(0.2, 0, 0.04, 0, 0);    //
 PIDController TouchYPid(0.2, 0, 0.08, 0, 0);    //
 
 float control_torque_compensation = 0;  // Control torque compensation
+float wheelSpeedFeedbackGain = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 0.2f : 0.0f;
+float wheelSpeedFeedbackOutput = 0;
 
 float PidDt = 0.01;
 
@@ -252,9 +272,14 @@ MyPIDController Pitching_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
 
 MyPIDController TouchX_Pid(0, 0, 0, 0, 10, PidDt, 0, 0);
 MyPIDController TouchY_Pid(0, 0, 0, 0, 8, PidDt, 0, 0);
+bool balancePidNeedsPriming = true;
 
 void ControlTorqueCompensation(char *cmd) {
   command.scalar(&control_torque_compensation, cmd);
+}
+
+void CbWheelSpeedFeedbackGain(char *cmd) {
+  command.scalar(&wheelSpeedFeedbackGain, cmd);
 }
 
 void Pid_Parameter_Tuning(char *cmd) {
@@ -404,6 +429,10 @@ void Robot_Tumble(void);
 void body_data_init(void);
 void TrotGaitAlgorithm(void);  // Trot gait
 void MotorOperatingMode(void);
+void DiagnosticLoop(void);
+bool diagnosticImuReady = false;
+unsigned long diagnosticLastRcFrameMs = 0;
+bool diagnosticHasRcFrame = false;
 
 void cpu0_task(void *ptParam) {
   while(1)
@@ -438,17 +467,43 @@ bool ten_msec_tick(void) {
  */
 void setup() {
 
+#if SENSOR_DIAGNOSTIC_MODE
+  // SimpleFOC's plain BLDCDriver3PWM enable pins are active high.
+  // Hold both drivers disabled before any other peripheral is initialized.
+  pinMode(16, OUTPUT);
+  digitalWrite(16, LOW);
+  pinMode(37, OUTPUT);
+  digitalWrite(37, LOW);
+#endif
+
+#if !SENSOR_DIAGNOSTIC_MODE
   if ((MasterSlaveSelection == MASTER_SLAVE_SELECTION_SLAVE) && (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE))  // Slave && 4-wheel mode
     Serial2.begin(1000000, SERIAL_8N1, RXD2, TXD2);
   else if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER)  // Master
     Serial1.begin(1000000, SERIAL_8N1, RXD1, TXD1);
+#endif
 
-  Serial.begin(SERIAL_BAUD_RATE);
+  Serial.begin(SENSOR_DIAGNOSTIC_MODE ? DIAGNOSTIC_SERIAL_BAUD_RATE :
+               (DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? LIVE_TUNING_SERIAL_BAUD_RATE : SERIAL_BAUD_RATE));
   FlashInit();  // Read flash data
   pinMode(BOARD_PIN_LED, OUTPUT);
   digitalWrite(BOARD_PIN_LED, LOW);  // 亮
   Serial.println("system run.");
   delay(500);
+
+#if SENSOR_DIAGNOSTIC_MODE
+  biquadFilterInitLPF(&VoltageFilterLPF, 20, 100);
+  for (int axis = 0; axis < 6; axis++) {
+    biquadFilterInitLPF(&ImuFilterLPF[axis], 20, 100);
+  }
+  diagnosticImuReady = initICM42688();
+  if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER)
+    sBus.begin();
+  timestamp_prev = micros();
+  Serial.printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n",
+                (int)esp_reset_reason(), diagnosticImuReady ? 1 : 0);
+  return;
+#endif
 
   ble_init();
   xTaskCreatePinnedToCore(cpu0_task, "cpu0_task", 4096, NULL, 0, NULL, 0);
@@ -756,6 +811,12 @@ void setup() {
 
   // command.add('U', Pid_Parameter_Tuning, "my Pid_Parameter_Tuning");
   command.add('U', User_command, "my User_command");
+  command.add('V', CbWheelSpeedFeedbackGain, "wheel speed feedback gain");
+
+#if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
+  // Preload the gentle gains before CH5 can pass briefly through mode 1.
+  PidParameter();
+#endif
   
 
   // Run user commands to configure and the motor (find the full command list in docs.simplefoc.com)
@@ -1173,6 +1234,8 @@ void RXsbus() {
     sBus.toChannels = 0;
 
     MovementSpeed = mapf(sBus.channels[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -15, 15);
+    if (DIAGNOSTIC_LIVE_TUNING_DEFAULTS)
+      MovementSpeed *= 2.0f;  // Keep drive-command authority near the previous 0.03 x 3.3 setting.
     BodyTurn = -mapf(sBus.channels[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -11, 11);
     pid_gains_mode = map(sBus.channels[4], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
     posture_or_mark_mode = map(sBus.channels[5], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
@@ -1214,8 +1277,11 @@ void RXsbus() {
 
     if (Voltage <= 7.4) {
       // pid_gains_mode = REMOTE_CONTROL_MODE_PID_GAINS_MODE_OFF
-      Serial.print(" Voltage:");
-      Serial.println(Voltage, 5);
+      // K56/K57/K58 already include voltage; avoid interleaving warnings with CSV rows.
+      if ((int)Select != 56 && (int)Select != 57 && (int)Select != 58) {
+        Serial.print(" Voltage:");
+        Serial.println(Voltage, 5);
+      }
     }
 
     /*
@@ -1764,6 +1830,7 @@ void FlashSave(int sw) {
  * parts of the system without recompiling.
  */
 void print_data(void) {
+  static unsigned long lastSbusPrintMs = 0;
   switch ((int)Select) {
     case 1:
       // Output Euler angle
@@ -1849,6 +1916,12 @@ void print_data(void) {
 
     case 8:
       //
+      // K8 is also used over the 115200-baud live-tuning connection. The
+      // control loop runs much faster than that link can carry these lines.
+      if (millis() - lastSbusPrintMs < 50)
+        break;
+      lastSbusPrintMs = millis();
+
       for (int i = 0; i < 10; i++) {
         Serial.print(" ch:");
         Serial.print(sBus.channels[i]);
@@ -2396,6 +2469,107 @@ void print_data(void) {
       Serial.println(Pitching_Pid.output, 5);
       break;
 
+    case 55: {
+      // One row every 20 ms; voltage_min_v includes every raw ADC read in that interval.
+      static unsigned long lastTraceMs = 0;
+      const unsigned long traceMs = millis();
+      if (traceMs - lastTraceMs >= 20) {
+        lastTraceMs = traceMs;
+        const float rawMinV = (float)7.77 / 813.43 * VoltageADCMin;
+        Serial.printf("TRACE,%lu,%d,%d,%.3f,%.3f,%.2f,%.2f,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f\n",
+                      traceMs, pid_gains_mode, posture_or_mark_mode, rawMinV, Voltage,
+                      roll_ok, pitch_ok, servoTraceAngle[0], servoTraceAngle[1],
+                      servoTraceAngle[2], servoTraceAngle[3],
+                      servoTraceMax[0] - servoTraceMin[0], servoTraceMax[1] - servoTraceMin[1],
+                      servoTraceMax[2] - servoTraceMin[2], servoTraceMax[3] - servoTraceMin[3],
+                      motor1.target, motor2.target);
+        VoltageADCMin = VoltageADC;
+        for (int i = 0; i < 4; i++)
+          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
+      }
+      break;
+    }
+
+    case 56: {
+      // Compact control decomposition for diagnosing opposite wheel targets.
+      static unsigned long lastTraceMs = 0;
+      const unsigned long traceMs = millis();
+      if (traceMs - lastTraceMs >= 20) {
+        lastTraceMs = traceMs;
+        const float rawMinV = (float)7.77 / 813.43 * VoltageADCMin;
+        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
+        int maxServoRange = 0;
+        for (int i = 0; i < 4; i++) {
+          maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
+          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
+        }
+        Serial.printf("CTRL,%lu,%d,%.3f,%.3f,%.2f,%.4f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d\n",
+                      traceMs, pid_gains_mode, rawMinV, Voltage, roll_ok,
+                      attitude.gyro.z, BodyTurn,
+                      active ? Angle_Pid.error : 0.0f, active ? Angle_Pid.output : 0.0f,
+                      active ? Yaw_Pid.error : 0.0f, active ? Yaw_Pid.output : 0.0f,
+                      motor1.target, motor2.target, maxServoRange);
+        VoltageADCMin = VoltageADC;
+      }
+      break;
+    }
+
+    case 57: {
+      // Short balance decomposition to reduce serial-line corruption at 2 Mbaud.
+      static unsigned long lastTraceMs = 0;
+      const unsigned long traceMs = millis();
+      if (traceMs - lastTraceMs >= 20) {
+        lastTraceMs = traceMs;
+        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
+        int maxServoRange = 0;
+        for (int i = 0; i < 4; i++) {
+          maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
+          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
+        }
+        Serial.printf("BAL,%lu,%d,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.4f,%.2f,%.2f,%d\n",
+                      traceMs, pid_gains_mode, (float)7.77 / 813.43 * VoltageADCMin,
+                      roll_ok, active ? Angle_Pid.error : 0.0f,
+                      active ? Angle_Pid.outP : 0.0f, active ? Angle_Pid.outI : 0.0f,
+                      active ? Angle_Pid.outD : 0.0f, active ? BodyX : 0.0f,
+                      motor1.target, motor2.target, maxServoRange);
+        VoltageADCMin = VoltageADC;
+      }
+      break;
+    }
+
+    case 58: {
+      // Compact drive-stop trace: correlate speed, posture, balance, and supply
+      // without saturating the serial link during a controlled test.
+      static unsigned long lastTraceMs = 0;
+      const unsigned long traceMs = millis();
+      if (traceMs - lastTraceMs >= 50) {
+        lastTraceMs = traceMs;
+        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
+        int maxServoRange = 0;
+        for (int i = 0; i < 4; i++) {
+          maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
+          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
+        }
+        Serial.printf("DRIVE,%lu,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.6f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%d\n",
+                      traceMs, pid_gains_mode,
+                      (float)7.77 / 813.43 * VoltageADCMin, Voltage,
+                      MovementSpeed, Motor1_Velocity_f, Motor2_Velocity_f, time_dt,
+                      active ? Speed_Pid.error : 0.0f,
+                      active ? Speed_Pid.outP : 0.0f, active ? Speed_Pid.outI : 0.0f,
+                      active ? Speed_Pid.outD : 0.0f, active ? Speed_Pid.output : 0.0f,
+                      active ? BodyX : 0.0f, BodyPitching_f, roll_ok,
+                      active ? Angle_Pid.output : 0.0f,
+                      active ? Angle_Pid.outP : 0.0f,
+                      active ? Angle_Pid.outI : 0.0f,
+                      active ? Angle_Pid.outD : 0.0f,
+                      active ? wheelSpeedFeedbackOutput : 0.0f,
+                      motor1.target, motor2.target,
+                      top_ball_x, Touch.XPdatF, BodyPitching, maxServoRange);
+        VoltageADCMin = VoltageADC;
+      }
+      break;
+    }
+
     default:
 
       break;
@@ -2483,7 +2657,12 @@ void PIDcontroller_angle(float dt) {
  * weight distribution and dynamics.
  */
 void PidParameter(void) {
-  if (pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH)  // No touch screen
+#if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
+  const int gainMode = REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH;
+#else
+  const int gainMode = pid_gains_mode;
+#endif
+  if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH)  // No touch screen
   {
     // Roll
     RollPid.P = PID_ROLL_P_NO_TOUCH;
@@ -2502,7 +2681,7 @@ void PidParameter(void) {
     AnglePid.I = PID_ANGLE_I_NO_TOUCH;
     AnglePid.D = PID_ANGLE_D_NO_TOUCH;
     AnglePid.limit = PID_ANGLE_LIMIT_NO_TOUCH;                                    // Integral limit
-  } else if (pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH)  // With touch screen
+  } else if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH)  // With touch screen
   {
     // Roll
     RollPid.P = PID_ROLL_P_WITH_TOUCH;
@@ -2527,6 +2706,20 @@ void PidParameter(void) {
   YawPid.I = 33;
   YawPid.D = 0;
   YawPid.limit = 0;
+
+#if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
+  AnglePid.P = 5;
+  AnglePid.I = 200;
+  AnglePid.D = 0.12;
+  AnglePid.limit = 0.1;
+  // The wheel speed estimate below uses the measured ~1.8 ms control tick.
+  SpeedPid.P = 0.045;
+  SpeedPid.I = 0;
+  SpeedPid.D = 0;
+  YawPid.P = 4;
+  YawPid.I = 0;
+  YawPid.D = 0;
+#endif
 
   // Touch screen
   TouchXPid.P = 0.2;
@@ -2678,6 +2871,12 @@ void PIDcontroller_posture(float dt) {
   Angle_Pid.iLimit = AnglePid.limit;  // Integral limit
 
   float angleError = roll_ok - (-BodyPitching_f);  // Measured value minus target value
+  if (balancePidNeedsPriming) {
+    // Avoid a derivative kick when CH5 first enables the balance loop.
+    Angle_Pid.previousError = angleError;
+    Angle_Pid.integral = 0;
+    balancePidNeedsPriming = false;
+  }
   float angleOutput = Angle_Pid.compute(angleError, dt);
 
   // Yaw loop
@@ -2694,8 +2893,18 @@ void PIDcontroller_posture(float dt) {
   float yawError = attitude.gyro.z - BodyTurn;  // Measured value minus target value
   float yawOutput = Yaw_Pid.compute(yawError, dt);
 
-  float target1 = angleOutput - yawOutput;
-  float target2 = angleOutput + yawOutput;
+  // Let filtered wheel-speed error act directly on the wheels as well as the
+  // leg-position loop. Limit its authority while this coupling is tuned.
+  const float boundedWheelGain = constrain(wheelSpeedFeedbackGain, 0.0f, 0.4f);
+  float wheelCorrection = boundedWheelGain * speedError;
+  if (MovementSpeed < -1.0f && speedError > 0.0f) {
+    // Reverse acceleration is already stronger than forward on this robot.
+    // Still allow correction of reverse overspeed and neutral braking.
+    wheelCorrection = 0.0f;
+  }
+  wheelSpeedFeedbackOutput = constrain(wheelCorrection, -8.0f, 8.0f);
+  float target1 = angleOutput - yawOutput + wheelSpeedFeedbackOutput;
+  float target2 = angleOutput + yawOutput + wheelSpeedFeedbackOutput;
 
   if (control_torque_compensation != 0) {
     if (target1 > 0)
@@ -2709,8 +2918,9 @@ void PIDcontroller_posture(float dt) {
       target2 = target2 + (-control_torque_compensation);
   }
 
-  motor1.target = target1;
-  motor2.target = target2;
+  // SimpleFOC's velocity mode does not apply velocity_limit to its target.
+  motor1.target = constrain(target1, -motor1.velocity_limit, motor1.velocity_limit);
+  motor2.target = constrain(target2, -motor2.velocity_limit, motor2.velocity_limit);
 }
 
 /**
@@ -2767,6 +2977,8 @@ void RemoteControlFiltering(void)  // Remote control filter
  */
 void ReadVoltage(void) {
   VoltageADC = analogRead(BOARD_PIN_ANALOG_IN);
+  if (VoltageADCMin == 0 || VoltageADC < VoltageADCMin)
+    VoltageADCMin = VoltageADC;
   VoltageADCf = biquadFilterApply(&VoltageFilterLPF, VoltageADC);
   Voltage = (float)7.77 / 813.43 * VoltageADCf;
 }
@@ -2934,7 +3146,52 @@ void TrotGaitAlgorithm(void)  // Trot gait
  * 7. Handling safety checks like fall detection.
  * 8. Printing debug data.
  */
+void DiagnosticLoop(void) {
+  static unsigned long lastImuMs = 0;
+  static unsigned long lastVoltageMs = 0;
+  static unsigned long lastPrintMs = 0;
+  const unsigned long nowMs = millis();
+
+  if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER) {
+    sBus.FeedLine();
+    if (sBus.toChannels == 1) {
+      sBus.UpdateChannels();
+      sBus.toChannels = 0;
+      diagnosticLastRcFrameMs = nowMs;
+      diagnosticHasRcFrame = true;
+    }
+  }
+
+  if (diagnosticImuReady && nowMs - lastImuMs >= 10) {
+    lastImuMs = nowMs;
+    ImuUpdate();
+  }
+  if (nowMs - lastVoltageMs >= 10) {
+    lastVoltageMs = nowMs;
+    ReadVoltage();
+  }
+  if (nowMs - lastPrintMs >= DIAGNOSTIC_PLOT_INTERVAL_MS) {
+    lastPrintMs = nowMs;
+    const long rcAgeMs = diagnosticHasRcFrame ? (long)(nowMs - diagnosticLastRcFrameMs) : -1;
+    const int rcFailsafe = diagnosticHasRcFrame ? sBus.Failsafe() : -1;
+    const float batteryRawV = (float)7.77 / 813.43 * VoltageADC;
+    // SerialPlot ASCII/CSV: fixed column count, numeric samples only.
+    // Order and units are documented in README.md.
+    Serial.printf("%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f,%.3f,%ld,%d,%d\n",
+                  nowMs * 0.001f,
+                  attitude.gyro.x, attitude.gyro.y, attitude.gyro.z,
+                  attitude.acc.x, attitude.acc.y, attitude.acc.z,
+                  attitude.roll, attitude.pitch, attitude.yaw,
+                  batteryRawV, rcAgeMs, rcFailsafe, diagnosticImuReady ? 1 : 0);
+  }
+  delay(1);
+}
+
 void loop() {
+#if SENSOR_DIAGNOSTIC_MODE
+  DiagnosticLoop();
+  return;
+#endif
   now_us = micros();
   // now_us2 = micros();
 
@@ -3052,11 +3309,12 @@ void loop() {
 
     FlashSave((int)CalibrationSelect);  // Save calibration data
 
-    Motor1_Velocity = (sensor1.getAngle() - Motor1_place_last) / 0.01f;
+    const float wheelVelocityDt = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? time_dt : 0.01f;
+    Motor1_Velocity = (sensor1.getAngle() - Motor1_place_last) / wheelVelocityDt;
     Motor1_Velocity_f = Motor1_Velocity_filter(Motor1_Velocity);
     Motor1_place_last = sensor1.getAngle();
 
-    Motor2_Velocity = -(sensor2.getAngle() - Motor2_place_last) / 0.01f;
+    Motor2_Velocity = -(sensor2.getAngle() - Motor2_place_last) / wheelVelocityDt;
     Motor2_Velocity_f = Motor2_Velocity_filter(Motor2_Velocity);
     Motor2_place_last = sensor2.getAngle();
 
@@ -3080,6 +3338,7 @@ void loop() {
     if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER)  // Host mode
     {
       if ((pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (RobotTumble == ROBOT_TUMBLE_YES)) {
+        balancePidNeedsPriming = true;
         if (Communication_object == COMMUNICATION_OBJECT_TWO_OR_FOUR_WHEEL_BALANCE && SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M1 && SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M2)  //
         {
           motor1.target = 0;
@@ -3095,6 +3354,7 @@ void loop() {
         Angle_Pid.integral = 0;
         Speed_Pid.integral = 0;
         Yaw_Pid.integral = 0;
+        wheelSpeedFeedbackOutput = 0;
 
         body.zo1 = 0;
         body.zo2 = 0;
@@ -3204,14 +3464,33 @@ void loop() {
     {
 
       // Set the angle of the four servos
-      servoControl.setServosAngle(1, Lax[0] - zeroBias.servo1, -1, Lax[1] - zeroBias.servo2, -1, Rax[0] - zeroBias.servo3, 1, Rax[1] - zeroBias.servo4, 1);
+      servoTraceAngle[0] = Lax[0] - zeroBias.servo1;
+      servoTraceAngle[1] = Lax[1] - zeroBias.servo2;
+      servoTraceAngle[2] = Rax[0] - zeroBias.servo3;
+      servoTraceAngle[3] = Rax[1] - zeroBias.servo4;
+      servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1, servoTraceAngle[3], 1);
     } else  // Assembly position and calibration
     {
       if ((int)CalibrationSelect == 3)  // Servo calibration
       {
-        servoControl.setServosAngle(1, 0 - zeroBias.servo1, -1, 0 - zeroBias.servo2, -1, 0 - zeroBias.servo3, 1, 0 - zeroBias.servo4, 1);  // 标定偏差
+        servoTraceAngle[0] = -zeroBias.servo1;
+        servoTraceAngle[1] = -zeroBias.servo2;
+        servoTraceAngle[2] = -zeroBias.servo3;
+        servoTraceAngle[3] = -zeroBias.servo4;
       } else {
-        servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);  // Assembly position
+        servoTraceAngle[0] = servoTraceAngle[1] = servoTraceAngle[2] = servoTraceAngle[3] = 0;
+      }
+      servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1, servoTraceAngle[3], 1);
+    }
+
+    if (!servoTraceWindowStarted) {
+      for (int i = 0; i < 4; i++)
+        servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
+      servoTraceWindowStarted = true;
+    } else {
+      for (int i = 0; i < 4; i++) {
+        if (servoTraceAngle[i] < servoTraceMin[i]) servoTraceMin[i] = servoTraceAngle[i];
+        if (servoTraceAngle[i] > servoTraceMax[i]) servoTraceMax[i] = servoTraceAngle[i];
       }
     }
 
