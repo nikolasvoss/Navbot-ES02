@@ -12,6 +12,8 @@
 #include "touchscreen.h"
 #include "ble.h"
 #include "robot.h"
+#include "TuningParameters.h"
+#include "WifiTuning.h"
 
 
 // commander communication instance
@@ -432,6 +434,8 @@ void MotorOperatingMode(void);
 void DiagnosticLoop(void);
 bool diagnosticImuReady = false;
 unsigned long diagnosticLastRcFrameMs = 0;
+unsigned long lastValidSbusFrameMs = 0;
+bool hasValidSbusFrame = false;
 bool diagnosticHasRcFrame = false;
 
 void cpu0_task(void *ptParam) {
@@ -505,9 +509,18 @@ void setup() {
   return;
 #endif
 
+#if WIFI_TUNING_ENABLE
+  // WLAN tuning uses SBUS only; it must not switch drive input to BLE.
+#else
   ble_init();
   xTaskCreatePinnedToCore(cpu0_task, "cpu0_task", 4096, NULL, 0, NULL, 0);
+#endif
 
+  bindTuningParameters(&AnglePid.P,&AnglePid.I,&AnglePid.D,&AnglePid.limit,
+                       &SpeedPid.P,&SpeedPid.I,&SpeedPid.D,&SpeedPid.limit,
+                       &YawPid.P,&YawPid.I,&YawPid.D,&YawPid.limit,
+                       &RollPid.P,&RollPid.I,&RollPid.D,&RollPid.limit,
+                       &PidParameterTuning,&wheelSpeedFeedbackGain);
   body_data_init();
   // Initialize second-order low-pass filter
   for (int axis = 0; axis < 6; axis++) {
@@ -824,6 +837,9 @@ void setup() {
 
   _delay(1000);
   timestamp_prev = micros();
+#if WIFI_TUNING_ENABLE
+  WifiTuningBegin();
+#endif
 }
 
 /**
@@ -1183,11 +1199,15 @@ float mapf(long x, long in_min, long in_max, float out_min, float out_max) {
  */
 
 void CtrlInput(){
+#if WIFI_TUNING_ENABLE
+  RXsbus();
+#else
   if(rp.ble_connected){
     bleCtrl();
   }else{
     RXsbus();
   }
+#endif
 }
 void bleCtrl(){
 
@@ -1232,6 +1252,8 @@ void RXsbus() {
     sBus.toChannels = 0;
     sBus.UpdateChannels();
     sBus.toChannels = 0;
+    lastValidSbusFrameMs = millis();
+    hasValidSbusFrame = true;
 
     MovementSpeed = mapf(sBus.channels[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -15, 15);
     if (DIAGNOSTIC_LIVE_TUNING_DEFAULTS)
@@ -3494,6 +3516,18 @@ void loop() {
       }
     }
 
+#if WIFI_TUNING_ENABLE
+    const uint32_t rcAge = hasValidSbusFrame ? (uint32_t)(millis() - lastValidSbusFrameMs) : UINT32_MAX;
+    WifiTuningState tuningState = {
+      MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER && SwitchingPattern == SWITCHING_PATTERN_TWO_WHEEL_MODE,
+      isSbusFresh(hasValidSbusFrame, rcAge, sBus.Failsafe() == SBUS_SIGNAL_OK),
+      rcAge,
+      pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF,
+      PidParameterTuning,
+      0
+    };
+    WifiTuningProcessOne(tuningState);
+#endif
     now_us1 = now_us;
   }
   //  Serial.print("  dt:");

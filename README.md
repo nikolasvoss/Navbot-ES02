@@ -199,3 +199,7 @@ according to personal habits. The corresponding functions of ch6-10 can be refer
 
 > Feel free to fork, contribute, or build your own version!  
 > PRs and feedback are always welcome.
+
+## WLAN-Parameterterminal (Phase 1)
+
+Der optionale WLAN-Tuning-Build und der Python-Client sind in [dev_reference/wifi-parameterterminal.md](dev_reference/wifi-parameterterminal.md) beschrieben. WLAN ist standardmäßig ausgeschaltet; das Terminal kann nur die freigegebenen Reglerparameter lesen und bei frischem SBUS sowie CH5 OFF schreiben. Es gibt keinen Upload- oder Flash-Schritt in diesem Ablauf.
