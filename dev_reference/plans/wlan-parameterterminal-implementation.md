@@ -6,7 +6,7 @@ Stand 28.09.2026. Ausführbarer Auftrag für GPT-6 Luna, Reasoning **high**. Nur
 
 Implementiere auf dem vorhandenen Navbot-ES02 ein einfaches Parameterterminal über WLAN im Heimnetz. Client: Python auf Linux Mint. Bedienung wie bisher `PP5`, `PD0.12`, `SP0.045`, `V0.2` sowie Abfragen ohne Zahlen. Gerät bestätigt den übernommenen Wert. Lesen auch bei aktiver Fahrt, Schreiben ausschließlich bei frischem, gültigem SBUS-Signal und CH5 aus. Profile lokal am PC speichern/laden.
 
-**Nicht implementieren:** Logging, Streaming, Recorder, Messstart, Diagramme, Weboberfläche, OTA, Access Point, BLE-Provisionierung, dauerhaftes Speichern der Gains im Roboter, neue Regleralgorithmen oder veränderte Start-Gains. Keine Vorab-Frameworks für das spätere Logging. Bestehende serielle Diagnosemöglichkeiten erhalten.
+**Nicht implementieren:** Logging, Streaming, Recorder, Messstart, Diagramme, Weboberfläche, OTA, einen dauerhaften Steuerungs-Access-Point, BLE-Provisionierung, dauerhaftes Speichern der Gains im Roboter, neue Regleralgorithmen oder veränderte Start-Gains. Ein SoftAP nur für die WLAN-Provisionierung beim Erststart oder nach bewusstem Reset ist vorgesehen. Keine Vorab-Frameworks für das spätere Logging. Bestehende serielle Diagnosemöglichkeiten erhalten.
 
 Hardware laut Nutzer: ESP32-S3-WROOM-1 ohne externen RAM, bestehende Pinbelegung korrekt. PSRAM deaktiviert lassen. Heimnetz ohne Internetzugriff genügt. Netzwerkverbindung darf Fahrquelle, Motorfreigabe und RC-Kanäle nicht verändern. Keine Firmware auf das Gerät flashen, solange nicht separat beauftragt; ein prüfbares Build und eine Uploadanleitung sind das Lieferziel.
 
@@ -56,7 +56,7 @@ Zentrale kleine Registry liefert Name, Wertebereich, Lesewert und Schreibziel. N
 
 Neue Dateien vorzugsweise `TuningParameters.{h,cpp}`, `WifiTuning.{h,cpp}` im Sketch; `scripts/wifi_tune.py` als Client. Namen dürfen aus Repositorykonventionen angepasst werden. Hauptsketch enthält nur Anbindung an Registry, SBUS-Freshness und Queue-Verarbeitung.
 
-WLAN-Task startet Station-Verbindung asynchron, ohne `while(!connected)`/lange Delays in `setup` oder `loop`. Fehlendes WLAN verhindert weder Boot noch RC-/Serial-Betrieb. Wiederverbindung mit begrenztem Backoff. HTTP-Server im Netzwerktask, maximal eine Mutation gleichzeitig, feste Queuekapazität, keine unbeschränkte Client-/Requestsammlung.
+WLAN-Task startet `WiFiProv` asynchron mit SoftAP und Security 0. Ohne gespeicherte Zugangsdaten provisioniert `esp_prov` das WLAN; nach erfolgreicher Provisionierung und bei normalen Neustarts nutzt der ESP32 die im WLAN-NVS gespeicherten Werte. Fehlendes WLAN verhindert weder Boot noch RC-/Serial-Betrieb. Ein Commander-Befehl setzt nur die WLAN-Konfiguration zurück. Der HTTP-Server startet nur bei WLAN-Verbindung und vorhandenem Laufzeit-Token; maximal eine Mutation gleichzeitig, feste Queuekapazität, keine unbeschränkte Client-/Requestsammlung.
 
 HTTP-Handler authentifiziert und parst, erstellt einen begrenzten POD-Request und wartet nur im Netzwerktask begrenzt auf Antwort. Keine Zeiger auf temporäre JSON-/HTTP-Puffer in der Queue. Loop verarbeitet höchstens eine vollständige Transaktion pro definiertem Kontrollzyklus. JSON-Serialisierung und Socketwrites ausschließlich im Netzwerktask. Auch Lese-Snapshots im Loop erstellen, damit ein HTTP-Callback keine inkonsistente Mischung von Parameterwerten/Modus/RC liest.
 
@@ -78,9 +78,9 @@ Eine begrenzte Antwortablage für die letzte Mutation ist ausreichend: gleicher 
 
 ## 6. Einrichtung und Terminal
 
-Beispielkonfiguration ohne echte Daten einchecken, lokale `wifi_tuning_secrets.h` explizit ignorieren. WLAN nur durch separates Buildflag aktivieren; aktivierter Build ohne SSID/Passwort/Token ergibt verständlichen Buildfehler, kein offenes Netz oder Standardpasswort. Token zufällig, mindestens 128 Bit; keine Secrets in Versionskennung, Debugausgaben, Dokumentation oder Tests. Konfigurationsdatei auf dem PC mit restriktiven Rechten; Token nicht als URL-Query oder sichtbares CLI-Argument. Keine Credentials in Compile-Kommandozeilen einbetten. Echte Secrets nur bei konkreter Einrichtung beschaffen, nicht als Voraussetzung für Mock-/Buildtests.
+Keine WLAN-Zugangsdaten oder Tuning-Token in Sourcecode, Builddateien oder Firmware-Binary einbetten. Der lokale Buildschalter aktiviert nur das WLAN-Feature. SoftAP-Provisioning verwendet Security 0 ohne Kopplung und ist für die Entwicklung vorgesehen. `esp_prov` muss Zugangsdaten interaktiv abfragen; keine echten Werte in Kommandozeilenargumente, Shell-Skripte oder Logs übernehmen. Core Debug Level bleibt `None`, weil `WiFiProv` bei höheren Debug-Stufen Provisionierungswerte protokollieren kann.
 
-HTTP mit Bearer-Token ist für das vom Nutzer gewünschte vertrauenswürdige Heimnetz gewählt. Keine TLS-Vertraulichkeit behaupten, keine Router-Portfreigabe. Alle Endpunkte authentifizieren. Keine Internet-/Gastnetzfreigabe. CSRF durch ausschließlich authentifizierte JSON-POSTs ohne Cookieauth vermeiden; kein freizügiges CORS hinzufügen.
+Der Tuning-Token wird erst zur Laufzeit aus dem Preferences-Namespace `wifi-tuning`, Schlüssel `token`, geladen. Ohne einen ausreichend langen NVS-Wert startet der HTTP-Server nicht. Ein eigener Provisioning-Custom-Endpoint für diesen Token ist ein Folgearbeitspaket. HTTP verwendet Port 80 ohne TLS und ist nur für ein vertrauenswürdiges Entwicklungsnetz vorgesehen; keine Router-Portfreigabe oder Gastnetzfreigabe einrichten.
 
 Client ausschließlich Python-Standardbibliothek, sofern kein konkreter Grund entgegensteht. Folgender Bedienvertrag:
 
@@ -119,7 +119,7 @@ Alle späteren Agenten explizit mit Modell `gpt-6-luna`, Reasoning `high` starte
 
 Verbindlich: [Testplan](wlan-parameterterminal-test-plan.md) und [Risikoregister](wlan-parameterterminal-risk-register.md). Risiko **high**, weil Netzwerkbefehle physische Regelparameter ändern; deshalb nach Umsetzung `/security-review`, `/cli-qa` für die neue CLI und `/review` für den Feature-Diff. Dokumentation mit `/document-release` synchronisieren. Kein `/ship`, Deployment oder Upload in diesem Auftrag.
 
-Builds: dokumentierter FQBN `esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=default`, PSRAM unverändert aus. Basis, Feature aus und Feature an mit Dummy-Konfiguration jeweils in getrennte Buildverzeichnisse kompilieren. Aktive Arduino-Core-/SimpleFOC-Versionen festhalten. Compile-Erfolg ersetzt keine Hardwareabnahme.
+Builds: dokumentierter FQBN `esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=default,DebugLevel=none,PartitionScheme=no_fs`, PSRAM unverändert aus. Das 4-MB-Partitionsschema `no_fs` stellt zwei 2-MB-App-Partitionen bereit; ein Dateisystem wird nicht verwendet. Der Build benötigt keine WLAN-Credentials oder Dummy-Secrets. Aktive Arduino-Core-/SimpleFOC-Versionen festhalten. Compile-Erfolg ersetzt keine Hardwareabnahme.
 
 Lieferung: isolierter Worktree/Branch, sauber abgegrenzter Feature-Diff relativ zum Snapshot-Basis-Commit, Protokoll/Setup im README oder eigener referenzierter Anleitung, Beispieldateien, automatische Tests und Buildnachweise, offene Hardwarechecks. Kein Loggingcode. Kein behaupteter erfolgreicher Funk-/Fahrtest ohne Gerät. Abschlussbericht benennt bekannte Grenzen und exakt, ob ein Image nur gebaut oder auch separat autorisiert geflasht wurde.
 

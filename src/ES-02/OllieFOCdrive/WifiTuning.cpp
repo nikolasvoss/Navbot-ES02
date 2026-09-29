@@ -1,29 +1,20 @@
 #include "WifiTuning.h"
 #if WIFI_TUNING_ENABLE
 #include <WiFi.h>
+#include <WiFiProv.h>
+#include <Preferences.h>
 #include <ArduinoJson.h>
 #include <esp_system.h>
+#include <esp_mac.h>
 #include <string.h>
 #include <strings.h>
 #include <ctype.h>
 #include <math.h>
 
-#include "wifi_tuning_secrets.h"
-#ifndef WIFI_TUNING_SSID
-#error "Define WIFI_TUNING_SSID in wifi_tuning_secrets.h"
-#endif
-#ifndef WIFI_TUNING_PASSWORD
-#error "Define WIFI_TUNING_PASSWORD in wifi_tuning_secrets.h"
-#endif
-#ifndef WIFI_TUNING_TOKEN
-#error "Define WIFI_TUNING_TOKEN in wifi_tuning_secrets.h (random, at least 128 bits)"
-#endif
-static_assert(sizeof(WIFI_TUNING_SSID) > 1, "WIFI_TUNING_SSID must not be empty");
-static_assert(sizeof(WIFI_TUNING_PASSWORD) > 1, "WIFI_TUNING_PASSWORD must not be empty; open networks are not supported");
-static_assert(sizeof(WIFI_TUNING_TOKEN) >= 33, "WIFI_TUNING_TOKEN must contain at least 32 characters");
 
 namespace {
 constexpr size_t kQueueCapacity = 4;
+constexpr size_t kTuningTokenCapacity = 129;
 constexpr size_t kBodyMax = 2048;
 constexpr size_t kHeaderMax = 1536;
 constexpr uint32_t kRequestTtlMs = 700;
@@ -61,15 +52,25 @@ struct Reply {
 QueueHandle_t requestQueue = nullptr;
 QueueHandle_t replyQueue = nullptr;
 WiFiServer server(80);
+TaskHandle_t wifiTaskHandle = nullptr;
+char tuningToken[kTuningTokenCapacity] = {};
+bool tuningTokenAvailable = false;
 uint32_t bootId = 0;
 uint32_t nextSequence = 1;
 struct CachedWrite { bool valid=false; char id[41]={0}; uint16_t bodyLength=0; char body[kBodyMax+1]={0}; Reply reply{}; } cache;
 
 String bootString(uint32_t value) { char out[9]; snprintf(out,sizeof(out),"%08lx",(unsigned long)value); return String(out); }
+bool loadTuningToken() {
+  Preferences preferences;
+  if (!preferences.begin("wifi-tuning", true)) return false;
+  const size_t length = preferences.getString("token", tuningToken, sizeof(tuningToken));
+  preferences.end();
+  return length >= 32 && length < sizeof(tuningToken);
+}
 bool authorized(const char *header) {
   static const char prefix[] = "Bearer ";
   if (!header || strncmp(header,prefix,sizeof(prefix)-1)!=0) return false;
-  return strcmp(header+sizeof(prefix)-1,WIFI_TUNING_TOKEN)==0;
+  return tuningTokenAvailable && strcmp(header+sizeof(prefix)-1,tuningToken)==0;
 }
 const char *reasonPhrase(int status) {
   switch(status){case 200:return "OK";case 400:return "Bad Request";case 401:return "Unauthorized";case 404:return "Not Found";case 409:return "Conflict";case 413:return "Payload Too Large";case 503:return "Service Unavailable";case 504:return "Gateway Timeout";default:return "Error";}
@@ -184,20 +185,68 @@ void handleClient(WiFiClient &client) {
   body[received]='\0';handleWrite(client,body,received);
 }
 void wifiTask(void*) {
-  WiFi.mode(WIFI_STA);WiFi.setSleep(false);WiFi.begin(WIFI_TUNING_SSID,WIFI_TUNING_PASSWORD);server.begin();
-  uint32_t retryAt=millis()+1000;uint32_t backoff=1000;
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  char serviceName[16];
+  snprintf(serviceName, sizeof(serviceName), "PROV_%02X%02X%02X", mac[3], mac[4], mac[5]);
+  WiFiProv.beginProvision(NETWORK_PROV_SCHEME_SOFTAP,
+                          NETWORK_PROV_SCHEME_HANDLER_NONE,
+                          NETWORK_PROV_SECURITY_0,
+                          nullptr, serviceName, nullptr, nullptr, false);
+  Serial.printf("Wi-Fi provisioning service initialized (AP name: %s).\n", serviceName);
+  bool serverStarted=false;
+  bool wasConnected=false;
   for(;;){
-    WiFiClient client=server.accept();if(client){handleClient(client);client.stop();}
-    if(WiFi.status()!=WL_CONNECTED&&(int32_t)(millis()-retryAt)<0){vTaskDelay(pdMS_TO_TICKS(2));continue;}
-    if(WiFi.status()!=WL_CONNECTED){WiFi.disconnect();WiFi.begin(WIFI_TUNING_SSID,WIFI_TUNING_PASSWORD);retryAt=millis()+backoff;backoff=backoff<30000?backoff*2:30000;}else backoff=1000;
+    if (ulTaskNotifyTake(pdTRUE, 0) > 0) {
+      Serial.println("Clearing saved Wi-Fi settings and restarting.");
+      WiFiProv.endProvision();
+      WiFi.mode(WIFI_STA);
+      if (WiFi.STA.erase()) ESP.restart();
+      Serial.println("Wi-Fi reset failed; settings were not cleared.");
+    }
+    const bool connected = WiFi.status() == WL_CONNECTED;
+    if (connected && !wasConnected) Serial.println("Wi-Fi connected.");
+    if (!connected && wasConnected) Serial.println("Wi-Fi disconnected; reconnecting.");
+    wasConnected = connected;
+    if (connected && tuningTokenAvailable && !serverStarted) {
+      server.begin();
+      serverStarted = true;
+      Serial.println("Wi-Fi tuning API started.");
+    }
+    if (serverStarted) {
+      WiFiClient client=server.accept();
+      if(client){handleClient(client);client.stop();}
+    }
     vTaskDelay(pdMS_TO_TICKS(2));
   }
 }
 }
 
 void WifiTuningBegin() {
-  bootId=esp_random();requestQueue=xQueueCreate(kQueueCapacity,sizeof(Request));replyQueue=xQueueCreate(1,sizeof(Reply));
-  if(requestQueue&&replyQueue)xTaskCreatePinnedToCore(wifiTask,"wifi-tuning",8192,nullptr,1,nullptr,0);
+  requestQueue=xQueueCreate(kQueueCapacity,sizeof(Request));
+  replyQueue=xQueueCreate(1,sizeof(Reply));
+  tuningTokenAvailable=loadTuningToken() && requestQueue && replyQueue;
+  if (!tuningTokenAvailable) Serial.println("Wi-Fi tuning API disabled; no runtime token is stored.");
+  bootId=esp_random();
+  if (xTaskCreatePinnedToCore(wifiTask,"wifi-tuning",8192,nullptr,1,&wifiTaskHandle,0) != pdPASS) {
+    wifiTaskHandle=nullptr;
+    Serial.println("Wi-Fi task failed to start.");
+  }
+}
+void WifiTuningReprovision(char *cmd) {
+  if (!cmd || strcmp(cmd, "RESET") != 0) {
+    Serial.println("Use WRESET to clear saved Wi-Fi settings.");
+    return;
+  }
+  if (!wifiTaskHandle) {
+    Serial.println("Wi-Fi task is not ready.");
+    return;
+  }
+  xTaskNotifyGive(wifiTaskHandle);
+  Serial.println("Wi-Fi reset requested.");
 }
 void WifiTuningProcessOne(const WifiTuningState &state) {
   if(!requestQueue||!replyQueue)return;Request request{};if(xQueueReceive(requestQueue,&request,0)!=pdTRUE)return;
@@ -221,5 +270,6 @@ void WifiTuningProcessOne(const WifiTuningState &state) {
 }
 #else
 void WifiTuningBegin() {}
+void WifiTuningReprovision(char *) {}
 void WifiTuningProcessOne(const WifiTuningState &) {}
 #endif

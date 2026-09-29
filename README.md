@@ -200,6 +200,6 @@ according to personal habits. The corresponding functions of ch6-10 can be refer
 > Feel free to fork, contribute, or build your own version!  
 > PRs and feedback are always welcome.
 
-## WLAN-Parameterterminal (Phase 1)
+## WLAN-Provisionierung und Parameterterminal
 
-Der optionale WLAN-Tuning-Build und der Python-Client sind in [dev_reference/wifi-parameterterminal.md](dev_reference/wifi-parameterterminal.md) beschrieben. WLAN ist standardmäßig ausgeschaltet; das Terminal kann nur die freigegebenen Reglerparameter lesen und bei frischem SBUS sowie CH5 OFF schreiben. Es gibt keinen Upload- oder Flash-Schritt in diesem Ablauf.
+WLAN-Provisionierung und der optionale Parameterterminal-Build sind in [dev_reference/wifi-parameterterminal.md](dev_reference/wifi-parameterterminal.md) beschrieben. Der ESP32 startet ohne gespeicherte Zugangsdaten einen offenen SoftAP für `esp_prov` und verwendet gespeicherte WLAN-Daten nach Neustarts weiter. Die Tuning-HTTP-API bleibt deaktiviert, bis ein Laufzeit-Token separat in NVS hinterlegt ist.

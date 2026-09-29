@@ -16,4 +16,5 @@ struct WifiTuningState {
 };
 
 void WifiTuningBegin();
+void WifiTuningReprovision(char *cmd);
 void WifiTuningProcessOne(const WifiTuningState &state);

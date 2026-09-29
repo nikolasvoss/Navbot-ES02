@@ -825,6 +825,9 @@ void setup() {
   // command.add('U', Pid_Parameter_Tuning, "my Pid_Parameter_Tuning");
   command.add('U', User_command, "my User_command");
   command.add('V', CbWheelSpeedFeedbackGain, "wheel speed feedback gain");
+#if WIFI_TUNING_ENABLE
+  command.add('W', WifiTuningReprovision, "reset Wi-Fi provisioning with WRESET");
+#endif
 
 #if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
   // Preload the gentle gains before CH5 can pass briefly through mode 1.
