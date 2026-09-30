@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Authenticated local WLAN parameter terminal for Navbot-ES02."""
+"""Local WLAN parameter terminal for Navbot-ES02."""
 from __future__ import annotations
 
 import argparse
@@ -34,21 +34,19 @@ class DeviceError(Exception):
     pass
 
 class Client:
-    def __init__(self, host: str, token: str, timeout: float = 2.0):
+    def __init__(self, host: str, timeout: float = 2.0):
         try:
             parsed = ipaddress.ip_address(host)
         except ValueError as exc:
             raise LocalError("--host muss eine IPv4-Adresse im Heimnetz sein") from exc
         if not isinstance(parsed, ipaddress.IPv4Address):
             raise LocalError("Nur lokale IPv4-Verbindungen werden unterstützt")
-        if not token:
-            raise LocalError("Token fehlt in der Konfiguration")
-        self.host, self.token, self.timeout = str(parsed), token, timeout
+        self.host, self.timeout = str(parsed), timeout
         self.boot_id: str | None = None
 
     def request(self, method: str, endpoint: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         body = None if payload is None else json.dumps(payload, allow_nan=False, separators=(",", ":"))
-        headers = {"Authorization": "Bearer " + self.token, "Accept": "application/json"}
+        headers = {"Accept": "application/json"}
         if body is not None:
             headers["Content-Type"] = "application/json"
         conn = http.client.HTTPConnection(self.host, 80, timeout=self.timeout)
@@ -73,7 +71,23 @@ class Client:
                 self.boot_id = boot_id
             return data
         except (OSError, TimeoutError, http.client.HTTPException) as exc:
-            raise TransportError(f"Transport/Timeout: {exc}") from exc
+            if isinstance(exc, ConnectionRefusedError):
+                message = (
+                    f"Verbindung zu {self.host}:80 abgelehnt. Prüfe die Roboter-IP "
+                    "und ob die WLAN-Tuning-API in der Firmware aktiviert ist."
+                )
+            elif isinstance(exc, TimeoutError):
+                if method == "POST":
+                    message = (
+                        f"Keine Antwort von {self.host}:80 innerhalb von {self.timeout:g} s. "
+                        "Ausgang des Schreibzugriffs unklar; zuerst status/show lesen und "
+                        "nicht automatisch wiederholen."
+                    )
+                else:
+                    message = f"Keine Antwort von {self.host}:80 innerhalb von {self.timeout:g} s"
+            else:
+                message = f"Transportfehler zu {self.host}:80: {exc}"
+            raise TransportError(message) from exc
         finally:
             conn.close()
 
@@ -102,7 +116,7 @@ def json_no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         result[key] = value
     return result
 
-def load_config(path: Path, host_arg: str | None) -> tuple[str, str]:
+def load_config(path: Path, host_arg: str | None) -> str:
     try:
         stat = path.stat()
         if stat.st_mode & 0o077:
@@ -111,14 +125,39 @@ def load_config(path: Path, host_arg: str | None) -> tuple[str, str]:
             raise LocalError("Konfigurationsdatei ist zu groß")
         data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=json_no_duplicates)
     except FileNotFoundError as exc:
-        raise LocalError(f"Konfiguration fehlt: {path} (JSON mit host und token anlegen, Rechte 0600)") from exc
+        raise LocalError(f"Konfiguration fehlt: {path}; starte einmal mit --host ROBOTER-IP") from exc
     except (OSError, ValueError) as exc:
         raise LocalError(f"Konfiguration kann nicht gelesen werden: {exc}") from exc
-    if not isinstance(data, dict) or not isinstance(data.get("host"), str) or not isinstance(data.get("token"), str):
-        raise LocalError("Konfiguration benötigt die Felder host und token")
-    if len(data["token"]) < 32:
-        raise LocalError("Token muss mindestens 32 Zeichen lang sein")
-    return host_arg or data["host"], data["token"]
+    if not isinstance(data, dict) or not isinstance(data.get("host"), str):
+        raise LocalError("Konfiguration benötigt das Feld host")
+    return host_arg or data["host"]
+
+
+def save_config(path: Path, host: str) -> None:
+    parent = path.parent
+    fd = -1
+    temp_name: str | None = None
+    try:
+        parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        encoded = json.dumps({"host": host}, indent=2) + "\n"
+        fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=parent)
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            fd = -1
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_name, path)
+    except OSError as exc:
+        raise LocalError(f"Verbindungskonfiguration konnte nicht gespeichert werden: {exc}") from exc
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        if temp_name and os.path.exists(temp_name):
+            try:
+                os.unlink(temp_name)
+            except OSError:
+                pass
 
 
 def parse_terminal_line(line: str) -> tuple[str, float | None] | None:
@@ -269,7 +308,15 @@ def execute(text: str, client: Client, json_output: bool = False) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description="WLAN-Terminal für Reglerparameter des Navbot-ES02.",
+        epilog=(
+            "Terminalbeispiele: PP liest den aktuellen Wert, PP5 schreibt PP=5; "
+            "show liest alle Parameter, status zeigt Verbindungs- und Freigabestatus. "
+            "Gain-Schreibzugriffe brauchen U=1, frische SBUS-Daten und CH5 OFF. "
+            "Parameteränderungen gelten bis zum Neustart."
+        ),
+    )
     parser.add_argument("--host", help="Roboter-IPv4; überschreibt host aus --config")
     parser.add_argument("--config", type=Path, default=Path.home() / ".config/navbot/wifi-tuning.json")
     parser.add_argument("--command", help="Einzelnen Terminalbefehl ausführen")
@@ -277,10 +324,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=2.0)
     args = parser.parse_args(argv)
     try:
-        host, token = load_config(args.config, args.host)
-        client = Client(host, token, args.timeout)
+        if args.config.exists():
+            host = load_config(args.config, args.host)
+        elif args.host:
+            host = args.host
+        else:
+            host = input("IPv4-Adresse des Roboters: ").strip()
+        client = Client(host, args.timeout)
+        if not args.config.exists():
+            save_config(args.config, client.host)
+            print(f"Roboteradresse lokal gespeichert: {args.config} (Verbindung noch nicht geprüft)")
         if args.command is not None:
-            print(execute(args.command, client, args.json) or "")
+            try:
+                result = execute(args.command, client, args.json)
+            except EOFError:
+                return 0
+            print(result or "")
             return 0
         while True:
             try:

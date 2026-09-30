@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 #include <SimpleFOC.h>
 #include <Preferences.h>  // This library is used for key-value data storage and retrieval in ESP32, enabling data persistence
 #include "SlotCalibration.h"
@@ -359,6 +360,13 @@ double LeftMotorAngle = 0;
 float time_dt = 0;
 unsigned long now_us = 0;
 unsigned long now_us1 = 0;
+#if WIFI_RECORDING_ENABLE
+uint64_t lastImuReadAtUs = 0;
+static_assert(REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH <= 3, "gain mode no longer fits telemetry v1");
+static_assert(REMOTE_CONTROL_ROLL_MODE_AUTO <= 3, "roll mode no longer fits telemetry v1");
+static_assert(REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE <= 3, "attitude mode no longer fits telemetry v1");
+static_assert(REMOTE_CONTROL_PM_MARK_MODE <= 3, "posture mode no longer fits telemetry v1");
+#endif
 unsigned long now_us2 = 0;
 // BLDC motor & driver instance
 BLDCMotor motor1 = BLDCMotor(7);  // Motor pole pairs
@@ -1559,6 +1567,9 @@ void ImuUpdate(void) {
 
   int16_t accelX, accelY, accelZ, gyroX, gyroY, gyroZ, temp;
   readIMUData(accelX, accelY, accelZ, gyroX, gyroY, gyroZ, temp);
+#if WIFI_RECORDING_ENABLE
+  lastImuReadAtUs = (uint64_t)esp_timer_get_time();
+#endif
 
   // Subtract the gyroscope zero bias value
   gyroX -= (int16_t)gyroBiasX;
@@ -3256,7 +3267,19 @@ void loop() {
   LeftMotorAngle = sensor2.getPreciseAngle();
 
   // user communication
+#if WIFI_RECORDING_ENABLE
+  static bool serialMutationWarning = false;
+  if (WifiTuningMutationLocked()) {
+    while (Serial.available()) (void)Serial.read();
+    if (!serialMutationWarning) Serial.println("Serial commands are paused while a WLAN recording owns the tuning configuration.");
+    serialMutationWarning = true;
+  } else {
+    serialMutationWarning = false;
+    command.run();
+  }
+#else
   command.run();
+#endif
 
   if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER) {
     ImuUpdate();  // Update IMU data
@@ -3269,6 +3292,9 @@ void loop() {
 
   time_dt = (now_us - now_us1) / 1000000.0f;
   if (time_dt >= 0.001f) {   //1kHz
+#if WIFI_RECORDING_ENABLE
+    bool regulatorCalculated = false;
+#endif
     static int Serial1_count = 0;
     Serial1_count++;
     if (Serial1_count >= 5) {
@@ -3290,7 +3316,10 @@ void loop() {
 
     RemoteControlFiltering();  // Remote control signal filtering
     ReadVoltage();             // Battery
-    print_data();              // Serial port data printing
+#if WIFI_RECORDING_ENABLE
+    if (!WifiTuningRecordingActive())
+#endif
+      print_data();              // Serial port data printing
 
     if (SwitchingPattern == SWITCHING_PATTERN_TWO_WHEEL_MODE)  // 2-wheel mode
       Robot_Tumble();                                          // Machine fall detection
@@ -3397,6 +3426,9 @@ void loop() {
 
         if (SwitchingPattern == SWITCHING_PATTERN_TWO_WHEEL_MODE)  // 2-wheel mode
         {
+#if WIFI_RECORDING_ENABLE
+          regulatorCalculated = true;
+#endif
           PIDcontroller_posture(time_dt);  // PID controller
 
           body.zo1 = 0;
@@ -3527,9 +3559,62 @@ void loop() {
       rcAge,
       pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF,
       PidParameterTuning,
-      0
+      0,
+      CalibrationSelect == 0,
+      (uint32_t)ImuRATE_HZ,
+      (uint32_t)LPF_CUTOFF_FREQ,
+      zeroBias.roll,
+      zeroBias.pitch,
+      gyroBiasX,
+      gyroBiasY,
+      gyroBiasZ
     };
     WifiTuningProcessOne(tuningState);
+#if WIFI_RECORDING_ENABLE
+    if (WifiTuningRecordingActive()) {
+      telemetry::Sample sample{};
+      sample.timestampUs = (uint64_t)esp_timer_get_time();
+      sample.flags = (uint32_t)(pid_gains_mode & 3);
+      if (RobotTumble == ROBOT_TUMBLE_YES) sample.flags |= 1u << 2;
+      if (regulatorCalculated) sample.flags |= 1u << 3;
+      if (isSbusFresh(hasValidSbusFrame, rcAge, sBus.Failsafe() == SBUS_SIGNAL_OK)) sample.flags |= 1u << 4;
+      if (lastImuReadAtUs != 0 && sample.timestampUs >= lastImuReadAtUs) {
+        sample.flags |= 1u << 5;
+        const uint64_t age = sample.timestampUs - lastImuReadAtUs;
+        sample.imuAgeUs = age > UINT32_MAX ? UINT32_MAX : (uint32_t)age;
+      } else sample.imuAgeUs = UINT32_MAX;
+      sample.flags |= (uint32_t)(roll_mode & 3) << 7;
+      sample.flags |= (uint32_t)(attitude_mode & 3) << 9;
+      sample.flags |= (uint32_t)(posture_or_mark_mode & 3) << 11;
+      const float runtime[] = {Speed_Pid.error, Speed_Pid.outP, Speed_Pid.outI, Speed_Pid.outD,
+        Speed_Pid.output, Angle_Pid.error, Angle_Pid.outP, Angle_Pid.outI, Angle_Pid.outD,
+        Angle_Pid.output, Yaw_Pid.output};
+      const size_t runtimeIndices[] = {9,10,11,12,13,14,15,16,17,18,19};
+      for (size_t i = 0; i < 11; ++i) sample.values[runtimeIndices[i]] = regulatorCalculated ? runtime[i] : NAN;
+      sample.values[0] = roll_ok;
+      sample.values[1] = BodyPitching_f;
+      sample.values[2] = attitude.gyrof.x;
+      sample.values[3] = attitude.gyrof.y;
+      sample.values[4] = attitude.gyrof.z;
+      sample.values[5] = MovementSpeed;
+      sample.values[6] = BodyTurn;
+      sample.values[7] = Motor1_Velocity_f;
+      sample.values[8] = Motor2_Velocity_f;
+      sample.values[20] = BodyX;
+      sample.values[21] = motor1.target;
+      sample.values[22] = motor2.target;
+      sample.values[23] = wheelSpeedFeedbackOutput;
+      sample.values[24] = Voltage;
+      sample.values[25] = wheelSpeedFeedbackGain;
+      bool numericFault = false;
+      for (size_t i = 0; i < telemetry::kRecordFloatCount; ++i) {
+        if (regulatorCalculated || (i < 9 || i > 19)) numericFault |= !isfinite(sample.values[i]);
+      }
+      if (numericFault) sample.flags |= 1u << 6;
+      sample.controlDtUs = time_dt <= 0 ? 0 : (time_dt * 1000000.0f >= (float)UINT32_MAX ? UINT32_MAX : (uint32_t)(time_dt * 1000000.0f));
+      WifiTuningRecordingTick(sample, tuningState);
+    }
+#endif
 #endif
     now_us1 = now_us;
   }

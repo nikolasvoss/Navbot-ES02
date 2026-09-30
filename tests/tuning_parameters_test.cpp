@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <math.h>
 #include <string.h>
+#include <string>
 
 int main() {
   float values[18] = {5,222,0.11f,0.1f,0.045f,0,0,50,4,0,0,0,0.06f,1.5f,0.0028f,2,1,0.2f};
@@ -18,6 +19,19 @@ int main() {
   assert(hasDuplicateJsonObjectKeys(duplicateValues,sizeof(duplicateValues)-1));
   assert(hasDuplicateJsonObjectKeys(duplicateRoot,sizeof(duplicateRoot)-1));
   assert(!hasDuplicateJsonObjectKeys(uniqueKeys,sizeof(uniqueKeys)-1));
+  std::string fullBatch="{\"request_id\":\"0123456789abcdef0123456789abcdef\",\"expected_boot_id\":\"0123456789abcdef\",\"values\":{";
+  for(size_t i=0;i<18;i++) {
+    if(i) fullBatch+=',';
+    fullBatch+='\"'; fullBatch+=names[i]; fullBatch+="\":0";
+  }
+  fullBatch+="}}";
+  assert(!hasDuplicateJsonObjectKeys(fullBatch.c_str(),fullBatch.size()));
+  const std::string duplicateBatch=fullBatch.substr(0,fullBatch.size()-2)+",\"PP\":5}}";
+  assert(hasDuplicateJsonObjectKeys(duplicateBatch.c_str(),duplicateBatch.size()));
+  const std::string longestKey="{\""+std::string(39,'k')+"\":0}";
+  const std::string oversizedKey="{\""+std::string(40,'k')+"\":0}";
+  assert(!hasDuplicateJsonObjectKeys(longestKey.c_str(),longestKey.size()));
+  assert(hasDuplicateJsonObjectKeys(oversizedKey.c_str(),oversizedKey.size()));
   assert(parseTuningLine("SI 4.5e-1",name,sizeof(name),&hasValue,&value)&&fabsf(value-.45f)<1e-6f);
   const char *invalid[]={"PPnan","PP1tail","PP 1 2","T1","U0.5","PP1e999","PP 1.0 junk"};
   for(const char *line:invalid) assert(!parseTuningLine(line,name,sizeof(name),&hasValue,&value));

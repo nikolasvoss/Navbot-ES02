@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 static TuningParameter parameters[TUNING_PARAMETER_COUNT] = {
   {"PP", 0, 20, "Angle proportional gain", nullptr, false},
@@ -63,24 +64,30 @@ const char *validateTuningWritePolicy(bool supportedMode,bool rcValid,bool ch5Of
 
 bool hasDuplicateJsonObjectKeys(const char *body,size_t length) {
   if(!body)return true;
-  char keys[5][24][40] = {};unsigned char counts[5]={0,0,0,0,0};int depth=0;
+  if(length>0xffffU)return true;
+  uint16_t keyOffsets[5][24] = {};
+  uint8_t keyLengths[5][24] = {};
+  unsigned char counts[5]={0,0,0,0,0};int depth=0;
   for(size_t i=0;i<length;i++){
     char c=body[i];
     if(c=='"'){
-      char key[40];size_t n=0;bool escaped=false;size_t j=i+1;
+      const size_t keyStart=i+1;size_t j=keyStart;bool escaped=false;
       for(;j<length&&body[j]!='"';j++){
         if(body[j]=='\\'){escaped=true;break;}
-        if(n+1>=sizeof(key)) return true;
-        key[n++]=body[j];
+        if(j-keyStart>=39)return true;
       }
       if(escaped){size_t k=j+1;bool inEscape=false;for(;k<length;k++){if(inEscape){inEscape=false;continue;}if(body[k]=='\\'){inEscape=true;continue;}if(body[k]=='"')break;}if(k>=length)return true;j=k;}
       if(j>=length)return true;
-      key[n]='\0';
+      const size_t keyLength=j-keyStart;
       size_t k=j+1;while(k<length&&isspace((unsigned char)body[k]))k++;
       if(k<length&&body[k]==':'){
         if(escaped||depth<1||depth>4||counts[depth]>=24)return true;
-        for(unsigned char q=0;q<counts[depth];q++)if(strcmp(keys[depth][q],key)==0)return true;
-        memcpy(keys[depth][counts[depth]++],key,n+1);
+        for(unsigned char q=0;q<counts[depth];q++){
+          if(keyLengths[depth][q]==keyLength&&
+             memcmp(body+keyOffsets[depth][q],body+keyStart,keyLength)==0)return true;
+        }
+        keyOffsets[depth][counts[depth]]=(uint16_t)keyStart;
+        keyLengths[depth][counts[depth]++]=(uint8_t)keyLength;
       }
       i=j;
     } else if(c=='{'){if(++depth>4)return true;counts[depth]=0;}
