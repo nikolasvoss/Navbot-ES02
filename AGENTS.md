@@ -1,5 +1,16 @@
 # Agent notes
 
+## Documentation structure
+
+Use the Diátaxis modes to choose the structure for each document. Keep each document focused on one mode. Split mixed content into separate documents and link between them.
+
+- **Tutorials** teach through a sequence of steps that produces a visible result.
+- **How-to guides** give the steps for completing a specific task. Leave background and teaching to linked docs.
+- **Reference docs** state facts for lookup. Mirror the structure of the code or system, and generate content from code when practical.
+- **Explanations** describe one topic and its reasons, constraints, history, or alternatives.
+
+Choose the mode by the reader's need: tutorials help readers learn by doing, how-to guides help them get work done, reference docs help them look up facts, and explanations help them understand. Use sentence-case headings and link related modes instead of mixing them into one document.
+
 Before changing USB, Serial, telemetry, or flashing behavior, read [agent_notes/usb-serial.md](agent_notes/usb-serial.md). Keep new hardware findings in `agent_notes/` with the observation, its evidence, and the practical consequence. Recheck device names and board settings before each flash.
 
 For an already compiled Arduino build, use `python3 scripts/upload_firmware.py BUILD_DIR` from the project root. The helper checks the CH340 port and uploads with the documented ESP32-S3 board options. See [agent_notes/usb-serial.md](agent_notes/usb-serial.md) for the build command and USB details.
