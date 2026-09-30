@@ -92,11 +92,7 @@ Channel order (also use these as names in SerialPlot's Plot tab):
 | 13 | `rc_failsafe` | `0` valid, `1` lost, `3` failsafe, `-1` before any frame |
 | 14 | `imu_ok` | `1` initialized, `0` failed |
 
-For plain text inspection, close SerialPlot first (the serial port can be opened by only one program) and use the included monitor. It requires `pyserial` and also keeps RTS deasserted:
-
-```bash
-python3 scripts/sensor_monitor.py
-```
+For plain text inspection, close SerialPlot first because only one program can open the serial port. Use the configured serial MCP server to open the CH340 port, keep DTR and RTS low, and read the output at 115200 baud.
 
 The `DIAG,boot` line includes `reset_reason` (`1` means power-on or external reset, `9` means brownout). The CSV voltage channel uses the direct ADC value so it does not have the filtered voltage's startup delay.
 

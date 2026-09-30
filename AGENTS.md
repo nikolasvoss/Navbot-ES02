@@ -13,6 +13,8 @@ Choose the mode by the reader's need: tutorials help readers learn by doing, how
 
 Before changing USB, Serial, telemetry, or flashing behavior, read [agent_notes/usb-serial.md](agent_notes/usb-serial.md). Keep new hardware findings in `agent_notes/` with the observation, its evidence, and the practical consequence. Recheck device names and board settings before each flash.
 
+For direct serial access, every agent must use the configured serial MCP server. Call `list_ports` before choosing a device, then use its `open`, `read`, `write`, and `close` tools as needed. Set RTS and DTR low after opening unless the task requires otherwise, because these lines can reset the board. Do not send serial data unless the task requires it. Use documented project scripts when their workflow-specific behavior is needed; see [agent_notes/usb-serial.md](agent_notes/usb-serial.md).
+
 For an already compiled Arduino build, use `python3 scripts/upload_firmware.py BUILD_DIR` from the project root. The helper checks the CH340 port and uploads with the documented ESP32-S3 board options. See [agent_notes/usb-serial.md](agent_notes/usb-serial.md) for the build command and USB details.
 
 ## How to use the hardware documentation
