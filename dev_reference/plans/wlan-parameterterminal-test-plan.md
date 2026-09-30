@@ -12,11 +12,13 @@ Stand 28.09.2026; gehört zum [Implementierungsauftrag](wlan-parameterterminal-i
 | Autorace | Bei Enqueue OFF, vor Ausführung ON; abgelaufener Request | Keine Änderung |
 | Automatik | Gainwrite bei U0, U1 plus Gains als Batch, U0 plus Gains, unabhängiges V | AUTO_MODE bzw. atomar definierter Erfolg |
 | Batch | Erstes Feld gültig, späteres ungültig; unbekanntes Feld; doppelte JSON-Keys | Kein einziger Wert geändert |
+| Parser-Stack | Gültiger Batch mit allen 18 Namen; doppelte Root- und Parameter-Keys bleiben abgelehnt | Schlüsselprüfung bleibt korrekt und verbraucht nur einen kleinen Teil des WLAN-Task-Stacks |
 | Zustände | Snapshot während Serialänderung/Batch; Neustart-/Boot-ID; doppelter Request gleich/anders | Kohärenter Snapshot, kein doppelter Effekt, klare Fehler |
 | Begrenzung | Queue voll, langsamer HTTP-Client, Teilrequest, Oversize, Acktimeout | Ressourcen begrenzt; Regelpfad wartet nicht auf Netzwerk |
-| Auth | Fehlender/falscher Token für GET/POST, korrektes Token | Kein unauthentifizierter Zugriff; keine Tokens im Output |
-| Client | Mockserver: Erfolg, 401/409/503/504, Timeout nach möglicher Anwendung, defektes JSON, falsche Boot-ID | Passende Exitcodes, keine automatische Mutation/Wiederholung |
+| HTTP-Zugriff | GET/POST ohne Authorization-Header | API antwortet nach WLAN-Verbindung ohne Tokenprüfung |
+| Client | Mockserver: Erfolg, 409/503/504, Timeout nach möglicher Anwendung, defektes JSON, falsche Boot-ID | Passende Exitcodes, keine automatische Mutation/Wiederholung |
 | Profile | Save/Load, Force, fehlender Pfad, ungültige Version, Secrets/Unbekanntes, halb ungültiges Profil | Atomare Datei/Batch, keine Teiländerung oder Secretkopie |
+| Host-Client | Fehlende Hostkonfiguration, interaktive Adresseingabe, vorhandene Konfiguration, Dateirechte, fehlender `Authorization`-Header | Client speichert nur `host` mit Modus `0600` und sendet keine Zugangsdaten |
 
 Firmware-Registry/Transaktionslogik möglichst Arduino-unabhängig testen, mit realem Parser/Validator und injizierten Zuständen/Uhr. Nicht nur eine Python-Nachbildung der Firmware testen. Host-C++-Harness genügt, kein großes neues Testframework erforderlich. Netzwerkgrenzen zusätzlich per HTTP-Mock für Client und später am Gerät prüfen.
 
@@ -32,9 +34,11 @@ Firmware-Registry/Transaktionslogik möglichst Arduino-unabhängig testen, mit r
 - Vor Flash Port/Board nach USB-Notiz identifizieren, vorhandenen Imagepfad für Rückkehr festhalten. Flash erst nach separatem Auftrag.
 - Ohne WLAN/bei falschen Zugangsdaten: Boot, Serial und SBUS funktionieren; keine Reconnect-Warteschleife im Reglerpfad.
 - Mit WLAN und CH5 OFF: U lesen, U1 setzen, PP/PD/SP/V ändern, zurücklesen; äquivalente Serialabfrage bestätigt dieselben Werte. Profile nur bewusst mit gültigen Werten laden.
+- Einen einzelnen Gain mit seinem aktuellen Wert schreiben und Serial beobachten: Antwort kommt, Boot-ID bleibt gleich, kein Stack-canary-Panic und der Wert bleibt gleich.
 - CH5 ON: Netzwerkschreiben abgelehnt; Lesen möglich. Frische-/Failsafe-Prüfung zuerst mit abgestütztem Roboter, keine riskanten Fahrversuche zur Netzwerk-QA.
 - Serial-/WLAN-Wechsel, WLAN-Reconnect: keine spontane Gain-/Modusänderung. Netzwerkverbindung übernimmt nicht die Fahrsteuerung.
 - Regeltakt ohne/mit WLAN sowie unter begrenzter Requestlast vergleichen: Median, p99, Maximum, Reset-/Watchdogereignisse und Speicherreserve. Zulässige Abweichung anhand Baseline vor Fahrfreigabe bewerten, keine isolierte Durchschnittsrate als Beweis verwenden.
 - Neustart: Builddefaults wiederhergestellt, PC-Profil bleibt Datei, keine automatische Wiederanwendung.
+- WLAN zuerst provisionieren, danach den Client starten, Roboter-IP eingeben und den API-Zugriff prüfen.
 
 Ohne Board: automatische Ergebnisse liefern und diese Punkte explizit als **nicht ausgeführt** markieren. Nicht den gesamten Auftrag wegen fehlender Hardware stoppen.

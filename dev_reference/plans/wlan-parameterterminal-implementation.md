@@ -56,7 +56,7 @@ Zentrale kleine Registry liefert Name, Wertebereich, Lesewert und Schreibziel. N
 
 Neue Dateien vorzugsweise `TuningParameters.{h,cpp}`, `WifiTuning.{h,cpp}` im Sketch; `scripts/wifi_tune.py` als Client. Namen dürfen aus Repositorykonventionen angepasst werden. Hauptsketch enthält nur Anbindung an Registry, SBUS-Freshness und Queue-Verarbeitung.
 
-WLAN-Task startet `WiFiProv` asynchron mit SoftAP und Security 0. Ohne gespeicherte Zugangsdaten provisioniert `esp_prov` das WLAN; nach erfolgreicher Provisionierung und bei normalen Neustarts nutzt der ESP32 die im WLAN-NVS gespeicherten Werte. Fehlendes WLAN verhindert weder Boot noch RC-/Serial-Betrieb. Ein Commander-Befehl setzt nur die WLAN-Konfiguration zurück. Der HTTP-Server startet nur bei WLAN-Verbindung und vorhandenem Laufzeit-Token; maximal eine Mutation gleichzeitig, feste Queuekapazität, keine unbeschränkte Client-/Requestsammlung.
+WLAN-Task startet `WiFiProv` asynchron mit SoftAP und Security 0. Ohne gespeicherte Zugangsdaten provisioniert `esp_prov` das WLAN; nach erfolgreicher Provisionierung und bei normalen Neustarts nutzt der ESP32 die im WLAN-NVS gespeicherten Werte. Fehlendes WLAN verhindert weder Boot noch RC-/Serial-Betrieb. Ein Commander-Befehl setzt nur die WLAN-Konfiguration zurück. Der unauthentifizierte HTTP-Server startet bei WLAN-Verbindung und verfügbaren Requestqueues; maximal eine Mutation gleichzeitig, feste Queuekapazität, keine unbeschränkte Client-/Requestsammlung.
 
 HTTP-Handler authentifiziert und parst, erstellt einen begrenzten POD-Request und wartet nur im Netzwerktask begrenzt auf Antwort. Keine Zeiger auf temporäre JSON-/HTTP-Puffer in der Queue. Loop verarbeitet höchstens eine vollständige Transaktion pro definiertem Kontrollzyklus. JSON-Serialisierung und Socketwrites ausschließlich im Netzwerktask. Auch Lese-Snapshots im Loop erstellen, damit ein HTTP-Callback keine inkonsistente Mischung von Parameterwerten/Modus/RC liest.
 
@@ -72,15 +72,15 @@ Nur lokale IPv4-HTTP-Verbindung, Standardport 80, API `/api/v1/`. Vorhandene ESP
 - `GET /api/v1/parameters`: kohärenter Snapshot mit denselben IDs plus `values` und Metadaten. Für einfache Abfrage darf Client gesamten Snapshot holen.
 - `POST /api/v1/parameters`: `{request_id, expected_boot_id, values:{"PP":5,"PD":0.12}}`. Maximal 18 verschiedene erlaubte Parameter, JSON-Body maximal 2048 Byte; doppelte JSON-Keys/mehrdeutige Requests ablehnen. `U:1` plus Gains in einem Batch erlaubt; resultierendes `U:0` plus Gainänderungen ablehnen. V ist vom Auto-Gainmodus unabhängig.
 - Erfolg: `{ok:true, request_id, boot_id, values:<angewandter Snapshot>}`; Fehler: `{ok:false, request_id, error:<stabiler Code>}` ohne Stacktrace oder Geheimnisse.
-- HTTP 400 ungültiges Schema/Wert/Name; 401 fehlende/falsche Authentifizierung; 409 `DRIVE_ACTIVE`, `RC_UNAVAILABLE`, `AUTO_MODE`, `BOOT_CHANGED`, `UNSUPPORTED_MODE` oder Request-ID-Konflikt; 413 zu groß; 503 Queue belegt; 504 Auftrag abgelaufen.
+- HTTP 400 ungültiges Schema/Wert/Name; 409 `DRIVE_ACTIVE`, `RC_UNAVAILABLE`, `AUTO_MODE`, `BOOT_CHANGED`, `UNSUPPORTED_MODE` oder Request-ID-Konflikt; 413 zu groß; 503 Queue belegt; 504 Auftrag abgelaufen.
 
 Eine begrenzte Antwortablage für die letzte Mutation ist ausreichend: gleicher Request-ID/Body/Boot liefert denselben Abschluss, dieselbe ID mit anderem Body Fehler. Neue Session nach Neustart anhand Boot-ID erkennen. Client wiederholt Writes nach Timeout **nicht automatisch**, sondern liest Zustand neu und meldet Ausgang unbekannt, falls der Abschluss nicht sicher feststeht. Wenn bereits ausgeführt, darf ein Timeout keine fingierte Rücknahme behaupten. Kein Transaktionssystem über Neustarts hinweg.
 
 ## 6. Einrichtung und Terminal
 
-Keine WLAN-Zugangsdaten oder Tuning-Token in Sourcecode, Builddateien oder Firmware-Binary einbetten. Der lokale Buildschalter aktiviert nur das WLAN-Feature. SoftAP-Provisioning verwendet Security 0 ohne Kopplung und ist für die Entwicklung vorgesehen. `esp_prov` muss Zugangsdaten interaktiv abfragen; keine echten Werte in Kommandozeilenargumente, Shell-Skripte oder Logs übernehmen. Core Debug Level bleibt `None`, weil `WiFiProv` bei höheren Debug-Stufen Provisionierungswerte protokollieren kann.
+WLAN-Zugangsdaten nicht in Sourcecode, Builddateien oder Firmware-Binary einbetten. Das lokale Buildmakro aktiviert das WLAN-Feature; der normale Build lässt es ausgeschaltet. SoftAP-Provisioning verwendet Security 0 ohne Kopplung und ist für die Entwicklung vorgesehen. `esp_prov` muss WLAN-Zugangsdaten interaktiv abfragen; keine echten Werte in Kommandozeilenargumente, Shell-Skripte oder Logs übernehmen. Core Debug Level bleibt `None`, weil `WiFiProv` bei höheren Debug-Stufen Provisionierungswerte protokollieren kann. Das Parameterterminal verwendet keine zusätzliche Authentifizierung; jeder erreichbare WLAN-Client kann seine freigegebenen Lese- und Schreibendpunkte aufrufen.
 
-Der Tuning-Token wird erst zur Laufzeit aus dem Preferences-Namespace `wifi-tuning`, Schlüssel `token`, geladen. Ohne einen ausreichend langen NVS-Wert startet der HTTP-Server nicht. Ein eigener Provisioning-Custom-Endpoint für diesen Token ist ein Folgearbeitspaket. HTTP verwendet Port 80 ohne TLS und ist nur für ein vertrauenswürdiges Entwicklungsnetz vorgesehen; keine Router-Portfreigabe oder Gastnetzfreigabe einrichten.
+Es gibt keine Token-Einrichtung und keinen Token in NVS. Nach dem WLAN-Beitritt startet der HTTP-Dienst direkt. HTTP verwendet Port 80 ohne TLS und ohne Authentifizierung; verwende ihn nur in einem vertrauten Entwicklungsnetz und schalte das WLAN-Feature vor dem Flashen eines Builds für den normalen Betrieb ab.
 
 Client ausschließlich Python-Standardbibliothek, sofern kein konkreter Grund entgegensteht. Folgender Bedienvertrag:
 
@@ -99,7 +99,7 @@ navbot> load profiles/stand.json
 navbot> quit
 ```
 
-Zusätzlich `--command PP` und `--command SP0.045` für automatisierte Einzelaufrufe; `--json` für maschinenlesbare Antworten. `--config` zeigt auf lokale Verbindungs-/Tokenkonfiguration. `help`, EOF und Ctrl-C sauber behandeln. Exitcodes: 0 Erfolg, 2 lokale Eingabe-/Profilfehler, 3 Transport/Timeout, 4 Geräteablehnung. Keine automatischen Writes beim Start oder Reconnect. Kein automatisches Flashen.
+Zusätzlich `--command PP` und `--command SP0.045` für automatisierte Einzelaufrufe; `--json` für maschinenlesbare Antworten. `--config` zeigt auf die lokale Hostkonfiguration. `help`, EOF und Ctrl-C sauber behandeln. Exitcodes: 0 Erfolg, 2 lokale Eingabe-/Profilfehler, 3 Transport/Timeout, 4 Geräteablehnung. Keine automatischen Writes beim Start oder Reconnect. Kein automatisches Flashen.
 
 Profile: versioniertes JSON nur mit erlaubten Konfigurationsparametern und optionalem Kommentar, keine Tokens/WLAN-Daten. `save` holt einen frischen Snapshot. `load` validiert vollständig und sendet einen einzigen Batch; keine Serie teilweise angewandter Einzelkommandos. Profil mit manuellen Gains muss U=1 enthalten. Gespeicherte Dateien atomar ersetzen, bestehende Datei nur mit explizitem `--force` bzw. `save --force` überschreiben. Fehler bei fehlendem Verzeichnis lesbar melden. Bestätigung zeigt tatsächliche Werte und Gültigkeit bis Neustart an.
 

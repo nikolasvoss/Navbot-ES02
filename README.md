@@ -145,6 +145,10 @@ python3 scripts/analyze_drive_trace.py drive-test-01.log drive-test-02.log --req
 
 `--format json` provides the same measurements for other scripts. A trial with neutral CH3 or a strongly tilted start is flagged as unsuitable for a stop comparison; it is not interpreted as a controller improvement or regression.
 
+### Record balance telemetry over Wi-Fi
+
+The optional `balance_v1` recorder streams control-loop samples to a Linux computer without using USB during capture. Build setup, client configuration, output files and current limitations are documented in [dev_reference/wifi-recording.md](dev_reference/wifi-recording.md).
+
 ### 3. Connect the model remote control
 ES02 has 3 lines, namely GND, 5V, and sbus.
 
@@ -202,4 +206,4 @@ according to personal habits. The corresponding functions of ch6-10 can be refer
 
 ## WLAN-Provisionierung und Parameterterminal
 
-WLAN-Provisionierung und der optionale Parameterterminal-Build sind in [dev_reference/wifi-parameterterminal.md](dev_reference/wifi-parameterterminal.md) beschrieben. Der ESP32 startet ohne gespeicherte Zugangsdaten einen offenen SoftAP für `esp_prov` und verwendet gespeicherte WLAN-Daten nach Neustarts weiter. Die Tuning-HTTP-API bleibt deaktiviert, bis ein Laufzeit-Token separat in NVS hinterlegt ist.
+WLAN-Provisionierung und der optionale Parameterterminal-Build sind in [dev_reference/wifi-parameterterminal.md](dev_reference/wifi-parameterterminal.md) beschrieben. Der ESP32 startet ohne gespeicherte Zugangsdaten einen offenen SoftAP für `esp_prov` und verwendet gespeicherte WLAN-Daten nach Neustarts weiter. Nach der Provisionierung verbindet sich `wifi_tune.py` direkt mit dem Parameterterminal. Es gibt keine Token-Einrichtung; das WLAN-Feature lässt sich im Build vollständig abschalten.
