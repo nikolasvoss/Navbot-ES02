@@ -54,6 +54,7 @@ Commander command = Commander(Serial);
 #define PID_ANGLE_LIMIT_NO_TOUCH 0.1
 
 //      Two-Wheel PID Gains for Remote Control Mode (With Touchscreen)
+#if TOUCHSCREEN_ENABLE
 #define PID_ROLL_P_WITH_TOUCH 0.08
 #define PID_ROLL_I_WITH_TOUCH 1.5
 #define PID_ROLL_D_WITH_TOUCH 0.005
@@ -66,6 +67,7 @@ Commander command = Commander(Serial);
 #define PID_ANGLE_I_WITH_TOUCH 200
 #define PID_ANGLE_D_WITH_TOUCH 0.11
 #define PID_ANGLE_LIMIT_WITH_TOUCH 0.1
+#endif
 
 #define IMU_SAMPLING_RATE_HZ 1000.0f  // Sampling frequency
 #define IMU_LPF_CUTOFF_FREQ_HZ 50.0f  // Cutoff frequency for low-pass filter
@@ -119,9 +121,15 @@ float LegLength_f = 0.06f;     // Leg length
 float BodyPitching_f = 0;      // Pitch
 float BodyRoll_f = 0;          // Roll
 float SlideStep_f = 0;         // Slide step
-biquadFilter_t FilterLPF[12];  // Second-order low-pass filter
+#if TOUCHSCREEN_ENABLE
+biquadFilter_t FilterLPF[12];  // Includes the touchscreen PID filters.
+#else
+biquadFilter_t FilterLPF[10];
+#endif
+#if TOUCHSCREEN_ENABLE
 float TouchY_Pid_outputF = 0;
 float TouchX_Pid_outputF = 0;
+#endif
 
 float cutoffFreq = 200;
 float enableDFilter = 1;
@@ -249,8 +257,10 @@ PIDController AnglePid(5, 200, 0.11, 0, 0.1);
 PIDController SpeedPid(0.045, 0.005, 0, 0, 50);
 PIDController YawPid(4, 0, 0, 0, 0);
 PIDController RollPid(0.06, 1.5, 0.003, 0, 2);  //
+#if TOUCHSCREEN_ENABLE
 PIDController TouchXPid(0.2, 0, 0.04, 0, 0);    //
 PIDController TouchYPid(0.2, 0, 0.08, 0, 0);    //
+#endif
 
 float control_torque_compensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
@@ -267,8 +277,10 @@ MyPIDController Speed_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
 MyPIDController Yaw_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
 MyPIDController Roll_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
 
+#if TOUCHSCREEN_ENABLE
 MyPIDController TouchX_Pid(0, 0, 0, 0, 10, PidDt, 0, 0);
 MyPIDController TouchY_Pid(0, 0, 0, 0, 8, PidDt, 0, 0);
+#endif
 bool balancePidNeedsPriming = true;
 
 void ControlTorqueCompensation(char *cmd) {
@@ -323,7 +335,7 @@ void CbRollPid(char *cmd) {
   command.pid(&RollPid, cmd);
 }
 
-#elif AdjusParameter == ADJUST_BALL_PUSHING
+#elif TOUCHSCREEN_ENABLE && AdjusParameter == ADJUST_BALL_PUSHING
 
 void CbTouchXPid(char *cmd) {
   command.pid(&TouchXPid, cmd);
@@ -523,11 +535,13 @@ void setup() {
 
   biquadFilterInitLPF(&FilterLPF[8], 50, (unsigned int)cutoffFreq);   // Remote control filter
   biquadFilterInitLPF(&FilterLPF[9], 50, (unsigned int)cutoffFreq);   // Remote control filter
+#if TOUCHSCREEN_ENABLE
   biquadFilterInitLPF(&FilterLPF[10], 200, (unsigned int)400);        // Touchscreen PID filter
   biquadFilterInitLPF(&FilterLPF[11], 200, (unsigned int)400);        // Touchscreen PID filter
 
   // use monitoring with serial
   TouchscreenInit(500);
+#endif
   // enable more verbose output for debugging
   // comment out if not needed
   SimpleFOCDebug::enable(&Serial);
@@ -763,7 +777,7 @@ void setup() {
   command.add('Y', CbYawPid, "my YawPid");
   command.add('R', CbRollPid, "my RollPid");
   command.add('O', Target_Leg_Length, "my Target_Leg_Length");
-#elif AdjusParameter == ADJUST_BALL_PUSHING
+#elif TOUCHSCREEN_ENABLE && AdjusParameter == ADJUST_BALL_PUSHING
   command.add('L', CbTouchXPid, "my CbTouchXPid");
   command.add('N', CbTouchYPid, "my CbTouchYPid");
   command.add('G', ControlTorqueCompensation, "my ControlTorqueCompensation");
@@ -1729,6 +1743,7 @@ void print_data(void) {
       Serial.println(BodyPitching, 6);
       break;
 
+#if TOUCHSCREEN_ENABLE
     case 26:
 
       if (Touch.state == 1) {
@@ -1755,6 +1770,7 @@ void print_data(void) {
       Serial.print("  aYF:");
       Serial.println(Touch.YPdatF);
       break;
+#endif
 
     case 28:
 
@@ -1772,6 +1788,7 @@ void print_data(void) {
       Serial.println(top_ball_y);
       break;
 
+#if TOUCHSCREEN_ENABLE
     case 29:
       Serial.print(" Kp:");
       Serial.print(TouchY_Pid.Kp, 6);
@@ -1790,6 +1807,7 @@ void print_data(void) {
       Serial.print(" deriv:");
       Serial.println(TouchY_Pid.deriv);
       break;
+#endif
 
     case 31:
       Serial.print(" E:");
@@ -1827,6 +1845,7 @@ void print_data(void) {
       Serial.println(Yaw_Pid.output, 5);
       break;
 
+#if TOUCHSCREEN_ENABLE
     case 34:
       Serial.print(" Kp:");
       Serial.print(TouchX_Pid.Kp, 6);
@@ -1852,6 +1871,7 @@ void print_data(void) {
       Serial.print(" start:");
       Serial.println(Touch.start);
       break;
+#endif
 
     case 37:
       Serial.print(" sbus_vra:");
@@ -1864,6 +1884,7 @@ void print_data(void) {
       Serial.println(sbus_top_ball_y_smoothed);
       break;
 
+#if TOUCHSCREEN_ENABLE
     case 38:
       Serial.print(" X OUT:");
       Serial.print(BodyPitching);
@@ -1896,6 +1917,7 @@ void print_data(void) {
         Serial.println(Touch.YPressDat);
       }
       break;
+#endif
 
     case 41:
 
@@ -2044,7 +2066,13 @@ void print_data(void) {
                       active ? Angle_Pid.outD : 0.0f,
                       active ? wheelSpeedFeedbackOutput : 0.0f,
                       motor1.target, motor2.target,
-                      top_ball_x, Touch.XPdatF, BodyPitching, maxServoRange);
+                      top_ball_x,
+#if TOUCHSCREEN_ENABLE
+                      Touch.XPdatF,
+#else
+                      0.0f,
+#endif
+                      BodyPitching, maxServoRange);
         VoltageADCMin = VoltageADC;
       }
       break;
@@ -2081,7 +2109,9 @@ float BodyPitchingCorrect(float x)  // Pitch angle correction
  * weight distribution and dynamics.
  */
 void PidParameter(void) {
-#if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
+#if !TOUCHSCREEN_ENABLE
+  const int gainMode = REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH;
+#elif DIAGNOSTIC_LIVE_TUNING_DEFAULTS
   const int gainMode = REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH;
 #else
   const int gainMode = pid_gains_mode;
@@ -2105,7 +2135,9 @@ void PidParameter(void) {
     AnglePid.I = PID_ANGLE_I_NO_TOUCH;
     AnglePid.D = PID_ANGLE_D_NO_TOUCH;
     AnglePid.limit = PID_ANGLE_LIMIT_NO_TOUCH;                                    // Integral limit
-  } else if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH)  // With touch screen
+  }
+#if TOUCHSCREEN_ENABLE
+  else if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH)
   {
     // Roll
     RollPid.P = PID_ROLL_P_WITH_TOUCH;
@@ -2125,6 +2157,7 @@ void PidParameter(void) {
     AnglePid.D = PID_ANGLE_D_WITH_TOUCH;
     AnglePid.limit = PID_ANGLE_LIMIT_WITH_TOUCH;  // Integral limit
   }
+#endif
 
   YawPid.P = 4;
   YawPid.I = 0;
@@ -2147,7 +2180,8 @@ void PidParameter(void) {
   YawPid.limit = 0;
 #endif
 
-  // Touch screen
+#if TOUCHSCREEN_ENABLE
+  // Touchscreen PID tuning.
   TouchXPid.P = 0.2;
   TouchXPid.I = 0;
   TouchXPid.D = 0.04;
@@ -2157,6 +2191,7 @@ void PidParameter(void) {
   TouchYPid.I = 0;
   TouchYPid.D = 0.08;
   TouchYPid.limit = 0;  // Integral limit
+#endif
 }
 
 /**
@@ -2176,7 +2211,8 @@ void PIDcontroller_posture(float dt) {
   if ((int)PidParameterTuning == 0)
     PidParameter();
 
-  // Touch screen
+#if TOUCHSCREEN_ENABLE
+  // Touchscreen PIDs add physical input to the filtered SBUS ball commands.
   TouchX_Pid.Kp = TouchXPid.P / 100;
   TouchX_Pid.Ki = TouchXPid.I / 100;
   TouchX_Pid.Kd = TouchXPid.D / 100;
@@ -2255,6 +2291,19 @@ void PIDcontroller_posture(float dt) {
     TouchX_kd = 0;
     TouchY_kd = 0;
   }
+#else
+  // Without the touchscreen, CH9 and CH10 remain the sole ball commands.
+  if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) ||
+      (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)) {
+    BodyPitching = -sbus_top_ball_x_smoothed;
+  }
+
+  const float topBallRollCommand =
+      (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE &&
+       roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)
+          ? sbus_top_ball_y_smoothed
+          : 0.0f;
+#endif
 
   // Roll
   Roll_Pid.Kp = RollPid.P / 100;
@@ -2265,7 +2314,12 @@ void PIDcontroller_posture(float dt) {
   float TargetBodyRoll = BodyRoll_f * 777;                            // Roll
   if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball禁止手动横滚
     TargetBodyRoll = 0;
-  float RollError = (-pitch_ok) - (-TargetBodyRoll) - (-TouchY_Pid_outputF);
+  float RollError = (-pitch_ok) - (-TargetBodyRoll) -
+#if TOUCHSCREEN_ENABLE
+                    (-TouchY_Pid_outputF);
+#else
+                    (-topBallRollCommand);
+#endif
   if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)  // Roll leveling
   {
     Roll_Pid.compute(RollError, dt);
@@ -2553,14 +2607,18 @@ void loop() {
   CtrlInput();  // BLE or remote control input
   RXsbus();
 
+#if TOUCHSCREEN_ENABLE
   ReadTouchDat();
+#endif
 
   time_dt = (now_us - now_us1) / 1000000.0f;
   if (time_dt >= 0.001f) {   //1kHz
 #if WIFI_RECORDING_ENABLE
     bool regulatorCalculated = false;
 #endif
-    TouchBiquadFilter();  // Touch screen filter
+#if TOUCHSCREEN_ENABLE
+    TouchBiquadFilter();
+#endif
 
     RemoteControlFiltering();  // Remote control signal filtering
     ReadVoltage();             // Battery

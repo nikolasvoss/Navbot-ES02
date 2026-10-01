@@ -1,5 +1,7 @@
 #include "touchscreen.h"
 
+#if TOUCHSCREEN_ENABLE
+
 Touch_t Touch;
 biquadFilter_t TouchLPF[2]; // Second-order low-pass filter
 
@@ -125,3 +127,5 @@ void TouchBiquadFilter(void)
   Touch.XPdatF = biquadFilterApply(&TouchLPF[0], Touch.XPdat);
   Touch.YPdatF = biquadFilterApply(&TouchLPF[1], Touch.YPdat); 
 }
+
+#endif  // TOUCHSCREEN_ENABLE

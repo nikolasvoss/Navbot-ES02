@@ -1,6 +1,11 @@
 #ifndef __touchscreen_H
 #define __touchscreen_H
 
+// Set to 0 to compile out touchscreen input and its control path.
+#define TOUCHSCREEN_ENABLE 1
+
+#if TOUCHSCREEN_ENABLE
+
 #include <Arduino.h>
 #include "filter.h"
 
@@ -42,4 +47,5 @@ void TouchBiquadFilter(void);
 
 extern Touch_t Touch;
 
+#endif  // TOUCHSCREEN_ENABLE
 #endif //
