@@ -29,6 +29,10 @@ Diese Seite ergänzt [hardware-overview.md](hardware-overview.md); alle Bauteil-
 
 Die kleine **CODER**-Platine enthält `U1` AS5600-ASOM, lokale 3,3-V-Abblockung und 10-kΩ-Pull-ups für SDA/SCL. Deren `H1` hat dieselbe logische Reihenfolge: 1 SDA, 2 SCL, 3 GND, 4 3,3 V; weitere Footprint-Pads 5/6 liegen an GND und sind keine zusätzlichen Kabeladern. Der MAIN-Pull-up ist je I²C-Leitung 3,3 kΩ. Die BOM nennt zwei AS5600-Module, zwei 2208-90-kV-Motoren und zwei radiale 6 × 1,5-mm-Magnete. Magnetposition und elektrischer Nullwinkel müssen mechanisch/mit SimpleFOC kalibriert werden; sie folgen nicht aus der Netzliste.
 
+**Polpaare, Recherche vom 01.10.2026:** Die [SimpleFOC-Motordokumentation](https://docs.simplefoc.com/bldc_motors) nennt für den 2208-90KV-Gimbalmotor `12N14P`: 12 Statornuten und 14 Rotorpole, also **7 Polpaare**. Das passt zur Modellangabe `2208-90kv` in `docs/BOM.xlsx`, `Sheet1!D26`. Beide Firmware-Instanzen verwenden bereits fest `BLDCMotor(7)`. Die verbauten Einzelmotoren wurden nicht durch Magnetzählung oder eine unabhängige Messung bestätigt; die BOM beschreibt die vorgesehenen Kaufteile.
+
+Der [Startup-Mitschnitt nach dem Bibliothekswechsel](../build/serial-startup-after-foc-update.txt) zeigt zwei erfolgreiche MCPWM-Initialisierungen und `Motor ready.`, aber Polpaar-Prüfschätzungen von 8,46 und 7,80. In der installierten SimpleFOC-Version 2.3.5 prüft `BLDCMotor::alignSensor()` den Winkelweg gegen den fest konfigurierten Wert und gibt bei Abweichung eine Schätzung aus; es überschreibt `pole_pairs` nicht. **Konsequenz:** 7 beibehalten und die Warnungen als offene Abweichung beim Abgleich behandeln. Aus diesem kurzen Abgleich allein weder 8 Polpaare ableiten noch die Warnung durch Überspringen der Kalibrierung unterdrücken. Eine Last, unvollständige Rotorbewegung oder ein Encoderfehler sind mögliche Ursachen, hier aber nicht nachgewiesen.
+
 ## Sensoren und Signale
 
 | Funktion | Chip / Signal | ESP32-S3 und Firmware |
@@ -58,7 +62,7 @@ Die kleine **CODER**-Platine enthält `U1` AS5600-ASOM, lokale 3,3-V-Abblockung 
 | Pfad | Steck-/Netzseite | Firmware und Einschränkung |
 | --- | --- | --- |
 | USB/Debug | USB-C `USB1` → CH340X `U3` → `RX0/TX0`; `H1`: 1 +5 V, 2 GND, 3 RX0, 4 TX0 | Flash/`Serial`; am vorhandenen Board als CH340 `/dev/ttyUSB*` beobachtet. Normalmodus 2 Mbaud, Sensordiagnose 115200 Baud. [USB-Fakten](usb-serial.md) vor Änderungen lesen. |
-| Touch / UART1 | `H2`: 1 +5 V, 2 GND, 3 RX1, 4 TX1; `CN4`: 2 +5 V, 3 GND, 4 RX1, 5 TX1 (1/7 GND) | **PCB-Netznamen:** RX1 an GPIO19, TX1 an GPIO20. **Firmware:** `RXD1=20`, `TXD1=19` – gegenläufig zu den Netznamen. Standard-Zweiradmodus liest die externe Touch-TTL-Platine mit 115200 Baud; im Vierbein-Master-Modus nutzt die Verbindung zum zweiten Controller denselben UART. Vor Verdrahtung physische Leitungsrichtung prüfen. |
+| Touch / UART1 | `H2`: 1 +5 V, 2 GND, 3 RX1, 4 TX1; `CN4`: 2 +5 V, 3 GND, 4 RX1, 5 TX1 (1/7 GND) | **PCB-Netznamen:** RX1 an GPIO19, TX1 an GPIO20. **Firmware:** `RXD1=20`, `TXD1=19` – gegenläufig zu den Netznamen. Die Zweirad-Firmware liest die externe Touch-TTL-Platine mit 115200 Baud. Der frühere Vierbein-Master/Slave-Modus wurde am 01.10.2026 entfernt; UART1 bleibt für Touch verfügbar. Vor Verdrahtung physische Leitungsrichtung prüfen. |
 | SBUS / UART2 | `H3`: 1 +5 V, 2 GND, 3 RX2, 4 TX2; `H4`: 1 GND, 2 +5 V, 3 SBUS über `Q1` | `RX2/TX2` = GPIO1/2. `FUTABA_SBUS` startet UART2 mit 100000 Baud; der Transistor invertiert den SBUS-Eingang für `RX2`. |
 
 `H1/H2/H3` besitzen laut PCB-Footprint zusätzliche GND-Pads 5/6, aber vier Kabeladern. Bei externen Kabeln die Kontakte 1–4 und die Platinenbeschriftung verwenden. Die BOM nennt drei SH1.0-Kabel mit 200 mm (zwei Encoder, Verbindung zweier Einheiten) und eines mit 100 mm (Touch); für den SBUS-Empfänger ein dreipoliges Kabel.

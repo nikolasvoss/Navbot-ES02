@@ -22,7 +22,7 @@ Commander command = Commander(Serial);
 
 // ----- Editable Constants
 #define SensorSwitch SENSOR_SWITCH_IIC_AS5600                                // 1: SPI  2: IIC AS5600
-#define Communication_object COMMUNICATION_OBJECT_TWO_OR_FOUR_WHEEL_BALANCE  // 0: 2-wheel balance || 4-wheel balance movement  1: simpleFOC Studio host computer  2: control dual motors  3: sample torque data
+#define Communication_object COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE  // 0: two-wheel balance  1: simpleFOC Studio host computer  2: control dual motors  3: sample torque data
 #define TorqueCompensation TORQUE_COMPENSATION_OFF                           // 1: torque compensation  0: no torque compensation (cannot be modified)
 #define SwitchUser SWITCH_USER_MODE_SPEED_MODE                               // 0: view encoder position and direction  1: sample motor 1 torque compensation data  2: sample motor 2 torque compensation data  3: torque  4: speed  5: angle mode
 #define CurrentUser CURRENT_LOOP_OFF                                         // 1: enable current loop
@@ -38,21 +38,19 @@ Commander command = Commander(Serial);
 #define DIAGNOSTIC_LIVE_TUNING_DEFAULTS 1
 
 #define AdjusParameter ADJUST_BALANCE_SPEED_YAW_ROLL        // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
-#define SwitchingPattern SWITCHING_PATTERN_TWO_WHEEL_MODE   // 0: two-wheel  1: four-wheel  switching mode
-#define MasterSlaveSelection MASTER_SLAVE_SELECTION_MASTER  // 0: slave   1: master
 
 //      Two-Wheel PID Gains for Remote Control Mode (Without Touchscreen)
 #define PID_ROLL_P_NO_TOUCH 0.06
-#define PID_ROLL_I_NO_TOUCH 1.5
-#define PID_ROLL_D_NO_TOUCH 0.0028
+#define PID_ROLL_I_NO_TOUCH 0.0
+#define PID_ROLL_D_NO_TOUCH 0.0
 #define PID_ROLL_LIMIT_NO_TOUCH 2
-#define PID_SPEED_P_NO_TOUCH 0.3
-#define PID_SPEED_I_NO_TOUCH 0.3
+#define PID_SPEED_P_NO_TOUCH 0.045
+#define PID_SPEED_I_NO_TOUCH 0.005
 #define PID_SPEED_D_NO_TOUCH 0
 #define PID_SPEED_LIMIT_NO_TOUCH 50
-#define PID_ANGLE_P_NO_TOUCH 66
-#define PID_ANGLE_I_NO_TOUCH 222  // if stuttering/shaking when balancing, consider reducing this Integral value (ex. 165 instead of 222)
-#define PID_ANGLE_D_NO_TOUCH 1
+#define PID_ANGLE_P_NO_TOUCH 5
+#define PID_ANGLE_I_NO_TOUCH 200
+#define PID_ANGLE_D_NO_TOUCH 0.11
 #define PID_ANGLE_LIMIT_NO_TOUCH 0.1
 
 //      Two-Wheel PID Gains for Remote Control Mode (With Touchscreen)
@@ -60,12 +58,12 @@ Commander command = Commander(Serial);
 #define PID_ROLL_I_WITH_TOUCH 1.5
 #define PID_ROLL_D_WITH_TOUCH 0.005
 #define PID_ROLL_LIMIT_WITH_TOUCH 2
-#define PID_SPEED_P_WITH_TOUCH 0.12
-#define PID_SPEED_I_WITH_TOUCH 0.12
+#define PID_SPEED_P_WITH_TOUCH 0.045
+#define PID_SPEED_I_WITH_TOUCH 0.005
 #define PID_SPEED_D_WITH_TOUCH 0
 #define PID_SPEED_LIMIT_WITH_TOUCH 50
-#define PID_ANGLE_P_WITH_TOUCH 9
-#define PID_ANGLE_I_WITH_TOUCH 222
+#define PID_ANGLE_P_WITH_TOUCH 5
+#define PID_ANGLE_I_WITH_TOUCH 200
 #define PID_ANGLE_D_WITH_TOUCH 0.11
 #define PID_ANGLE_LIMIT_WITH_TOUCH 0.1
 
@@ -92,13 +90,15 @@ Commander command = Commander(Serial);
 #define SBUS_CHANNEL_MAX 1792
 #define SBUS_CHANNEL_MIN 192
 
-#define SERIAL_PACKET_HEADER_BYTE_1 12
-#define SERIAL_PACKET_HEADER_BYTE_2 34
-#define SERIAL_PACKET_END_BYTE 0
-#define SERIAL_BAUD_RATE 2000000
+#define SERIAL_BAUD_RATE 115200
 #define DIAGNOSTIC_SERIAL_BAUD_RATE 115200
 #define LIVE_TUNING_SERIAL_BAUD_RATE 115200
 #define DIAGNOSTIC_PLOT_INTERVAL_MS 50
+// Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
+constexpr float DRIVE_BODY_X_LIMIT_M = 0.010f;
+constexpr float DRIVE_WHEEL_FEEDBACK_LIMIT = 8.0f;
+constexpr float DRIVE_TILT_REDUCTION_START_DEG = 5.0f;
+constexpr float DRIVE_TILT_REDUCTION_FULL_DEG = 10.0f;
 // -------------------------------------
 
 // Body
@@ -113,24 +113,18 @@ float SlideStep = 0;                // Slide step
 float BodyX = 0;                    // X position (controller output)
 int RobotTumble = ROBOT_TUMBLE_NO;  // Robot tumble (fall detection)
 
-body_t body;
 
 // 滤波
 float LegLength_f = 0.06f;     // Leg length
-float BarycenterX_f = 0;       // Center of mass X
 float BodyPitching_f = 0;      // Pitch
 float BodyRoll_f = 0;          // Roll
-float MovementSpeed_f = 0;     // Movement speed
-float BodyTurn_f = 0;          // Turning
 float SlideStep_f = 0;         // Slide step
-float BodyX_f = 0;             // X position
-biquadFilter_t FilterLPF[15];  // Second-order low-pass filter
+biquadFilter_t FilterLPF[12];  // Second-order low-pass filter
 float TouchY_Pid_outputF = 0;
 float TouchX_Pid_outputF = 0;
 
 float cutoffFreq = 200;
 float enableDFilter = 1;
-float LpfOut[6];  //
 
 void CutoffFreq(char *cmd) {
   command.scalar(&cutoffFreq, cmd);
@@ -143,7 +137,6 @@ void EnableDFilter(char *cmd) {
 int LED_HL = 1;
 int LED_count = 0;
 int LED_dt = 100;
-int sensorValue = 0;              // value read from the pot
 biquadFilter_t VoltageFilterLPF;  // Second-order low-pass filter
 uint16_t VoltageADC = 0;          // Battery voltage ADC data
 uint16_t VoltageADCMin = 0;       // Lowest raw battery reading since the last balance trace row
@@ -236,7 +229,6 @@ bool servoTraceWindowStarted = false;
 
 // Remote control
 FUTABA_SBUS sBus;
-float sbuschx[8] = { 0 };
 int sbus_dt_ms = 0;
 int pid_gains_mode = REMOTE_CONTROL_PID_GAINS_MODE_OFF;
 int posture_or_mark_mode = REMOTE_CONTROL_PM_POSTURE_MODE;
@@ -253,16 +245,19 @@ float CalibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Ca
 
 float PidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
 
-PIDController AnglePid(0, 0, 0, 0, 0);          // 4 22 0.08   (Kp, Ki, Kd ,ramp ,limit)
-PIDController SpeedPid(0.1, 0.1, 0, 0, 50);     //
-PIDController YawPid(11, 33, 0, 0, 0);          //
+PIDController AnglePid(5, 200, 0.11, 0, 0.1);
+PIDController SpeedPid(0.045, 0.005, 0, 0, 50);
+PIDController YawPid(4, 0, 0, 0, 0);
 PIDController RollPid(0.06, 1.5, 0.003, 0, 2);  //
 PIDController TouchXPid(0.2, 0, 0.04, 0, 0);    //
 PIDController TouchYPid(0.2, 0, 0.08, 0, 0);    //
 
 float control_torque_compensation = 0;  // Control torque compensation
-float wheelSpeedFeedbackGain = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 0.2f : 0.0f;
+float wheelSpeedFeedbackGain = 0.0f;
 float wheelSpeedFeedbackOutput = 0;
+float driveTiltReductionGain = 1.0f;
+float driveEffectiveSpeed = 0;
+float driveSpeedBodyXRaw = 0;
 
 float PidDt = 0.01;
 
@@ -271,7 +266,6 @@ MyPIDController Angle_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);  // p i d iLimit outputLi
 MyPIDController Speed_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
 MyPIDController Yaw_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
 MyPIDController Roll_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
-MyPIDController Pitching_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
 
 MyPIDController TouchX_Pid(0, 0, 0, 0, 10, PidDt, 0, 0);
 MyPIDController TouchY_Pid(0, 0, 0, 0, 8, PidDt, 0, 0);
@@ -283,6 +277,10 @@ void ControlTorqueCompensation(char *cmd) {
 
 void CbWheelSpeedFeedbackGain(char *cmd) {
   command.scalar(&wheelSpeedFeedbackGain, cmd);
+}
+
+void CbDriveTiltReductionGain(char *cmd) {
+  command.scalar(&driveTiltReductionGain, cmd);
 }
 
 void Pid_Parameter_Tuning(char *cmd) {
@@ -336,8 +334,6 @@ void CbTouchYPid(char *cmd) {
 }
 #endif
 
-float Motor1_voltage_compensation = 0;
-float Motor2_voltage_compensation = 0;
 double Motor1_place_last = 0;
 float Motor1_Velocity = 0;
 float Motor1_Velocity_f = 0;
@@ -348,8 +344,6 @@ float Motor2_Velocity = 0;
 float Motor2_Velocity_f = 0;
 LowPassFilter Motor2_Velocity_filter = LowPassFilter(0.01);  // Tf = 10ms
 
-Serial_t serial1;
-Serial_t serial2;
 
 float Motor1_Target = 0;
 float Motor2_Target = 0;
@@ -367,7 +361,6 @@ static_assert(REMOTE_CONTROL_ROLL_MODE_AUTO <= 3, "roll mode no longer fits tele
 static_assert(REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE <= 3, "attitude mode no longer fits telemetry v1");
 static_assert(REMOTE_CONTROL_PM_MARK_MODE <= 3, "posture mode no longer fits telemetry v1");
 #endif
-unsigned long now_us2 = 0;
 // BLDC motor & driver instance
 BLDCMotor motor1 = BLDCMotor(7);  // Motor pole pairs
 BLDCDriver3PWM driver = BLDCDriver3PWM(15, 7, 6, 16);
@@ -411,17 +404,6 @@ void doMotor1(char *cmd) {
   command.motor(&motor1, cmd);
 }
 
-void doMotion2(char *cmd) {
-  command.motion(&motor2, cmd);
-}
-void doMotor2(char *cmd) {
-  command.motor(&motor2, cmd);
-}
-
-void Send_Serial1(void);
-void Read_Serial1(void);  // Read serial port 1 data;
-void Send_Serial2(void);
-void Read_Serial2(void);  // Read serial port 2 data;
 void RXsbus();
 int RightInverseKinematics(float x, float y, float p, float *ax);
 int LeftInverseKinematics(float x, float y, float p, float *ax);
@@ -429,16 +411,11 @@ void print_data(void);
 void ImuUpdate(void);
 void FlashSave(int sw);
 void FlashInit(void);
-void PIDcontroller_angle(float dt);
 void PIDcontroller_posture(float dt);
-void PIDcontroller_posture_4wheel(float dt);
 void RemoteControlFiltering(void);
 void ReadVoltage(void);
 void PidParameter(void);
 void Robot_Tumble(void);
-void body_data_init(void);
-void TrotGaitAlgorithm(void);  // Trot gait
-void MotorOperatingMode(void);
 void DiagnosticLoop(void);
 bool diagnosticImuReady = false;
 unsigned long diagnosticLastRcFrameMs = 0;
@@ -488,13 +465,6 @@ void setup() {
   digitalWrite(37, LOW);
 #endif
 
-#if !SENSOR_DIAGNOSTIC_MODE
-  if ((MasterSlaveSelection == MASTER_SLAVE_SELECTION_SLAVE) && (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE))  // Slave && 4-wheel mode
-    Serial2.begin(1000000, SERIAL_8N1, RXD2, TXD2);
-  else if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER)  // Master
-    Serial1.begin(1000000, SERIAL_8N1, RXD1, TXD1);
-#endif
-
   Serial.begin(SENSOR_DIAGNOSTIC_MODE ? DIAGNOSTIC_SERIAL_BAUD_RATE :
                (DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? LIVE_TUNING_SERIAL_BAUD_RATE : SERIAL_BAUD_RATE));
   FlashInit();  // Read flash data
@@ -509,8 +479,7 @@ void setup() {
     biquadFilterInitLPF(&ImuFilterLPF[axis], 20, 100);
   }
   diagnosticImuReady = initICM42688();
-  if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER)
-    sBus.begin();
+  sBus.begin();
   timestamp_prev = micros();
   Serial.printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n",
                 (int)esp_reset_reason(), diagnosticImuReady ? 1 : 0);
@@ -524,12 +493,6 @@ void setup() {
   xTaskCreatePinnedToCore(cpu0_task, "cpu0_task", 4096, NULL, 0, NULL, 0);
 #endif
 
-  bindTuningParameters(&AnglePid.P,&AnglePid.I,&AnglePid.D,&AnglePid.limit,
-                       &SpeedPid.P,&SpeedPid.I,&SpeedPid.D,&SpeedPid.limit,
-                       &YawPid.P,&YawPid.I,&YawPid.D,&YawPid.limit,
-                       &RollPid.P,&RollPid.I,&RollPid.D,&RollPid.limit,
-                       &PidParameterTuning,&wheelSpeedFeedbackGain);
-  body_data_init();
   // Initialize second-order low-pass filter
   for (int axis = 0; axis < 6; axis++) {
     biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)LPF_CUTOFF_FREQ, (unsigned int)RATE_HZ);
@@ -545,34 +508,26 @@ void setup() {
 
   servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);  // Assembly position
   // IMU
-  if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER)  // Master
-  {
-    if (!initICM42688()) {
-      Serial.println("ICM42688 initialization failed!");
-      while (1)
-        ;
-    }
-    Serial.println("ICM42688 initialized successfully!");
+  if (!initICM42688()) {
+    Serial.println("ICM42688 initialization failed!");
+    while (1)
+      ;
   }
-
-  // calibrateGyro();
+  Serial.println("ICM42688 initialized successfully!");
 
   // Remote control
-  if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER)  // Master uses
-    sBus.begin();
+  sBus.begin();
 
   for (int i = 0; i < 6; i++)
     biquadFilterInitLPF(&FilterLPF[i], 100, (unsigned int)cutoffFreq);  // Remote control filter
 
   biquadFilterInitLPF(&FilterLPF[8], 50, (unsigned int)cutoffFreq);   // Remote control filter
   biquadFilterInitLPF(&FilterLPF[9], 50, (unsigned int)cutoffFreq);   // Remote control filter
-  biquadFilterInitLPF(&FilterLPF[10], 200, (unsigned int)400);        //
-  biquadFilterInitLPF(&FilterLPF[11], 200, (unsigned int)400);        //
-  biquadFilterInitLPF(&FilterLPF[12], 50, (unsigned int)cutoffFreq);  // Remote control filter
+  biquadFilterInitLPF(&FilterLPF[10], 200, (unsigned int)400);        // Touchscreen PID filter
+  biquadFilterInitLPF(&FilterLPF[11], 200, (unsigned int)400);        // Touchscreen PID filter
 
   // use monitoring with serial
-  if ((SwitchingPattern == SWITCHING_PATTERN_TWO_WHEEL_MODE) || (MasterSlaveSelection == MASTER_SLAVE_SELECTION_SLAVE))  // Two-wheel or slave mode
-    TouchscreenInit(500);
+  TouchscreenInit(500);
   // enable more verbose output for debugging
   // comment out if not needed
   SimpleFOCDebug::enable(&Serial);
@@ -589,9 +544,6 @@ void setup() {
   sensor1.init(&I2Cone);
   sensor2.init(&I2Ctwo);
 #endif
-
-  // sensor1.min_elapsed_time = 0.0001; // 100us by default
-  // sensor2.min_elapsed_time = 0.0001; // 100us by default
 
   // link the motor to the sensor
   motor1.linkSensor(&sensor1);
@@ -634,8 +586,6 @@ void setup() {
   // velocity loop PID
   motor1.PID_velocity.P = 0.006;  // 0.07;
   motor1.PID_velocity.I = 0;
-  if (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE)
-    motor1.PID_velocity.I = 0.8;
   motor1.PID_velocity.D = 0.0;
   motor1.PID_velocity.output_ramp = 10000;
   motor1.PID_velocity.limit = 8.4;
@@ -669,8 +619,6 @@ void setup() {
   motor1.velocity_limit = 88.0;
   motor1.voltage_limit = 8.4;
   motor1.current_limit = 5.0;
-  // sensor zero offset - home position
-  // motor1.sensor_offset = -68924.77299999999;
   // general settings
   // motor phase resistance
   motor1.phase_resistance = 22;
@@ -698,8 +646,6 @@ void setup() {
   // velocity loop PID
   motor2.PID_velocity.P = 0.006;
   motor2.PID_velocity.I = 0;
-  if (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE)
-    motor2.PID_velocity.I = 0.8;
   motor2.PID_velocity.D = 0;
   motor2.PID_velocity.output_ramp = 10000;
   motor2.PID_velocity.limit = 8.4;
@@ -735,8 +681,6 @@ void setup() {
   motor2.velocity_limit = motor1.velocity_limit;
   motor2.voltage_limit = motor1.voltage_limit;
   motor2.current_limit = motor1.current_limit;
-  // sensor zero offset - home position
-  // motor2.sensor_offset = -68924.77299999999;
   // general settings
   // motor phase resistance
   motor2.phase_resistance = motor1.phase_resistance;
@@ -778,12 +722,8 @@ void setup() {
       ;
   } else {
 
-    // motor1.sensor_direction=Direction::CCW; // or Direction::CCW
-    // motor1.zero_electric_angle=2.586293;   // use the real value!
     motor1.initFOC();
 
-    // motor2.sensor_direction=Direction::CW; // or Direction::CCW
-    // motor2.zero_electric_angle=4.166292;   // use the real value!
     motor2.initFOC();
   }
 
@@ -795,7 +735,6 @@ void setup() {
 
   motor1.useMonitoring(Serial);
   motor1.monitor_downsample = 10;  // disable intially
-  // motor2.monitor_variables = _MON_TARGET | _MON_VEL | _MON_ANGLE; // monitor target velocity and angle
 
   // subscribe motor to the commander
   command.add('T', doMotion1, "motion1 control");  // Set motor target value
@@ -830,11 +769,11 @@ void setup() {
   command.add('G', ControlTorqueCompensation, "my ControlTorqueCompensation");
 #endif
 
-  // command.add('U', Pid_Parameter_Tuning, "my Pid_Parameter_Tuning");
   command.add('U', User_command, "my User_command");
   command.add('V', CbWheelSpeedFeedbackGain, "wheel speed feedback gain");
+  command.add('W', CbDriveTiltReductionGain, "drive tilt reduction gain");
 #if WIFI_TUNING_ENABLE
-  command.add('W', WifiTuningReprovision, "reset Wi-Fi provisioning with WRESET");
+  command.add('X', WifiTuningReprovision, "reset Wi-Fi provisioning with XRESET");
 #endif
 
 #if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
@@ -849,340 +788,13 @@ void setup() {
   _delay(1000);
   timestamp_prev = micros();
 #if WIFI_TUNING_ENABLE
+  bindTuningParameters(&AnglePid.P,&AnglePid.I,&AnglePid.D,&AnglePid.limit,
+                       &SpeedPid.P,&SpeedPid.I,&SpeedPid.D,&SpeedPid.limit,
+                       &YawPid.P,&YawPid.I,&YawPid.D,&YawPid.limit,
+                       &RollPid.P,&RollPid.I,&RollPid.D,&RollPid.limit,
+                       &PidParameterTuning,&wheelSpeedFeedbackGain);
   WifiTuningBegin();
 #endif
-}
-
-/**
- * @brief Validates the checksum of a received serial data buffer.
- * @param buffer The byte array containing the received data packet.
- * @return `true` if the checksum is correct, `false` otherwise.
- */
-boolean crc1(unsigned char buffer[]) {
-  unsigned int crc_bit1 = 0;
-  unsigned int sum1 = 0;
-
-  for (int j = 2; j <= 27; j++) {
-    sum1 += buffer[j];
-  }
-  crc_bit1 = sum1 & 0xff;
-  if ((unsigned char)crc_bit1 == buffer[28])
-    return true;
-  else
-    return false;
-}
-
-/**
- * @brief Calculates the checksum for a serial data buffer to be transmitted.
- * @param buffer The byte array containing the data to be sent.
- * @return The calculated 8-bit checksum.
- */
-unsigned char crc2(unsigned char buffer[]) {
-  unsigned int crc_bit1 = 0;
-  unsigned int sum1 = 0;
-
-  for (int j = 2; j <= 27; j++) {
-    sum1 += buffer[j];
-  }
-  crc_bit1 = sum1 & 0xff;
-
-  return (unsigned char)crc_bit1;
-}
-
-/**
- * @brief Sends robot state data from the Master controller to the Slave via Serial1.
- *
- * This function is used in 4-wheel mode. It packs leg coordinates, motor targets,
- * and gait information into a custom packet format with a checksum and sends it.
- */
-void Send_Serial1(void) {
-  // Start flag
-  serial1.txbuf[0] = SERIAL_PACKET_HEADER_BYTE_1;
-  serial1.txbuf[1] = SERIAL_PACKET_HEADER_BYTE_2;
-  // Left leg coordinate x
-  serial1.txbuf[2] = ((uint8_t *)&body.xo3)[0];  //
-  serial1.txbuf[3] = ((uint8_t *)&body.xo3)[1];
-  serial1.txbuf[4] = ((uint8_t *)&body.xo3)[2];
-  serial1.txbuf[5] = ((uint8_t *)&body.xo3)[3];
-  // Left leg coordinate z
-  serial1.txbuf[6] = ((uint8_t *)&body.zo3)[0];
-  serial1.txbuf[7] = ((uint8_t *)&body.zo3)[1];
-  serial1.txbuf[8] = ((uint8_t *)&body.zo3)[2];
-  serial1.txbuf[9] = ((uint8_t *)&body.zo3)[3];
-  // Right leg coordinate x
-  serial1.txbuf[10] = ((uint8_t *)&body.xo4)[0];  //
-  serial1.txbuf[11] = ((uint8_t *)&body.xo4)[1];
-  serial1.txbuf[12] = ((uint8_t *)&body.xo4)[2];
-  serial1.txbuf[13] = ((uint8_t *)&body.xo4)[3];
-  // Right leg coordinate z
-  serial1.txbuf[14] = ((uint8_t *)&body.zo4)[0];
-  serial1.txbuf[15] = ((uint8_t *)&body.zo4)[1];
-  serial1.txbuf[16] = ((uint8_t *)&body.zo4)[2];
-  serial1.txbuf[17] = ((uint8_t *)&body.zo4)[3];
-  // Left leg motor target value
-  serial1.txbuf[18] = ((uint8_t *)&body.MT[2])[0];
-  serial1.txbuf[19] = ((uint8_t *)&body.MT[2])[1];
-  serial1.txbuf[20] = ((uint8_t *)&body.MT[2])[2];
-  serial1.txbuf[21] = ((uint8_t *)&body.MT[2])[3];
-  // Right motor target value
-  serial1.txbuf[22] = ((uint8_t *)&body.MT[3])[0];
-  serial1.txbuf[23] = ((uint8_t *)&body.MT[3])[1];
-  serial1.txbuf[24] = ((uint8_t *)&body.MT[3])[2];
-  serial1.txbuf[25] = ((uint8_t *)&body.MT[3])[3];
-
-  // Motor operating mode
-  serial1.txbuf[26] = body.MotorMode;
-
-  //
-  serial1.txbuf[27] = body.Ts;
-
-  // Checksum
-  serial1.txbuf[28] = crc2(serial1.txbuf);
-  // End flag
-  serial1.txbuf[29] = SERIAL_PACKET_END_BYTE;
-
-  Serial1.write(serial1.txbuf, sizeof(serial1.txbuf));
-}
-
-/**
- * @brief Reads and parses state data from the Slave controller on Serial1.
- *
- * This function is used by the Master controller in 4-wheel mode. It reads
- * incoming bytes, validates the packet structure and checksum, and unpacks
- * data such as touchscreen input and motor velocities from the Slave.
- */
-void Read_Serial1(void)  // Read serial port 1 data
-{
-
-  while (Serial1.available()) {
-    serial1.dat = Serial1.read();
-    // Serial.println(serial1.dat);
-    if ((serial1.count == 0) && (serial1.dat == SERIAL_PACKET_HEADER_BYTE_1)) {
-      serial1.rxbuf[serial1.count] = serial1.dat;
-      serial1.count = 1;
-    } else if ((serial1.count == 1) && (serial1.dat == SERIAL_PACKET_HEADER_BYTE_2)) {
-      serial1.rxbuf[serial1.count] = serial1.dat;
-      serial1.recstatu = 1;
-      serial1.count = 2;
-    } else if (serial1.recstatu == 1)  // Header byte is correct
-    {
-      serial1.rxbuf[serial1.count] = serial1.dat;
-      serial1.count++;
-      if (serial1.count >= 29) {
-        if (crc1(serial1.rxbuf)) {
-          body.Serial1count++;
-          serial1.recstatu = 0;
-          serial1.packerflag = 1;  // For system notification of successful reception
-          serial1.count = 0;
-          // Touch screen x data
-          ((uint8_t *)&Touch.XPdatF)[0] = serial1.rxbuf[2];
-          ((uint8_t *)&Touch.XPdatF)[1] = serial1.rxbuf[3];
-          ((uint8_t *)&Touch.XPdatF)[2] = serial1.rxbuf[4];
-          ((uint8_t *)&Touch.XPdatF)[3] = serial1.rxbuf[5];
-          // Touch screen y data
-          ((uint8_t *)&Touch.YPdatF)[0] = serial1.rxbuf[6];
-          ((uint8_t *)&Touch.YPdatF)[1] = serial1.rxbuf[7];
-          ((uint8_t *)&Touch.YPdatF)[2] = serial1.rxbuf[8];
-          ((uint8_t *)&Touch.YPdatF)[3] = serial1.rxbuf[9];
-          // Left motor speed
-          ((uint8_t *)&body.MotorVelocityF[2])[0] = serial1.rxbuf[10];
-          ((uint8_t *)&body.MotorVelocityF[2])[1] = serial1.rxbuf[11];
-          ((uint8_t *)&body.MotorVelocityF[2])[2] = serial1.rxbuf[12];
-          ((uint8_t *)&body.MotorVelocityF[2])[3] = serial1.rxbuf[13];
-          // Right motor speed
-          ((uint8_t *)&body.MotorVelocityF[3])[0] = serial1.rxbuf[14];
-          ((uint8_t *)&body.MotorVelocityF[3])[1] = serial1.rxbuf[15];
-          ((uint8_t *)&body.MotorVelocityF[3])[2] = serial1.rxbuf[16];
-          ((uint8_t *)&body.MotorVelocityF[3])[3] = serial1.rxbuf[17];
-
-          Touch.state = serial1.rxbuf[27];
-          /*
-          //Left leg motor target value
-          ((uint8_t *)&body.MT[2])[0] = serial1.rxbuf[18];
-          ((uint8_t *)&body.MT[2])[1] = serial1.rxbuf[19];
-          ((uint8_t *)&body.MT[2])[2] = serial1.rxbuf[20];
-          ((uint8_t *)&body.MT[2])[3] = serial1.rxbuf[21];
-          //Right motor target value
-          ((uint8_t *)&body.MT[3])[0] = serial1.rxbuf[22];
-          ((uint8_t *)&body.MT[3])[1] = serial1.rxbuf[23];
-          ((uint8_t *)&body.MT[3])[2] = serial1.rxbuf[24];
-          ((uint8_t *)&body.MT[3])[3] = serial1.rxbuf[25];
-          //Motor operating mode
-          body.MotorMode = serial1.rxbuf[26];
-
-          //Gait time
-          body.Ts = serial1.rxbuf[27];
-
-          */
-        } else {
-          serial1.rxbuf[0] = 0;
-          serial1.rxbuf[1] = 0;
-          serial1.recstatu = 0;
-          serial1.packerflag = 0;  // Receive failed
-          serial1.count = 0;
-          // Serial.println("on2..............................");
-        }
-      }
-    } else {
-      serial1.rxbuf[0] = 0;
-      serial1.rxbuf[1] = 0;
-      serial1.recstatu = 0;
-      serial1.packerflag = 0;  // For system notification of failed reception
-      serial1.count = 0;
-      serial1.dat = 0;
-      // Serial.println("on1..............................");
-    }
-  }
-}
-
-/**
- * @brief Sends state data from the Slave controller to the Master via Serial2.
- *
- * This function is used in 4-wheel mode. It packs local data like touchscreen
- * position and motor velocities into a custom packet and sends it to the Master.
- */
-void Send_Serial2(void) {
-  // Start flag
-  serial2.txbuf[0] = SERIAL_PACKET_HEADER_BYTE_1;
-  serial2.txbuf[1] = SERIAL_PACKET_HEADER_BYTE_2;
-
-  // Touch screen x position
-  serial2.txbuf[2] = ((uint8_t *)&Touch.XPdatF)[0];  //
-  serial2.txbuf[3] = ((uint8_t *)&Touch.XPdatF)[1];
-  serial2.txbuf[4] = ((uint8_t *)&Touch.XPdatF)[2];
-  serial2.txbuf[5] = ((uint8_t *)&Touch.XPdatF)[3];
-  // Touch screen y position
-  serial2.txbuf[6] = ((uint8_t *)&Touch.YPdatF)[0];
-  serial2.txbuf[7] = ((uint8_t *)&Touch.YPdatF)[1];
-  serial2.txbuf[8] = ((uint8_t *)&Touch.YPdatF)[2];
-  serial2.txbuf[9] = ((uint8_t *)&Touch.YPdatF)[3];
-  // Left motor speed
-  serial2.txbuf[10] = ((uint8_t *)&Motor1_Velocity_f)[0];  //
-  serial2.txbuf[11] = ((uint8_t *)&Motor1_Velocity_f)[1];
-  serial2.txbuf[12] = ((uint8_t *)&Motor1_Velocity_f)[2];
-  serial2.txbuf[13] = ((uint8_t *)&Motor1_Velocity_f)[3];
-  // Right motor speed
-  serial2.txbuf[14] = ((uint8_t *)&Motor2_Velocity_f)[0];
-  serial2.txbuf[15] = ((uint8_t *)&Motor2_Velocity_f)[1];
-  serial2.txbuf[16] = ((uint8_t *)&Motor2_Velocity_f)[2];
-  serial2.txbuf[17] = ((uint8_t *)&Motor2_Velocity_f)[3];
-  // Left leg motor target value
-  serial2.txbuf[18] = 0;  //((uint8_t *)&body.MT[2])[0];
-  serial2.txbuf[19] = 0;  //((uint8_t *)&body.MT[2])[1];
-  serial2.txbuf[20] = 0;  //((uint8_t *)&body.MT[2])[2];
-  serial2.txbuf[21] = 0;  //((uint8_t *)&body.MT[2])[3];
-  // Right motor target value
-  serial2.txbuf[22] = 0;  //((uint8_t *)&body.MT[3])[0];
-  serial2.txbuf[23] = 0;  //((uint8_t *)&body.MT[3])[1];
-  serial2.txbuf[24] = 0;  //((uint8_t *)&body.MT[3])[2];
-  serial2.txbuf[25] = 0;  //((uint8_t *)&body.MT[3])[3];
-
-  // Motor operating mode
-  serial2.txbuf[26] = 0;  // body.MotorMode;
-
-  //
-  serial2.txbuf[27] = Touch.state;  // body.Ts;
-
-  // Checksum
-  serial2.txbuf[28] = crc2(serial2.txbuf);
-  // End flag
-  serial2.txbuf[29] = SERIAL_PACKET_END_BYTE;
-
-  Serial2.write(serial2.txbuf, sizeof(serial2.txbuf));
-}
-
-/**
- * @brief Reads and parses command data from the Master controller on Serial2.
- *
- * This function is used by the Slave controller in 4-wheel mode. It reads
- * incoming bytes, validates the packet, and unpacks target leg coordinates
- * and motor commands sent from the Master.
- */
-void Read_Serial2(void)  // Read serial port 2 data
-{
-
-  while (Serial2.available()) {
-    serial2.dat = Serial2.read();
-    // Serial.println(serial2.dat);
-    if ((serial2.count == 0) && (serial2.dat == SERIAL_PACKET_HEADER_BYTE_1)) {
-      serial2.rxbuf[serial2.count] = serial2.dat;
-      serial2.count = 1;
-    } else if ((serial2.count == 1) && (serial2.dat == SERIAL_PACKET_HEADER_BYTE_2)) {
-      serial2.rxbuf[serial2.count] = serial2.dat;
-      serial2.recstatu = 1;
-      serial2.count = 2;
-    } else if (serial2.recstatu == 1)  // Header byte is correct
-    {
-      serial2.rxbuf[serial2.count] = serial2.dat;
-      serial2.count++;
-      if (serial2.count >= 29) {
-        if (crc1(serial2.rxbuf)) {
-          body.Serial1count++;
-          serial2.recstatu = 0;
-          serial2.packerflag = 1;  // For system notification of successful reception
-          serial2.count = 0;
-          // Left leg coordinate x
-          ((uint8_t *)&body.xo3)[0] = serial2.rxbuf[2];
-          ((uint8_t *)&body.xo3)[1] = serial2.rxbuf[3];
-          ((uint8_t *)&body.xo3)[2] = serial2.rxbuf[4];
-          ((uint8_t *)&body.xo3)[3] = serial2.rxbuf[5];
-          // Left leg coordinate z
-          ((uint8_t *)&body.zo3)[0] = serial2.rxbuf[6];
-          ((uint8_t *)&body.zo3)[1] = serial2.rxbuf[7];
-          ((uint8_t *)&body.zo3)[2] = serial2.rxbuf[8];
-          ((uint8_t *)&body.zo3)[3] = serial2.rxbuf[9];
-          // Right leg coordinate x
-          ((uint8_t *)&body.xo4)[0] = serial2.rxbuf[10];
-          ((uint8_t *)&body.xo4)[1] = serial2.rxbuf[11];
-          ((uint8_t *)&body.xo4)[2] = serial2.rxbuf[12];
-          ((uint8_t *)&body.xo4)[3] = serial2.rxbuf[13];
-          // Right leg coordinate z
-          ((uint8_t *)&body.zo4)[0] = serial2.rxbuf[14];
-          ((uint8_t *)&body.zo4)[1] = serial2.rxbuf[15];
-          ((uint8_t *)&body.zo4)[2] = serial2.rxbuf[16];
-          ((uint8_t *)&body.zo4)[3] = serial2.rxbuf[17];
-          // Left leg motor target value
-          ((uint8_t *)&body.MT[2])[0] = serial2.rxbuf[18];
-          ((uint8_t *)&body.MT[2])[1] = serial2.rxbuf[19];
-          ((uint8_t *)&body.MT[2])[2] = serial2.rxbuf[20];
-          ((uint8_t *)&body.MT[2])[3] = serial2.rxbuf[21];
-          // Right motor target value
-          ((uint8_t *)&body.MT[3])[0] = serial2.rxbuf[22];
-          ((uint8_t *)&body.MT[3])[1] = serial2.rxbuf[23];
-          ((uint8_t *)&body.MT[3])[2] = serial2.rxbuf[24];
-          ((uint8_t *)&body.MT[3])[3] = serial2.rxbuf[25];
-          // Motor operating mode
-          body.MotorMode = serial2.rxbuf[26];
-
-          // body.Ts = serial2.rxbuf[27];
-
-          /*
-                          Serial.println("\t");
-                          Serial.print("Motor1_Target:");
-                          Serial.print(Motor1_Target);
-                          Serial.print("  Motor2_Target:");
-                          Serial.println(Motor2_Target);
-          */
-          // disconnection = 0;
-        } else {
-          serial2.rxbuf[0] = 0;
-          serial2.rxbuf[1] = 0;
-          serial2.recstatu = 0;
-          serial2.packerflag = 0;  // Receive failed
-          serial2.count = 0;
-          // Serial.println("on2..............................");
-        }
-      }
-    } else {
-      serial2.rxbuf[0] = 0;
-      serial2.rxbuf[1] = 0;
-      serial2.recstatu = 0;
-      serial2.packerflag = 0;  // For system notification of failed reception
-      serial2.count = 0;
-      serial2.dat = 0;
-      // Serial.println("on1..............................");
-    }
-  }
 }
 
 /**
@@ -1228,8 +840,6 @@ void bleCtrl(){
     posture_or_mark_mode  = map(ble_ctrler.ch[5], BLE_CH5_MIN, BLE_CH5_MAX, 0, 1);
     roll_mode             = map(ble_ctrler.ch[6], BLE_CH6_MIN, BLE_CH6_MAX, 0, 1);
     attitude_mode         = map(ble_ctrler.ch[7], BLE_CH7_MIN, BLE_CH7_MAX, 0, 2);
-    sbuschx[8]            = map(ble_ctrler.ch[8], BLE_CH8_MIN, BLE_CH8_MAX, 0, 100);
-    sbuschx[9]            = map(ble_ctrler.ch[9], BLE_CH9_MIN, BLE_CH9_MAX, 0, 100);
     // Top ball
     top_ball_x = mapf(ble_ctrler.ch[8], BLE_CH8_MIN, BLE_CH8_MAX, -5, 5);  //  
     top_ball_y = mapf(ble_ctrler.ch[9], BLE_CH9_MIN, BLE_CH9_MAX, -5, 5);
@@ -1274,42 +884,31 @@ void RXsbus() {
     posture_or_mark_mode = map(sBus.channels[5], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
     roll_mode = map(sBus.channels[6], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
     attitude_mode = map(sBus.channels[7], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
-    sbuschx[8] = map(sBus.channels[8], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 100);
-    sbuschx[9] = map(sBus.channels[9], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 100);
-
     // Top ball
     top_ball_x = mapf(sBus.channels[8], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -5, 5);  // Modify top ball target position
     top_ball_y = mapf(sBus.channels[9], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -5, 5);
 
     if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT)  // Attitude control 1
     {
-      // SlideStep = mapf(sBus.channels[0],SBUS_chMin, SBUS_chMax, -0.05,0.05);//Slide step
       if (sBus.channels[1] <= 992)
         LegLength = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, 992, 0.05, 0.06);  // Leg height
       else
         LegLength = mapf(sBus.channels[1], 993, SBUS_CHANNEL_MAX, 0.06, 0.09);       // Leg height
     } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST)  // Attitude control 2
     {
-      // BodyRoll =  mapf(sBus.channels[0], SBUS_chMin, SBUS_chMax, -0.011, 0.011); //Roll
-      // sbus_vrb    =  mapf(sBus.channels[9], SBUS_chMin, SBUS_chMax, -25, 25);
       BodyPitching = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -12, 12);  // Pitching       + sbus_vrb
     } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)              // Attitude control 3
     {
-      // LegLength = 0.06;
       if (sBus.channels[1] <= 992)
         LegLength = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, 992, 0.05, 0.06);
       else
         LegLength = mapf(sBus.channels[1], 993, SBUS_CHANNEL_MAX, 0.06, 0.07);
 
-      // BodyRoll =  mapf(sBus.channels[0], SBUS_chMin, SBUS_chMax, -0.011, 0.011);
-      // BodyPitching = mapf(sBus.channels[1], SBUS_chMin, SBUS_chMax, -22, 22);
-      // BodyPitching = mapf(sBus.channels[9], SBUS_chMin, SBUS_chMax, -45, 45);
     }
 
     BodyRoll = mapf(sBus.channels[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);
 
     if (Voltage <= 7.4) {
-      // pid_gains_mode = REMOTE_CONTROL_MODE_PID_GAINS_MODE_OFF
       // K56/K57/K58 already include voltage; avoid interleaving warnings with CSV rows.
       if ((int)Select != 56 && (int)Select != 57 && (int)Select != 58 && !WifiTuningRecordingActive()) {
         Serial.print(" Voltage:");
@@ -1317,46 +916,6 @@ void RXsbus() {
       }
     }
 
-    /*
-        static int js = 0;
-        if((sBus.channels[0]>1700)&&(sBus.channels[1]<200)&&(sBus.channels[2]<200)&&(sBus.channels[3]<200))//外八
-        {
-          js++;
-          if(js>=200)//Last for 1 second
-          {
-            js=0;
-            //SwitchingPattern = 0;
-            for (int i = 0; i < 10; i++)
-            {
-              digitalWrite(LED_Pin, LOW);
-              delay(100);
-              digitalWrite(LED_Pin, HIGH);
-              delay(100);
-            }
-
-          }
-        }
-        else if((sBus.channels[0]<200)&&(sBus.channels[1]<200)&&(sBus.channels[2]<200)&&(sBus.channels[3]>1700))//内八
-        {
-          js++;
-          if(js>=200)
-          {
-            js=0;
-            //SwitchingPattern = 1;
-            for (int i = 0; i < 10; i++)
-            {
-              digitalWrite(LED_Pin, LOW);
-              delay(100);
-              digitalWrite(LED_Pin, HIGH);
-              delay(100);
-            }
-          }
-        }
-        else
-        {
-          js = 0;
-        }
-    */
   }
 }
 
@@ -1597,8 +1156,6 @@ void ImuUpdate(void) {
 
   // Convert temperature data
   attitude.temp = (float)temp / 132.48 + 25;
-  // Run the Mahony filter algorithm, pass dt
-  // mahonyFilter.update(attitude.gyro.x, attitude.gyro.y, attitude.gyro.z, attitude.acc.x, attitude.acc.y, attitude.acc.z, IMUtime_dt);
   mahonyFilter.update(attitude.gyrof.x, attitude.gyrof.y, attitude.gyrof.z, attitude.accf.x, attitude.accf.y, attitude.accf.z, IMUtime_dt);
 
   // Get the filtered quaternion
@@ -1846,7 +1403,6 @@ void FlashSave(int sw) {
 
       // Close flash access, release related resources
       preferences.end();
-      // CalibrationSelect = 0;//Manual setting calibration end
 
       break;
 
@@ -2039,16 +1595,10 @@ void print_data(void) {
 
       Serial.print(" x:");
       Serial.print(angleX);
-      // Serial.print(" y:");
-      // Serial.print( angleY);
 
       Serial.print(" Roll:");
       Serial.println(attitude.roll);
-      // Serial.print(" Pitch:");
-      // Serial.print( attitude.pitch);
 
-      // Serial.print(" IMUdt:");
-      // Serial.println(IMUtime_dt,6);
 
       break;
 
@@ -2078,8 +1628,6 @@ void print_data(void) {
 
     case 15:
       // Output acc
-      // Serial.print("dt:");
-      // Serial.print(time_dt,6);
       Serial.print(" accy:");
       Serial.print(attitude.acc.y);
       Serial.print(" accyf:");
@@ -2088,8 +1636,6 @@ void print_data(void) {
 
     case 16:
       // Output acc
-      // Serial.print("dt:");
-      // Serial.print(time_dt,6);
       Serial.print(" gyro:");
       Serial.print(attitude.gyro.y);
       Serial.print(" gyrof:");
@@ -2098,8 +1644,6 @@ void print_data(void) {
 
     case 17:
       // Output acc
-      // Serial.print("dt:");
-      // Serial.print(time_dt,6);
       Serial.print(" current_sp:");
       Serial.println(motor2.current_sp, 6);
       break;
@@ -2148,14 +1692,6 @@ void print_data(void) {
       break;
 
     case 22:
-      /*
-    Serial.print(" PP:");
-    Serial.print(Angle_Pid.Kp, 5);
-    Serial.print(" PI:");
-    Serial.print(Angle_Pid.Ki, 5);
-    Serial.print(" PD:");
-    Serial.print(Angle_Pid.Kd, 5);
-    */
       Serial.print(" it:");
       Serial.print(Angle_Pid.iLimit, 5);
       Serial.print(" il:");
@@ -2167,12 +1703,6 @@ void print_data(void) {
       break;
 
     case 23:
-      /*
-      Serial.print(" SP:");
-      Serial.print(Speed_Pid.Kp, 5);
-      Serial.print(" SI:");
-      Serial.print(Speed_Pid.Ki, 5);
-      */
       Serial.print(" it:");
       Serial.print(Speed_Pid.iLimit, 5);
       Serial.print(" il:");
@@ -2417,94 +1947,6 @@ void print_data(void) {
 
       break;
 
-    case 46:
-
-      break;
-
-    case 47:
-      Serial.print(" Serial1HZ:");
-      Serial.print(body.Serial1HZ);
-
-      Serial.print(" sbus_swb:");
-      Serial.println(posture_or_mark_mode);
-
-      break;
-
-    case 48:
-      Serial.print(" xo3:");
-      Serial.print(body.xo3 * 100, 4);
-
-      Serial.print(" zo3:");
-      Serial.print(body.zo3 * 100, 4);
-      Serial.print(" Ts:");
-      Serial.println(body.Ts, 4);
-
-      break;
-
-    case 49:
-
-      Serial.print(" xo4:");
-      Serial.print(body.xo4 * 100, 4);
-
-      Serial.print(" zo4:");
-      Serial.print(body.zo4 * 100, 4);
-
-      Serial.print(" Ts:");
-      Serial.println(body.Ts, 4);
-
-      break;
-
-    case 50:
-
-      Serial.print(" body.Ts:");
-      Serial.print(body.Ts, 4);
-
-      Serial.print(" bodyH:");
-      Serial.println(top_ball_y, 4);
-
-      break;
-
-    case 51:
-      Serial.print(" mv1:");
-      Serial.print(body.MotorVelocityF[0], 3);
-      Serial.print(" mv2:");
-      Serial.print(body.MotorVelocityF[1], 3);
-      Serial.print(" mv3:");
-      Serial.print(body.MotorVelocityF[2], 3);
-      Serial.print(" mv4:");
-      Serial.println(body.MotorVelocityF[3], 3);
-      break;
-
-    case 52:
-      Serial.print(" xt:");
-      Serial.print(body.xt, 4);
-      Serial.print(" h:");
-      Serial.print(body.h, 4);
-      Serial.print(" Ts:");
-      Serial.println(body.Ts, 4);
-      break;
-
-    case 53:
-
-      Serial.print(" BodyPitching4WheelTF:");
-      Serial.print(body.BodyPitching4WheelTF, 4);
-      Serial.print(" BodyPitching4Wheel:");
-      Serial.println(body.BodyPitching4Wheel, 4);
-      break;
-
-    case 54:
-      Serial.print(" E:");
-      Serial.print(Pitching_Pid.error, 6);
-      Serial.print(" it:");
-      Serial.print(Pitching_Pid.iLimit, 5);
-      Serial.print(" il:");
-      Serial.print(Pitching_Pid.integral, 5);
-      Serial.print(" oI:");
-      Serial.print(Pitching_Pid.outI, 5);
-      Serial.print(" out:");
-      Serial.println(Pitching_Pid.output, 5);
-      break;
-
     case 55: {
       // One row every 20 ms; voltage_min_v includes every raw ADC read in that interval.
       static unsigned long lastTraceMs = 0;
@@ -2586,13 +2028,15 @@ void print_data(void) {
           maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
           servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
         }
-        Serial.printf("DRIVE,%lu,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.6f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%d\n",
+        Serial.printf("DRIVE,%lu,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.6f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%d\n",
                       traceMs, pid_gains_mode,
                       (float)7.77 / 813.43 * VoltageADCMin, Voltage,
-                      MovementSpeed, Motor1_Velocity_f, Motor2_Velocity_f, time_dt,
+                      MovementSpeed, active ? driveEffectiveSpeed : 0.0f,
+                      Motor1_Velocity_f, Motor2_Velocity_f, time_dt,
                       active ? Speed_Pid.error : 0.0f,
                       active ? Speed_Pid.outP : 0.0f, active ? Speed_Pid.outI : 0.0f,
                       active ? Speed_Pid.outD : 0.0f, active ? Speed_Pid.output : 0.0f,
+                      active ? driveSpeedBodyXRaw : 0.0f,
                       active ? BodyX : 0.0f, BodyPitching_f, roll_ok,
                       active ? Angle_Pid.output : 0.0f,
                       active ? Angle_Pid.outP : 0.0f,
@@ -2626,62 +2070,6 @@ float BodyPitchingCorrect(float x)  // Pitch angle correction
 {
   float y = 0.000004 * x * x + 0.0004 * x - 0.0008;  // y = 4E-06x2 + 0.0004x - 0.0008    y = -2E-07x2 + 0.0002x - 0.0029
   return y;
-}
-
-/**
- * @brief Legacy PID controller for two-wheel balancing (likely deprecated).
- *
- * This function implements a cascade PID control loop for balancing:
- * 1. A speed loop calculates a target angle based on forward/backward velocity error.
- * 2. A balance loop calculates motor output based on the error from the target angle.
- * 3. A yaw loop adds differential torque for turning.
- * This appears to be an older version, with `PIDcontroller_posture` being the active one.
- *
- * @param dt The time delta since the last call, in seconds.
- */
-void PIDcontroller_angle(float dt) {
-  // Speed loop
-  Speed_Pid.Kp = SpeedPid.P;
-  Speed_Pid.Ki = SpeedPid.I;
-  Speed_Pid.Kd = SpeedPid.D;
-
-  float speedError = (Motor1_Velocity_f + Motor2_Velocity_f) * 0.5 - MovementSpeed;  // Measured value minus target value
-  float speedOutput = Speed_Pid.compute(speedError, dt);
-
-  // Balance loop
-  Angle_Pid.Kp = AnglePid.P;
-  Angle_Pid.Ki = AnglePid.I;
-  Angle_Pid.Kd = AnglePid.D;
-
-  // LpfOut BodyPitching
-  float angleError = roll_ok - speedOutput - (-BodyPitching);  // Measured value minus target value
-  float angleOutput = Angle_Pid.compute(angleError, dt);
-
-  // Turn loop
-  Yaw_Pid.Kp = YawPid.P;
-  Yaw_Pid.Ki = YawPid.I;
-  Yaw_Pid.Kd = YawPid.D;
-
-  float yawError = attitude.gyro.z - BodyTurn;  // Measured value minus target value
-  float yawOutput = Yaw_Pid.compute(yawError, dt);
-
-  float target1 = angleOutput - yawOutput;
-  float target2 = angleOutput + yawOutput;
-
-  if (control_torque_compensation != 0) {
-    if (target1 > 0)
-      target1 = target1 + control_torque_compensation;
-    else if (target1 < 0)
-      target1 = target1 + (-control_torque_compensation);
-
-    if (target2 > 0)
-      target2 = target2 + control_torque_compensation;
-    else if (target2 < 0)
-      target2 = target2 + (-control_torque_compensation);
-  }
-
-  motor1.target = target1;
-  motor2.target = target2;
 }
 
 /**
@@ -2738,23 +2126,25 @@ void PidParameter(void) {
     AnglePid.limit = PID_ANGLE_LIMIT_WITH_TOUCH;  // Integral limit
   }
 
-  YawPid.P = 110;
-  YawPid.I = 33;
+  YawPid.P = 4;
+  YawPid.I = 0;
   YawPid.D = 0;
   YawPid.limit = 0;
 
 #if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
   AnglePid.P = 5;
   AnglePid.I = 200;
-  AnglePid.D = 0.12;
+  AnglePid.D = 0.11;
   AnglePid.limit = 0.1;
-  // The wheel speed estimate below uses the measured ~1.8 ms control tick.
+  // Keep the verified live-tuning gains as the startup defaults.
   SpeedPid.P = 0.045;
-  SpeedPid.I = 0;
+  SpeedPid.I = 0.005;
   SpeedPid.D = 0;
+  SpeedPid.limit = 50;
   YawPid.P = 4;
   YawPid.I = 0;
   YawPid.D = 0;
+  YawPid.limit = 0;
 #endif
 
   // Touch screen
@@ -2828,10 +2218,7 @@ void PIDcontroller_posture(float dt) {
   if ((Touch.state == 1) && (Touch.P_count < 4)) {
     Touch.P_count++;
     TouchX_Pid.integral = 0;
-    // TouchX_Pid.output = 0;
-    // BodyPitching = 0;
     TouchY_Pid.integral = 0;
-    // TouchY_Pid_outputF = 0;
   }
 
   if (Touch.P_count >= 4) {
@@ -2851,10 +2238,7 @@ void PIDcontroller_posture(float dt) {
 
   if (Touch.L_count >= 44) {
     TouchX_Pid.integral = 0;
-    // TouchX_Pid.output = 0;
-    // BodyPitching = 0;
     TouchY_Pid.integral = 0;
-    // TouchY_Pid_outputF = 0;
     Touch.P_count = 0;
     TouchX_kd = 0;
     TouchY_kd = 0;
@@ -2865,7 +2249,6 @@ void PIDcontroller_posture(float dt) {
   {
     TouchX_Pid.integral = 0;
     TouchX_Pid.output = 0;
-    // BodyPitching = 0;
     TouchY_Pid.integral = 0;
     TouchY_Pid.output = 0;
     TouchY_Pid_outputF = 0;
@@ -2897,8 +2280,30 @@ void PIDcontroller_posture(float dt) {
   Speed_Pid.Kd = SpeedPid.D / 100;
   Speed_Pid.iLimit = SpeedPid.limit;  // Integral limit
 
-  float speedError = (Motor1_Velocity_f + Motor2_Velocity_f) * 0.5 - MovementSpeed;  // Measured value minus target value
-  BodyX = Speed_Pid.compute(speedError, dt) + BodyPitchingCorrect(BodyPitching_f);   //
+  const float avgVelocity = 0.5f * (Motor1_Velocity_f + Motor2_Velocity_f);
+  driveEffectiveSpeed = MovementSpeed;
+  // Reduce only further acceleration when tilt consumes balance headroom.
+  if (MovementSpeed * avgVelocity >= 0.0f && fabsf(MovementSpeed) > fabsf(avgVelocity)) {
+    const float tiltFraction = constrain((fabsf(roll_ok) - DRIVE_TILT_REDUCTION_START_DEG) /
+                                         (DRIVE_TILT_REDUCTION_FULL_DEG - DRIVE_TILT_REDUCTION_START_DEG),
+                                         0.0f, 1.0f);
+    const float reduction = tiltFraction * constrain(driveTiltReductionGain, 0.0f, 1.0f);
+    driveEffectiveSpeed = avgVelocity + (MovementSpeed - avgVelocity) * (1.0f - reduction);
+  }
+  const float speedError = avgVelocity - driveEffectiveSpeed;
+
+  const float previousSpeedIntegral = Speed_Pid.integral;
+  driveSpeedBodyXRaw = Speed_Pid.compute(speedError, dt);
+  if (Speed_Pid.Ki != 0.0f && fabsf(driveSpeedBodyXRaw) > DRIVE_BODY_X_LIMIT_M &&
+      driveSpeedBodyXRaw * speedError > 0.0f) {
+    Speed_Pid.integral = previousSpeedIntegral;
+    Speed_Pid.outI = Speed_Pid.Ki * previousSpeedIntegral;
+    driveSpeedBodyXRaw = Speed_Pid.outP + Speed_Pid.outI + Speed_Pid.outD;
+    Speed_Pid.output = driveSpeedBodyXRaw;
+  }
+  const float speedBodyX = constrain(driveSpeedBodyXRaw, -DRIVE_BODY_X_LIMIT_M, DRIVE_BODY_X_LIMIT_M);
+
+  BodyX = speedBodyX + BodyPitchingCorrect(BodyPitching_f);
 
   // Balance loop
   Angle_Pid.Kp = AnglePid.P;
@@ -2929,16 +2334,12 @@ void PIDcontroller_posture(float dt) {
   float yawError = attitude.gyro.z - BodyTurn;  // Measured value minus target value
   float yawOutput = Yaw_Pid.compute(yawError, dt);
 
-  // Let filtered wheel-speed error act directly on the wheels as well as the
-  // leg-position loop. Limit its authority while this coupling is tuned.
+  // Use the existing wheel path only to oppose measured overspeed.
   const float boundedWheelGain = constrain(wheelSpeedFeedbackGain, 0.0f, 0.4f);
-  float wheelCorrection = boundedWheelGain * speedError;
-  if (MovementSpeed < -1.0f && speedError > 0.0f) {
-    // Reverse acceleration is already stronger than forward on this robot.
-    // Still allow correction of reverse overspeed and neutral braking.
-    wheelCorrection = 0.0f;
-  }
-  wheelSpeedFeedbackOutput = constrain(wheelCorrection, -8.0f, 8.0f);
+  const bool braking = avgVelocity * (avgVelocity - MovementSpeed) > 0.0f;
+  const float wheelCorrection = braking ? boundedWheelGain * (avgVelocity - MovementSpeed) : 0.0f;
+  wheelSpeedFeedbackOutput = constrain(wheelCorrection, -DRIVE_WHEEL_FEEDBACK_LIMIT,
+                                      DRIVE_WHEEL_FEEDBACK_LIMIT);
   float target1 = angleOutput - yawOutput + wheelSpeedFeedbackOutput;
   float target2 = angleOutput + yawOutput + wheelSpeedFeedbackOutput;
 
@@ -2976,12 +2377,7 @@ void RemoteControlFiltering(void)  // Remote control filter
   sbus_top_ball_y_smoothed = biquadFilterApply(&FilterLPF[9], top_ball_y);
 
   if ((int)enableDFilter == 1) {
-    if (body.MotorMode >= 3)
-      body.BodyPitching4WheelT = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);  // Pitch
-    else
-      BodyPitching_f = biquadFilterApply(&FilterLPF[0], BodyPitching);  //
-
-    body.BodyPitching4WheelTF = biquadFilterApply(&FilterLPF[12], body.BodyPitching4WheelT);
+    BodyPitching_f = biquadFilterApply(&FilterLPF[0], BodyPitching);
     BodyRoll_f = biquadFilterApply(&FilterLPF[1], BodyRoll);
     LegLength_f = biquadFilterApply(&FilterLPF[2], LegLength);
     SlideStep_f = biquadFilterApply(&FilterLPF[3], SlideStep);
@@ -2995,7 +2391,6 @@ void RemoteControlFiltering(void)  // Remote control filter
   if (((int)enableDFilter != enableDFilter_last) || ((int)cutoffFreq != cutoffFreq_last)) {
     for (int i = 0; i < 6; i++) {
       biquadFilterInitLPF(&FilterLPF[i], 100, (unsigned int)cutoffFreq);  // Remote control filter
-      // TouchscreenInit((unsigned int)cutoffFreq);
     }
 
     enableDFilter_last = (int)enableDFilter;
@@ -3047,155 +2442,18 @@ void Robot_Tumble(void) {
   }
 }
 
-/**
- * @brief Initializes the parameters for the gait generation algorithm.
- *
- * Sets default values for the robot's gait, including step height (`h`),
- * step length (`xt`), period (`Ts`), and other parameters related to the
- * cycloidal foot trajectory used in the `TrotGaitAlgorithm`.
- */
-void body_data_init(void)  //
-{
-  //  Gait parameters
-  body.delayTime = 0.005;  // Delay time per step
-  body.CurrentSteps = 0;   // Current step
-  body.xt = 0.015;         // Starting position
-  body.xs1 = 0;            // Starting position
-  body.xf1 = body.xt;      // End position
-  body.xs2 = 0;            // Starting position
-  body.xf2 = body.xt;      // End position
-  body.xs3 = 0;            // Starting position
-  body.xf3 = body.xt;      // End position
-  body.xs4 = 0;            // Starting position
-  body.xf4 = body.xt;      // End position
-  body.h = 0.02;           // Highest position
-  body.zs = 0;             // Starting height
-  body.Ts = 0.5;           // Period
-
-  body.lambda[0] = 0.5;  // λ parameter
-  body.lambda[1] = 1.0f;
-
-  body.H_fron = 0.075;  //
-  body.H_back = 0.075;
-  ;  //
-
-  body.MotorMode = 0;  //
-}
-
-/**
- * @brief Generates foot trajectories for a trot gait in four-wheel mode.
- *
- * This function implements a gait pattern generator based on cycloidal trajectories.
- * A trot gait involves moving diagonal pairs of legs together. The function
- * calculates the desired horizontal (`xo`) and vertical (`zo`) position for each
- * of the four feet at the current point in the gait cycle (`CurrentSteps`).
- * The resulting foot positions are then passed to the inverse kinematics solver.
- */
-void TrotGaitAlgorithm(void)  // Trot gait
-{
-  body.CurrentSteps = body.CurrentSteps + body.delayTime;  // Gait time
-  if (body.CurrentSteps > body.Ts) {
-    body.CurrentSteps = 0;
-  }
-
-  if ((body.CurrentSteps >= 0) && (body.CurrentSteps < (body.lambda[0] * body.Ts)))  // First stage
-  {
-
-    body.sigma = 2 * PI * body.CurrentSteps / (body.lambda[0] * body.Ts);  // First stage time converted to 360 degrees
-
-    body.xo1 = (body.xt) * (body.sigma - sin(body.sigma)) / (2 * PI) + (-body.xt / 2);  // Cycloidal trajectory calculation
-    body.zo1 = body.h * (1 - cos(body.sigma)) + body.zs;
-
-    body.xo2 = (body.xt) * (body.sigma - sin(body.sigma)) / (2 * PI) + (-body.xt / 2);  // Cycloidal trajectory calculation
-    body.zo2 = 0;
-
-    body.xo3 = (body.xt) * (body.sigma - sin(body.sigma)) / (2 * PI) + (-body.xt / 2);  // Cycloidal trajectory calculation
-    body.zo3 = 0;
-
-    body.xo4 = (body.xt) * (body.sigma - sin(body.sigma)) / (2 * PI) + (-body.xt / 2);  // Cycloidal trajectory calculation
-    body.zo4 = body.h * (1 - cos(body.sigma)) + body.zs;
-  } else if ((body.CurrentSteps >= (body.lambda[0] * body.Ts)) && (body.CurrentSteps < (body.lambda[1] * body.Ts)))  // Second stage
-  {
-    body.sigma = 2 * PI * (body.CurrentSteps - (body.lambda[0] * body.Ts)) / ((body.lambda[1] - body.lambda[0]) * body.Ts);  // Second stage time converted to 360 degrees
-
-    body.xo1 = (-body.xt) * (body.sigma - sin(body.sigma)) / (2 * PI) + (body.xt / 2);  // Cycloidal trajectory calculation
-    body.zo1 = 0;
-
-    body.xo2 = (-body.xt) * (body.sigma - sin(body.sigma)) / (2 * PI) + (body.xt / 2);  // Cycloidal trajectory calculation
-    body.zo2 = body.h * (1 - cos(body.sigma)) + body.zs;
-
-    body.xo3 = (-body.xt) * (body.sigma - sin(body.sigma)) / (2 * PI) + (body.xt / 2);  // Cycloidal trajectory calculation
-    body.zo3 = body.h * (1 - cos(body.sigma)) + body.zs;
-
-    body.xo4 = (-body.xt) * (body.sigma - sin(body.sigma)) / (2 * PI) + (body.xt / 2);  // Cycloidal trajectory calculation
-    body.zo4 = 0;
-  }
-
-  if (body.MotorMode < 2) {
-    if (body.xt < 0) {
-      body.zo1 = body.zo1 - 0.01;
-      body.zo2 = body.zo2 - 0.01;
-    }
-    if (body.xt > 0) {
-      body.zo3 = body.zo3 - 0.01;
-      body.zo4 = body.zo4 - 0.01;
-    }
-  } else if (body.MotorMode >= 2) {
-    body.zo1 = body.zo1 + LegLength - body.BodyRoll4Wheel + body.BodyPitching4Wheel - Roll_Pid.output - TouchX_Pid_outputF + TouchY_Pid_outputF;
-    body.zo2 = body.zo2 + LegLength + body.BodyRoll4Wheel + body.BodyPitching4Wheel + Roll_Pid.output + TouchX_Pid_outputF + TouchY_Pid_outputF;
-    body.zo3 = body.zo3 + LegLength - body.BodyRoll4Wheel - body.BodyPitching4Wheel - Roll_Pid.output - TouchX_Pid_outputF - TouchY_Pid_outputF;
-    body.zo4 = body.zo4 + LegLength + body.BodyRoll4Wheel - body.BodyPitching4Wheel + Roll_Pid.output + TouchX_Pid_outputF - TouchY_Pid_outputF;
-  }
-
-  if ((int)Select == 46) {
-    Serial.print(" XT:");
-    Serial.print(body.xt * 100, 4);
-
-    Serial.print(" xo1:");
-    Serial.print(body.xo1 * 100, 4);
-
-    Serial.print(" zo1:");
-    Serial.print(body.zo1 * 100, 4);
-
-    Serial.print(" xo2:");
-    Serial.print(body.xo2 * 100, 4);
-
-    Serial.print(" zo2:");
-    Serial.print(body.zo2 * 100, 4);
-
-    Serial.print(" sigma:");
-    Serial.println(body.sigma, 4);
-  }
-}
-
-/**
- * @brief The main execution loop of the program.
- *
- * This function runs repeatedly after `setup()` is complete. It is the heart
- * of the robot's operation, responsible for:
- * 1. Calling the SimpleFOC `move()` and `loopFOC()` methods to update motor states.
- * 2. Handling serial communication (commander, master/slave protocol).
- * 3. Reading sensors (IMU, RC, Touchscreen).
- * 4. Calling the appropriate high-level control functions (`PIDcontroller_posture`, `TrotGaitAlgorithm`) based on the robot's current mode.
- * 5. Calculating inverse kinematics to determine servo angles.
- * 6. Sending final commands to the servos.
- * 7. Handling safety checks like fall detection.
- * 8. Printing debug data.
- */
 void DiagnosticLoop(void) {
   static unsigned long lastImuMs = 0;
   static unsigned long lastVoltageMs = 0;
   static unsigned long lastPrintMs = 0;
   const unsigned long nowMs = millis();
 
-  if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER) {
-    sBus.FeedLine();
-    if (sBus.toChannels == 1) {
-      sBus.UpdateChannels();
-      sBus.toChannels = 0;
-      diagnosticLastRcFrameMs = nowMs;
-      diagnosticHasRcFrame = true;
-    }
+  sBus.FeedLine();
+  if (sBus.toChannels == 1) {
+    sBus.UpdateChannels();
+    sBus.toChannels = 0;
+    diagnosticLastRcFrameMs = nowMs;
+    diagnosticHasRcFrame = true;
   }
 
   if (diagnosticImuReady && nowMs - lastImuMs >= 10) {
@@ -3223,13 +2481,26 @@ void DiagnosticLoop(void) {
   delay(1);
 }
 
+/**
+ * @brief The main execution loop of the program.
+ *
+ * This function runs repeatedly after `setup()` is complete. It is the heart
+ * of the robot's operation, responsible for:
+ * 1. Calling the SimpleFOC `move()` and `loopFOC()` methods to update motor states.
+ * 2. Handling serial communication for commands and telemetry.
+ * 3. Reading sensors (IMU, RC, Touchscreen).
+ * 4. Running posture control for two-wheel balancing.
+ * 5. Calculating inverse kinematics to determine servo angles.
+ * 6. Sending final commands to the servos.
+ * 7. Handling safety checks like fall detection.
+ * 8. Printing debug data.
+ */
 void loop() {
 #if SENSOR_DIAGNOSTIC_MODE
   DiagnosticLoop();
   return;
 #endif
   now_us = micros();
-  // now_us2 = micros();
 
   // iterative function setting the outter loop target
 
@@ -3259,9 +2530,6 @@ void loop() {
   motor1.loopFOC();
   motor2.loopFOC();
 
-  // Serial.print(Motor2_voltage_compensation,6);
-  // Serial.print("\t");
-  // Serial.println(motor2.voltage.q+Motor2_voltage_compensation,6);
 
   RightMotorAngle = -sensor1.getPreciseAngle();
   LeftMotorAngle = sensor2.getPreciseAngle();
@@ -3281,38 +2549,18 @@ void loop() {
   command.run();
 #endif
 
-  if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER) {
-    ImuUpdate();  // Update IMU data
-    CtrlInput();  // BLE or remote control input
-    RXsbus();
-  }
+  ImuUpdate();  // Update IMU data
+  CtrlInput();  // BLE or remote control input
+  RXsbus();
 
-  if ((SwitchingPattern == SWITCHING_PATTERN_TWO_WHEEL_MODE) || (MasterSlaveSelection == MASTER_SLAVE_SELECTION_SLAVE))  // Two-wheel or slave mode
-    ReadTouchDat();
+  ReadTouchDat();
 
   time_dt = (now_us - now_us1) / 1000000.0f;
   if (time_dt >= 0.001f) {   //1kHz
 #if WIFI_RECORDING_ENABLE
     bool regulatorCalculated = false;
 #endif
-    static int Serial1_count = 0;
-    Serial1_count++;
-    if (Serial1_count >= 5) {
-      Serial1_count = 0;
-      body.Serial1HZ = body.Serial1count * 40;
-      body.Serial1count = 0;
-    }
-
-    if (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE)  // 4-wheel mode
-      MotorOperatingMode();
-
-    if ((MasterSlaveSelection == MASTER_SLAVE_SELECTION_SLAVE) && (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE))  // Slave && 4-wheel mode
-      Read_Serial2();
-    else if ((MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER) && (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE))  // Host && 4-wheel mode
-      Read_Serial1();
-
-    if ((MasterSlaveSelection == MASTER_SLAVE_SELECTION_SLAVE) || (SwitchingPattern == SWITCHING_PATTERN_TWO_WHEEL_MODE))  // Slave || 2-wheel mode
-      TouchBiquadFilter();                                                                                                 // Touch screen filter
+    TouchBiquadFilter();  // Touch screen filter
 
     RemoteControlFiltering();  // Remote control signal filtering
     ReadVoltage();             // Battery
@@ -3321,12 +2569,9 @@ void loop() {
 #endif
       print_data();              // Serial port data printing
 
-    if (SwitchingPattern == SWITCHING_PATTERN_TWO_WHEEL_MODE)  // 2-wheel mode
-      Robot_Tumble();                                          // Machine fall detection
+    Robot_Tumble();  // Machine fall detection
     LED_count++;
     if (LED_count >= LED_dt) {
-      // Serial.print(LED_HL);
-      // Serial.println(" LED:");
       LED_count = 0;
       if (LED_HL == 1) {
         digitalWrite(BOARD_PIN_LED, LOW);  // On
@@ -3372,9 +2617,6 @@ void loop() {
     Motor2_Velocity_f = Motor2_Velocity_filter(Motor2_Velocity);
     Motor2_place_last = sensor2.getAngle();
 
-    body.MotorVelocityF[0] = Motor1_Velocity_f;
-    body.MotorVelocityF[1] = Motor2_Velocity_f;
-
     if ((SwitchUser == SWITCH_USER_MODE_SAMPLE_TORQUE_M1) && (Slot_calibration_mark == 0)) {
       Serial.print(" motor1 ");
       CalibrationCurrentSp(-sensor1.getAngle(), Motor1_Velocity_f, &motor1);
@@ -3389,132 +2631,53 @@ void loop() {
     float bodyH = 0.06f;
     float bodyRoll = BodyRoll_f;
 
-    if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER)  // Host mode
-    {
-      if ((pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (RobotTumble == ROBOT_TUMBLE_YES)) {
-        balancePidNeedsPriming = true;
-        if (Communication_object == COMMUNICATION_OBJECT_TWO_OR_FOUR_WHEEL_BALANCE && SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M1 && SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M2)  //
-        {
-          motor1.target = 0;
-          motor2.target = 0;
-        }
-
-        bodyH = 0.06;
-        bodyRoll = 0;
-        BodyX = 0;
-        bodyRoll = 0;
-        BodyPitching_f = 0;
-
-        Angle_Pid.integral = 0;
-        Speed_Pid.integral = 0;
-        Yaw_Pid.integral = 0;
-        wheelSpeedFeedbackOutput = 0;
-
-        body.zo1 = 0;
-        body.zo2 = 0;
-        body.zo3 = 0;
-        body.zo4 = 0;
-
-        body.xo1 = 0;
-        body.xo2 = 0;
-        body.xo3 = 0;
-        body.xo4 = 0;
-
-        body_data_init();
-      } else if ((pid_gains_mode_is_enabled(pid_gains_mode)) && (RobotTumble == ROBOT_TUMBLE_NO))  //
+    if ((pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (RobotTumble == ROBOT_TUMBLE_YES)) {
+      balancePidNeedsPriming = true;
+      if (Communication_object == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE && SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M1 && SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M2)  //
       {
-
-        if (SwitchingPattern == SWITCHING_PATTERN_TWO_WHEEL_MODE)  // 2-wheel mode
-        {
-#if WIFI_RECORDING_ENABLE
-          regulatorCalculated = true;
-#endif
-          PIDcontroller_posture(time_dt);  // PID controller
-
-          body.zo1 = 0;
-          body.zo2 = 0;
-          body.zo3 = 0;
-          body.zo4 = 0;
-
-          body.xo1 = 0;
-          body.xo2 = 0;
-          body.xo3 = 0;
-          body.xo4 = 0;
-
-          if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)
-            bodyRoll = Roll_Pid.output;
-
-          if (TargetLegLength == 0)
-            bodyH = LegLength_f;
-          else
-            bodyH = TargetLegLength;
-        } else if ((SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE) && (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER))  // 4-wheel mode && Host mode
-        {
-          TrotGaitAlgorithm();  // Gait
-          PIDcontroller_posture_4wheel(time_dt);
-
-          Send_Serial1();  // Send data to slave
-          motor1.target = body.MT[0];
-          motor2.target = body.MT[1];
-
-          bodyH = body.H_fron;
-
-          bodyRoll = 0;
-          BodyX = 0;
-          bodyRoll = 0;
-          BodyPitching_f = 0;
-        }
+        motor1.target = 0;
+        motor2.target = 0;
       }
-    } else  // Slave mode
-    {
 
-      bodyH = body.H_back;
-
-      bodyRoll = 0;
+      bodyH = 0.06;
       BodyX = 0;
       bodyRoll = 0;
       BodyPitching_f = 0;
 
-      Send_Serial2();
-      if (body.Serial1HZ >= 50) {
+      Angle_Pid.integral = 0;
+      Speed_Pid.integral = 0;
+      Yaw_Pid.integral = 0;
+      wheelSpeedFeedbackOutput = 0;
+      driveEffectiveSpeed = 0;
+      driveSpeedBodyXRaw = 0;
 
-        body.xo2 = -body.xo4;
-        body.xo1 = -body.xo3;
-        body.zo2 = body.zo4;
-        body.zo1 = body.zo3;
+    } else if ((pid_gains_mode_is_enabled(pid_gains_mode)) && (RobotTumble == ROBOT_TUMBLE_NO)) {
+      PIDcontroller_posture(time_dt);  // PID controller
+#if WIFI_RECORDING_ENABLE
+      regulatorCalculated = true;
+#endif
 
-        motor1.target = body.MT[2];
-        motor2.target = body.MT[3];
-      } else {
-        bodyH = 0.06;
-        bodyRoll = 0;
-        BodyX = 0;
-        bodyRoll = 0;
-        BodyPitching_f = 0;
+      if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)
+        bodyRoll = Roll_Pid.output;
 
-        body.xo2 = 0;
-        body.xo1 = 0;
-        body.zo2 = 0;
-        body.zo1 = 0;
-
-        motor1.target = 0;
-        motor2.target = 0;
-      }
+      if (TargetLegLength == 0)
+        bodyH = LegLength_f;
+      else
+        bodyH = TargetLegLength;
     }
 
     if (RobotTumble == ROBOT_TUMBLE_YES)  // Machine fall
     {
       bodyH = 0.06;
-      bodyRoll = 0;
       BodyX = 0;
       bodyRoll = 0;
       BodyPitching_f = 0;
     }
 
-    if (RightInverseKinematics(BarycenterX - BodyX + body.xo2, bodyH - bodyRoll - body.zo2, BodyPitching_f, Rax))
+    if (RightInverseKinematics(BarycenterX - BodyX, bodyH - bodyRoll, BodyPitching_f, Rax))
       Serial.println("RightInverseKinematics no");
 
-    if (LeftInverseKinematics(BarycenterX - BodyX - body.xo1, bodyH + bodyRoll - body.zo1, BodyPitching_f, Lax))
+    if (LeftInverseKinematics(BarycenterX - BodyX, bodyH + bodyRoll, BodyPitching_f, Lax))
       Serial.println("LeftInverseKinematics no");
 
     if (posture_or_mark_mode == REMOTE_CONTROL_PM_POSTURE_MODE)  // Posture
@@ -3554,7 +2717,7 @@ void loop() {
 #if WIFI_TUNING_ENABLE
     const uint32_t rcAge = hasValidSbusFrame ? (uint32_t)(millis() - lastValidSbusFrameMs) : UINT32_MAX;
     WifiTuningState tuningState = {
-      MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER && SwitchingPattern == SWITCHING_PATTERN_TWO_WHEEL_MODE,
+      Communication_object == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE,
       isSbusFresh(hasValidSbusFrame, rcAge, sBus.Failsafe() == SBUS_SIGNAL_OK),
       rcAge,
       pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF,
@@ -3622,314 +2785,7 @@ void loop() {
     if (!recordingActive) lastRecordingSampleUs = 0;
 #endif
 #endif
+
     now_us1 = now_us;
-  }
-  //  Serial.print("  dt:");
-  //  Serial.println(micros()-now_us2);
-}
-
-/**
- * @brief Determines the robot's behavior in 4-wheel mode based on RC switch positions.
- *
- * This function acts as a state machine for the 4-wheel mode, controlled by
- * the `sbus_swc` and `sbus_swd` switches on the remote. It sets the `body.MotorMode`
- * and adjusts parameters like step length, step height, and motor targets to
- * switch between different walking, trotting, and posture control behaviors.
- */
-void MotorOperatingMode(void) {
-  if (motor1.controller != MotionControlType::velocity) {
-    motor1.controller = MotionControlType::velocity;
-    motor2.controller = MotionControlType::velocity;
-  }
-  if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_MASTER)  // Host
-  {
-    if (roll_mode == REMOTE_CONTROL_ROLL_MODE_MANUAL) {
-      if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT) && (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE)) {
-        body.MotorMode = 0;
-        body.BodyPitching4Wheel = 0;
-        body.xt = mapf(sBus.channels[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.04, 0.04);  // Step length
-        body.h = 0.025;                                                                     // mapf(sBus.channels[8], SBUS_chMin, SBUS_chMax, 0.005, 0.02);//Step height VRA
-        // body.Ts =  mapf(sBus.channels[9], SBUS_chMin, SBUS_chMax, 0.5, 1);//Stride period S VRB
-
-        BodyTurn = mapf(sBus.channels[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -55, 55);
-
-        body.MT[0] = -BodyTurn;
-        body.MT[1] = BodyTurn;
-        body.MT[2] = -BodyTurn;
-        body.MT[3] = BodyTurn;
-      } else if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST) && (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE)) {
-        body.MotorMode = 1;
-
-        body.BodyPitching4Wheel = 0;
-        body.xt = mapf(sBus.channels[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.04, 0.04);  // Step length
-        MovementSpeed = -mapf(sBus.channels[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -33, 33);
-
-        body.h = 0.025;  // mapf(sBus.channels[8], SBUS_chMin, SBUS_chMax, 0.005, 0.025);//Step height VRA
-        // body.Ts =  mapf(sBus.channels[9], SBUS_chMin, SBUS_chMax, 0.5, 1);//Stride period S VRB
-
-        BodyTurn = mapf(sBus.channels[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -55, 55);
-        body.MT[0] = -BodyTurn + MovementSpeed;
-        body.MT[1] = BodyTurn + MovementSpeed;
-        body.MT[2] = -BodyTurn + MovementSpeed;
-        body.MT[3] = BodyTurn + MovementSpeed;
-      } else if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) && (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE)) {
-        body.MotorMode = 2;
-
-        /// body.H_R
-        body.xt = 0;  // Step length
-        MovementSpeed = -mapf(sBus.channels[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -111, 111);
-        body.h = 0;  // Step height
-        // body.Ts =  mapf(sBus.channels[9], SBUS_chMin, SBUS_chMax, 0.5, 1);//Stride period S VRB
-        BodyTurn = mapf(sBus.channels[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -111, 111);
-
-        LegLength = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0.03, -0.03);              // leg height
-        body.BodyRoll4Wheel = mapf(sBus.channels[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);  // Roll
-
-        body.MT[0] = -BodyTurn + MovementSpeed;
-        body.MT[1] = BodyTurn + MovementSpeed;
-        body.MT[2] = -BodyTurn + MovementSpeed;
-        body.MT[3] = BodyTurn + MovementSpeed;
-      }
-    } else if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO) {
-      if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT) && (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE)) {
-        body.MotorMode = 3;
-
-        /// body.H_R
-        body.xt = 0;  // Step length
-        MovementSpeed = -mapf(sBus.channels[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -111, 111);
-        body.h = 0;  // Step height
-        BodyTurn = mapf(sBus.channels[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -111, 111);
-
-        LegLength = 0;  // leg height
-
-        body.MT[0] = -BodyTurn + MovementSpeed;
-        body.MT[1] = BodyTurn + MovementSpeed;
-        body.MT[2] = -BodyTurn + MovementSpeed;
-        body.MT[3] = BodyTurn + MovementSpeed;
-
-        body.BodyPitching4Wheel = body.BodyPitching4WheelT;
-        body.BodyRoll4Wheel = mapf(sBus.channels[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);  // Roll
-      } else if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST) && (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE)) {
-        body.MotorMode = 4;
-        /// body.H_R
-        body.xt = 0;  // Step length
-        body.h = 0;   // Step height
-        MovementSpeed = -mapf(sBus.channels[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -111, 111);
-
-        // body.Ts =  mapf(sBus.channels[9], SBUS_chMin, SBUS_chMax, 0.5, 1);//Stride period S VRB
-        BodyTurn = mapf(sBus.channels[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -111, 111);
-        //
-        LegLength = 0;            // leg height
-        body.BodyRoll4Wheel = 0;  // Roll
-
-        body.MT[0] = -BodyTurn + MovementSpeed;
-        body.MT[1] = BodyTurn + MovementSpeed;
-        body.MT[2] = -BodyTurn + MovementSpeed;
-        body.MT[3] = BodyTurn + MovementSpeed;
-      } else if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) && (SwitchingPattern == SWITCHING_PATTERN_FOUR_WHEEL_MODE)) {
-        body.MotorMode = 5;
-        /// body.H_R
-        body.xt = 0;  // Step length
-        body.h = 0;   // Step height
-        MovementSpeed = -mapf(sBus.channels[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -33, 33);
-
-        // body.Ts =  mapf(sBus.channels[9], SBUS_chMin, SBUS_chMax, 0.5, 1);//Stride period S VRB
-        BodyTurn = mapf(sBus.channels[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -55, 55);
-        // body.BodyPitching4Wheel = body.BodyPitching4WheelT;
-        LegLength = 0;            // leg height
-        body.BodyRoll4Wheel = 0;  // Roll
-
-        body.MT[0] = -BodyTurn + MovementSpeed;
-        body.MT[1] = BodyTurn + MovementSpeed;
-        body.MT[2] = -BodyTurn + MovementSpeed;
-        body.MT[3] = BodyTurn + MovementSpeed;
-      }
-    }
-  } else if (MasterSlaveSelection == MASTER_SLAVE_SELECTION_SLAVE)  // Slave
-  {
-    if (body.MotorMode == 0) {
-    } else if (body.MotorMode == 1) {
-    } else if (body.MotorMode == 2) {
-    }
-  }
-}
-
-/**
- * @brief Sets the PID gains for the 4-wheel mode controllers.
- *
- * This function defines a specific set of PID parameters tailored for the
- * dynamics of the four-legged configuration, including gains for roll/pitch
- * stabilization and touchscreen control.
- */
-void PidParameter4wheel(void) {
-
-  // Roll
-  RollPid.P = 0.04;
-  RollPid.I = 0.5;
-  RollPid.D = 0.003;
-  RollPid.limit = 4.4;  // Integral limit·
-
-  // Pitching
-  AnglePid.P = 0.08;
-  AnglePid.I = 1;
-  AnglePid.D = 0.005;
-  AnglePid.limit = 2.2;  // Integral limit
-
-  // Touch screen
-  TouchXPid.P = 0.1;
-  TouchXPid.I = 0;
-  TouchXPid.D = 0.1;
-  TouchXPid.limit = 0;  // Integral limit
-
-  TouchYPid.P = 0.15;
-  TouchYPid.I = 0;
-  TouchYPid.D = 0.11;
-  TouchYPid.limit = 0;  // Integral limit
-}
-
-/**
- * @brief Main PID control loop for posture control in 4-wheel mode.
- *
- * This function manages stability when the robot is in its four-legged stance.
- * It uses PID controllers to:
- * - Stabilize the body's roll and pitch based on IMU feedback.
- * - Incorporate commands from the touchscreen for fine-grained posture adjustments.
- * The output of these controllers modifies the leg positions to maintain balance.
- *
- * @param dt The time delta since the last call, in seconds.
- */
-void PIDcontroller_posture_4wheel(float dt) {
-  if ((int)PidParameterTuning == 0)
-    PidParameter4wheel();
-
-  // Touch screen
-  TouchX_Pid.Kp = TouchXPid.P / 1000;
-  TouchX_Pid.Ki = TouchXPid.I / 1000;
-  TouchX_Pid.Kd = TouchXPid.D / 1000;
-  TouchX_Pid.iLimit = TouchXPid.limit;  // Integral limit
-
-  TouchY_Pid.Kp = TouchYPid.P / 1000;
-  TouchY_Pid.Ki = TouchYPid.I / 1000;
-  TouchY_Pid.Kd = TouchYPid.D / 1000;
-  TouchY_Pid.iLimit = TouchYPid.limit;  // Integral limit
-
-  float touchXError = Touch.XPdatF / 100;
-  float touchYError = Touch.YPdatF / 100;
-  static float TouchX_kd = 0;
-  static float TouchY_kd = 0;
-
-  TouchX_Pid.compute(touchXError, dt);
-  TouchY_Pid.compute(touchYError, dt);
-
-  TouchX_Pid.deriv = constrain(TouchX_Pid.deriv, -77, 77);
-  TouchX_Pid.outD = TouchX_kd * TouchX_Pid.deriv;
-
-  TouchY_Pid.deriv = constrain(TouchY_Pid.deriv, -77, 77);
-  TouchY_Pid.outD = TouchY_kd * TouchY_Pid.deriv;
-
-  if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) && (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO) && (pid_gains_mode_is_enabled(pid_gains_mode)))  // Top ball mode
-  {
-    TouchX_Pid.output = TouchX_Pid.outP + TouchX_Pid.outI + TouchX_Pid.outD + sbus_top_ball_x_smoothed * 0.002;
-
-    TouchY_Pid.output = TouchY_Pid.outP + TouchY_Pid.outI + TouchY_Pid.outD + sbus_top_ball_y_smoothed * 0.002;
-
-    TouchX_Pid.output = -TouchX_Pid.output;
-    TouchY_Pid.output = -TouchY_Pid.output;
-  } else {
-    TouchY_Pid_outputF = 0;
-    TouchX_Pid_outputF = 0;
-    TouchY_Pid.output = 0;
-    TouchX_Pid.output = 0;
-  }
-
-  if ((int)enableDFilter == 1) {
-    // TouchY_Pid_outputF = biquadFilterApply(&FilterLPF[10], TouchY_Pid.output);
-    // TouchX_Pid_outputF = biquadFilterApply(&FilterLPF[11], TouchX_Pid.output);
-    TouchY_Pid_outputF = TouchY_Pid.output;
-    TouchX_Pid_outputF = TouchX_Pid.output;
-  } else {
-    TouchY_Pid_outputF = TouchY_Pid.output;
-    TouchX_Pid_outputF = TouchX_Pid.output;
-  }
-
-  if ((Touch.state == 1) && (Touch.P_count < 4)) {
-    Touch.P_count++;
-    TouchX_Pid.integral = 0;
-    // TouchX_Pid.output = 0;
-    // TouchX_Pid.output = 0;
-    TouchY_Pid.integral = 0;
-    // TouchY_Pid_outputF = 0;
-  }
-
-  if (Touch.P_count >= 4) {
-    if (TouchX_kd < TouchX_Pid.Kd) {
-      TouchX_kd = TouchX_kd + (TouchX_Pid.Kd / 22);
-    }
-    if (TouchY_kd < TouchY_Pid.Kd) {
-      TouchY_kd = TouchY_kd + (TouchY_Pid.Kd / 22);
-    }
-    Touch.start = 2;
-  }
-
-  if ((Touch.state == 0) && (Touch.L_count < 44))
-    Touch.L_count++;
-  else
-    Touch.L_count = 0;
-
-  if (Touch.L_count >= 44) {
-    TouchX_Pid.integral = 0;
-    // TouchX_Pid.output = 0;
-    // TouchX_Pid.output = 0;
-    TouchY_Pid.integral = 0;
-    // TouchY_Pid_outputF = 0;
-    Touch.P_count = 0;
-    TouchX_kd = 0;
-    TouchY_kd = 0;
-    Touch.start = -2;
-  }
-
-  if ((attitude_mode != REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) || (roll_mode != REMOTE_CONTROL_ROLL_MODE_AUTO) || (body.MotorMode != 5))  // Non-top ball mode
-  {
-    TouchX_Pid.integral = 0;
-    TouchX_Pid.output = 0;
-    // TouchX_Pid.output = 0;
-    TouchY_Pid.integral = 0;
-    TouchY_Pid.output = 0;
-    TouchY_Pid_outputF = 0;
-    TouchX_kd = 0;
-    TouchY_kd = 0;
-  }
-
-  // Roll Pitching
-  Roll_Pid.Kp = RollPid.P / 100;
-  Roll_Pid.Ki = RollPid.I / 100;
-  Roll_Pid.Kd = RollPid.D / 100;
-  Roll_Pid.iLimit = RollPid.limit;  // Integral limit
-
-  Pitching_Pid.Kp = AnglePid.P / 100;
-  Pitching_Pid.Ki = AnglePid.I / 100;
-  Pitching_Pid.Kd = AnglePid.D / 100;
-  Pitching_Pid.iLimit = AnglePid.limit;  // Integral limit
-
-  float TargetBodyRoll = BodyRoll_f * 1222;                    // Roll
-  float TargetBodyPitching = body.BodyPitching4WheelTF * 666;  // Pitching
-  if (body.MotorMode == 5) {
-    TargetBodyRoll = 0;
-    TargetBodyPitching = 0;
-  }
-
-  float RollError = (-pitch_ok) - (-TargetBodyRoll);        // - (-TouchX_Pid_outputF);
-  float PitchingError = (-roll_ok) - (TargetBodyPitching);  // - (TouchY_Pid_outputF);
-
-  if ((roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO) && (pid_gains_mode_is_enabled(pid_gains_mode)) && (body.MotorMode == 4))  // Roll Pitching
-  {
-    Roll_Pid.compute(RollError, dt);
-    body.BodyPitching4Wheel = -Pitching_Pid.compute(PitchingError, dt);
-  } else {
-    Roll_Pid.output = 0;
-    Roll_Pid.integral = 0;
-
-    Pitching_Pid.output = 0;
-    Pitching_Pid.integral = 0;
   }
 }

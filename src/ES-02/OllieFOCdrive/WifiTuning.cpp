@@ -808,7 +808,7 @@ void WifiTuningBegin() {
 }
 void WifiTuningReprovision(char *cmd) {
   if (!cmd || strcmp(cmd, "RESET") != 0) {
-    Serial.println("Use WRESET to clear saved Wi-Fi settings.");
+    Serial.println("Use XRESET to clear saved Wi-Fi settings.");
     return;
   }
   if (!wifiTaskHandle) {

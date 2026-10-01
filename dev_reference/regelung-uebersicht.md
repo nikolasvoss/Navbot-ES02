@@ -43,7 +43,7 @@ Die IMU sitzt laut PCB-Entwurf auf dem MAIN-Board. Jeder Radmotor hat einen AS56
 | **Seitliche Haltung** | `RollError` aus `pitch_ok`, Roll-Sollwert und Touch-Y | Bei CH7/AUTO erzeugt `Roll_Pid` eine Höhenkorrektur zwischen den Beinen. Bei MANUAL ist sein Ausgang null. |
 | **Touch-/Ball-Pose** | Touch-X/Y und CH9/10 | Verändert `BodyPitching`, einen seitlichen Touch-Anteil und damit mittelbar Rad- bzw. Servo-Vorgaben; siehe unten. |
 
-Radmotoren im Kern: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`; danach werden beide auf ±88 begrenzt. Die Vorzeichen sind Softwarekonventionen und ersetzen keinen Test der mechanischen Wirkrichtung. `PIDcontroller_posture()` ist der aktive Zweiradpfad. Die ältere Funktion `PIDcontroller_angle()` enthält tatsächlich die klassische Kaskade „Geschwindigkeit → Neigung → Radmotor“, wird von `loop()` hier aber nicht aufgerufen. Der Kommentar über `PIDcontroller_posture()` nennt ebenfalls eine Kaskade und ist an dieser Stelle irreführend.
+Radmotoren im Kern: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`; danach werden beide auf ±88 begrenzt. Die Vorzeichen sind Softwarekonventionen und ersetzen keinen Test der mechanischen Wirkrichtung. `PIDcontroller_posture()` ist der aktive Zweiradpfad. Die ungenutzte ältere Funktion `PIDcontroller_angle()` wurde am 01.10.2026 beim Aufräumen entfernt. Sie enthielt die klassische Kaskade „Geschwindigkeit → Neigung → Radmotor“, wurde von `loop()` aber nicht aufgerufen. Der Kommentar über `PIDcontroller_posture()` nennt ebenfalls eine Kaskade und ist an dieser Stelle irreführend.
 
 **Zahlenbeispiel ohne I-/D-Anteil:** Bei `roll_ok=+1°`, `BodyPitching_f=0` und Balance-P=6 trägt der P-Anteil `+6` zur gemeinsamen Rad-Sollgeschwindigkeit bei. Liegt gleichzeitig `yawError=+0,2 rad/s` und Yaw-P=5 vor, ist der Gieranteil `+1`: Rad 1 erhält `6−1=5`, Rad 2 `6+1=7 rad/s`. Das Beispiel zeigt die Mischrechnung; die tatsächliche Reaktion hängt von Vorzeichen, Dynamik, I-/D-Anteilen und Begrenzung ab.
 
@@ -82,19 +82,19 @@ BLE hat eine eigene Abbildung der Steuerkanäle. `loop()` ruft nach `CtrlInput()
 - Im aktuellen Diagnose-Quellstand wird die Raddrehzahl aus Encoder-Winkeldifferenz / **gemessenem `time_dt`** berechnet, dann mit einem SimpleFOC-Tiefpass (`Tf=0.01 s`) geglättet. Wird `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` abgeschaltet, teilt der Code stattdessen durch feste `0.01 s`; das skaliert die Messung bei einem etwa 1,8-ms-Tick rechnerisch um Faktor 5,6 zu klein. Gain-Werte beider Stände sind deshalb nicht direkt vergleichbar.
 - `roll_ok`/`pitch_ok` sind Winkel in Grad nach Abzug gespeicherter Nullpunkte. Der Gyro liefert rad/s. `BodyX` ist eine Kinematikverschiebung in Metern. Die Radziele sind SimpleFOC-Sollgeschwindigkeiten in rad/s. Die benannten PID-Gains tragen dadurch unterschiedliche implizite Einheiten; Zahlen aus verschiedenen Reglern lassen sich nicht direkt vergleichen.
 
-## Aktuelle Parameter: Quellstand und Originalmodi
+## Aktuelle Parameter: Startwerte und CH5-Modi
 
-`DIAGNOSTIC_LIVE_TUNING_DEFAULTS=1` ist derzeit im lokalen Sketch gesetzt. Beim Start lädt die Firmware den sanfteren CH5=2-Satz, überschreibt Teile davon und lässt Live-Tuning eingeschaltet. Das gilt auch beim kurzen Durchschalten von CH5=1. Die zuletzt vom Nutzer live als günstig beschriebenen Werte `PP5`, `PD0.12`, `PL0.1` sind eine **Beobachtung**, keine Änderung dieser Startwerte.
+`DIAGNOSTIC_LIVE_TUNING_DEFAULTS=1` ist derzeit im lokalen Sketch gesetzt. Beim Start lädt die Firmware den sanfteren CH5=2-Satz, überschreibt Teile davon und lässt Live-Tuning eingeschaltet. Das gilt auch beim kurzen Durchschalten von CH5=1. Der Startsatz entspricht den am 01.10.2026 zurückgelesenen Live-Werten, mit denen der Nutzer kein Vibrieren mehr meldete. Spätere serielle Änderungen bleiben bis zum Neustart gültig und ändern diesen Startsatz nicht.
 
-| Größe | Aktueller Diagnose-Startwert | Original CH5=1 ohne Touch | Original CH5=2 mit Touch |
+| Größe | Aktueller Diagnose-Startwert | CH5=1 ohne Touch | CH5=2 mit Touch |
 | --- | ---: | ---: | ---: |
-| Balance P / I / D | 6 / 222 / 0,11 | 66 / 222 / 1 | 9 / 222 / 0,11 |
+| Balance P / I / D | 5 / 200 / 0,11 | 5 / 200 / 0,11 | 5 / 200 / 0,11 |
 | Balance Integralzustand-Grenze | ±0,1 | ±0,1 | ±0,1 |
-| Speed P / I / D, vor `/100` | 0,05 / 0 / 0 | 0,3 / 0,3 / 0 | 0,12 / 0,12 / 0 |
-| Yaw P / I / D | 5 / 0 / 0 | 110 / 33 / 0 | 110 / 33 / 0 |
+| Speed P / I / D, vor `/100` | 0,045 / 0,005 / 0 | 0,045 / 0,005 / 0 | 0,045 / 0,005 / 0 |
+| Yaw P / I / D | 4 / 0 / 0 | 4 / 0 / 0 | 4 / 0 / 0 |
 | CH3-Abbildung | ±15 × 2 | ±15 | ±15 |
 
-Bei CH7/MANUAL setzt der Code Yaw-I auch im Originalmodus auf null. Die Grenze ±0,1 ist die Grenze des **Balance-Integralzustands**, nicht des Motorziels: Mit I=222 ergibt sie maximal ±22,2 Beitrag; P und D können weitere Anteile liefern. Das Motorziel selbst wird auf ±88 begrenzt. Die Speed-Koeffizienten werden in `PIDcontroller_posture()` durch 100 geteilt, bevor `Speed_Pid` sie nutzt. Serielle Kommandos wie `PP5`, `PD0.12`, `SP0.04` ändern die Werte nur bis zum Neustart; die Quelle und das geflashte Image müssen vor Messvergleichen abgeglichen werden.
+Der Yaw-I-Startwert ist in beiden CH5-Modi null. Die Grenze ±0,1 ist die Grenze des **Balance-Integralzustands**, nicht des Motorziels: Mit I=200 ergibt sie maximal ±20 Beitrag; P und D können weitere Anteile liefern. Das Motorziel selbst wird auf ±88 begrenzt. Die Speed-Koeffizienten werden in `PIDcontroller_posture()` durch 100 geteilt, bevor `Speed_Pid` sie nutzt. Serielle Kommandos wie `PP5`, `PD0.12`, `SP0.04` ändern die Werte nur bis zum Neustart; die Quelle und das geflashte Image müssen vor Messvergleichen abgeglichen werden.
 
 ## Freigabe und Schutz im Code
 

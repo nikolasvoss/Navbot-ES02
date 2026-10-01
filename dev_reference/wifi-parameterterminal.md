@@ -91,7 +91,7 @@ rm -r "$HOME/Dokumente/Bastelei/roboter/wifi-provisioning"
 
 ## Provisionierung bewusst zurücksetzen
 
-Sende über den seriellen Commander den Befehl `WRESET`. Die Firmware löscht nur die gespeicherte WLAN-Konfiguration und startet neu. Danach öffnet sie erneut den Provisioning-SoftAP. Das ist auch der Wiederherstellungsweg, falls versehentlich falsche WLAN-Daten provisioniert wurden. Kalibrierungswerte und andere Preferences bleiben erhalten.
+Sende über den seriellen Commander den Befehl `XRESET`. Die Firmware löscht nur die gespeicherte WLAN-Konfiguration und startet neu. Danach öffnet sie erneut den Provisioning-SoftAP. Das ist auch der Wiederherstellungsweg, falls versehentlich falsche WLAN-Daten provisioniert wurden. Kalibrierungswerte und andere Preferences bleiben erhalten.
 
 ## Parameterterminal
 

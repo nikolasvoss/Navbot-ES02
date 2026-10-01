@@ -5,12 +5,6 @@
 #include "filter.h"
 #include "touchscreen.h"
 
-#define SWITCHING_PATTERN_TWO_WHEEL_MODE 0  // Self-balancing two-wheel mode
-#define SWITCHING_PATTERN_FOUR_WHEEL_MODE 1 // Four-legged walking mode
-
-#define MASTER_SLAVE_SELECTION_SLAVE 0  // The controller is a slave
-#define MASTER_SLAVE_SELECTION_MASTER 1 // The controller is the master
-
 #define ADJUSTMENT_PARAM_BALANCE_SPEED_YAW_ROLL 0
 #define ADJUSTMENT_PARAM_BALL_PUSHING 1 // For tuning main balance and movement PID loops
 
@@ -24,7 +18,7 @@
 #define TORQUE_COMPENSATION_OFF 0 // Torque compensation is off
 #define TORQUE_COMPENSATION_ON 1  // Torque compensation is on
 
-#define COMMUNICATION_OBJECT_TWO_OR_FOUR_WHEEL_BALANCE 0 // Two-wheel balance mode
+#define COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE 0 // Two-wheel balance mode
 #define COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO 1          // SimpleFOC Studio host computer
 #define COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS 2       // Control dual motors
 #define COMMUNICATION_OBJECT_SAMPLE_TORQUE_DATA 3        // Sample torque data
@@ -51,74 +45,6 @@
 #define REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT 0
 #define REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST 1 // Pitching adjustment mode
 #define REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE 2      // Ball poise mode
-
-typedef struct
-{
-  unsigned char rxbuf[30];//Receive data buffer
-  unsigned char txbuf[30];
-  unsigned char recstatu;//Indicates whether in a state of receiving data packet
-  unsigned char count;//Counter
-  unsigned char packerflag;//Flag indicating whether a complete data packet is received
-  unsigned char dat;     
-} Serial_t;
-
-
-typedef struct
-{
-  // Gait parameters
-  //float stepSize;   // Angle change per step
-  
-  float delayTime;  // Delay time per step
-  //float cycleSteps; // Time for one cycle
-  float CurrentSteps; //Current step count
-  float xt;       // Target position
-  float xs1;       // Start position
-  float xf1;       // End position  
-  float xs2;       // Start position
-  float xf2;       // End position
-  float xs3;       // Start position
-  float xf3;       // End position  
-  float xs4;       // Start position
-  float xf4;       // End position  
-  float h;        // Maximum height  
-  float H_fron;  //     
-  float H_back;  //   
-  float H_R;  //     
-  float H_P;  //  
-  float zs;       // Start height
-  float lambda[2];   // λ parameter
-  float sigma;
-  float Ts;       // Period
-
-  float xo1;       // x1 output position
-  float zo1;        //Output maximum height
-
-  float xo2;       // x2 output position
-  float zo2;        //Output maximum height
-
-  float xo3;       // x3 output position
-  float zo3;        //Output maximum height
-
-  float xo4;       // x4 output position
-  float zo4;        //Output maximum height  
-
-  float MT[4];   //Motor target values
-
-  float MotorVelocityF[4];   //Motor velocity
-
-
-  uint8_t MotorMode;   //Motor working mode
-
-  int Serial1HZ;
-  int Serial1count;
-
-  float BodyRoll4Wheel;
-  float BodyPitching4Wheel;
-  float BodyPitching4WheelT;
-  float BodyPitching4WheelTF;
-      
-} body_t;
-
 
 typedef union 
 {
