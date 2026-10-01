@@ -3,6 +3,7 @@ import io
 import json
 import os
 from pathlib import Path
+import stat
 import struct
 import tempfile
 import threading
@@ -36,6 +37,12 @@ class FakeSocket:
         result = bytes(self.data[:min(count, 1)])
         del self.data[:len(result)]
         return result
+    def sendall(self, data):
+        pass
+    def settimeout(self, timeout):
+        pass
+    def close(self):
+        pass
 
 
 class RecorderTests(unittest.TestCase):
@@ -110,6 +117,45 @@ class RecorderTests(unittest.TestCase):
         self.assertEqual(path, "/api/v1/recording/prepare")
         self.assertNotIn("recording_id", json.loads(body))
         self.assertNotIn("Authorization", headers)
+
+    def test_invalid_utf8_http_response_is_a_transport_error(self):
+        class Response:
+            status = 200
+            def read(self, count): return b"\xff"
+        class Connection:
+            def __init__(self, host, port, timeout=None): pass
+            def request(self, method, path, body=None, headers=None): pass
+            def getresponse(self): return Response()
+            def close(self): pass
+        with mock.patch.object(recorder.http.client, "HTTPConnection", Connection):
+            with self.assertRaises(recorder.TransportError):
+                recorder.Client("127.0.0.1").status()
+
+    def test_directory_fsync_failure_does_not_report_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "trial.nblog"
+            client = mock.Mock()
+            client.status.side_effect = [
+                {"boot_id": "boot"},
+                {"stream_ready": True},
+            ]
+            client.mutate.side_effect = [
+                {"recording_id": "0000000000000011", "stream_ticket": "ticket", "port": 1234},
+                {"state": "RECORDING"},
+            ]
+            def fsync(fd):
+                if stat.S_ISDIR(os.fstat(fd).st_mode):
+                    raise OSError("directory sync failed")
+            stderr = io.StringIO()
+            with mock.patch.object(recorder.socket, "create_connection", return_value=FakeSocket(b"OK\n" + recording())), \
+                 mock.patch.object(recorder.os, "fsync", side_effect=fsync), \
+                 contextlib.redirect_stderr(stderr):
+                result = recorder.run_record(client, 20, output_path, False)
+            self.assertEqual(result, 3)
+            self.assertTrue(output_path.exists())
+            self.assertIn("durability is unconfirmed", stderr.getvalue())
+            self.assertNotIn("saved and verified", stderr.getvalue())
+            self.assertEqual([call.args[0] for call in client.mutate.call_args_list], ["prepare", "start"])
 
 
 if __name__ == "__main__":

@@ -68,7 +68,8 @@ class Client:
             if response.status != 200:
                 raise TransportError(f"unexpected HTTP status {response.status}")
             return data
-        except (OSError, TimeoutError, http.client.HTTPException, json.JSONDecodeError) as exc:
+        except (OSError, TimeoutError, http.client.HTTPException,
+                json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise TransportError(f"control request failed: {exc}") from exc
         finally:
             connection.close()
@@ -127,9 +128,7 @@ def check_frame(raw_header: bytes, payload: bytes, expected_id: int,
     if kind == 1:
         if expected_frame != 0 or meta is not None or count != 0 or size > decoder.MAX_META:
             raise ValueError("invalid META frame")
-        parsed_meta = json.loads(payload.decode("utf-8"))
-        if not isinstance(parsed_meta, dict):
-            raise ValueError("META is not a JSON object")
+        parsed_meta = decoder.parse_json_object(payload, "META")
         return expected_sample, records_crc, parsed_meta, None
     if kind == 2:
         if meta is None or end_seen or count < 1 or count > 32 or size != count * decoder.RECORD_SIZE:
@@ -144,9 +143,7 @@ def check_frame(raw_header: bytes, payload: bytes, expected_id: int,
     if kind == 3:
         if meta is None or end_seen or count != 0 or size > decoder.MAX_END:
             raise ValueError("invalid END frame")
-        parsed_end = json.loads(payload.decode("utf-8"))
-        if not isinstance(parsed_end, dict):
-            raise ValueError("END is not a JSON object")
+        parsed_end = decoder.parse_json_object(payload, "END")
         if parsed_end.get("sent_records") != expected_sample or parsed_end.get("records_crc32") != records_crc:
             raise ValueError("END record count or records CRC mismatch")
         if parsed_end.get("generated_records", 0) < expected_sample or parsed_end.get("queued_records", 0) < expected_sample:
@@ -366,8 +363,8 @@ def run_record(client: Client, seconds: int, output_path: Path, force: bool) -> 
         return 5
     except (OSError, EOFError, ValueError, TransportError, DeviceError, IncompleteError) as exc:
         if renamed:
-            print(f"Recording file is verified at {final_path}, but completion confirmation failed: {exc}", file=sys.stderr)
-            return 0
+            print(f"Recording file was published at {final_path}, but directory sync failed; durability is unconfirmed: {exc}", file=sys.stderr)
+            return 3
         if session:
             try:
                 client.mutate("stop", status.get("boot_id", ""), session.get("recording_id", ""))

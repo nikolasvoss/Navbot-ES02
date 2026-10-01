@@ -1311,7 +1311,7 @@ void RXsbus() {
     if (Voltage <= 7.4) {
       // pid_gains_mode = REMOTE_CONTROL_MODE_PID_GAINS_MODE_OFF
       // K56/K57/K58 already include voltage; avoid interleaving warnings with CSV rows.
-      if ((int)Select != 56 && (int)Select != 57 && (int)Select != 58) {
+      if ((int)Select != 56 && (int)Select != 57 && (int)Select != 58 && !WifiTuningRecordingActive()) {
         Serial.print(" Voltage:");
         Serial.println(Voltage, 5);
       }
@@ -3561,7 +3561,7 @@ void loop() {
       PidParameterTuning,
       0,
       CalibrationSelect == 0,
-      (uint32_t)ImuRATE_HZ,
+      (uint32_t)RATE_HZ,
       (uint32_t)LPF_CUTOFF_FREQ,
       zeroBias.roll,
       zeroBias.pitch,
@@ -3571,9 +3571,14 @@ void loop() {
     };
     WifiTuningProcessOne(tuningState);
 #if WIFI_RECORDING_ENABLE
-    if (WifiTuningRecordingActive()) {
+    static uint64_t lastRecordingSampleUs = 0;
+    const bool recordingActive = WifiTuningRecordingActive();
+    const uint64_t sampleNowUs = (uint64_t)esp_timer_get_time();
+    if (recordingActive &&
+        (lastRecordingSampleUs == 0 || sampleNowUs - lastRecordingSampleUs >= 10000)) {
+      lastRecordingSampleUs = sampleNowUs;
       telemetry::Sample sample{};
-      sample.timestampUs = (uint64_t)esp_timer_get_time();
+      sample.timestampUs = sampleNowUs;
       sample.flags = (uint32_t)(pid_gains_mode & 3);
       if (RobotTumble == ROBOT_TUMBLE_YES) sample.flags |= 1u << 2;
       if (regulatorCalculated) sample.flags |= 1u << 3;
@@ -3614,6 +3619,7 @@ void loop() {
       sample.controlDtUs = time_dt <= 0 ? 0 : (time_dt * 1000000.0f >= (float)UINT32_MAX ? UINT32_MAX : (uint32_t)(time_dt * 1000000.0f));
       WifiTuningRecordingTick(sample, tuningState);
     }
+    if (!recordingActive) lastRecordingSampleUs = 0;
 #endif
 #endif
     now_us1 = now_us;

@@ -485,7 +485,7 @@ void recordingSenderTask(void *argument) {
     const telemetry::SessionState state = (telemetry::SessionState)recordingState.load(std::memory_order_acquire);
     if ((state == telemetry::SessionState::Draining || state == telemetry::SessionState::Failed) && recordingRing.size() == 0) break;
     if (!client.connected()) { transportOk = false; break; }
-    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(20));
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(60));
   }
   if (transportOk && client.connected()) {
     JsonDocument doc;
@@ -876,8 +876,8 @@ void WifiTuningRecordingTick(const telemetry::Sample &input, const WifiTuningSta
     if (recordingSenderTaskHandle) xTaskNotifyGive(recordingSenderTaskHandle);
     return;
   }
-  queuedRecords.fetch_add(1, std::memory_order_relaxed);
-  if (recordingSenderTaskHandle) xTaskNotifyGive(recordingSenderTaskHandle);
+  const uint32_t queued = queuedRecords.fetch_add(1, std::memory_order_relaxed) + 1;
+  if (queued % 5 == 0 && recordingSenderTaskHandle) xTaskNotifyGive(recordingSenderTaskHandle);
 }
 #else
 bool WifiTuningRecordingActive() { return false; }

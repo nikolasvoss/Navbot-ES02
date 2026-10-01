@@ -1,0 +1,7 @@
+# Generated build outputs
+build/
+logs/
+
+# Python bytecode caches
+__pycache__/
+*.py[cod]

@@ -2,8 +2,10 @@ import io
 import json
 from pathlib import Path
 import struct
+import tempfile
 import unittest
 import zlib
+from unittest import mock
 
 import decode_wifi_trace as decoder
 
@@ -75,6 +77,21 @@ class DecoderTests(unittest.TestCase):
         self.assertTrue(report["transport_complete"])
         self.assertEqual(report["reason"], "USER_STOP")
         self.assertEqual(report["record_count"], 1)
+
+    def test_nan_in_meta_is_reported_as_corrupt_input(self):
+        content = recording()
+        meta_size = len(frame(1, 0, json.dumps({"schema": "balance_v1", "requested_duration_s": 30}).encode()))
+        invalid_meta = frame(1, 0, b'{"schema":"balance_v1","unexpected":NaN}')
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "input.nblog"
+            source.write_bytes(invalid_meta + content[meta_size:])
+            report = Path(directory) / "report.json"
+            with mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                result = decoder.main([str(source), "--csv", str(Path(directory) / "out.csv"),
+                                       "--report", str(report)])
+            self.assertEqual(result, 5)
+            self.assertIn("invalid JSON constant NaN", stderr.getvalue())
+            self.assertFalse(report.exists())
 
 
 if __name__ == "__main__":

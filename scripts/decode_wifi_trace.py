@@ -57,6 +57,17 @@ def parse_record(raw: bytes) -> dict[str, Any]:
     return result
 
 
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"invalid JSON constant {value}")
+
+
+def parse_json_object(payload: bytes, frame_name: str) -> dict[str, Any]:
+    value = json.loads(payload.decode("utf-8"), parse_constant=_reject_json_constant)
+    if not isinstance(value, dict):
+        raise ValueError(f"{frame_name} must be a JSON object")
+    return value
+
+
 def decode_stream(stream: Any) -> tuple[list[dict[str, Any]], dict[str, Any] | None,
                                           dict[str, Any] | None, int, bool]:
     records: list[dict[str, Any]] = []
@@ -97,9 +108,7 @@ def decode_stream(stream: Any) -> tuple[list[dict[str, Any]], dict[str, Any] | N
             if zlib.crc32(payload, zlib.crc32(raw_header[:28])) & 0xffffffff != crc:
                 raise ValueError("frame CRC mismatch")
             if kind == 1:
-                meta = json.loads(payload.decode("utf-8"))
-                if not isinstance(meta, dict):
-                    raise ValueError("META must be a JSON object")
+                meta = parse_json_object(payload, "META")
             elif kind == 2:
                 records_crc = zlib.crc32(payload, records_crc) & 0xffffffff
                 frame_records = []
@@ -111,9 +120,7 @@ def decode_stream(stream: Any) -> tuple[list[dict[str, Any]], dict[str, Any] | N
                     frame_records.append(record)
                 records.extend(frame_records)
             else:
-                candidate_end = json.loads(payload.decode("utf-8"))
-                if not isinstance(candidate_end, dict):
-                    raise ValueError("END must be a JSON object")
+                candidate_end = parse_json_object(payload, "END")
                 if candidate_end.get("sent_records") != expected_sample_sequence:
                     raise ValueError("END sent record count disagrees with DATA frames")
                 if candidate_end.get("generated_records", 0) < expected_sample_sequence or candidate_end.get("queued_records", 0) < expected_sample_sequence:
