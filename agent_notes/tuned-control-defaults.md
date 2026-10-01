@@ -9,3 +9,9 @@ The startup-default build completed successfully with `esp32:esp32:esp32s3:USBMo
 At the user's subsequent request, both CH5 balance/speed presets, the global controller initializers, and the common yaw preset also use this gain set. Roll and touch-controller gains retain their existing mode-specific values. The motor target limit and control timing retain their existing implementations.
 
 The detailed local captures are retained under `agent_notes/control-recovery-2026-10-01*` and `agent_notes/control-startup-2026-10-01.log`. These capture artifacts are not part of this tuning commit.
+
+## Flash test of the aligned presets
+
+The subsequent build of commit `cf81c50` was uploaded on 2026-10-01 through CH340 `1a86:7523` at `/dev/ttyUSB0`. The sketch binary SHA-256 was `a3e9aa43e600caee298694ad1267aa5033daf90f4177e295c6cacadbee6c78d7`. The build's generated source contained the aligned presets and initializers, and its recorded board configuration used USB CDC disabled.
+
+The uploader identified ESP32-S3 revision v0.2 and completed flash hash verification with exit status zero. A serial check used 115200 baud, DTR low, and RTS low. All 14 startup settings matched without gain writes. After an explicit RTS reset with DTR kept low, a second startup check matched all 14 again. Both checks observed `Motor ready.`. The local raw log is `agent_notes/control-defaults-flash-test-2026-10-01.log`. This test establishes successful flashing and restart persistence, not active balancing or driving performance.

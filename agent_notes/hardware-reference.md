@@ -29,6 +29,10 @@ Diese Seite ergänzt [hardware-overview.md](hardware-overview.md); alle Bauteil-
 
 Die kleine **CODER**-Platine enthält `U1` AS5600-ASOM, lokale 3,3-V-Abblockung und 10-kΩ-Pull-ups für SDA/SCL. Deren `H1` hat dieselbe logische Reihenfolge: 1 SDA, 2 SCL, 3 GND, 4 3,3 V; weitere Footprint-Pads 5/6 liegen an GND und sind keine zusätzlichen Kabeladern. Der MAIN-Pull-up ist je I²C-Leitung 3,3 kΩ. Die BOM nennt zwei AS5600-Module, zwei 2208-90-kV-Motoren und zwei radiale 6 × 1,5-mm-Magnete. Magnetposition und elektrischer Nullwinkel müssen mechanisch/mit SimpleFOC kalibriert werden; sie folgen nicht aus der Netzliste.
 
+**Polpaare, Recherche vom 01.10.2026:** Die [SimpleFOC-Motordokumentation](https://docs.simplefoc.com/bldc_motors) nennt für den 2208-90KV-Gimbalmotor `12N14P`: 12 Statornuten und 14 Rotorpole, also **7 Polpaare**. Das passt zur Modellangabe `2208-90kv` in `docs/BOM.xlsx`, `Sheet1!D26`. Beide Firmware-Instanzen verwenden bereits fest `BLDCMotor(7)`. Die verbauten Einzelmotoren wurden nicht durch Magnetzählung oder eine unabhängige Messung bestätigt; die BOM beschreibt die vorgesehenen Kaufteile.
+
+Der [Startup-Mitschnitt nach dem Bibliothekswechsel](../build/serial-startup-after-foc-update.txt) zeigt zwei erfolgreiche MCPWM-Initialisierungen und `Motor ready.`, aber Polpaar-Prüfschätzungen von 8,46 und 7,80. In der installierten SimpleFOC-Version 2.3.5 prüft `BLDCMotor::alignSensor()` den Winkelweg gegen den fest konfigurierten Wert und gibt bei Abweichung eine Schätzung aus; es überschreibt `pole_pairs` nicht. **Konsequenz:** 7 beibehalten und die Warnungen als offene Abweichung beim Abgleich behandeln. Aus diesem kurzen Abgleich allein weder 8 Polpaare ableiten noch die Warnung durch Überspringen der Kalibrierung unterdrücken. Eine Last, unvollständige Rotorbewegung oder ein Encoderfehler sind mögliche Ursachen, hier aber nicht nachgewiesen.
+
 ## Sensoren und Signale
 
 | Funktion | Chip / Signal | ESP32-S3 und Firmware |
