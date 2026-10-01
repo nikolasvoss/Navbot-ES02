@@ -43,13 +43,13 @@ Commander command = Commander(Serial);
 #define PID_ROLL_I_NO_TOUCH 0.0
 #define PID_ROLL_D_NO_TOUCH 0.0
 #define PID_ROLL_LIMIT_NO_TOUCH 2
-#define PID_SPEED_P_NO_TOUCH 0.3
-#define PID_SPEED_I_NO_TOUCH 0.3
+#define PID_SPEED_P_NO_TOUCH 0.045
+#define PID_SPEED_I_NO_TOUCH 0.005
 #define PID_SPEED_D_NO_TOUCH 0
 #define PID_SPEED_LIMIT_NO_TOUCH 50
-#define PID_ANGLE_P_NO_TOUCH 66
-#define PID_ANGLE_I_NO_TOUCH 222  // if stuttering/shaking when balancing, consider reducing this Integral value (ex. 165 instead of 222)
-#define PID_ANGLE_D_NO_TOUCH 1
+#define PID_ANGLE_P_NO_TOUCH 5
+#define PID_ANGLE_I_NO_TOUCH 200
+#define PID_ANGLE_D_NO_TOUCH 0.11
 #define PID_ANGLE_LIMIT_NO_TOUCH 0.1
 
 //      Two-Wheel PID Gains for Remote Control Mode (With Touchscreen)
@@ -57,12 +57,12 @@ Commander command = Commander(Serial);
 #define PID_ROLL_I_WITH_TOUCH 1.5
 #define PID_ROLL_D_WITH_TOUCH 0.005
 #define PID_ROLL_LIMIT_WITH_TOUCH 2
-#define PID_SPEED_P_WITH_TOUCH 0.12
-#define PID_SPEED_I_WITH_TOUCH 0.12
+#define PID_SPEED_P_WITH_TOUCH 0.045
+#define PID_SPEED_I_WITH_TOUCH 0.005
 #define PID_SPEED_D_WITH_TOUCH 0
 #define PID_SPEED_LIMIT_WITH_TOUCH 50
-#define PID_ANGLE_P_WITH_TOUCH 9
-#define PID_ANGLE_I_WITH_TOUCH 222
+#define PID_ANGLE_P_WITH_TOUCH 5
+#define PID_ANGLE_I_WITH_TOUCH 200
 #define PID_ANGLE_D_WITH_TOUCH 0.11
 #define PID_ANGLE_LIMIT_WITH_TOUCH 0.1
 
@@ -92,7 +92,7 @@ Commander command = Commander(Serial);
 #define SERIAL_PACKET_HEADER_BYTE_1 12
 #define SERIAL_PACKET_HEADER_BYTE_2 34
 #define SERIAL_PACKET_END_BYTE 0
-#define SERIAL_BAUD_RATE 2000000
+#define SERIAL_BAUD_RATE 115200
 #define DIAGNOSTIC_SERIAL_BAUD_RATE 115200
 #define LIVE_TUNING_SERIAL_BAUD_RATE 115200
 #define DIAGNOSTIC_PLOT_INTERVAL_MS 50
@@ -255,9 +255,9 @@ float CalibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Ca
 
 float PidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
 
-PIDController AnglePid(0, 0, 0, 0, 0);          // 4 22 0.08   (Kp, Ki, Kd ,ramp ,limit)
-PIDController SpeedPid(0.1, 0.1, 0, 0, 50);     //
-PIDController YawPid(11, 33, 0, 0, 0);          //
+PIDController AnglePid(5, 200, 0.11, 0, 0.1);
+PIDController SpeedPid(0.045, 0.005, 0, 0, 50);
+PIDController YawPid(4, 0, 0, 0, 0);
 PIDController RollPid(0.06, 1.5, 0.003, 0, 2);  //
 PIDController TouchXPid(0.2, 0, 0.04, 0, 0);    //
 PIDController TouchYPid(0.2, 0, 0.08, 0, 0);    //
@@ -2717,23 +2717,25 @@ void PidParameter(void) {
     AnglePid.limit = PID_ANGLE_LIMIT_WITH_TOUCH;  // Integral limit
   }
 
-  YawPid.P = 110;
-  YawPid.I = 33;
+  YawPid.P = 4;
+  YawPid.I = 0;
   YawPid.D = 0;
   YawPid.limit = 0;
 
 #if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
-  AnglePid.P = 5.5;
-  AnglePid.I = 100;
-  AnglePid.D = 0.08;
+  AnglePid.P = 5;
+  AnglePid.I = 200;
+  AnglePid.D = 0.11;
   AnglePid.limit = 0.1;
-  // The wheel speed estimate below uses the measured ~1.8 ms control tick.
+  // Keep the verified live-tuning gains as the startup defaults.
   SpeedPid.P = 0.045;
-  SpeedPid.I = 0.0;
+  SpeedPid.I = 0.005;
   SpeedPid.D = 0;
+  SpeedPid.limit = 50;
   YawPid.P = 4;
   YawPid.I = 0;
   YawPid.D = 0;
+  YawPid.limit = 0;
 #endif
 
   // Touch screen
