@@ -2,7 +2,7 @@
 
 Before changing USB, Serial, telemetry, or flashing behavior, read [agent_notes/usb-serial.md](agent_notes/usb-serial.md). Keep new hardware findings in `agent_notes/` with the observation, its evidence, and the practical consequence. Recheck device names and board settings before each flash.
 
-For an already compiled Arduino build, use `python3 scripts/upload_firmware.py BUILD_DIR` from the project root. The helper checks the CH340 port and uploads with the documented ESP32-S3 board options. See [agent_notes/usb-serial.md](agent_notes/usb-serial.md) for the build command and USB details.
+Build the default firmware from the project root with `python3 scripts/build_firmware.py`. The script writes Arduino CLI output to `build/flash`; pass `--help` for sketch, board, output, and build-property options. To flash that compiled build, use `python3 scripts/upload_firmware.py build/flash`. The upload helper checks the CH340 port and verifies the flash. See [agent_notes/usb-serial.md](agent_notes/usb-serial.md) for USB details.
 
 ## How to use the hardware documentation
 

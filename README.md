@@ -54,24 +54,24 @@ The current firmware supports the two-wheel balancing robot only. Legacy four-wh
 
 ### 1. Install Requirements
 
-- Arduino IDE 2.x
-- ESP32 board package (`esp32@3.0.7`)
+- Arduino CLI with the ESP32 board package installed
 - Libraries (via Library Manager or GitHub):
   - [SimpleFOC](https://github.com/simplefoc/Arduino-FOC)
   - [SimpleFOcDrivers](https://github.com/simplefoc/Arduino-FOC-drivers)
-  - [Preferences](https://github.com/vshymanskyy/Preferences)
+  - ArduinoJson
+  - Queue (`cppQueue.h`)
+
+The repository does not pin the ESP32 core or Arduino library versions. The build uses the versions installed in your Arduino CLI environment.
     
-### 2. Flash the Firmware
+### 2. Build and flash the firmware
 
 ```bash
 git clone https://github.com/fuwei007/Navbot-ES02.git
+cd Navbot-ES02
+python3 scripts/build_firmware.py
 ```
 
-- Open `OllieFOCdrive.ino` with Arduino IDE
-- Select board: `ESP32S3 Dev Module`
-- Upload code and monitor via Serial for debugging
-
-For an already compiled Arduino build, use [`scripts/upload_firmware.py`](scripts/upload_firmware.py). The exact compile and upload commands are in [`agent_notes/usb-serial.md`](agent_notes/usb-serial.md).
+The command builds the NavBot sketch into `build/flash`. Run `python3 scripts/build_firmware.py --help` to choose another sketch, board, output directory, or build properties. To flash the default build, close serial monitors and run `python3 scripts/upload_firmware.py build/flash`. See [`agent_notes/usb-serial.md`](agent_notes/usb-serial.md) for the verified USB and upload details.
 
 ### Safe sensor diagnostics
 

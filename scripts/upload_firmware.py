@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Upload an already compiled OllieFOCdrive Arduino build to the NavBot ES02.
 
-Build first with the FQBN shown in --help, then pass its --output-dir here.
+Build first with `python3 scripts/build_firmware.py`, then pass its output directory here.
 Requires arduino-cli and pyserial. This script never compiles source code.
 """
 
@@ -11,15 +11,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+from firmware_build_config import DEFAULT_FQBN, DEFAULT_SKETCH
+
 try:
     from serial.tools import list_ports
 except ImportError:
     sys.exit("pyserial is required: python3 -m pip install pyserial")
 
 
-FQBN = "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=default"
 CH340_USB_ID = (0x1A86, 0x7523)
-SKETCH = Path(__file__).resolve().parents[1] / "src/ES-02/OllieFOCdrive"
 REQUIRED_BINARIES = (
     "OllieFOCdrive.ino.bin",
     "OllieFOCdrive.ino.bootloader.bin",
@@ -62,12 +62,12 @@ def main():
         parser.error(f"expected one CH340 (1a86:7523), found {[p.device for p in matches]}; use --port")
 
     command = [
-        "arduino-cli", "upload", "--fqbn", FQBN,
+        "arduino-cli", "upload", "--fqbn", DEFAULT_FQBN,
         "--port", selected.device, "--input-dir", str(build_dir),
-        "--verify", str(SKETCH),
+        "--verify", str(DEFAULT_SKETCH),
     ]
     print(f"Uploading {build_dir} to {selected.device} ({selected.description})", flush=True)
-    print(f"Board: {FQBN}; verify: enabled", flush=True)
+    print(f"Board: {DEFAULT_FQBN}; verify: enabled", flush=True)
     print("Close SerialPlot and other serial monitors before upload.", flush=True)
     try:
         return subprocess.call(command)

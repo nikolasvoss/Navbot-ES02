@@ -9,10 +9,17 @@
 ## Working firmware setting
 
 - Use Arduino IDE **Tools → USB CDC On Boot → Disabled**. With Arduino CLI, use `esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=default`.
-- To compile and then upload the compiled Arduino binaries from the project root, use:
+- Build the default sketch from the project root with:
 
   ```bash
-  arduino-cli compile --fqbn esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=default --output-dir build/flash src/ES-02/OllieFOCdrive
+  python3 scripts/build_firmware.py
+  ```
+
+  The build helper defaults to `src/ES-02/OllieFOCdrive`, the FQBN above, and `build/flash`. Pass `--help` for overrides, including another sketch, FQBN, output directory, Arduino CLI build path, repeated build properties, and a clean build. The temporary Arduino build path defaults to a hidden sibling of the output directory so compilation can run inside the repository. The helper requires Arduino CLI and does not install or pin board cores or libraries.
+
+- To upload that compiled build, close SerialPlot and other serial monitors, then run:
+
+  ```bash
   python3 scripts/upload_firmware.py build/flash
   ```
 
