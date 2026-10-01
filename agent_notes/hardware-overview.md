@@ -14,7 +14,7 @@ ESP32-S3-WROOM-1 (MAIN)
   ├─ 2 getrennte I²C-Busse → je 1 AS5600-Platine (CODER), Radwinkel für SimpleFOC
   ├─ SPI → ICM-42688P, Beschleunigung und Drehrate für Lage/Balanceregelung
   ├─ 6 PWM + 2 Enable → 2 Motor-Endstufen; 4 PWM → Beinservos
-  ├─ UART2 → invertierter SBUS-Empfänger; UART1 → Touch-TTL / Mehrplatinenmodus
+  ├─ UART2 → invertierter SBUS-Empfänger; UART1 → Touch-TTL
   ├─ UART0 → CH340X → USB-C für Flash und Serial
   ├─ GPIO17/ADC → 2S-Akkuspannung über 10-kΩ/1-kΩ-Teiler
   └─ BLE → Steuerung ohne zusätzlichen Funkchip

@@ -48,6 +48,8 @@ Navbot-ES02/
 
 ---
 
+The current firmware supports the two-wheel balancing robot only. Legacy four-wheel gait control and master/slave communication have been removed. UART1 remains available for the touchscreen, and UART2 handles SBUS.
+
 ## Getting Started
 
 ### 1. Install Requirements
