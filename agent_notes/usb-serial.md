@@ -1,5 +1,7 @@
 # USB, Serial, and IMU: verified project facts
 
+For agent uploads, use the configured `navbot_flash` MCP tool. See the [firmware flashing MCP reference](../docs/reference/firmware-flashing-mcp.md) for the tool contract and sandbox troubleshooting.
+
 ## Board connection
 
 - The user's board has one USB-C connector. On the connected PC it enumerated as a CH340 USB-to-serial adapter (`1a86:7523`) at `/dev/ttyUSB0`. The port name may change; inspect `/dev/serial/by-id/` or run `arduino-cli board list` before flashing.

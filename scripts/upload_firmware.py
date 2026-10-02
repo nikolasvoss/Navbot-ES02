@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from firmware_build_artifact import read_build_manifest, required_binary_names
 from firmware_build_config import DEFAULT_FQBN, DEFAULT_SKETCH
 
 try:
@@ -20,10 +21,10 @@ except ImportError:
 
 
 CH340_USB_ID = (0x1A86, 0x7523)
-REQUIRED_BINARIES = (
-    "OllieFOCdrive.ino.bin",
-    "OllieFOCdrive.ino.bootloader.bin",
-    "OllieFOCdrive.ino.partitions.bin",
+PORT_VISIBILITY_HINT = (
+    "If a serial MCP or another host can see the CH340 but this uploader cannot, "
+    "the USB device is not exposed to this process. Use the configured navbot_flash "
+    "MCP tool or run the uploader on the USB-owning host."
 )
 
 
@@ -35,6 +36,7 @@ def main():
         help="directory of binaries made by arduino-cli compile --output-dir",
     )
     parser.add_argument("--port", help="CH340 serial port; auto-detect if exactly one is connected")
+    parser.add_argument("--fqbn", help="board configuration for a legacy build without a manifest")
     args = parser.parse_args()
 
     if not shutil.which("arduino-cli"):
@@ -43,7 +45,32 @@ def main():
     build_dir = args.build_dir.expanduser().resolve()
     if not build_dir.is_dir():
         parser.error(f"build directory does not exist: {build_dir}")
-    missing = [name for name in REQUIRED_BINARIES if not (build_dir / name).is_file()]
+    try:
+        manifest = read_build_manifest(build_dir)
+    except ValueError as error:
+        parser.error(str(error))
+
+    if manifest is None:
+        fqbn = args.fqbn or DEFAULT_FQBN
+        sketch = DEFAULT_SKETCH
+        print(
+            "Build manifest missing; using the default sketch and board settings. "
+            "Rebuild with build_firmware.py to bind settings to the images.",
+            file=sys.stderr,
+        )
+    else:
+        fqbn = manifest["fqbn"]
+        sketch = Path(manifest["sketch"])
+        if args.fqbn and args.fqbn != fqbn:
+            parser.error("--fqbn does not match the build manifest")
+        if manifest["build_properties"]:
+            print(
+                "This build used custom build properties. The upload helper reuses its FQBN "
+                "but cannot reapply compile-only properties.",
+                file=sys.stderr,
+            )
+
+    missing = [name for name in required_binary_names(sketch) if not (build_dir / name).is_file()]
     if missing:
         parser.error(f"missing build files in {build_dir}: {', '.join(missing)}")
 
@@ -55,19 +82,28 @@ def main():
             None,
         )
         if selected is None:
-            parser.error(f"{args.port} is not a detected CH340 (1a86:7523); connected: {[p.device for p in matches]}")
+            message = f"{args.port} is not a detected CH340 (1a86:7523); connected: {[p.device for p in matches]}"
+            if not matches:
+                message += f". {PORT_VISIBILITY_HINT}"
+            parser.error(message)
     elif len(matches) == 1:
         selected = matches[0]
     else:
+        if not matches:
+            parser.error(f"expected one CH340 (1a86:7523), found []. {PORT_VISIBILITY_HINT}")
         parser.error(f"expected one CH340 (1a86:7523), found {[p.device for p in matches]}; use --port")
 
     command = [
-        "arduino-cli", "upload", "--fqbn", DEFAULT_FQBN,
+        "arduino-cli", "upload", "--fqbn", fqbn,
         "--port", selected.device, "--input-dir", str(build_dir),
-        "--verify", str(DEFAULT_SKETCH),
+        "--verify", str(sketch),
     ]
     print(f"Uploading {build_dir} to {selected.device} ({selected.description})", flush=True)
-    print(f"Board: {DEFAULT_FQBN}; verify: enabled", flush=True)
+    print(f"Board: {fqbn}; verify: enabled", flush=True)
+    if manifest is not None:
+        print(f"Partition: {manifest['partition_scheme']}; OTA app slot: {manifest['supports_ota']}", flush=True)
+        if manifest["supports_ota"] is False:
+            print("Warning: this build has no OTA app slot.", file=sys.stderr)
     print("Close SerialPlot and other serial monitors before upload.", flush=True)
     try:
         return subprocess.call(command)
