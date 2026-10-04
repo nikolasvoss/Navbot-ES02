@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>HMMD radar data</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <main>
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">CM5 · ROS 2</p>
+          <h1>HMMD radar data</h1>
+          <p class="lede">Live range-Doppler map over rosbridge.</p>
+        </div>
+        <div class="connection-stack" aria-live="polite">
+          <div><span class="label">Browser to bridge</span><span id="bridge-state" class="badge">Connecting</span></div>
+          <div><span class="label">HMMD sensor</span><span id="sensor-state" class="badge badge-muted">Waiting for status</span></div>
+        </div>
+      </header>
+
+      <section class="panel map-panel" aria-labelledby="map-title">
+        <div class="panel-header">
+          <div>
+            <h2 id="map-title">Range-Doppler map</h2>
+            <p id="map-meta" class="muted">Waiting for the first HMMD frame.</p>
+          </div>
+          <label class="control">
+            <span>Display</span>
+            <select id="scale-select" aria-label="Heatmap display scale">
+              <option value="raw">Raw values</option>
+              <option value="log1p">log1p values</option>
+            </select>
+          </label>
+        </div>
+        <div class="map-wrap">
+          <canvas id="heatmap" width="900" height="560" role="img" aria-label="HMMD heatmap with no data yet"></canvas>
+        </div>
+        <div class="map-footer">
+          <span id="map-state" class="badge badge-muted">Waiting for frame</span>
+          <span id="map-scale" class="muted">Amplitude squared</span>
+        </div>
+      </section>
+
+      <section class="panel sensor-panel" aria-labelledby="sensor-title">
+        <div class="panel-header">
+          <div>
+            <h2 id="sensor-title">Approved ROS topics</h2>
+            <p class="muted">The selector shows the latest message from the chosen topic.</p>
+          </div>
+          <label class="control">
+            <span>Topic</span>
+            <select id="topic-select" aria-label="Approved ROS topic"></select>
+          </label>
+        </div>
+        <div class="topic-meta">
+          <code id="topic-name">/hmmd/status</code>
+          <span id="topic-age" class="muted">Waiting for message</span>
+        </div>
+        <pre id="topic-message" class="message-view">No message received.</pre>
+      </section>
+
+      <p class="footnote">The bridge connection and HMMD frame freshness are separate states. Axes use bin indices; the page applies no physical-unit conversion.</p>
+    </main>
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>

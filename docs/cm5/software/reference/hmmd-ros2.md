@@ -2,7 +2,7 @@
 
 ## Pakete und Daten
 
-Die Python-Pakete benötigen Python ab Version 3.10. Die ROS-2-Distribution auf dem vorhandenen CM5 ist noch nicht erfasst.
+Die Python-Pakete benötigen Python ab Version 3.10. ROS 2 Jazzy ist laut Benutzerangabe auf dem CM5 installiert. Distribution, rosbridge-Version und tatsächliche CM5-Konfiguration wurden in diesem Arbeitslauf nicht per SSH bestätigt.
 
 `src/cm5/ros2/src/hmmd_interfaces` enthält die ROS-Nachricht `RangeDopplerMap`. `src/cm5/ros2/src/hmmd_radar` enthält Parser, seriellen Sensorknoten und Heatmap. Der Sensorknoten ist unabhängig von der ESP32-Firmware und ihrer Fahrsteuerung.
 
@@ -84,6 +84,18 @@ Die Anzeige bewertet Frische nach lokaler monotoner Empfangszeit. Originalzeitst
 ## Darstellung
 
 Die Rohansicht zeigt die ganzzahligen Amplitudenquadrate. Die logarithmische Ansicht verwendet `log1p(value)` und kann deshalb Nullwerte darstellen. Farbskalierung verändert keine Matrixnachricht. Beide Achsen verwenden Bin-Indizes.
+
+## Browser-Datenagent
+
+`src/cm5/ros2/src/hmmd_radar/web/` enthält eine statische, abhängigkeitenfreie Browseransicht. `topic_registry.mjs` begrenzt die dargestellten Topics auf `/hmmd/rdmap` (`hmmd_interfaces/msg/RangeDopplerMap`, Best Effort) und `/hmmd/status` (`diagnostic_msgs/msg/DiagnosticArray`, Reliable). Der Browser spricht rosbridge über die [Standard-JSON-Nachrichten](https://github.com/RobotWebTools/rosbridge_suite/blob/ros2/ROSBRIDGE_PROTOCOL.md) `subscribe`, `unsubscribe` und `publish` an; er implementiert keine Publish-, Service- oder Action-Aufrufe. Neue Topics benötigen eine explizite Registry-Änderung und eine passende serverseitige Abonnementfreigabe.
+
+Der Standard-Endpunkt ist `ws://127.0.0.1:9090`. Auf dem CM5 muss rosbridge an `127.0.0.1` gebunden sein; der PC stellt den Port über `ssh -N -L 127.0.0.1:9090:127.0.0.1:9090 cm5` bereit. Die statische Seite kann auf dem CM5 im LAN über Port 8080 ausgeliefert werden. Das ist eine statische Dateiauslieferung, keine zusätzliche ROS-Schnittstelle.
+
+Der Client fordert maximal 10 Hz mit `throttle_rate: 100` Millisekunden, Keep-Last-Tiefe 1 und Volatile-Durability an. Für `/hmmd/rdmap` ist die Reliability Best Effort; für `/hmmd/status` Reliable. Er hält nur den zuletzt empfangenen Wert pro Topic, verwendet monotone lokale Empfangszeiten und verwirft die Frische alter Samples nach Bridge-Neuverbindungen, bis neue Daten eintreffen. HMMD-Portverbindung, Sensor-Frame-Frische und rosbridge-Verbindung werden als getrennte Zustände dargestellt.
+
+Die Seite filtert lokal auf die freigegebene Registry, ist aber keine serverseitige Sicherheitsgrenze. rosbridge stellt zusätzliche Protokolloperationen bereit. Verwende Topic-Freigaben, binde den Bridge-Server an Loopback und greife per SSH-Tunnel zu. Launch-Argumente und Filtersemantik hängen von der installierten `rosbridge_server`-Version ab; vor dem Start sind `ros2 launch rosbridge_server rosbridge_websocket_launch.xml --show-args` und die Paketversion zu prüfen. Sind getrennte Topic-Filter nicht verfügbar, rosbridge nicht mit diesem Browser verbinden, bis eine begrenzte Konfiguration bereitsteht.
+
+`test/web/synthetic_rosbridge.py` ist ausschließlich ein lokaler QA-Simulator mit synthetischen Nachrichten. Er simuliert weder den CM5 noch den HMMD oder die produktive rosbridge-Sicherheitskonfiguration.
 
 ## Verifikationsgrenze
 
