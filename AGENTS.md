@@ -15,11 +15,3 @@ Build the default firmware from the project root with `python3 scripts/build_fir
 5. When a new hardware finding changes the overview or reference, update the affected canonical page and record the observation, evidence, and practical consequence in `agent_notes/robot/hardware-findings/` so the next agent can find it without reopening the PCB project.
 
 The upcoming CM5 has its own canonical documentation tree under `docs/cm5/`. Treat its hardware and attached peripherals as pending until they are selected and verified; do not infer pinouts, power paths, or software behavior.
-
-## Scope check cadence
-
-For Navbot tasks, use a fresh, read-only `gpt-6-luna` scope reviewer at medium reasoning effort. Select fast speed when the runtime exposes a speed setting.
-
-Run a scope check before proposed work that expands the frozen plan, adds an unplanned component, or introduces compatibility or legacy behavior. After a delegate finishes, the owner inspects its actual changes; run a fresh scope check only if its changes exceed the assigned plan, expected area, or extent. Routine in-plan implementation steps do not need separate scope checks.
-
-Run one check on the complete task diff after planned work is finished and before final review or delivery. Combine simultaneous triggers and reuse a verdict while the checked evidence is unchanged. After that check, run another only when a later change expands scope or invalidates the prior verdict.
