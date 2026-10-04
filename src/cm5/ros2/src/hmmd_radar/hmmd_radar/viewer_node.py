@@ -69,4 +69,5 @@ def main(args=None):
                 time.sleep(min(delay, 0.02))
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()

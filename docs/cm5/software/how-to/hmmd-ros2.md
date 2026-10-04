@@ -124,8 +124,10 @@ Melde dich nach einer Gruppenänderung vollständig ab und erneut an, damit die 
 3. Installiere die Paketabhängigkeiten über das vorhandene rosdep.
 
 ```bash
-rosdep install --from-paths src/cm5/ros2/src --ignore-src -r -y
+rosdep install --from-paths src/cm5/ros2/src --ignore-src -r -y --skip-keys=ament_python
 ```
+
+`rosdep` hat für `ament_python` keinen Systemschlüssel. Der Build-Typ kommt mit der vorhandenen ROS-2-Installation; die Paketabhängigkeiten werden weiterhin geprüft und installiert.
 
 4. Baue und aktiviere den Workspace.
 
@@ -134,13 +136,23 @@ colcon --log-base src/cm5/ros2/log build --base-paths src/cm5/ros2/src --build-b
 source src/cm5/ros2/install/setup.bash
 ```
 
+Aktiviere in jedem neuen Terminal die ROS- und Workspace-Umgebung erneut. Wechsle dazu zuerst in das Projektcheckout:
+
+```bash
+cd ~/Navbot-ES02
+source /opt/ros/$ROS_DISTRO/setup.bash
+source src/cm5/ros2/install/setup.bash
+```
+
+Passe den `cd`-Pfad an, falls der Checkout an einem anderen Ort liegt. Ohne das Workspace-Setup meldet `ros2 run`, dass `hmmd_radar` nicht gefunden wurde.
+
 5. Prüfe Parser, Verbindungsablauf und Anzeigenmodell.
 
 ```bash
-PYTHONPATH=src/cm5/ros2/src/hmmd_radar python3 -m unittest discover -s src/cm5/ros2/src/hmmd_radar/test -v
+PYTHONPATH="src/cm5/ros2/src/hmmd_radar${PYTHONPATH:+:$PYTHONPATH}" python3 -m unittest discover -s src/cm5/ros2/src/hmmd_radar/test -v
 ```
 
-Diese Tests verwenden synthetische Frames und einen nachgebildeten seriellen Anschluss. Sie ersetzen keine Live-Prüfung am Sensor. Die grafischen Tests benötigen Matplotlib.
+Die Ergänzung der vorhandenen `PYTHONPATH`-Variable erhält die ROS-Python-Module, damit auch der ROS-Graph-Test ausgeführt wird. Diese Tests verwenden synthetische Frames und einen nachgebildeten seriellen Anschluss. Sie ersetzen keine Live-Prüfung am Sensor. Die grafischen Tests benötigen Matplotlib.
 
 ## Starte den Sensor
 
@@ -153,6 +165,16 @@ ros2 run hmmd_radar hmmd_sensor --ros-args -p "port:=$HMMD_PORT" -p baud_rate:=1
 ```
 
 Der Port muss ausdrücklich angegeben werden. Der Knoten sendet beim Öffnen den dokumentierten Befehl für den Debug-Modus. Er schreibt keine persistenten Sensorparameter. Beim CM5-Setup wurden echte Frames beobachtet; eine ACK-Sequenz oder die Sensor-Firmwareversion wurde dabei nicht bestätigt. Siehe die [Beobachtungen mit Evidenz](../../../../agent_notes/cm5/sensors/hmmd/observations.md). Läuft bereits ein `hmmd_sensor`, starte keinen zweiten UART-Leser.
+
+Alternativ starte den Knoten mit dem geprüften Pfad über das lokale [Startskript](../../../../scripts/start_hmmd_sensor.sh). Das Skript aktiviert ROS und den Workspace, prüft den Port und verwendet standardmäßig 115200 Baud:
+
+```bash
+HMMD_PORT=/dev/ttyAMA0 scripts/start_hmmd_sensor.sh
+```
+
+Der Gerätepfad kann auch als erstes Argument übergeben werden. Das Skript läuft im Vordergrund und wird mit `Ctrl+C` beendet. Starte es nur, wenn kein anderer Leser den Port verwendet.
+
+Falls du statt des geprüften J8-UART einen USB-Adapter verwendest, ermittle dessen tatsächlichen Gerätepfad mit `ls -l /dev/serial/by-id/` und übergib genau diesen Pfad. Verwechsle den USB-Adapter der ESP32-Fahrsteuerung nicht mit dem Radar. Fehlt das Verzeichnis oder ist es leer, prüfe zuerst die Erkennung des HMMD-Adapters; rate keinen Gerätenamen. Prüfe Port und Zugriffsrechte. Verwende `/dev/ttyAMA*` oder `/dev/ttyS*` nur mit bestätigter Verbindung und Pinbelegung; bei einer direkt benutzten CM5-UART muss die serielle Konsole dort deaktiviert sein.
 
 3. Prüfe in einem zweiten Terminal mit aktivierter ROS- und Workspace-Umgebung die Daten und den Status.
 
