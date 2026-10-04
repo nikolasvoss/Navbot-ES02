@@ -1,0 +1,165 @@
+{
+  "host": "CM5",
+  "browser": "Chromium via Playwright",
+  "transport": "real rosbridge_server 2.7.1",
+  "phases": [
+    {
+      "name": "real_HMMD_live",
+      "#bridge-state": "Connected",
+      "#sensor-state": "Receiving sensor frames",
+      "#map-state": "Fresh frames",
+      "#map-meta": "Frame hmmd_sensor \u00b7 ROS stamp 1791150806.421483951 \u00b7 received 0.1 s ago",
+      "#map-scale": "Amplitude squared"
+    },
+    {
+      "name": "synthetic_raw_log1p_and_uint32_edge",
+      "#bridge-state": "Connected",
+      "#sensor-state": "Receiving sensor frames",
+      "#map-state": "Fresh frames",
+      "#map-meta": "Frame explicitly_synthetic_browser_test \u00b7 ROS stamp 1791150808.092893242 \u00b7 received 0.2 s ago",
+      "#map-scale": "Amplitude squared"
+    },
+    {
+      "name": "synthetic_UART_open_without_frames",
+      "#bridge-state": "Connected",
+      "#sensor-state": "UART open, no recent frames",
+      "#map-state": "No recent frames",
+      "#map-meta": "Frame explicitly_synthetic_browser_test \u00b7 ROS stamp 1791150808.092893242 \u00b7 received 1.6 s ago",
+      "#map-scale": "Amplitude squared"
+    },
+    {
+      "name": "synthetic_publisher_stopped",
+      "#bridge-state": "Connected",
+      "#sensor-state": "HMMD status publisher is silent",
+      "#map-state": "No recent frames",
+      "#map-meta": "Frame explicitly_synthetic_browser_test \u00b7 ROS stamp 1791150808.092893242 \u00b7 received 4.7 s ago",
+      "#map-scale": "Amplitude squared"
+    },
+    {
+      "name": "real_bridge_abort",
+      "#bridge-state": "Reconnecting",
+      "#sensor-state": "Unavailable while bridge is disconnected",
+      "#map-state": "Bridge disconnected",
+      "#map-meta": "Frame explicitly_synthetic_browser_test \u00b7 ROS stamp 1791150808.092893242 \u00b7 received 4.8 s ago",
+      "#map-scale": "Amplitude squared"
+    },
+    {
+      "name": "reconnected_old_sample_not_fresh",
+      "#bridge-state": "Connected",
+      "#sensor-state": "Waiting for fresh status after reconnect",
+      "#map-state": "Waiting for a new frame",
+      "#map-meta": "Frame explicitly_synthetic_browser_test \u00b7 ROS stamp 1791150808.092893242 \u00b7 received 12.3 s ago",
+      "#map-scale": "Amplitude squared"
+    },
+    {
+      "name": "reconnected_new_synthetic_messages",
+      "#bridge-state": "Connected",
+      "#sensor-state": "Receiving sensor frames",
+      "#map-state": "Fresh frames",
+      "#map-meta": "Frame explicitly_synthetic_browser_test \u00b7 ROS stamp 1791150821.189034945 \u00b7 received 0.1 s ago",
+      "#map-scale": "Amplitude squared"
+    },
+    {
+      "name": "real_HMMD_restored",
+      "#bridge-state": "Connected",
+      "#sensor-state": "Receiving sensor frames",
+      "#map-state": "Fresh frames",
+      "#map-meta": "Frame hmmd_sensor \u00b7 ROS stamp 1791150821.842077820 \u00b7 received 0.0 s ago",
+      "#map-scale": "Amplitude squared"
+    }
+  ],
+  "transforms": {
+    "rows": 20,
+    "columns": 16,
+    "first": 0,
+    "last": 4294967295,
+    "loglast": 22.18070977791825,
+    "unchanged": true
+  },
+  "synthetic_header": {
+    "stamp": {
+      "sec": 1791150807,
+      "nanosec": 892353741
+    },
+    "frame_id": "explicitly_synthetic_browser_test"
+  },
+  "page_errors": [],
+  "result": "PASS",
+  "roslibpy_isolated_client": {
+    "version": "2.1.0",
+    "rclpy_import_available": false,
+    "hmmd_interfaces_import_available": false,
+    "map_header": {
+      "stamp": {
+        "sec": 1791150927,
+        "nanosec": 461465405
+      },
+      "frame_id": "hmmd_sensor"
+    },
+    "status": {
+      "connected": "true",
+      "stale": "false",
+      "last_frame_age_sec": "0.020",
+      "frames_received": "21393",
+      "frame_rate_hz": "5.000",
+      "malformed_candidates": "0",
+      "discarded_bytes": "27554212",
+      "reconnects": "0",
+      "input_backlog_overflows": "0",
+      "last_io_error": ""
+    },
+    "result": "PASS"
+  },
+  "direct_ROS_vs_real_rosbridge": {
+    "stamp": {
+      "sec": 1791150929,
+      "nanosec": 991454955
+    },
+    "dimensions": [
+      20,
+      16
+    ],
+    "count": 320,
+    "frame_id": "hmmd_sensor",
+    "raw_values_sha256": "0dfeacd487c38bcea81a793892a877ede3ad3d0abb4c6e21c6796e67bcecdeca",
+    "all_fields_identical": true,
+    "result": "PASS"
+  },
+  "pc_LAN_access": {
+    "browser_source_IP": "192.168.178.22",
+    "HTTP_assets_status": 200,
+    "user_confirmation_after_tunnel": "l\u00e4uft",
+    "server_socket_owner": "sshd",
+    "server_forwarded_destination": "127.0.0.1:9090",
+    "both_HMMD_subscriptions_after_bridge_restart": true,
+    "automated_PC_DOM_check": false
+  },
+  "checks": {
+    "python_tests": {
+      "passed": 16,
+      "ROS_graph_domain": 47
+    },
+    "node_tests": {
+      "passed": 6
+    },
+    "colcon_packages_built": [
+      "hmmd_interfaces",
+      "hmmd_radar"
+    ],
+    "chromium_version": "153.0.8010.12"
+  },
+  "filters": {
+    "parameter_type": "STRING",
+    "unquoted_list_launch": "InvalidParameterTypeException",
+    "denied_subscription": "/rosout",
+    "denied_publish": "/hmmd/browser_filter_probe",
+    "denied_service": "/hmmd_sensor/get_parameters",
+    "allowed_service_exception": "/rosapi/topics",
+    "rosapi_topics_result": [
+      "/hmmd/rdmap",
+      "/hmmd/status"
+    ],
+    "action_filter_exposed_in_installed_launch": false,
+    "server_receive_only_proven": false
+  }
+}

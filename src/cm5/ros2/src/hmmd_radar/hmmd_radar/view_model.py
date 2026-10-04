@@ -1,5 +1,6 @@
 import math
 import time
+from numbers import Integral
 
 from .protocol import DOPPLER_BINS, RANGE_GATES, VALUE_COUNT
 
@@ -21,8 +22,9 @@ class RangeDopplerViewModel:
         values = tuple(amplitude_squared)
         if len(values) != VALUE_COUNT:
             raise ValueError("message must contain exactly 320 amplitudes")
-        if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 or v > UINT32_MAX for v in values):
+        if any(isinstance(v, bool) or not isinstance(v, Integral) or v < 0 or v > UINT32_MAX for v in values):
             raise ValueError("amplitudes must be uint32 values")
+        values = tuple(int(value) for value in values)
         self.matrix = tuple(
             tuple(values[doppler * RANGE_GATES : (doppler + 1) * RANGE_GATES])
             for doppler in range(DOPPLER_BINS)

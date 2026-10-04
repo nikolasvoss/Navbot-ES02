@@ -120,7 +120,7 @@ Melde dich nach einer Gruppenänderung vollständig ab und erneut an, damit die 
 ## Baue die Pakete
 
 1. Aktiviere auf dem CM5 die vorhandene ROS-2-Umgebung. Prüfe `echo "$ROS_DISTRO"`, `ros2 --help` und `colcon --help`. Verwende den Python-Interpreter dieser ROS-Installation ab Version 3.10.
-2. Wechsle in den Projektcheckout mit dem Branch `codex/hmmd-ros2-rdmap`.
+2. Wechsle in den Projektcheckout. Beim CM5-Setup am 4. Oktober 2026 war das Repository `/home/niko/Navbot-ES02-cm5-hmmd`, Worktree-Branch `codex/hmmd-cm5-browser-setup` auf Basis von `f93ab3f34ee273914629e4e4c0d851866f819ae2`.
 3. Installiere die Paketabhängigkeiten über das vorhandene rosdep.
 
 ```bash
@@ -152,7 +152,7 @@ export HMMD_PORT=/dev/ttyAMA0
 ros2 run hmmd_radar hmmd_sensor --ros-args -p "port:=$HMMD_PORT" -p baud_rate:=115200
 ```
 
-Der Port muss ausdrücklich angegeben werden. Der Knoten sendet beim Öffnen den dokumentierten Befehl für den Debug-Modus. Er schreibt keine persistenten Sensorparameter. Das Verhalten des vorhandenen Moduls ist noch nicht live bestätigt.
+Der Port muss ausdrücklich angegeben werden. Der Knoten sendet beim Öffnen den dokumentierten Befehl für den Debug-Modus. Er schreibt keine persistenten Sensorparameter. Beim CM5-Setup wurden echte Frames beobachtet; eine ACK-Sequenz oder die Sensor-Firmwareversion wurde dabei nicht bestätigt. Siehe die [Beobachtungen mit Evidenz](../../../../agent_notes/cm5/sensors/hmmd/observations.md). Läuft bereits ein `hmmd_sensor`, starte keinen zweiten UART-Leser.
 
 3. Prüfe in einem zweiten Terminal mit aktivierter ROS- und Workspace-Umgebung die Daten und den Status.
 
@@ -193,9 +193,9 @@ Starte die Heatmap auf einem Rechner mit grafischem Display und Zugriff auf dies
 
 ## Zeige die HMMD-Daten im PC-Browser
 
-Die statische Browseransicht benötigt auf dem PC keine ROS-Installation und keine Nachrichtenpakete. Sie verbindet sich über das [Standard-JSON-Protokoll von rosbridge](https://github.com/RobotWebTools/rosbridge_suite/blob/ros2/ROSBRIDGE_PROTOCOL.md) mit `/hmmd/rdmap` und `/hmmd/status`. Die Freigabe bleibt begrenzt: rosbridge lauscht auf dem CM5 nur auf Loopback, und der PC greift über einen SSH-Tunnel darauf zu. Die Browseranwendung sendet keine ROS-Nachrichten, Aufrufe oder Aktionen. Das rosbridge-Protokoll selbst enthält jedoch auch schreibende Operationen; Loopback, SSH und die Topic-Filter sind deshalb Teil der Sicherheitsgrenze.
+Die statische Browseransicht benötigt auf dem PC keine ROS-Installation und keine Nachrichtenpakete. Sie verbindet sich über das [Standard-JSON-Protokoll von rosbridge](https://github.com/RobotWebTools/rosbridge_suite/blob/ros2/ROSBRIDGE_PROTOCOL.md) mit `/hmmd/rdmap` und `/hmmd/status`. Der Browser-Client sendet nur `subscribe` und `unsubscribe`. rosbridge selbst stellt weitere Protokolloperationen bereit; verwende daher die Loopback-Bindung und den SSH-Tunnel als Zugangsgrenze.
 
-1. Prüfe auf dem CM5 die installierte Jazzy- und rosbridge-Version sowie die tatsächlich verfügbaren Launch-Argumente. ROS 2 Jazzy ist auf dem Zielsystem laut Aufgabenangabe installiert; der SSH-Alias `cm5` war in der Ausführungsumgebung nicht auflösbar, daher sind Distribution, Paketversion, Launch-Argumente und Live-Datenpfad dort noch nicht verifiziert.
+1. Prüfe auf dem CM5 die installierte Jazzy- und rosbridge-Version sowie die tatsächlich verfügbaren Launch-Argumente. Beim eingerichteten CM5 sind Ubuntu 24.04.5 LTS, ROS 2 Jazzy und rosbridge-server/rosbridge-library 2.7.1 installiert.
 
 ```bash
 echo "$ROS_DISTRO"
@@ -204,32 +204,44 @@ dpkg-query -W -f='${Version}\n' ros-jazzy-rosbridge-server
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml --show-args
 ```
 
-Setze die ROS-Umgebung wie im Abschnitt „Baue die Pakete“ auf und source danach auch `src/cm5/ros2/install/setup.bash`. Starte rosbridge nur, wenn die installierte Launch-Datei `address`, `port`, `topics_pub_glob`, `topics_sub_glob` und `services_glob` als Argumente anbietet. Die getrennten Topic-Filter sind versionsabhängig; wenn sie fehlen, aktualisiere oder konfiguriere rosbridge vor Verwendung, statt mit ungefilterten Topics fortzufahren. Lass den Server auf Loopback und verwende ausschließlich die beiden HMMD-Topics als abonnierbare Topics:
+Setze die ROS-Umgebung wie im Abschnitt „Baue die Pakete“ auf und source danach auch `src/cm5/ros2/install/setup.bash`. rosbridge 2.7.1 stellt `address`, `port`, `topics_glob`, `topics_pub_glob`, `topics_sub_glob`, `services_glob` und `params_glob` als Launch-Argumente bereit. Die Filterparameter sind ROS-Strings, keine ROS-Arrays; innere Anführungszeichen erhalten den Stringtyp. Mit ungequoteten Listen starteten weder Bridge noch rosapi. Verwende:
 
 ```bash
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
   address:=127.0.0.1 port:=9090 \
-  'topics_pub_glob:=[]' \
-  'topics_sub_glob:=[/hmmd/rdmap,/hmmd/status]' \
-  'services_glob:=[]'
+  'topics_glob:=""' \
+  'topics_pub_glob:="[]"' \
+  'topics_sub_glob:="[/hmmd/rdmap,/hmmd/status]"' \
+  'services_glob:="[]"' \
+  'params_glob:="[]"'
 ```
 
-Leere Publisher-/Service-Filter müssen als gesperrt wirken. Prüfe die Launch-Ausgabe und Paketversion, bevor der Server benutzt wird; rosbridge-Releases unterscheiden sich bei Filterargumenten und rosapi-Verhalten. Der Topic-Filter schränkt die gewöhnlichen Topic-Abonnements ein, ersetzt aber nicht die Loopback-Bindung und den SSH-Tunnel.
+Ein leerer Glob-String bedeutet in dieser Version keine Filterung. `topics_pub_glob:="[]"` verweigert Publish/Advertise, und `topics_sub_glob` beschränkt Abos auf die beiden HMMD-Topics. Bei `services_glob:="[]"` hängt der Server automatisch `/rosapi/*` an; `/rosapi/topics` wurde mit einer auf die freigegebenen HMMD-Topics beschränkten Liste beantwortet, während `/hmmd_sensor/get_parameters` abgewiesen wurde. ROS-API-Dienste unter `/rosapi/*` bleiben damit erreichbar. `actions_glob` existiert als Serverparameter, wird aber von der Launch-Datei nicht angeboten und bleibt bei diesem Befehl ungefiltert. Der rosbridge-Server ist damit keine nachgewiesene reine Empfangsschnittstelle. Der Loopback-Port darf nicht direkt im LAN geöffnet werden.
 
 2. In einem zweiten CM5-Terminal oder einer SSH-Sitzung starte den statischen Dateiserver aus dem Projektcheckout:
 
 ```bash
-cd /pfad/zum/Navbot-ES02
+cd /home/niko/Navbot-ES02-cm5-hmmd
 python3 -m http.server 8080 --bind 0.0.0.0 --directory src/cm5/ros2/src/hmmd_radar/web
 ```
 
-Öffne auf dem PC `http://<CM5-LAN-Adresse>:8080/`. Der Server enthält nur statische Dateien. Für den rosbridge-Zugriff starte auf dem PC einen SSH-Tunnel, der das lokale Port 9090 an den CM5-Loopback-Port weiterleitet:
+Öffne auf dem PC `http://192.168.178.28:8080/`. Diese WLAN-Adresse war beim Setup aktiv und kann sich durch DHCP ändern. Der HTTP-Server enthält nur statische Browserdateien. Für den rosbridge-Zugriff starte auf dem PC einen SSH-Tunnel, der das lokale Port 9090 an den CM5-Loopback-Port weiterleitet:
 
 ```bash
-ssh -N -L 127.0.0.1:9090:127.0.0.1:9090 cm5
+ssh -N -L 127.0.0.1:9090:127.0.0.1:9090 niko@192.168.178.28
 ```
 
-Die Seite verbindet sich mit `ws://127.0.0.1:9090`. Halte den Tunnel und beide CM5-Prozesse geöffnet. Falls der SSH-Alias nicht eingerichtet ist, ersetze `cm5` durch den üblichen SSH-Hostnamen bzw. die LAN-Adresse.
+Die Seite verbindet sich mit `ws://127.0.0.1:9090`. Halte den Tunnel und beide CM5-Prozesse geöffnet. Auf dem PC war der Alias `cm5` nicht auflösbar. Ermittle die aktuelle CM5-Adresse bei Bedarf mit `ip -br addr`.
+
+Alternativ starte auf dem PC das Skript `scripts/start_hmmd_web.py` aus einem lokalen Checkout oder kopiere diese einzelne Datei auf den PC. Es benötigt Python 3 und OpenSSH, öffnet den Tunnel und anschließend den Standardbrowser. Die oben beschriebenen CM5-Prozesse müssen bereits laufen:
+
+```bash
+python3 scripts/start_hmmd_web.py
+# Bei anderer CM5-Adresse oder anderem SSH-Benutzer:
+python3 scripts/start_hmmd_web.py --host 192.168.178.28 --user niko
+```
+
+Unter Windows lautet der Python-Aufruf üblicherweise `py scripts/start_hmmd_web.py`. Lass das PC-Terminal geöffnet; `Strg+C` beendet den vom Skript gestarteten Tunnel. Ein bereits belegter lokaler Port 9090 wird gemeldet; beende dann den alten Tunnel oder öffne bei einem bereits laufenden CM5-Tunnel direkt die Browser-URL.
 
 3. Prüfe den Verbindungsstatus getrennt vom HMMD-Status. „Connected“ bestätigt nur die Browser-Bridge-Verbindung. „Receiving sensor frames“ erfordert frische `/hmmd/status`-Daten mit `connected=true` und `stale=false`; die Heatmap wird erst mit einem gültigen 20×16-Frame frisch. Bei unterbrochenen Frames bleibt der zuletzt empfangene Frame sichtbar, ist aber als veraltet markiert. Nach einer Bridge-Neuverbindung wartet die Seite auf neue Nachrichten und markiert alte Samples nicht wieder als frisch.
 
@@ -237,7 +249,15 @@ Die Karte wird höchstens mit 10 Hz aktualisiert, verwendet eine Keep-Last-Tiefe
 
 ### Python-Beispiel mit roslibpy
 
-Das folgende Beispiel läuft auf dem PC durch denselben SSH-Tunnel. Es braucht kein lokales ROS, aber das Python-Paket `roslibpy` (`python3 -m pip install roslibpy`). Das [roslibpy-Projekt](https://github.com/RobotWebTools/roslibpy) beschreibt ROS-2-Unterstützung als im Aufbau befindlich; prüfe die installierte Version vor dem Einsatz.
+Das folgende Beispiel läuft auf dem PC durch denselben SSH-Tunnel. Es braucht kein lokales ROS und keine generierten `hmmd_interfaces`-Pakete. `roslibpy` 2.1.0 wurde in einer isolierten Umgebung ohne importierbare ROS-Pakete erfolgreich mit rosbridge 2.7.1 geprüft. `roslibpy.Topic` setzt selbst kein QoS-Profil; rosbridge nimmt für Topics ohne QoS-Angabe einen Best-Effort-Subscriber und gleicht vorhandene Publisher ab. Dieser Standardpfad empfing die HMMD-Map mit Best-Effort-QoS.
+
+Installiere `roslibpy` auf Debian-/Ubuntu-Systemen in einer virtuellen Umgebung:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install roslibpy==2.1.0
+```
 
 ```python
 import roslibpy
@@ -255,7 +275,7 @@ topic = roslibpy.Topic(
 )
 topic.subscribe(lambda message: print(
     message['doppler_bins'], message['range_gates'],
-    len(message['amplitude_squared']),
+    len(message['amplitude_squared']), message['header']['stamp'],
 ))
 
 wait = Event()
@@ -267,7 +287,11 @@ finally:
     client.terminate()
 ```
 
-Der Browser-Client und dieses Beispiel führen keine Schreiboperationen durch. Erlaube keine Topics oder Dienste, die sie nicht benötigen.
+Der Empfang über rosbridge enthielt 20×16 Dimensionen, 320 ganzzahlige Matrixwerte, Header und Zeitstempel sowie den HMMD-Status. Ein Vergleich desselben Frames über einen direkten ROS-Subscriber und WebSocket bestätigte identische Dimensionen, Rohwerte, `frame_id` und Zeitstempel. Im isolierten `roslibpy`-Client waren weder `rclpy` noch `hmmd_interfaces` importierbar.
+
+Die Browserprüfung auf dem CM5 verwendete den echten rosbridge-Server: Roh-/Logansicht, Topic-Auswahl, fehlende Frames, Publisher-Stopp, Bridge-Abbruch und Wiederverbindung bestanden. Die Fehlerzustände wurden mit ausdrücklich synthetischen ROS-Nachrichten geprüft, anschließend wurde der echte HMMD-Empfang wiederhergestellt. Der PC-Browser lud die Seite über LAN; der Nutzer bestätigte den laufenden Zugriff nach Start des SSH-Tunnels, und der CM5 zeigte die SSH-Weiterleitung samt beiden HMMD-Abonnements auch nach dem Bridge-Neustart. Details stehen im [Prüfprotokoll](../../../../agent_notes/cm5/sensors/hmmd/browser-integration-2026-10-04.json).
+
+Der Browser-Client und dieses Beispiel führen keine Schreiboperationen durch. Das ist keine Einschränkung aller Operationen, die rosbridge serverseitig anbieten kann.
 
 ## Zeichne die drei Situationen auf
 
