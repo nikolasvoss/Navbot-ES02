@@ -1,7 +1,7 @@
 
 # Navbot-ES02 - Open Source Desktop Dual-Wheel Legged Robot
 
-![robot](docs/image/photo1.JPG)
+![robot](docs/robot/media/photo1.JPG)
 
 **Navbot-ES02** is a compact, open-source desktop robot that combines self-balancing wheels with articulated legs. It’s an experimental platform for exploring locomotion, balance, and user interaction — ideal for makers, educators, and robotics enthusiasts.
 
@@ -50,6 +50,13 @@ Navbot-ES02/
 
 The current firmware supports the two-wheel balancing robot only. Legacy four-wheel gait control and master/slave communication have been removed. UART1 remains available for the touchscreen, and UART2 handles SBUS.
 
+## Project documentation
+
+The canonical hardware and software documentation follows the two target trees:
+
+- [Robot and ESP32 hardware](docs/robot/hardware/system-overview.md), [robot software/control](docs/robot/software/control/control-flow.md), and the [BLE communication protocol](docs/robot/software/interfaces/NavBot-ES02-BLE-communication-protocol-V1.2.pdf).
+- [CM5 hardware and attached peripherals](docs/cm5/hardware/README.md) and [CM5 software/roadmap](docs/cm5/software/README.md). CM5 details remain pending until hardware is selected and verified.
+
 ## Getting Started
 
 ### 1. Install Requirements
@@ -71,38 +78,11 @@ cd Navbot-ES02
 python3 scripts/build_firmware.py
 ```
 
-The command builds the NavBot sketch into `build/flash`. Run `python3 scripts/build_firmware.py --help` to choose another sketch, board, output directory, or build properties. To flash the default build, close serial monitors and run `python3 scripts/upload_firmware.py build/flash`. See [`agent_notes/usb-serial.md`](agent_notes/usb-serial.md) for the verified USB and upload details.
+The command builds the NavBot sketch into `build/flash`. Run `python3 scripts/build_firmware.py --help` to choose another sketch, board, output directory, or build properties. To flash a compiled build, use the configured `navbot_flash` MCP tool `flash_firmware` with the absolute build directory from the active worktree. Check the serial MCP `list_ports` before reporting that the board is disconnected, close the serial MCP connection before flashing, and keep balance disabled with motor outputs safe. See the [canonical USB/serial documentation](docs/robot/software/development/usb-serial-flashing.md) for board settings and verified connection details.
 
 ### Safe sensor diagnostics
 
-Set `SENSOR_DIAGNOSTIC_MODE` to `1` and rebuild to use the sensor-only diagnostic firmware; the current source has it set to `0` for normal operation. In diagnostic mode the wheel driver enable pins are held low, motor and servo initialization is skipped, and the robot reports sensor data over the CH340 USB serial connection. Support the robot mechanically because the legs are not driven. BLE control is also inactive in this mode.
-
-Use **ESP32S3 Dev Module** with **USB CDC On Boot: Disabled** when uploading. The diagnostic firmware sends 20 numeric CSV samples per second on the CH340 USB port at **115200 baud**. In SerialPlot, select the current `/dev/ttyUSB*` port, set **DTR off** and **RTS off** in the Port tab, and choose **ASCII**, **comma delimiter**, **14 channels** in Data Format. Opening the port may cause a brief reset; keep it open while watching for spontaneous reboots. Startup text can cause a few harmless parsing warnings before the numeric samples begin.
-
-If SerialPlot shows `boot:...DOWNLOAD(USB/UART0)` and `waiting for download`, the ESP32 entered its flash loader instead of starting the firmware. With SerialPlot connected, leave DTR off and pulse RTS on then off, or press the board's RESET/EN button. The next boot line should say `SPI_FAST_FLASH_BOOT`; numeric CSV samples then follow. If the board says nothing at all, also check that RTS is off, because asserted RTS can hold it in reset. Do not run the Python monitor simultaneously with SerialPlot: both need exclusive access to the port.
-
-Channel order (also use these as names in SerialPlot's Plot tab):
-
-| # | Name | Unit / meaning |
-| --- | --- | --- |
-| 1 | `uptime_s` | seconds since boot; drops on reset |
-| 2–4 | `gyro_x`, `gyro_y`, `gyro_z` | rad/s |
-| 5–7 | `acc_x`, `acc_y`, `acc_z` | g |
-| 8–10 | `roll`, `pitch`, `yaw` | degrees; uncalibrated values may drift |
-| 11 | `battery_raw_v` | V, direct ADC conversion without filter delay |
-| 12 | `rc_age_ms` | age of last SBUS frame; `-1` before any frame |
-| 13 | `rc_failsafe` | `0` valid, `1` lost, `3` failsafe, `-1` before any frame |
-| 14 | `imu_ok` | `1` initialized, `0` failed |
-
-For plain text inspection, close SerialPlot first (the serial port can be opened by only one program) and use the included monitor. It requires `pyserial` and also keeps RTS deasserted:
-
-```bash
-python3 scripts/sensor_monitor.py
-```
-
-The `DIAG,boot` line includes `reset_reason` (`1` means power-on or external reset, `9` means brownout). The CSV voltage channel uses the direct ADC value so it does not have the filtered voltage's startup delay.
-
-The diagnostic mode is selected at compile time. Leave it enabled while checking sensors, receiver and supply voltage. Changing it to `0` restores the original motor-control startup path and requires a rebuild and upload.
+The full, current procedure is in the [sensor diagnostic guide](docs/robot/software/diagnostics/sensor-diagnostic-mode.md), including safe motor outputs, build and flash steps, SerialPlot settings, the 14-column channel map, and reset troubleshooting. The source defaults to `SENSOR_DIAGNOSTIC_MODE=0`; enabling it skips motor and servo initialization and holds the wheel-driver enable pins low. Support the robot mechanically because the legs are not driven. The diagnostic stream uses 115200 baud and does not establish stability under motor load.
 
 ### Capture a balance shutdown
 
@@ -150,12 +130,12 @@ python3 scripts/analyze_drive_trace.py drive-test-01.log drive-test-02.log --req
 ### 3. Connect the model remote control
 ES02 has 3 lines, namely GND, 5V, and sbus.
 
-<img src="docs/image/ES02 sbus wire.png" height="350"/>
+<img src="docs/robot/hardware/connectors/ES02-SBUS-wire.png" height="350"/>
 
 The remote control receiver may have multiple interfaces. It is necessary to confirm the sbus
 output port by yourself. The following picture shows the wiring ports of the RadioLink receiver.
 
-<img src="docs/image/RadioLink connector.png" height="350"/>
+<img src="docs/robot/hardware/connectors/RadioLink-connector.png" height="350"/>
 
 The channels of the joystick are generally defaulted to ch1-4. Besides, six auxiliary channels
 are needed to switch on some functions. Each remote control is different, and they should be set
@@ -186,7 +166,7 @@ according to personal habits. The corresponding functions of ch6-10 can be refer
 ## Discord link
 | Link: [https://discord.gg/syywQ2CKN3](https://discord.gg/syywQ2CKN3)        |
 | :------------: |
-| <img src="docs/image/discord link.png" height="200"/> |
+| <img src="docs/robot/media/discord-link.png" height="200"/> |
 
 ---
 
