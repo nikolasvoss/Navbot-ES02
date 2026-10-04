@@ -1,0 +1,114 @@
+Impact of Radome on HMMD-mmWave-Sensor Performance
+
+ Radar waves reflected at the radome edge
+
+   Loss in the total power radiated or received by the radar;
+
+   Reflected waves enter the receiving channel, affecting the isolation between the transmitting and receiving channels;
+
+   Reflections can degrade the standing wave ratio (SWR) of the antenna, further affecting the antenna gain.
+
+ Radar waves attenuate when passing through a medium; theoretically, the higher the frequency, the greater the
+
+  attenuation.
+
+ Electromagnetic waves will undergo a certain degree of refraction when passing through a medium.
+
+   Affecting the antenna's radiation pattern, thereby impacting the sensor's coverage area.
+Design Principle of Radome
+ Structure and Appearance
+    Smooth and flat surface with uniform thickness is recommended. It can be planar or spherical, but should not be
+      uneven;
+
+    If there is a surface coating, it must not contain any metal or conductive materials;
+
+    Design the radome above the antenna so that its surface remains parallel to the antenna plane.
+
+ The distance from the antenna to the inner surface of the radome, denoted as H.
+
+    The ideal height is an integer multiple of the half-wavelength of
+      electromagnetic waves in the air.
+
+
+
+
+Where m is a positive integer, c0 is the speed of light in vacuum, and f is
+the working center frequency.
+
+For example, at a center frequency of 24.125 GHz, the half-wavelength in air is about 6.2 mm.
+ Thickness d of radome
+   The ideal thickness is an integer multiple of the half wavelength of electromagnetic wave in the medium.
+
+
+
+
+Where m is a positive integer and �� is the relative constant of the radome material. For example, for ABS material,
+
+�� = 2.5 and its half wavelength is about 3.92 mm.
+Common Materials
+ Before designing, it's essential to understand the material and electrical characteristics of the antenna radome.
+    The table below is for reference only. Please confirm the actual value with the supplier.
+
+                                    Common material characteristics (based on 24.125GHz)
+
+       Medium             �� TYP.          Half wavelength (mm)       1/8 wavelength (mm)          1/10 wavelength (mm)
+
+          Air              1.00                    6.20                      1.55                          1.24
+
+        ABS1               1.50                    5.06                      1.27                          1.01
+
+        ABS2               2.50                    3.92                      0.98                          0.78
+
+      PC material          3.00                    3.58                      0.89                          0.72
+
+    PMMA acrylic 1         2.00                    4.38                      1.10                          0.88
+
+    PMMA acrylic 2         5.00                    2.77                      0.69                          0.55
+
+      PVC hard             4.00                    3.10                      0.78                          0.62
+
+       PVC soft            8.00                    2.19                      0.55                          0.44
+
+    High density PE        2.40                    4.00                      1.00                          0.80
+
+    Low density PE         2.30                    4.09                      1.02                          0.82
+
+     Quartz glass           5                      2.77                      0.69                          0.55
+ Height (H) from antenna to inner surface of radome
+
+   When space is allowed, 1 or 1.5 times wavelength is preferred.
+   For example, 12.4 or 18.6mm is recommended for 24.125GHz.
+   If space is not allowed, it is recommended to control it at half a wavelength.
+   If it needs to be controlled within half a wavelength, please make experimental adjustment during design.
+   Error Tolerance: within 1.2 mm.
+
+ Radome Thickness D
+
+   Half wavelength is recommended, and the error should be controlled within 20%.
+   If the thickness requirement of half wavelength cannot be met, it is recommended to use low �� materials;
+   The thickness is recommended to be less than or equal to 1/8 wavelength in the medium.
+
+ Non-uniform or composite materials can degrade radar performance, so it is advisable to make
+
+  adjustments during the design phase to mitigate these effects.
+FAQ
+Q1
+ Why is the thickness D of radome recommended to be half wavelength? If it cannot meet the thickness
+  requirement of half wavelength, it is recommended to be less than or equal to 1/8 wavelength in the
+  medium?
+A1
+
+ The recommended thickness of the radome is half the wavelength in the medium to ensure impedance
+  consistency before and after the electromagnetic wave penetrates the casing, thereby reducing
+  reflection and insertion loss.
+ If the customer finds the half-wavelength thickness too thick, it is recommended to use a thickness
+  equal to or less than 1/8 wavelength to minimize the path length of the electromagnetic wave through
+  the casing, reducing the insertion loss.
+ The thickness D of the antenna radome can also be an integer multiple of the half-wavelength.
+Q2
+ Will the designed radome have different effects if it is made of frosted material?
+A2
+ It is suggested that the radome should be made of smooth and uniform materials, and it is not
+  recommended to use frosted materials, which will increase the reflection of electromagnetic waves
+  and increase the loss and affect the antenna radiation patterns.
+

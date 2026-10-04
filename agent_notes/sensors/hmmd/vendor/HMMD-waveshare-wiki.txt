@@ -1,0 +1,331 @@
+HMMD mmWave Sensor - Waveshare Wiki
+Navigation menu
+Toggle navigation
+Raspberry Pi
+Boards/Kits
+Displays
+Cameras
+Expansions
+All-in-one
+Robots
+Portable Gaming
+Accessories
+Other Android/Linux Boards
+AI
+Boards/Kits
+Displays
+Cameras
+Expansions
+Robots
+Displays
+LCD/OLED
+e-Paper
+IoT
+Long Range Wireless
+Short Range Wireless
+Wired Comm / Converter
+Cameras / Audio / Video
+Sensors
+Motors / Servos
+others
+Robotics
+Mobile Robots
+Dog-like Robots
+Drivers / Sensors
+Robot Arm / Control
+MCU/FPGA
+Arduino
+micro:bit
+STM32
+FPGA
+Support
+HMMD mmWave Sensor
+From Waveshare Wiki
+Jump to: navigation , search
+HMMD mmWave Sensor
+HMMD mmWave Sensor
+GPIO, UART
+{{{name2}}}
+{{{name3}}}
+{{{name4}}}
+{{{name5}}}
+{{{name6}}}
+Primary Attribute
+Category:
+{{{userDefinedInfo}}}: {{{userdefinedvalue}}}
+Brand: Waveshare
+Website
+International: Website
+Chinese: 官网
+Onboard Interfaces
+Related Products
+Contents
+1 Introduction
+2 Features
+3 Specification
+4 Hardware Description
+5 Hardware Test
+5.1 Hardware Connection
+5.2 Host Description
+6 Terminology Explanation
+7 Communication Protocol
+7.1 Protocol Format
+7.1.1 Send Command with ACK
+8 Module Report Data
+8.1 Normal Mode
+8.2 Debug Mode
+8.3 Report Mode
+9 Detection Range
+9.1 Top-mount Installation
+9.2 Wall-mount Installation
+9.3 Detection Range Test
+10 Dimensions
+11 Working with Raspberry Pi
+11.1 Hardware Preparation & Connection
+11.2 UART Debugging
+11.3 Sample Demo
+12 Working with Jetson Nano
+12.1 Hardware Preparation & Connection
+12.2 Sample Demo
+13 Working with Arduino/ESP32
+13.1 Hardware Preparation & Connection
+14 Working with Pico/RP2040
+14.1 Hardware Preparation & Connection
+14.2 Sample Demo
+15 Resource
+15.1 Demo
+15.2 Software
+15.3 Document
+15.4 Project Resources
+16 FAQ
+17 Support
+Introduction
+HMMD mmWave Sensor is a human micro-motion sensor that can detect and recognize moving, standing, and stationary human body. It is widely used in various AIoT scenarios, covering smart homes, smart security, smart businesses, and smart lighting, etc.
+Features
+Comes with the Silicon Micro AIoT Millimeter-Wave Sensor SoC SXKMXXX0.
+Onboard high-performance 24GHz one-transmit-one-receive antenna and peripheral circuits.
+Mini module size: 20mm x 20mm.
+Pre-loaded with default human body sensing configuration, plug-and-play.
+Longest detection distance for motion human body sensing: 8.5m.
+Driven by the PY32F003F17U6TR microcontroller, with UART pins exposed for easy integration with Arduino/ESP32/JetsonNano and other main control boards.
+Utilizes human micro-motion sensing algorithms, millimeter-wave radar distance measurement technology, and advanced proprietary signal processing technology of the SXKMXXX0 chip.
+Provide online comprehensive supporting documentation (Raspberry/JetsonNano/Arduino/ESP32/sample demos).
+Accurate perception of motion, micro-movement, and stationary human bodies achieved.
+Specification
+Hardware
+Frequency Band: 24~24.25Ghz
+Maximum Scanning Bandwidth: 0.25GHz
+Maximum Equivalent Isotropic Radiated Power: 11dBm
+Supply Voltage: 3.3V (3.0~3.6V Wide-range Voltage)
+Dimensions: 20x20mm²
+Environment Temperature: -40~85℃
+System:
+Detection Range (wall-mount): Motion human body target 8m; Micro-motion human body target 6m
+Detection Range (ceiling-mount): Motion human body target 5m; Micro-motion human body target 4m
+Detection Accuracy: ±0.35m (for moving targets within 8m straight-line distance from the radar)
+Average Operation Current: 50mA
+Data Refresh Period: 100ms
+Hardware Description
+J2 Pin Label Function Description
+J2Pin1 3V3 Power Input Power supply positive, 3.0~3.6V，Typ.3.3V
+J2Pin2 GND Ground Connect to the Ground
+J2Pin3 TX UART_TX 0~3.3V
+J2Pin4 RX UART_RX 0~3.3V
+J2Pin5 OT2 IO, Used for reporting detection status: High output level for presence, low output level for absence. 0~3.3V
+Hardware Test
+Hardware Connection
+Users need to prepare the following things in addition to the module itself before using the module: USB TO TTL and related cables, here we recommend CP2102 and FT232 kernel-driven TTL modules: CP2102 USB UART Board
+Set the USB TO TTL level selector toggle switch to 3.3V and connect the module and USB TO TTL as described in the table below:
+HMMD mmWave Sensor CP2102 USB UART Board
+3V3 VCC
+GND GND
+TX RXD
+RX TXD
+Connect the USB TO TTL to the computer, open the supporting software of the host computer, select the corresponding USB TO TTL serial port number, select the baud rate of 115200 to connect to the device, and then adjust the parameter to receive the data.
+Host Description
+1. First, download HMMD mmWave Sensor host software .
+2. According to #Hardware Connection , use USRT to USB to connect the module and the host.
+3. Open the host tool, click on the "Refresh" button, select the TTL tool's serial port in the "Port No." dropdown, confirm that the "Baud Rate" is 115200, and then click "Connect" to establish the connection between the host and the radar module.
+As shown in the above image, the host tool is divided into three areas: Device Operation Area 1, Function Button Area 2, and Function Page Area 3.
+After connecting the host and the module, In Area 1 of the interface, the firmware version and serial number of the radar module will be displayed (if the serial number is not flashed, the host computer will display FFFFFFFF). The Function Page Area of the "Parameter View/Set" function will show the current settings of the radar module.
+Terminology Explanation
+Maximum Distance Gate: Used to set the module's farthest effective detection distance, with one gate length equal to 70cm. Parameter range: 0~15.
+Target Disappearance Delay Time (s): The time it takes for the target state to switch from presence to absence. During this delay, if a person is detected, the timer resetting the delay time is triggered. After the module detects the absence state for a duration equal to the delay time, it reports no presence, and at this point, the OT2 pin outputs a low level. Parameter range: 0~65535.
+Communication Protocol
+The default baud rate of the radar serial port is 115200, 1 stop bit, no parity bit.
+Protocol Format
+HMMD mmWave Sensor data communication uses the small end format and all data is in hexadecimal. Send Command with ACK
+1. Read Firmware Version Command
+This command reads the radar firmware version information.
+Command Code: 0x0000
+Command Value: None
+Return Value: Version Number Length (2 bytes) + Version Number Byte String
+Sending data:
+FH(frame header) Byte 1~4 In-frame Data Length Byte 5,6 In-frame Data Byte 7,8 Frame Tail Byte 9~12
+FD FC FB FA 02 00 00 00 04 03 02 01
+Module ACK: (Successful Example)
+Byte 1~4 Byte 5,6 Byte 7,8 Byte 9,10 Byte 11,12 Byte 13~18 Byte 19~24
+FD FC FB FA 0C 00 00 01 00 00 06 00 76 31 2E 35 2E 35 04 03 02 01
+2. Read Serial Number Command
+This command reads the serial number of the radar.
+Command Code: 0x0011
+Command Value: None
+Return Value: 2 bytes ACK status (0 for success, 1 for failure)
+Sending Data:
+Byte 1~4 Byte5,6 Byte 7,8 Byte 9~12
+FD FC FB FA 02 00 11 00 04 03 02 01
+Module ACK: (Successful Example)
+Byte 1~4 Byte 5,6 Byte 7,8 Byte 9,10 Byte 11,12 Byte 13~14 Byte 15~18
+FD FC FB FA 08 00 11 01 00 00 02 00 CB AB 04 03 02 01
+3. Read Register Command
+This command reads the registers of the radar.
+Command Code: 0x0002
+Command Value: 2 bytes chip address + (2 bytes address) * N
+Return Value: (2 bytes data) * N
+Sending Data:
+Byte 1~4 Byte 5,6 Byte 7,8 Byte 9~12 Byte 13~16
+FD FC FB FA 06 00 02 00 40 00 40 00 04 03 02 01
+Module ACK: (Successful Example)
+Byte 1~4 Byte 5,6 Byte 7,8 Byte 9,10 Byte 11,12 Byte 13~16
+FD FC FB FA 06 00 02 01 00 00 07 02 04 03 02 01
+4. Read Parameters Configuration Command
+This command reads the configuration parameters of the radar.
+Command Code: 0x0008
+Command value: (2 byte parameter ID)*N
+Return value: (4 byte parameter value)*N
+Sending Data:
+Byte 1~4 Byte 5,6 Byte 7,8 Byte 9~10 Byte 11~14
+FD FC FB FA 04 00 08 00 01 00 04 03 02 01
+Module ACK: (Success, maximum distance gate set to 12)
+Byte 1~4 Byte 5,6 Byte 7,8 Byte 9,10 Byte 11,14 Byte 15~18
+FD FC FB FA 08 00 08 01 00 00 0C 00 00 00 04 03 02 01
+Module Report Data
+The HMMD mmWave Sensor operates in default mode by outputting detection results through the serial port. The output consists of a string indicating ON/OFF along with the target distance gate.
+In typical application scenarios, the host computer obtains data during the module's processing. Therefore, the module offers debug mode, report mode, and normal mode. Normal Mode
+Byte 1~4 Byte5,6 Byte 7,8 Byte9~10 Byte 11~14 Byte 15~18
+FD FC FB FA 08 00 12 00 00 00 64 00 00 00 04 03 02 01 Debug Mode
+Byte 1~4 Byte5,6 Byte 7,8 Byte9~10 Byte 11~14 Byte 15~18
+FD FC FB FA 08 00 12 00 00 00 00 00 00 00 04 03 02 01
+Debug Mode serial port data frame example：
+PS: In debugging mode, the RDMAP data of all the range gates of a certain chirp are sent out each time, i.e., the
+data of all the 16 range gates of the first chirp will be sent out first, then goes the second chirp, and so on.
+Header Intra-frame Data Tailer
+AA BF 10 14 RDMAP: 20(Dopple)*16（number of range gate）*4（square of the amplitude） FD FC FB FA Report Mode
+Byte 1~4 Byte5,6 Byte 7,8 Byte9~10 Byte 11~14 Byte 15~18
+FD FC FB FA 08 00 12 00 00 00 04 00 00 00 04 03 02 01
+In report mode serial port data frame example:
+Frame Header Length Detection Result Target Distance The energy values for each distance gate Frame Tail
+F4 F3 F2 F1 2 bytes, total number of bytes for detection result, target distance, and energy values for each distance gate 1 byte, 00 absent, 01 present 2 bytes indicating the distance of the target phase from the radar in the scene 32 bytes, 16 (total number of distance gates) * 2 bytes, size of energy value for each distance gate from 0 to 15 F8 F7 F6 F5
+Detection Range
+The HMMD mmWave Sensor supports both top and wall mounting and is recommended for top mounting.
+Top-mount Installation
+The recommended top-mounted installation height is 2.7~3.0m. The top-mounted HMMD mmWave Sensor radar module, in the default configuration, has a maximum motion detection range within a conical three-dimensional space with a bottom radius of 5m.
+Wall-mount Installation
+Recommended wall-mounted installation height is 1.5~2.0m. The J2Pin pins are recommended to be positioned at the top. The HMMD mmWave Sensor radar module, in the default configuration, has a maximum motion detection range within a three-dimensional fan-shaped space with a normal direction of 8m, and horizontal and pitch angles of ±45°.
+Detection Range Test
+Testing methods for radar triggering and maintaining detection range are described as follows:
+Triggering Range:
+Move the target human body from a distance towards the radar, ensuring that the radar is reporting a "no presence" state. Stop the forward movement of the target human body when the radar begins reporting "presence."
+Record the position where the target human body stops; this position is the boundary of the radar's triggering detection range. Repeat similar tests in various directions to outline the detection boundaries in each direction. The area enclosed by the detection boundary in all directions is the radar trigger detection range;
+Maintaining Range:
+With the radar reporting "presence," have the target human body perform slight movements, such as shrugging shoulders or raising hands, at the test position.
+If the radar continues to report "presence" consistently for 60 seconds, the current position is within the radar's maintaining detection range.
+Otherwise, the detection position is outside the maintaining detection range.
+Dimensions
+Working with Raspberry Pi
+Hardware Preparation & Connection
+A Raspberry Pi 4B/5
+A HMMD mmWave Sensor
+Connect the Raspberry Pi and the module as follows:
+HMMD mmWave Sensor Raspberry Pi
+3V3 3.3V
+GND GND
+TX RXD
+RX TXD
+UART Debugging
+Since the Raspberry Pi serial port is used for terminal debugging by default, if you need to use the serial port, you need to modify the Raspberry Pi settings.
+Execute the following command to enter the Raspberry Pi configuration: sudo raspi-config
+Select Interfacing Options -> Serial -> no -> yes, and turn off the serial port debugging function:
+Sample Demo
+Open the Raspberry Pi and run: mkdir HMMD_mmWave_Sensor&&cd HMMD_mmWave_Sensor
+python -m venv env
+source env/bin/activate
+pip install pyserial
+wget https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD_mmWave_Sensor.zip unzip HMMD_mmWave_Sensor.zip
+cd raspberry &&  python Raspberry_demo.py
+Working with Jetson Nano
+Hardware Preparation & Connection
+A Jetson Nano
+A HMMD mmWave Sensor
+Connect the above hardware as shown below:
+HMMD mmWave Sensor JetsonNano
+3V3 3.3V
+GND GND
+TX RXD
+RX TXD
+Sample Demo
+Open the Jetson Nano: mkdir HMMD_mmWave_Sensor&&cd HMMD_mmWave_Sensor
+python -m venv env
+source env/bin/activate
+pip install pyserial
+wget https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD_mmWave_Sensor.zip unzip HMMD_mmWave_Sensor.zip
+cd Jetson_nano &&  python Jetson_Nano_demo.py
+Working with Arduino/ESP32
+Hardware Preparation & Connection
+An Arduino/ESP32
+A HMMD mmWave Sensor
+Connect the module and ESP32 as shown below:
+HMMD mmWave Sensor ESP32
+3V3 3.3V
+GND GND
+TX GPIO5
+RX GPIO4
+Open Arduino_ESP32demo and use Arduino IDE to program the code:
+Working with Pico/RP2040
+Hardware Preparation & Connection
+A Raspberry Pi Pico or RP2040-Zero
+A HMMD mmWave Sensor
+Connect the module and Raspberry Pi Pico or RP2040-Zero as shown below:
+HMMD mmWave Sensor RP2040 Zero
+3V3 3.3V
+GND GND
+TX GPIO5
+RX GPIO4
+Sample Demo
+Download sample demo , use the Thonny tool to open the RP2040_Zero demo code, and run the demo:
+Resource
+Demo
+Demo code
+Software
+Host tool
+Document
+HMMD-mmWave-Sensor Radome Design Guide
+Project Resources
+This section features third - party project resources. We merely provide links and bear no responsibility for content updates or maintenance. Thank you for your understanding.
+Electronic Clinic- ESP32 + HMMD mmWave Sensor: Real Tests + Blynk IoT!
+Youtube: https://www.youtube.com/watch?v=I508XQrjvDY
+Code Program: https://www.electroniclinic.com/esp32-hmmd-mmwave-sensor-real-tests-blynk-iot/
+FAQ
+Question: Why is the maximum calibrated detection distance 10m, but the actual measured distance is only 8.5m?
+Answer:
+The millimeter-wave radar's maximum radial detection range for targets is 10m. Within this detection range, the millimeter-wave radar reports the straight-line distance of the target to the radar. The millimeter-wave radar can only provide distance information output for moving human bodies within 10m. The theoretical accuracy of radar ranging is 0.35m. Due to variations in the size, posture, Radar Cross Section (RCS), and other factors of human body targets, the ranging accuracy may fluctuate. Additionally, there may be some fluctuations in the maximum detection distance.
+{{{5}}}
+Question: What is a distance gate, and how to understand it?
+Answer:
+A distance gate refers to the range or area that a millimeter-wave radar system uses to determine the distance to a target. The millimeter-wave radar sends radio waves and receives signals reflected from the target, using the time delay of these signals to determine the target's distance. The "distance gate" is essentially a time window, and signals received by the radar system within this window are considered valid signals from the target. Radar systems typically set a specific distance gate to exclude signals from targets that are far from the radar or sources of interference. This helps improve the performance of the radar system and reduces false positives from non-target signals.
+{{{5}}}
+Question: Does the sensor detect only human beings, or can it detect any moving object?
+Answer:
+It can detect living beings that are moving relative to each other.
+{{{5}}}
+Question: What is the detection frequency of the HMMD mmWave Sensor?
+Answer:
+The data refresh period is 100ms and the sampling rate is 10kbps.
+{{{5}}}
+Support
+Technical Support
+If you need technical support or have any feedback/review, please click the Submit Now button to submit a ticket, Our support team will check and reply to you within 1 to 2 working days. Please be patient as we make every effort to help you to resolve the issue.
+Working Time: 9 AM - 6 PM GMT+8 (Monday to Friday)
+Submit Now
+Retrieved from " https://www.waveshare.com/w/index.php?title=HMMD_mmWave_Sensor&oldid=111236 "
+Login / Create Account

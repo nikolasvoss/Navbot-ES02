@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html class="client-nojs" lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8"/>
+<title>HMMD mmWave Sensor - Waveshare Wiki</title>
+<script>document.documentElement.className="client-js";RLCONF={"wgBreakFrames":!1,"wgSeparatorTransformTable":["",""],"wgDigitTransformTable":["",""],"wgDefaultDateFormat":"dmy","wgMonthNames":["","January","February","March","April","May","June","July","August","September","October","November","December"],"wgRequestId":"8677aae493dea657d11c525f","wgCSPNonce":!1,"wgCanonicalNamespace":"","wgCanonicalSpecialPageName":!1,"wgNamespaceNumber":0,"wgPageName":"HMMD_mmWave_Sensor","wgTitle":"HMMD mmWave Sensor","wgCurRevisionId":111236,"wgRevisionId":111236,"wgArticleId":18060,"wgIsArticle":!0,"wgIsRedirect":!1,"wgAction":"view","wgUserName":null,"wgUserGroups":["*"],"wgCategories":[],"wgPageContentLanguage":"en","wgPageContentModel":"wikitext","wgRelevantPageName":"HMMD_mmWave_Sensor","wgRelevantArticleId":18060,"wgIsProbablyEditable":!1,"wgRelevantPageIsProbablyEditable":!1,"wgRestrictionEdit":[],"wgRestrictionMove":[]};RLSTATE={"ext.gadget.tabber":"ready","site.styles":"ready",
+"noscript":"ready","user.styles":"ready","user":"ready","user.options":"loading","mediawiki.toc.styles":"ready","skins.tweeki.styles":"ready","skins.tweeki.bootstraptheme.styles":"ready","skins.tweeki.externallinks.styles":"ready","skins.tweeki.awesome.styles":"ready"};RLPAGEMODULES=["site","mediawiki.page.startup","mediawiki.page.ready","mediawiki.toc","ext.FancyBoxThumbs","ext.HighlightjsIntegration","skins.tweeki.messages","skins.tweeki.scripts"];</script>
+<script>(RLQ=window.RLQ||[]).push(function(){mw.loader.implement("user.options@1hzgi",function($,jQuery,require,module){/*@nomin*/mw.user.tokens.set({"patrolToken":"+\\","watchToken":"+\\","csrfToken":"+\\"});
+});});</script>
+<link rel="stylesheet" href="/w/Uy8Yw0y/aAdkk0o.php?lang=en&amp;modules=mediawiki.toc.styles%7Cskins.tweeki.awesome.styles%7Cskins.tweeki.bootstraptheme.styles%7Cskins.tweeki.externallinks.styles%7Cskins.tweeki.styles&amp;only=styles&amp;skin=tweeki"/>
+<script async="" src="/w/Uy8Yw0y/aAdkk0o.php?lang=en&amp;modules=startup&amp;only=scripts&amp;raw=1&amp;skin=tweeki"></script>
+<meta name="ResourceLoaderDynamicStyles" content=""/>
+<link rel="stylesheet" href="/w/Uy8Yw0y/aAdkk0o.php?lang=en&amp;modules=ext.gadget.tabber&amp;only=styles&amp;skin=tweeki"/>
+<link rel="stylesheet" href="/w/Uy8Yw0y/aAdkk0o.php?lang=en&amp;modules=site.styles&amp;only=styles&amp;skin=tweeki"/>
+<meta name="generator" content="MediaWiki 1.35.5"/>
+<meta property="og:image" content="https://www.waveshare.com/w/upload/thumb/a/ac/HMMD_mmWave_Sensor.jpg/1200px-HMMD_mmWave_Sensor.jpg"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="shortcut icon" href="/w/favicon.ico"/>
+<link rel="search" type="application/opensearchdescription+xml" href="/w/opensearch_desc.php" title="Waveshare Wiki (en)"/>
+<link rel="EditURI" type="application/rsd+xml" href="https://www.waveshare.com/w/api.php?action=rsd"/>
+<link rel="alternate" type="application/atom+xml" title="Waveshare Wiki Atom feed" href="/w/index.php?title=Special:RecentChanges&amp;feed=atom"/>
+<!--[if lt IE 9]><script src="/w/resources/lib/html5shiv/html5shiv.js"></script><![endif]-->
+</head>
+<body class="mediawiki ltr sitedir-ltr mw-hide-empty-elt ns-0 ns-subject page-HMMD_mmWave_Sensor rootpage-HMMD_mmWave_Sensor skin-tweeki action-view tweeki-animateLayout tweeki-non-advanced tweeki-user-anon"><a href="https://www.waveshare.com/cdn-cgi/content?id=6IhOCrVrHmnjelej9dnqhIK5aHs2udNgbHvapucjInk-1791117391.4068148-1.2.1.1-7tM7ZG2v8fYu.ViQ5HhPMTe.MemSrGOikA.2JfGbTzQpzpGV04zWD5DlRpbziRNI" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a>			<!-- navbar -->
+			<div id="mw-navigation" class="navbar navbar-default navbar-fixed-top navbar-expand-lg fixed-top navbar-light bg-light" role="navigation">
+				<h2>Navigation menu</h2>
+				<div id="mw-head" class="navbar-inner">
+					<div class="container">
+
+						<div class="navbar-header">
+							<button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+								<span class="sr-only">Toggle navigation</span>
+								<span class="icon-bar"></span>
+								<span class="icon-bar"></span>
+								<span class="icon-bar"></span>
+							</button>
+
+							<a href="/wiki/Main_Page" class="navbar-brand"><img src="https://www.waveshare.com/w/upload/a/a7/Ws-watermark-en.svg" alt="Waveshare Wiki" /></a>
+						</div>
+
+						<div id="navbar" class="navbar-collapse collapse">
+													<ul class="nav navbar-nav">
+							<li class="nav"><a href="#" id="n-raspberry-pi" class="dropdown-toggle" data-toggle="dropdown">Raspberry Pi <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523rpi-boards"><a href="/wiki/Main_Page#RPi-Boards" tabindex="-1">Boards/Kits</a></li><li id="n-main_page.2523rpi-displays"><a href="/wiki/Main_Page#RPi-Displays" tabindex="-1">Displays</a></li><li id="n-main_page.2523rpi-cameras"><a href="/wiki/Main_Page#RPi-Cameras" tabindex="-1">Cameras</a></li><li id="n-main_page.2523rpi-expansions"><a href="/wiki/Main_Page#RPi-Expansions" tabindex="-1">Expansions</a></li><li id="n-main_page.2523rpi-laptops"><a href="/wiki/Main_Page#RPi-Laptops" tabindex="-1">All-in-one</a></li><li id="n-main_page.2523rpi-robots"><a href="/wiki/Main_Page#RPi-Robots" tabindex="-1">Robots</a></li><li id="n-main_page.2523rpi-games"><a href="/wiki/Main_Page#RPi-Games" tabindex="-1">Portable Gaming</a></li><li id="n-main_page.2523rpi-acces"><a href="/wiki/Main_Page#RPi-Acces" tabindex="-1">Accessories</a></li><li id="n-main_page.2523android-linux-boards"><a href="/wiki/Main_Page#Android-Linux-Boards" tabindex="-1">Other Android/Linux Boards</a></li></ul></li><li class="nav"><a href="#" id="n-ai" class="dropdown-toggle" data-toggle="dropdown">AI <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523jetson-ai-boards"><a href="/wiki/Main_Page#Jetson-AI-Boards" tabindex="-1">Boards/Kits</a></li><li id="n-main_page.2523jetson-ai-displays"><a href="/wiki/Main_Page#Jetson-AI-Displays" tabindex="-1">Displays</a></li><li id="n-main_page.2523jetson-ai-cameras"><a href="/wiki/Main_Page#Jetson-AI-Cameras" tabindex="-1">Cameras</a></li><li id="n-main_page.2523jetson-ai-hat"><a href="/wiki/Main_Page#Jetson-AI-HAT" tabindex="-1">Expansions</a></li><li id="n-main_page.2523jetson-ai-robots"><a href="/wiki/Main_Page#Jetson-AI-Robots" tabindex="-1">Robots</a></li></ul></li><li class="nav"><a href="#" id="n-displays" class="dropdown-toggle" data-toggle="dropdown">Displays <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523display-lcd-oleds"><a href="/wiki/Main_Page#Display-LCD-OLEDs" tabindex="-1">LCD/OLED</a></li><li id="n-main_page.2523display-e-paper"><a href="/wiki/Main_Page#Display-e-Paper" tabindex="-1">e-Paper</a></li></ul></li><li class="nav"><a href="#" id="n-iot" class="dropdown-toggle" data-toggle="dropdown">IoT <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523long-range-wireless-comm"><a href="/wiki/Main_Page#Long-range-wireless-comm" tabindex="-1">Long Range Wireless</a></li><li id="n-main_page.2523short-range-wireless-comm"><a href="/wiki/Main_Page#Short-range-wireless-comm" tabindex="-1">Short Range Wireless</a></li><li id="n-main_page.2523wired-communication"><a href="/wiki/Main_Page#Wired-communication" tabindex="-1">Wired Comm / Converter</a></li><li id="n-main_page.2523misc-cameras-av"><a href="/wiki/Main_Page#Misc-cameras-av" tabindex="-1">Cameras / Audio / Video</a></li><li id="n-main_page.2523misc-sensor-modules"><a href="/wiki/Main_Page#Misc-sensor-modules" tabindex="-1">Sensors</a></li><li id="n-main_page.2523misc-servos-motors"><a href="/wiki/Main_Page#Misc-servos-motors" tabindex="-1">Motors / Servos</a></li><li id="n-main_page.2523misc-other-modules"><a href="/wiki/Main_Page#Misc-other-modules" tabindex="-1">others</a></li></ul></li><li class="nav"><a href="#" id="n-robotics" class="dropdown-toggle" data-toggle="dropdown">Robotics <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523robotics-cars"><a href="/wiki/Main_Page#Robotics-cars" tabindex="-1">Mobile Robots</a></li><li id="n-main_page.2523dog-like-robots"><a href="/wiki/Main_Page#Dog-like-Robots" tabindex="-1">Dog-like Robots</a></li><li id="n-main_page.2523robotics-drivers-sensors"><a href="/wiki/Main_Page#Robotics-drivers-sensors" tabindex="-1">Drivers / Sensors</a></li><li id="n-main_page.2523robotics-robot-arms"><a href="/wiki/Main_Page#Robotics-robot-arms" tabindex="-1">Robot Arm / Control</a></li></ul></li><li class="nav"><a href="#" id="n-mcu.252Ffpga" class="dropdown-toggle" data-toggle="dropdown">MCU/FPGA <b class="caret"></b></a><ul class="dropdown-menu " role="menu"><li id="n-main_page.2523arduino-main-boards"><a href="/wiki/Main_Page#Arduino-main-boards" tabindex="-1">Arduino</a></li><li id="n-main_page.2523micro.253Abit"><a href="/wiki/Main_Page#micro:bit" tabindex="-1">micro:bit</a></li><li id="n-main_page.2523mcu.2farm" class="LPC"><a href="/wiki/Main_Page#MCU.2FARM" tabindex="-1">STM32</a></li><li id="n-main_page.2523fpga"><a href="/wiki/Main_Page#FPGA" tabindex="-1">FPGA</a></li></ul></li><li class="nav"><a href="https://service.waveshare.com" id="n-https.253A.252F.252Fservice.waveshare.com" rel="nofollow" target="_blank">Support</a></li>							</ul>
+						
+													<ul class="nav navbar-nav navbar-right">
+							</ul>
+				<form class="navbar-form navbar-right" action="/w/index.php" id="searchform">
+					<div class="form-group"><input type="search" name="search" placeholder="Product name search" title="Search Waveshare Wiki [f]" accesskey="f" id="searchInput" class="search-query form-control"/><input type="submit" name="go" value="Go" title="Go to a page with this exact name if it exists" id="mw-searchButton" class="searchButton btn hidden"/>
+					</div>
+				</form><ul class="nav navbar-nav navbar-right">							</ul>
+						</div>
+						
+					</div>
+				</div>
+			</div>
+			<!-- /navbar -->
+					<div id="mw-page-base"></div>
+			<div id="mw-head-base"></div>
+			<a id="top"></a>
+
+			<!-- content -->
+			<div id="contentwrapper" class="user-loggedout not-editable container with-navbar with-navbar-fixed">
+
+				
+				<div class="row">
+					<div class="col-md-offset-2 col-md-10" role="main">
+								<div class="mw-body" id="content">
+			<div id="mw-js-message" style="display:none;"></div>
+									<h1 id="firstHeading" class="firstHeading page-header" lang="en"><span dir="auto">HMMD mmWave Sensor</span></h1>
+									<!-- bodyContent -->
+			<div id="bodyContent">
+								<div id="siteSub">From Waveshare Wiki</div>
+								<div id="contentSub"></div>
+												<div id="jump-to-nav" class="mw-jump">
+					Jump to:					<a href="#mw-navigation">navigation</a>, 					<a href="#p-search">search</a>
+				</div>
+				<div id="mw-content-text" lang="en" dir="ltr" class="mw-content-ltr"><div class="mw-parser-output"><div class="wiki-pages jet-green-color">
+<table id="infotable" class="a-r at-c roundy bgd-green bl-white" style="margin-left: 5px; margin-bottom: 5px; width: 30%;">
+
+<tbody><tr>
+<td>
+<table class="at-c roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>HMMD mmWave Sensor</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><a href="https://www.waveshare.com/hmmd-mmwave-sensor.htm" target="_blank" rel="nofollow noreferrer noopener"><img alt="HMMD mmWave Sensor.jpg" src="/w/upload/thumb/a/ac/HMMD_mmWave_Sensor.jpg/300px-HMMD_mmWave_Sensor.jpg" decoding="async" loading="lazy" width="300" height="225" srcset="/w/upload/thumb/a/ac/HMMD_mmWave_Sensor.jpg/450px-HMMD_mmWave_Sensor.jpg 1.5x, /w/upload/thumb/a/ac/HMMD_mmWave_Sensor.jpg/600px-HMMD_mmWave_Sensor.jpg 2x" /></a><br /><br /><small>HMMD mmWave Sensor<br />GPIO, UART</small>
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>{{{name2}}}</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><br />
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>{{{name3}}}</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><br />
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>{{{name4}}}</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><br />
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>{{{name5}}}</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><br />
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="roundy" style="background: transparent;width:100%;">
+
+<tbody><tr>
+<td class="at-c textwhite"><b>{{{name6}}}</b>
+</td></tr>
+<tr>
+<td class="at-c bgwhite" style="margin:5px;"><br />
+</td></tr></tbody></table>
+</td></tr>
+<tr>
+<td>
+<table class="roundy" style="display:none;">
+<tbody><tr>
+<td style="width:2%;">
+</td>
+<td style="width:3%;">
+</td>
+<th colspan="2" width="90%" class="at-c roundytop bgl-white">Primary Attribute
+</th>
+<td style="width:3%;">
+</td>
+<td style="width:2%;">
+</td></tr>
+<tr>
+<td colspan="6" width="90px" class="at-c roundytl roundytr bgwhite b-green" style="border-width: 0 0 1px 0;"><b>Category:</b>
+</td></tr>
+<tr style="display:none;">
+<th colspan="3" width="90px" class="at-r bgwhite b-green" style="border-width: 0 0 1px 0;">{{{userDefinedInfo}}}:
+</th>
+<td colspan="3" class="at-l b-green bgwhite" style="border-width: 0 0 1px 0;">{{{userdefinedvalue}}}
+</td></tr>
+<tr style="display:none;">
+<td colspan="6" width="90px" class="at-c roundybl roundybr bgwhite"><b>Brand:</b> Waveshare
+</td></tr></tbody></table>
+</td></tr>
+<tr>
+<td>
+<table class="a-r roundy" style="display:none;">
+<tbody><tr>
+<td style="width:2%;">
+</td>
+<td style="width:3%;">
+</td>
+<th colspan="2" width="90%" class="at-c roundytop bgl-white">Website
+</th>
+<td style="width:3%;">
+</td>
+<td style="width:2%;">
+</td></tr>
+<tr>
+<td colspan="6" width="90px" class="at-c roundytl roundytr bgwhite b-green" style="border-width: 0 0 1px 0;"><b>International:</b> <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.com">Website</a>
+</td></tr>
+<tr>
+<td colspan="6" width="90px" class="at-c roundybl roundybr bgwhite"><b>Chinese:</b> <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.net/shop">官网</a>
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="a-r roundy" style="background: transparent; border-collapse:collapse;width:100%;display:none;">
+<tbody><tr>
+<td style="width:2%;">
+</td>
+<td style="width:3%;">
+</td>
+<th colspan="2" width="90%" class="at-c roundytop bgl-white">Onboard Interfaces
+</th>
+<td style="width:3%;">
+</td>
+<td style="width:2%;">
+</td></tr>
+<tr>
+<td colspan="6" width="90px" class="at-l roundy bgwhite b-green" style="border-width: 0 0 1px 0;">
+<table class="roundy bgwhite fulltable" style="text-align:center;">
+
+<tbody><tr>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td></tr>
+<tr>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td></tr>
+<tr>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td></tr>
+<tr>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td></tr>
+<tr>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td>
+<td class="roundy bl-gray bw-1" style="width:25%;display:none;"><small></small>
+</td></tr></tbody></table>
+</td></tr></tbody></table>
+</td></tr>
+<tr style="display:none;">
+<td>
+<table class="a-r roundy" style="background: transparent; border-collapse:collapse;width:100%;;display:none;">
+<tbody><tr>
+<td style="width:2%;">
+</td>
+<td style="width:3%;">
+</td>
+<th colspan="2" width="90%" class="at-c roundytop bgl-white">Related Products
+</th>
+<td style="width:3%;">
+</td>
+<td style="width:2%;">
+</td></tr>
+<tr>
+<td colspan="6" width="90px" class="at-l roundy bgwhite b-green" style="border-width: 0 0 1px 0;">
+</td></tr></tbody></table>
+</td></tr></tbody></table>
+<div id="toc" class="toc" role="navigation" aria-labelledby="mw-toc-heading"><input type="checkbox" role="button" id="toctogglecheckbox" class="toctogglecheckbox" style="display:none" /><div class="toctitle" lang="en" dir="ltr"><h2 id="mw-toc-heading">Contents</h2><span class="toctogglespan"><label class="toctogglelabel" for="toctogglecheckbox"></label></span></div>
+<ul>
+<li class="toclevel-1 tocsection-1"><a href="#Introduction"><span class="tocnumber">1</span> <span class="toctext">Introduction</span></a></li>
+<li class="toclevel-1 tocsection-2"><a href="#Features"><span class="tocnumber">2</span> <span class="toctext">Features</span></a></li>
+<li class="toclevel-1 tocsection-3"><a href="#Specification"><span class="tocnumber">3</span> <span class="toctext">Specification</span></a></li>
+<li class="toclevel-1 tocsection-4"><a href="#Hardware_Description"><span class="tocnumber">4</span> <span class="toctext">Hardware Description</span></a></li>
+<li class="toclevel-1 tocsection-5"><a href="#Hardware_Test"><span class="tocnumber">5</span> <span class="toctext">Hardware Test</span></a>
+<ul>
+<li class="toclevel-2 tocsection-6"><a href="#Hardware_Connection"><span class="tocnumber">5.1</span> <span class="toctext">Hardware Connection</span></a></li>
+<li class="toclevel-2 tocsection-7"><a href="#Host_Description"><span class="tocnumber">5.2</span> <span class="toctext">Host Description</span></a></li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-8"><a href="#Terminology_Explanation"><span class="tocnumber">6</span> <span class="toctext">Terminology Explanation</span></a></li>
+<li class="toclevel-1 tocsection-9"><a href="#Communication_Protocol"><span class="tocnumber">7</span> <span class="toctext">Communication Protocol</span></a>
+<ul>
+<li class="toclevel-2 tocsection-10"><a href="#Protocol_Format"><span class="tocnumber">7.1</span> <span class="toctext">Protocol Format</span></a>
+<ul>
+<li class="toclevel-3 tocsection-11"><a href="#Send_Command_with_ACK"><span class="tocnumber">7.1.1</span> <span class="toctext">Send Command with ACK</span></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-12"><a href="#Module_Report_Data"><span class="tocnumber">8</span> <span class="toctext">Module Report Data</span></a>
+<ul>
+<li class="toclevel-2 tocsection-13"><a href="#Normal_Mode"><span class="tocnumber">8.1</span> <span class="toctext">Normal Mode</span></a></li>
+<li class="toclevel-2 tocsection-14"><a href="#Debug_Mode"><span class="tocnumber">8.2</span> <span class="toctext">Debug Mode</span></a></li>
+<li class="toclevel-2 tocsection-15"><a href="#Report_Mode"><span class="tocnumber">8.3</span> <span class="toctext">Report Mode</span></a></li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-16"><a href="#Detection_Range"><span class="tocnumber">9</span> <span class="toctext"><b>Detection Range</b></span></a>
+<ul>
+<li class="toclevel-2 tocsection-17"><a href="#Top-mount_Installation"><span class="tocnumber">9.1</span> <span class="toctext">Top-mount Installation</span></a></li>
+<li class="toclevel-2 tocsection-18"><a href="#Wall-mount_Installation"><span class="tocnumber">9.2</span> <span class="toctext">Wall-mount Installation</span></a></li>
+<li class="toclevel-2 tocsection-19"><a href="#Detection_Range_Test"><span class="tocnumber">9.3</span> <span class="toctext">Detection Range Test</span></a></li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-20"><a href="#Dimensions"><span class="tocnumber">10</span> <span class="toctext">Dimensions</span></a></li>
+<li class="toclevel-1 tocsection-21"><a href="#Working_with_Raspberry_Pi"><span class="tocnumber">11</span> <span class="toctext">Working with Raspberry Pi</span></a>
+<ul>
+<li class="toclevel-2 tocsection-22"><a href="#Hardware_Preparation_.26_Connection"><span class="tocnumber">11.1</span> <span class="toctext">Hardware Preparation &amp; Connection</span></a></li>
+<li class="toclevel-2 tocsection-23"><a href="#UART_Debugging"><span class="tocnumber">11.2</span> <span class="toctext">UART Debugging</span></a></li>
+<li class="toclevel-2 tocsection-24"><a href="#Sample_Demo"><span class="tocnumber">11.3</span> <span class="toctext">Sample Demo</span></a></li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-25"><a href="#Working_with_Jetson_Nano"><span class="tocnumber">12</span> <span class="toctext">Working with Jetson Nano</span></a>
+<ul>
+<li class="toclevel-2 tocsection-26"><a href="#Hardware_Preparation_.26_Connection_2"><span class="tocnumber">12.1</span> <span class="toctext">Hardware Preparation &amp; Connection</span></a></li>
+<li class="toclevel-2 tocsection-27"><a href="#Sample_Demo_2"><span class="tocnumber">12.2</span> <span class="toctext">Sample Demo</span></a></li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-28"><a href="#Working_with_Arduino.2FESP32"><span class="tocnumber">13</span> <span class="toctext">Working with Arduino/ESP32</span></a>
+<ul>
+<li class="toclevel-2 tocsection-29"><a href="#Hardware_Preparation_.26_Connection_3"><span class="tocnumber">13.1</span> <span class="toctext">Hardware Preparation &amp; Connection</span></a></li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-30"><a href="#Working_with_Pico.2FRP2040"><span class="tocnumber">14</span> <span class="toctext">Working with Pico/RP2040</span></a>
+<ul>
+<li class="toclevel-2 tocsection-31"><a href="#Hardware_Preparation_.26_Connection_4"><span class="tocnumber">14.1</span> <span class="toctext">Hardware Preparation &amp; Connection</span></a></li>
+<li class="toclevel-2 tocsection-32"><a href="#Sample_Demo_3"><span class="tocnumber">14.2</span> <span class="toctext">Sample Demo</span></a></li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-33"><a href="#Resource"><span class="tocnumber">15</span> <span class="toctext">Resource</span></a>
+<ul>
+<li class="toclevel-2 tocsection-34"><a href="#Demo"><span class="tocnumber">15.1</span> <span class="toctext">Demo</span></a></li>
+<li class="toclevel-2 tocsection-35"><a href="#Software"><span class="tocnumber">15.2</span> <span class="toctext">Software</span></a></li>
+<li class="toclevel-2 tocsection-36"><a href="#Document"><span class="tocnumber">15.3</span> <span class="toctext">Document</span></a></li>
+<li class="toclevel-2 tocsection-37"><a href="#Project_Resources"><span class="tocnumber">15.4</span> <span class="toctext">Project Resources</span></a></li>
+</ul>
+</li>
+<li class="toclevel-1 tocsection-38"><a href="#FAQ"><span class="tocnumber">16</span> <span class="toctext">FAQ</span></a></li>
+<li class="toclevel-1 tocsection-39"><a href="#Support"><span class="tocnumber">17</span> <span class="toctext">Support</span></a></li>
+</ul>
+</div>
+
+<h2><span class="mw-headline" id="Introduction">Introduction</span></h2>
+<p>HMMD mmWave Sensor is a human micro-motion sensor that can detect and recognize moving, standing, and stationary human body. It is widely used in various AIoT scenarios, covering smart homes, smart security, smart businesses, and smart lighting, etc.
+</p>
+<h2><span class="mw-headline" id="Features">Features</span></h2>
+<ul><li>Comes with the Silicon Micro AIoT Millimeter-Wave Sensor SoC SXKMXXX0.</li>
+<li>Onboard high-performance 24GHz one-transmit-one-receive antenna and peripheral circuits.</li>
+<li>Mini module size: 20mm x 20mm.</li>
+<li>Pre-loaded with default human body sensing configuration, plug-and-play.</li>
+<li>Longest detection distance for motion human body sensing: 8.5m.</li>
+<li>Driven by the PY32F003F17U6TR microcontroller, with UART pins exposed for easy integration with Arduino/ESP32/JetsonNano and other main control boards.</li>
+<li>Utilizes human micro-motion sensing algorithms, millimeter-wave radar distance measurement technology, and advanced proprietary signal processing technology of the SXKMXXX0 chip.</li>
+<li>Provide online comprehensive supporting documentation (Raspberry/JetsonNano/Arduino/ESP32/sample demos).</li>
+<li>Accurate perception of motion, micro-movement, and stationary human bodies achieved.</li></ul>
+<h2><span class="mw-headline" id="Specification">Specification</span></h2>
+<ul><li>Hardware
+<ul><li>Frequency Band: 24~24.25Ghz</li>
+<li>Maximum Scanning Bandwidth: 0.25GHz</li>
+<li>Maximum Equivalent Isotropic Radiated Power: 11dBm</li>
+<li>Supply Voltage: 3.3V (3.0~3.6V Wide-range Voltage)</li>
+<li>Dimensions: 20x20mm²</li>
+<li>Environment Temperature: -40~85℃</li></ul></li>
+<li>System:
+<ul><li>Detection Range (wall-mount): Motion human body target 8m; Micro-motion human body target 6m</li>
+<li>Detection Range (ceiling-mount): Motion human body target 5m; Micro-motion human body target 4m</li>
+<li>Detection Accuracy: ±0.35m (for moving targets within 8m straight-line distance from the radar)</li>
+<li>Average Operation Current: 50mA</li>
+<li>Data Refresh Period: 100ms</li></ul></li></ul>
+<h2><span class="mw-headline" id="Hardware_Description">Hardware Description</span></h2>
+<p><a href="/wiki/File:HMMD_mmWave_Sensor02.jpg" class="image"><img alt="HMMD mmWave Sensor02.jpg" src="/w/upload/5/5b/HMMD_mmWave_Sensor02.jpg" decoding="async" loading="lazy" width="600" height="286" /></a>
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>J2 Pin</th>
+<th>Label</th>
+<th>Function</th>
+<th>Description
+</th></tr>
+<tr>
+<td>J2Pin1</td>
+<td>3V3</td>
+<td>Power Input</td>
+<td>Power supply positive, 3.0~3.6V，Typ.3.3V
+</td></tr>
+<tr>
+<td>J2Pin2</td>
+<td>GND</td>
+<td>Ground</td>
+<td>Connect to the Ground
+</td></tr>
+<tr>
+<td>J2Pin3</td>
+<td>TX</td>
+<td>UART_TX</td>
+<td>0~3.3V
+</td></tr>
+<tr>
+<td>J2Pin4</td>
+<td>RX</td>
+<td>UART_RX</td>
+<td>0~3.3V
+</td></tr>
+<tr>
+<td>J2Pin5</td>
+<td>OT2</td>
+<td>IO, Used for reporting detection status: High output level for presence, low output level for absence.</td>
+<td>0~3.3V
+</td></tr></tbody></table>
+<h2><span class="mw-headline" id="Hardware_Test">Hardware Test</span></h2>
+<h3><span class="mw-headline" id="Hardware_Connection">Hardware Connection</span></h3>
+<ul><li>Users need to prepare the following things in addition to the module itself before using the module:</li></ul>
+<pre>USB TO TTL and related cables, here we recommend CP2102 and FT232 kernel-driven TTL modules: <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.com/catalogsearch/result/?q=CP2102">CP2102 USB UART Board</a>
+</pre>
+<ul><li>Set the USB TO TTL level selector toggle switch to 3.3V and connect the module and USB TO TTL as described in the table below:</li></ul>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>HMMD mmWave Sensor</th>
+<th><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.com/catalogsearch/result/?q=CP2102">CP2102 USB UART Board</a>
+</th></tr>
+<tr>
+<td>3V3</td>
+<td>VCC
+</td></tr>
+<tr>
+<td>GND</td>
+<td>GND
+</td></tr>
+<tr>
+<td>TX</td>
+<td>RXD
+</td></tr>
+<tr>
+<td>RX</td>
+<td>TXD
+</td></tr></tbody></table>
+<p><a href="/wiki/File:HMMD-mmWave-Sensor-details-7.jpg" class="image"><img alt="HMMD-mmWave-Sensor-details-7.jpg" src="/w/upload/1/17/HMMD-mmWave-Sensor-details-7.jpg" decoding="async" loading="lazy" width="600" height="167" /></a>
+</p>
+<ul><li>Connect the USB TO TTL to the computer, open the supporting software of the host computer, select the corresponding USB TO TTL serial port number, select the baud rate of 115200 to connect to the device, and then adjust the parameter to receive the data.</li></ul>
+<div class="floatleft"><a href="/wiki/File:HMMD-mmWave001.png" class="image"><img alt="HMMD-mmWave001.png" src="/w/upload/e/ec/HMMD-mmWave001.png" decoding="async" loading="lazy" width="550" height="309" /></a></div><a href="/wiki/File:HMMD-mmWave002.png" class="image"><img alt="HMMD-mmWave002.png" src="/w/upload/7/76/HMMD-mmWave002.png" decoding="async" loading="lazy" width="550" height="307" /></a>
+<h3><span class="mw-headline" id="Host_Description">Host Description</span></h3>
+<p>1. First, download HMMD mmWave Sensor <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD-mmWave-Sensor-Tools.zip">host software</a>.<br />
+2. According to <a href="#Hardware_Connection">#Hardware Connection</a>, use USRT to USB to connect the module and the host.<br />
+3. Open the host tool, click on the <b>"Refresh"</b> button, select the TTL tool's serial port in the <b>"Port No."</b> dropdown, confirm that the <b>"Baud Rate"</b> is 115200, and then click <b>"Connect"</b> to establish the connection between the host and the radar module.<br />
+<a href="/wiki/File:HMMD-mmWave-hptool.png" class="image"><img alt="HMMD-mmWave-hptool.png" src="/w/upload/a/a0/HMMD-mmWave-hptool.png" decoding="async" loading="lazy" width="550" height="308" /></a><a href="/wiki/File:HMMD-mmWave-hptool01.png" class="image"><img alt="HMMD-mmWave-hptool01.png" src="/w/upload/a/a3/HMMD-mmWave-hptool01.png" decoding="async" loading="lazy" width="550" height="308" /></a><br />
+As shown in the above image, the host tool is divided into three areas: Device Operation Area 1, Function Button Area 2, and Function Page Area 3.<br />
+After connecting the host and the module, In Area 1 of the interface, the firmware version and serial number of the radar module will be displayed (if the serial number is not flashed, the host computer will display FFFFFFFF). The Function Page Area of the "Parameter View/Set" function will show the current settings of the radar module.
+</p>
+<h2><span class="mw-headline" id="Terminology_Explanation">Terminology Explanation</span></h2>
+<ul><li>Maximum Distance Gate: Used to set the module's farthest effective detection distance, with one gate length equal to 70cm. Parameter range: 0~15.<br /></li>
+<li>Target Disappearance Delay Time (s): The time it takes for the target state to switch from presence to absence. During this delay, if a person is detected, the timer resetting the delay time is triggered. After the module detects the absence state for a duration equal to the delay time, it reports no presence, and at this point, the OT2 pin outputs a low level. Parameter range: 0~65535.</li></ul>
+<h2><span class="mw-headline" id="Communication_Protocol">Communication Protocol</span></h2>
+<p>The default baud rate of the radar serial port is 115200, 1 stop bit, no parity bit.
+</p>
+<h3><span class="mw-headline" id="Protocol_Format">Protocol Format</span></h3>
+<p>HMMD mmWave Sensor data communication uses the small end format and all data is in hexadecimal.
+</p>
+<h4><span class="mw-headline" id="Send_Command_with_ACK">Send Command with ACK</span></h4>
+<p><b>1. Read Firmware Version Command  </b><br />
+This command reads the radar firmware version information.  <br />
+Command Code: 0x0000<br />
+Command Value: None<br />
+Return Value: Version Number Length (2 bytes) + Version Number Byte String<br />
+</p><p>Sending data:<br />
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>FH(frame header) Byte 1~4</th>
+<th>In-frame Data Length Byte 5,6</th>
+<th>In-frame Data Byte 7,8</th>
+<th>Frame Tail Byte 9~12
+</th></tr>
+<tr>
+<td>FD FC FB FA</td>
+<td>02 00</td>
+<td>00 00</td>
+<td>04 03 02 01
+</td></tr></tbody></table>
+<p>Module ACK: (Successful Example)<br />
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Byte 1~4</th>
+<th>Byte 5,6</th>
+<th>Byte 7,8</th>
+<th>Byte 9,10</th>
+<th>Byte 11,12</th>
+<th>Byte 13~18</th>
+<th>Byte 19~24
+</th></tr>
+<tr>
+<td>FD FC FB FA</td>
+<td>0C 00</td>
+<td>00 01</td>
+<td>00 00</td>
+<td>06 00</td>
+<td>76 31 2E 35 2E 35</td>
+<td>04 03 02 01
+</td></tr></tbody></table>
+<p><b>2. Read Serial Number Command</b><br />
+This command reads the serial number of the radar.<br />
+Command Code: 0x0011<br />
+Command Value: None<br />
+Return Value: 2 bytes ACK status (0 for success, 1 for failure)<br />
+</p><p>Sending Data:
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Byte 1~4</th>
+<th>Byte5,6</th>
+<th>Byte 7,8</th>
+<th>Byte 9~12
+</th></tr>
+<tr>
+<td>FD FC FB FA</td>
+<td>02 00</td>
+<td>11 00</td>
+<td>04 03 02 01
+</td></tr></tbody></table>
+<p>Module ACK: (Successful Example) 
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Byte 1~4</th>
+<th>Byte 5,6</th>
+<th>Byte 7,8</th>
+<th>Byte 9,10</th>
+<th>Byte 11,12</th>
+<th>Byte 13~14</th>
+<th>Byte 15~18
+</th></tr>
+<tr>
+<td>FD FC FB FA</td>
+<td>08 00</td>
+<td>11 01</td>
+<td>00 00</td>
+<td>02 00</td>
+<td>CB AB</td>
+<td>04 03 02 01
+</td></tr></tbody></table>
+<p><b>3. Read Register Command</b><br />
+This command reads the registers of the radar.<br />
+Command Code: 0x0002<br />
+Command Value: 2 bytes chip address + (2 bytes address) * N<br />
+Return Value: (2 bytes data) * N<br />
+</p><p>Sending Data:<br />
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Byte 1~4</th>
+<th>Byte 5,6</th>
+<th>Byte 7,8</th>
+<th>Byte 9~12</th>
+<th>Byte 13~16
+</th></tr>
+<tr>
+<td>FD FC FB FA</td>
+<td>06 00</td>
+<td>02 00</td>
+<td>40 00 40 00</td>
+<td>04 03 02 01
+</td></tr></tbody></table>
+<p>Module ACK: (Successful Example) 
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Byte 1~4</th>
+<th>Byte 5,6</th>
+<th>Byte 7,8</th>
+<th>Byte 9,10</th>
+<th>Byte 11,12</th>
+<th>Byte 13~16
+</th></tr>
+<tr>
+<td>FD FC FB FA</td>
+<td>06 00</td>
+<td>02 01</td>
+<td>00 00</td>
+<td>07 02</td>
+<td>04 03 02 01
+</td></tr></tbody></table>
+<p><b>4. Read Parameters Configuration Command</b><br />
+This command reads the configuration parameters of the radar.<br />
+Command Code: 0x0008<br />
+Command value: (2 byte parameter ID)*N<br />
+Return value: (4 byte parameter value)*N<br />
+</p><p>Sending Data:<br />
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Byte 1~4</th>
+<th>Byte 5,6</th>
+<th>Byte 7,8</th>
+<th>Byte 9~10</th>
+<th>Byte 11~14
+</th></tr>
+<tr>
+<td>FD FC FB FA</td>
+<td>04 00</td>
+<td>08 00</td>
+<td>01 00</td>
+<td>04 03 02 01
+</td></tr></tbody></table>
+<p>Module ACK: (Success, maximum distance gate set to 12)
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Byte 1~4</th>
+<th>Byte 5,6</th>
+<th>Byte 7,8</th>
+<th>Byte 9,10</th>
+<th>Byte 11,14</th>
+<th>Byte 15~18
+</th></tr>
+<tr>
+<td>FD FC FB FA</td>
+<td>08 00</td>
+<td>08 01</td>
+<td>00 00</td>
+<td>0C 00 00 00</td>
+<td>04 03 02 01
+</td></tr></tbody></table>
+<h2><span class="mw-headline" id="Module_Report_Data">Module Report Data</span></h2>
+<p>The HMMD mmWave Sensor operates in default mode by outputting detection results through the serial port. The output consists of a string indicating ON/OFF along with the target distance gate.<br /> 
+In typical application scenarios, the host computer obtains data during the module's processing. Therefore, the module offers debug mode, report mode, and normal mode.
+</p>
+<h4><span class="mw-headline" id="Normal_Mode">Normal Mode</span></h4>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Byte 1~4</th>
+<th>Byte5,6</th>
+<th>Byte 7,8</th>
+<th>Byte9~10</th>
+<th>Byte 11~14</th>
+<th>Byte 15~18
+</th></tr>
+<tr>
+<td>FD FC FB FA</td>
+<td>08 00</td>
+<td>12 00</td>
+<td>00 00</td>
+<td><font color="red">64</font> 00 00 00</td>
+<td>04 03 02 01
+</td></tr></tbody></table>
+<h4><span class="mw-headline" id="Debug_Mode">Debug Mode</span></h4>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Byte 1~4</th>
+<th>Byte5,6</th>
+<th>Byte 7,8</th>
+<th>Byte9~10</th>
+<th>Byte 11~14</th>
+<th>Byte 15~18
+</th></tr>
+<tr>
+<td>FD FC FB FA</td>
+<td>08 00</td>
+<td>12 00</td>
+<td>00 00</td>
+<td><font color="red">00</font> 00 00 00</td>
+<td>04 03 02 01
+</td></tr></tbody></table>
+<p>Debug Mode serial port data frame example：
+</p><p>PS: In debugging mode, the RDMAP data of all the range gates of a certain chirp are sent out each time, i.e., the
+data of all the 16 range gates of the first chirp will be sent out first, then goes the second chirp, and so on.
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Header</th>
+<th>Intra-frame Data</th>
+<th>Tailer
+</th></tr>
+<tr>
+<td>AA BF 10 14</td>
+<td>RDMAP: 20(Dopple)*16（number of range gate）*4（square of the amplitude）</td>
+<td>FD FC FB FA
+</td></tr></tbody></table>
+<h4><span class="mw-headline" id="Report_Mode">Report Mode</span></h4>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Byte 1~4</th>
+<th>Byte5,6</th>
+<th>Byte 7,8</th>
+<th>Byte9~10</th>
+<th>Byte 11~14</th>
+<th>Byte 15~18
+</th></tr>
+<tr>
+<td>FD FC FB FA</td>
+<td>08 00</td>
+<td>12 00</td>
+<td>00 00</td>
+<td><font color="red">04</font> 00 00 00</td>
+<td>04 03 02 01
+</td></tr></tbody></table>
+<p>In report mode serial port data frame example: 
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>Frame Header</th>
+<th>Length</th>
+<th>Detection Result</th>
+<th>Target Distance</th>
+<th>The energy values for each distance gate</th>
+<th>Frame Tail
+</th></tr>
+<tr>
+<td>F4 F3 F2 F1</td>
+<td>2 bytes, total number of bytes for detection result, target distance, and energy values for each distance gate</td>
+<td>1 byte, 00 absent, 01 present</td>
+<td>2 bytes indicating the distance of the target phase from the radar in the scene</td>
+<td>32 bytes, 16 (total number of distance gates) * 2 bytes, size of energy value for each distance gate from 0 to 15</td>
+<td>F8 F7 F6 F5
+</td></tr></tbody></table>
+<h2><span class="mw-headline" id="Detection_Range"><b>Detection Range</b></span></h2>
+<p>The HMMD mmWave Sensor supports both top and wall mounting and is recommended for top mounting.
+</p>
+<h3><span class="mw-headline" id="Top-mount_Installation">Top-mount Installation</span></h3>
+<p>The recommended top-mounted installation height is 2.7~3.0m. The top-mounted HMMD mmWave Sensor radar module, in the default configuration, has a maximum motion detection range within a conical three-dimensional space with a bottom radius of 5m.<br />
+<a href="/wiki/File:HMMD_mmWave_Sensor_top.png" class="image"><img alt="HMMD mmWave Sensor top.png" src="/w/upload/8/8f/HMMD_mmWave_Sensor_top.png" decoding="async" loading="lazy" width="651" height="881" /></a>
+</p>
+<h3><span class="mw-headline" id="Wall-mount_Installation">Wall-mount Installation</span></h3>
+<p>Recommended wall-mounted installation height is 1.5~2.0m. The J2Pin pins are recommended to be positioned at the top. The HMMD mmWave Sensor radar module, in the default configuration, has a maximum motion detection range within a three-dimensional fan-shaped space with a normal direction of 8m, and horizontal and pitch angles of ±45°.<br />
+<a href="/wiki/File:Hmmd-8m.png" class="image"><img alt="Hmmd-8m.png" src="/w/upload/4/4b/Hmmd-8m.png" decoding="async" loading="lazy" width="960" height="1143" /></a>
+</p>
+<h3><span class="mw-headline" id="Detection_Range_Test">Detection Range Test</span></h3>
+<p>Testing methods for radar triggering and maintaining detection range are described as follows:<br />
+</p>
+<ul><li>Triggering Range:<br /></li></ul>
+<p>Move the target human body from a distance towards the radar, ensuring that the radar is reporting a "no presence" state. Stop the forward movement of the target human body when the radar begins reporting "presence." <br />Record the position where the target human body stops; this position is the boundary of the radar's triggering detection range. Repeat similar tests in various directions to outline the detection boundaries in each direction. The area enclosed by the detection boundary in all directions is the radar trigger detection range;<br />
+</p>
+<ul><li>Maintaining Range:<br /></li></ul>
+<p>With the radar reporting "presence," have the target human body perform slight movements, such as shrugging shoulders or raising hands, at the test position.
+If the radar continues to report "presence" consistently for 60 seconds, the current position is within the radar's maintaining detection range.
+Otherwise, the detection position is outside the maintaining detection range.
+</p>
+<h2><span class="mw-headline" id="Dimensions">Dimensions</span></h2>
+<p><a href="/wiki/File:HMMD_mmWave_Sensor_Dimensions.jpg" class="image"><img alt="HMMD mmWave Sensor Dimensions.jpg" src="/w/upload/e/ee/HMMD_mmWave_Sensor_Dimensions.jpg" decoding="async" loading="lazy" width="600" height="369" /></a>
+</p>
+<h2><span class="mw-headline" id="Working_with_Raspberry_Pi">Working with Raspberry Pi</span></h2>
+<h3><span id="Hardware_Preparation_&amp;_Connection"></span><span class="mw-headline" id="Hardware_Preparation_.26_Connection">Hardware Preparation &amp; Connection</span></h3>
+<ul><li>A Raspberry Pi 4B/5</li>
+<li>A HMMD mmWave Sensor</li></ul>
+<p>Connect the Raspberry Pi and the module as follows:
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>HMMD mmWave Sensor</th>
+<th>Raspberry Pi
+</th></tr>
+<tr>
+<td>3V3</td>
+<td>3.3V
+</td></tr>
+<tr>
+<td>GND</td>
+<td>GND
+</td></tr>
+<tr>
+<td>TX</td>
+<td>RXD
+</td></tr>
+<tr>
+<td>RX</td>
+<td>TXD
+</td></tr></tbody></table>
+<h3><span class="mw-headline" id="UART_Debugging">UART Debugging</span></h3>
+<p>Since the Raspberry Pi serial port is used for terminal debugging by default, if you need to use the serial port, you need to modify the Raspberry Pi settings.
+</p>
+<ul><li>Execute the following command to enter the Raspberry Pi configuration:</li></ul>
+<pre>sudo raspi-config
+</pre>
+<ul><li>Select Interfacing Options -&gt; Serial -&gt; no -&gt; yes, and turn off the serial port debugging function:</li></ul>
+<div class="center"><div class="floatnone"><a href="/wiki/File:L76X_GPS_Module_rpi_serial.png" class="image"><img alt="L76X GPS Module rpi serial.png" src="/w/upload/3/31/L76X_GPS_Module_rpi_serial.png" decoding="async" loading="lazy" width="1200" height="412" /></a></div></div><br />
+<h3><span class="mw-headline" id="Sample_Demo">Sample Demo</span></h3>
+<p>Open the Raspberry Pi and run:
+</p>
+<pre>mkdir HMMD_mmWave_Sensor&amp;&amp;cd HMMD_mmWave_Sensor
+python -m venv env
+source env/bin/activate
+pip install pyserial
+wget  <a target="_blank" rel="nofollow noreferrer noopener" class="external free" href="https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD_mmWave_Sensor.zip">https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD_mmWave_Sensor.zip</a>
+unzip HMMD_mmWave_Sensor.zip
+cd raspberry &amp;&amp;  python Raspberry_demo.py
+</pre>
+<p><br />
+<a href="/wiki/File:HMMD-mmWave-Sensor_Raspberry.png" class="image"><img alt="HMMD-mmWave-Sensor Raspberry.png" src="/w/upload/1/17/HMMD-mmWave-Sensor_Raspberry.png" decoding="async" loading="lazy" width="594" height="259" /></a>
+</p>
+<h2><span class="mw-headline" id="Working_with_Jetson_Nano">Working with Jetson Nano</span></h2>
+<h3><span id="Hardware_Preparation_&amp;_Connection_2"></span><span class="mw-headline" id="Hardware_Preparation_.26_Connection_2">Hardware Preparation &amp; Connection</span></h3>
+<ul><li>A Jetson Nano</li>
+<li>A HMMD mmWave Sensor</li></ul>
+<p>Connect the above hardware as shown below:
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>HMMD mmWave Sensor</th>
+<th>JetsonNano
+</th></tr>
+<tr>
+<td>3V3</td>
+<td>3.3V
+</td></tr>
+<tr>
+<td>GND</td>
+<td>GND
+</td></tr>
+<tr>
+<td>TX</td>
+<td>RXD
+</td></tr>
+<tr>
+<td>RX</td>
+<td>TXD
+</td></tr></tbody></table>
+<h3><span class="mw-headline" id="Sample_Demo_2">Sample Demo</span></h3>
+<p>Open the Jetson Nano:
+</p>
+<pre>mkdir HMMD_mmWave_Sensor&amp;&amp;cd HMMD_mmWave_Sensor
+python -m venv env
+source env/bin/activate
+pip install pyserial
+wget <a target="_blank" rel="nofollow noreferrer noopener" class="external free" href="https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD_mmWave_Sensor.zip">https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD_mmWave_Sensor.zip</a>
+unzip HMMD_mmWave_Sensor.zip
+cd Jetson_nano &amp;&amp;  python Jetson_Nano_demo.py
+</pre>
+<h2><span id="Working_with_Arduino/ESP32"></span><span class="mw-headline" id="Working_with_Arduino.2FESP32">Working with Arduino/ESP32</span></h2>
+<h3><span id="Hardware_Preparation_&amp;_Connection_3"></span><span class="mw-headline" id="Hardware_Preparation_.26_Connection_3">Hardware Preparation &amp; Connection</span></h3>
+<ul><li>An Arduino/ESP32</li>
+<li>A HMMD mmWave Sensor</li></ul>
+<p>Connect the module and ESP32 as shown below:  
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>HMMD mmWave Sensor</th>
+<th>ESP32
+</th></tr>
+<tr>
+<td>3V3</td>
+<td>3.3V
+</td></tr>
+<tr>
+<td>GND</td>
+<td>GND
+</td></tr>
+<tr>
+<td>TX</td>
+<td>GPIO5
+</td></tr>
+<tr>
+<td>RX</td>
+<td>GPIO4
+</td></tr></tbody></table>
+<p>Open Arduino_ESP32demo and use Arduino IDE to program the code:  
+</p><p><a href="/wiki/File:HMMD_mmWave_Sensor_ESP32.png" class="image"><img alt="HMMD mmWave Sensor ESP32.png" src="/w/upload/2/27/HMMD_mmWave_Sensor_ESP32.png" decoding="async" loading="lazy" width="507" height="492" /></a>
+</p>
+<h2><span id="Working_with_Pico/RP2040"></span><span class="mw-headline" id="Working_with_Pico.2FRP2040">Working with Pico/RP2040</span></h2>
+<h3><span id="Hardware_Preparation_&amp;_Connection_4"></span><span class="mw-headline" id="Hardware_Preparation_.26_Connection_4">Hardware Preparation &amp; Connection</span></h3>
+<ul><li>A Raspberry Pi Pico or <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.waveshare.com/rp2040-zero.htm">RP2040-Zero</a></li>
+<li>A HMMD mmWave Sensor</li></ul>
+<p>Connect the module and Raspberry Pi Pico or RP2040-Zero as shown below:  
+</p>
+<table class="list table table-striped table-bordered">
+
+<tbody><tr>
+<th>HMMD mmWave Sensor</th>
+<th>RP2040 Zero
+</th></tr>
+<tr>
+<td>3V3</td>
+<td>3.3V
+</td></tr>
+<tr>
+<td>GND</td>
+<td>GND
+</td></tr>
+<tr>
+<td>TX</td>
+<td>GPIO5
+</td></tr>
+<tr>
+<td>RX</td>
+<td>GPIO4
+</td></tr></tbody></table>
+<h3><span class="mw-headline" id="Sample_Demo_3">Sample Demo</span></h3>
+<p>Download <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD_mmWave_Sensor.zip">sample demo</a>, use the Thonny tool to open the RP2040_Zero demo code, and run the demo: 
+</p><p><a href="/wiki/File:HMMD-mmWave-Sensor_RP2040.png" class="image"><img alt="HMMD-mmWave-Sensor RP2040.png" src="/w/upload/9/9a/HMMD-mmWave-Sensor_RP2040.png" decoding="async" loading="lazy" width="822" height="829" /></a>
+</p>
+<h1><span class="mw-headline" id="Resource">Resource</span></h1>
+<h2><span class="mw-headline" id="Demo">Demo</span></h2>
+<ul><li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD_mmWave_Sensor.zip">Demo code</a></li></ul>
+<h2><span class="mw-headline" id="Software">Software</span></h2>
+<ul><li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD-mmWave-Sensor-Tools.zip">Host tool</a></li></ul>
+<h2><span class="mw-headline" id="Document">Document</span></h2>
+<ul><li><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD-mmWave-Sensor%20Radome%20Design%20Guide%20.pdf">HMMD-mmWave-Sensor Radome Design Guide</a></li></ul>
+<h2><span class="mw-headline" id="Project_Resources">Project Resources</span></h2>
+<p>This section features third - party project resources. We merely provide links and bear no responsibility for content updates or maintenance. Thank you for your understanding.<br />
+</p><p><b>Electronic Clinic- ESP32 + HMMD mmWave Sensor: Real Tests + Blynk IoT!</b>
+<iframe width="400" height="315" src="//www.youtube.com/embed/I508XQrjvDY" frameborder="0" allowfullscreen=""></iframe>
+</p>
+<ul><li>Youtube: <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.youtube.com/watch?v=I508XQrjvDY">https://www.youtube.com/watch?v=I508XQrjvDY</a></li>
+<li>Code Program: <a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://www.electroniclinic.com/esp32-hmmd-mmwave-sensor-real-tests-blynk-iot/">https://www.electroniclinic.com/esp32-hmmd-mmwave-sensor-real-tests-blynk-iot/</a></li></ul>
+<h1><span class="mw-headline" id="FAQ">FAQ</span></h1>
+<div class="panel-group">
+				<div class="panel panel-default">
+					<div class="panel-heading">
+						<h4 class="panel-title">
+							<a data-toggle="collapse" data-parent="#accordion" href="#accordion1">
+								Question: Why is the maximum calibrated detection distance 10m, but the actual measured distance is only 8.5m?
+
+							</a>
+						</h4>
+					</div>
+					<div id="accordion1" class="panel-collapse collapse in">
+						<div class="panel-body">
+<div>&#160;<b>Answer:</b></div>
+<div>
+<p>The millimeter-wave radar's maximum radial detection range for targets is 10m. Within this detection range, the millimeter-wave radar reports the straight-line distance of the target to the radar. The millimeter-wave radar can only provide distance information output for moving human bodies within 10m. The theoretical accuracy of radar ranging is 0.35m. Due to variations in the size, posture, Radar Cross Section (RCS), and other factors of human body targets, the ranging accuracy may fluctuate. Additionally, there may be some fluctuations in the maximum detection distance.
+</p>
+</div>
+<div style="display:none;"></div>
+<div style="display:none;"></div>
+<p><font color="red" style="display:none;">{{{5}}}</font>
+</p>
+						</div>
+					</div>
+				</div>
+</div>
+<p><br />
+</p>
+<div class="panel-group">
+				<div class="panel panel-default">
+					<div class="panel-heading">
+						<h4 class="panel-title">
+							<a data-toggle="collapse" data-parent="#accordion" href="#accordion2">
+								Question: What is a distance gate, and how to understand it?
+
+							</a>
+						</h4>
+					</div>
+					<div id="accordion2" class="panel-collapse collapse in">
+						<div class="panel-body">
+<div>&#160;<b>Answer:</b></div>
+<div>
+<p>A distance gate refers to the range or area that a millimeter-wave radar system uses to determine the distance to a target. The millimeter-wave radar sends radio waves and receives signals reflected from the target, using the time delay of these signals to determine the target's distance. The "distance gate" is essentially a time window, and signals received by the radar system within this window are considered valid signals from the target. Radar systems typically set a specific distance gate to exclude signals from targets that are far from the radar or sources of interference. This helps improve the performance of the radar system and reduces false positives from non-target signals.
+</p>
+</div>
+<div style="display:none;"></div>
+<div style="display:none;"></div>
+<p><font color="red" style="display:none;">{{{5}}}</font>
+</p>
+						</div>
+					</div>
+				</div>
+</div>
+<p><br />
+</p>
+<div class="panel-group">
+				<div class="panel panel-default">
+					<div class="panel-heading">
+						<h4 class="panel-title">
+							<a data-toggle="collapse" data-parent="#accordion" href="#accordion3">
+								Question: Does the sensor detect only human beings, or can it detect any moving object?
+
+							</a>
+						</h4>
+					</div>
+					<div id="accordion3" class="panel-collapse collapse in">
+						<div class="panel-body">
+<div>&#160;<b>Answer:</b></div>
+<div>
+<p>It can detect living beings that are moving relative to each other.
+</p>
+</div>
+<div style="display:none;"></div>
+<div style="display:none;"></div>
+<p><font color="red" style="display:none;">{{{5}}}</font>
+</p>
+						</div>
+					</div>
+				</div>
+</div>
+<p><br />
+</p>
+<div class="panel-group">
+				<div class="panel panel-default">
+					<div class="panel-heading">
+						<h4 class="panel-title">
+							<a data-toggle="collapse" data-parent="#accordion" href="#accordion4">
+								Question: What is the detection frequency of the HMMD mmWave Sensor?
+
+							</a>
+						</h4>
+					</div>
+					<div id="accordion4" class="panel-collapse collapse in">
+						<div class="panel-body">
+<div>&#160;<b>Answer:</b></div>
+<div>
+<p>The data refresh period is 100ms and the sampling rate is 10kbps.
+</p>
+</div>
+<div style="display:none;"></div>
+<div style="display:none;"></div>
+<p><font color="red" style="display:none;">{{{5}}}</font>
+</p>
+						</div>
+					</div>
+				</div>
+</div>
+<p><br />
+</p>
+<h1><span class="mw-headline" id="Support">Support</span></h1>
+<p><br />
+<br />
+</p>
+<div style="background:linear-gradient(to bottom right,#91C942,#7DB036); border-radius:15px; width:100%;min-width:750px;">
+<div style="display:flex;flex-direction: row;align-items: flex-start;">
+<div style="flex:l; font-size:15px; width:70%; margin-top:20px; margin-bottom:20px; margin-right:40px;padding-left:40px;">
+<p style="font-size:20px; font-weight:bold;">
+Technical Support
+</p>
+<p>
+If you need technical support or have any feedback/review, please click the <b>Submit Now</b> button to submit a ticket, Our support team will check and reply to you within 1 to 2 working days. Please be patient as we make every effort to help you to resolve the issue. 
+<br /> 
+Working Time: 9 AM - 6 PM GMT+8 (Monday to Friday)
+</p>
+</div>
+<div style="margin-top:94px;">
+<div id="service" style="display:flex; flex:r; background-color:#393939; color:white; text-align:center; font-size:20px; border-radius:20px;">
+<p><a target="_blank" rel="nofollow noreferrer noopener" class="external text" href="https://service.waveshare.com/">Submit Now</a>
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- 
+NewPP limit report
+Cached time: 20261004123632
+Cache expiry: 0
+Dynamic content: true
+Complications: []
+CPU time usage: 0.152 seconds
+Real time usage: 0.214 seconds
+Preprocessor visited node count: 658/1000000
+Post‐expand include size: 7438/2097152 bytes
+Template argument size: 3455/2097152 bytes
+Highest expansion depth: 8/40
+Expensive parser function count: 0/100
+Unstrip recursion depth: 0/20
+Unstrip post‐expand size: 3966/5000000 bytes
+-->
+<!--
+Transclusion expansion time report (%,ms,calls,template)
+100.00%   70.218      1 -total
+ 43.01%   30.198      1 Template:Infobox_item
+ 37.99%   26.673      4 Template:FAQ
+ 17.38%   12.202      1 Template:Amazon_nolink
+ 17.37%   12.198      1 Template:Servicebox1
+-->
+</div></div>								<div class="printfooter">
+				Retrieved from "<a dir="ltr" href="https://www.waveshare.com/w/index.php?title=HMMD_mmWave_Sensor&amp;oldid=111236">https://www.waveshare.com/w/index.php?title=HMMD_mmWave_Sensor&amp;oldid=111236</a>"				</div>
+												<div id="catlinks" class="catlinks catlinks-allhidden" data-mw="interface"></div>												<div class="visualClear"></div>
+							</div>
+			<!-- /bodyContent -->
+		</div>
+						</div>
+				</div>
+			</div>
+			<!-- /content -->
+
+			<!-- sidebar-left -->
+			<div class="sidebar-wrapper sidebar-left-wrapper">
+				<div class="sidebar-container container">
+					<div class="row">
+						<div id="sidebar-left" class="col-md-2 col-md-offset-0">
+							<div id="tweekiTOC"></div>						</div>
+					</div>
+				</div>
+			</div>
+			<!-- /sidebar-left -->
+					<!-- footer -->
+			<div id="footer" role="contentinfo" class="footer container footer-sticky bg-light">
+			<ul id="footer-custom"><li class="dropup"><a href="/w/index.php?title=Special:UserLogin&amp;returnto=HMMD+mmWave+Sensor" title="You are encouraged to log in; however, it is not mandatory [o]" accesskey="o">Login / Create Account</a></li></ul><div style="clear:both"></div>			</div>
+			<!-- /footer -->
+		
+<script>
+var fbtFancyBoxOptions = {};
+</script>
+
+<script>(RLQ=window.RLQ||[]).push(function(){mw.config.set({"wgPageParseReport":{"limitreport":{"cputime":"0.152","walltime":"0.214","ppvisitednodes":{"value":658,"limit":1000000},"postexpandincludesize":{"value":7438,"limit":2097152},"templateargumentsize":{"value":3455,"limit":2097152},"expansiondepth":{"value":8,"limit":40},"expensivefunctioncount":{"value":0,"limit":100},"unstrip-depth":{"value":0,"limit":20},"unstrip-size":{"value":3966,"limit":5000000},"timingprofile":["100.00%   70.218      1 -total"," 43.01%   30.198      1 Template:Infobox_item"," 37.99%   26.673      4 Template:FAQ"," 17.38%   12.202      1 Template:Amazon_nolink"," 17.37%   12.198      1 Template:Servicebox1"]},"cachereport":{"timestamp":"20261004123632","ttl":0,"transientcontent":true}}});mw.config.set({"wgBackendResponseTime":684});});</script>	<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a4543b904a678863',t:'MTc5MTExNzM5MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
