@@ -240,7 +240,27 @@ ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
 
 Ein leerer Glob-String bedeutet in dieser Version keine Filterung. `topics_pub_glob:="[]"` verweigert Publish/Advertise, und `topics_sub_glob` beschränkt Abos auf die beiden HMMD-Topics. Bei `services_glob:="[]"` hängt der Server automatisch `/rosapi/*` an; `/rosapi/topics` wurde mit einer auf die freigegebenen HMMD-Topics beschränkten Liste beantwortet, während `/hmmd_sensor/get_parameters` abgewiesen wurde. ROS-API-Dienste unter `/rosapi/*` bleiben damit erreichbar. `actions_glob` existiert als Serverparameter, wird aber von der Launch-Datei nicht angeboten und bleibt bei diesem Befehl ungefiltert. Der rosbridge-Server ist damit keine nachgewiesene reine Empfangsschnittstelle. Der Loopback-Port darf nicht direkt im LAN geöffnet werden.
 
-2. In einem zweiten CM5-Terminal oder einer SSH-Sitzung starte den statischen Dateiserver aus dem Projektcheckout:
+2. Für den normalen PC-Start übernimmt das Startscript die CM5-Prozesse automatisch. Es startet den HMMD-Sensor, rosbridge und den statischen Dateiserver oder verwendet passende, bereits laufende Instanzen. Die Prozesse bleiben nach dem Beenden des PC-Tunnels auf dem CM5 aktiv und werden beim nächsten Start wiederverwendet.
+
+   Starte auf dem PC aus einem lokalen Checkout oder mit der einzelnen Datei `scripts/start_hmmd_web.py`:
+
+```bash
+python3 scripts/start_hmmd_web.py
+# Bei anderer CM5-Adresse oder anderem SSH-Benutzer:
+python3 scripts/start_hmmd_web.py --host 192.168.178.28 --user niko
+```
+
+Unter Windows lautet der Python-Aufruf üblicherweise `py scripts/start_hmmd_web.py`. Das Script benötigt Python 3, OpenSSH und eine funktionierende SSH-Anmeldung zum CM5. Beim ersten Verbinden kann SSH nach Bestätigung des Hosts oder einem Passwort fragen. Das Terminal bleibt während des lokalen Tunnels geöffnet; `Strg+C` beendet den Tunnel. Die CM5-Dienste bleiben für die nächste Sitzung aktiv.
+
+Passe bei abweichender CM5-Installation die Optionen an: `--workspace` setzt den Remote-Projektpfad (Standard `/home/niko/Navbot-ES02-cm5-hmmd`), `--device` den UART (Standard `/dev/ttyAMA0`), `--baud-rate` die Baudrate (Standard `115200`) und `--startup-timeout` die Wartezeit pro Dienststart in Sekunden (Standard `30`). Zum Beispiel:
+
+```bash
+python3 scripts/start_hmmd_web.py --startup-timeout 45
+```
+
+Das Script prüft die UART-Belegung, rosbridge und den HTTP-Endpunkt, bevor es fehlende Dienste startet. Läuft ein erwarteter Dienst bereits, wird er wiederverwendet. Ein laufender Sensorknoten mit abweichender UART- oder Baud-Konfiguration, eine unbekannte Belegung von `/dev/ttyAMA0` oder ein nicht eindeutig passender Prozess auf Port 9090/8080 führt zu einer Fehlermeldung, statt einen Prozess zu beenden oder einen zweiten UART-Leser zu starten. Ein laufender, gerade getrennter Sensor wird ebenfalls wiederverwendet. Sensorstatus mit „keine Frames“ verhindert den Browserstart nicht; die Seite zeigt diesen Zustand selbst an. Vom Script neu gestartete Dienste schreiben ihre Protokolle auf dem CM5 unter `/tmp/navbot-hmmd-sensor.log`, `/tmp/navbot-hmmd-rosbridge.log` und `/tmp/navbot-hmmd-web.log`.
+
+Für manuelle Diagnose oder einen Start ohne PC-Script kann der statische Dateiserver weiterhin separat gestartet werden:
 
 ```bash
 cd /home/niko/Navbot-ES02-cm5-hmmd
@@ -253,17 +273,9 @@ python3 -m http.server 8080 --bind 0.0.0.0 --directory src/cm5/ros2/src/hmmd_rad
 ssh -N -L 127.0.0.1:9090:127.0.0.1:9090 niko@192.168.178.28
 ```
 
-Die Seite verbindet sich mit `ws://127.0.0.1:9090`. Halte den Tunnel und beide CM5-Prozesse geöffnet. Auf dem PC war der Alias `cm5` nicht auflösbar. Ermittle die aktuelle CM5-Adresse bei Bedarf mit `ip -br addr`.
+Die Seite verbindet sich mit `ws://127.0.0.1:9090`. Halte den Sensor, rosbridge, den HTTP-Server und den Tunnel geöffnet. Auf dem PC war der Alias `cm5` nicht auflösbar. Ermittle die aktuelle CM5-Adresse bei Bedarf mit `ip -br addr`.
 
-Alternativ starte auf dem PC das Skript `scripts/start_hmmd_web.py` aus einem lokalen Checkout oder kopiere diese einzelne Datei auf den PC. Es benötigt Python 3 und OpenSSH, öffnet den Tunnel und anschließend den Standardbrowser. Die oben beschriebenen CM5-Prozesse müssen bereits laufen:
-
-```bash
-python3 scripts/start_hmmd_web.py
-# Bei anderer CM5-Adresse oder anderem SSH-Benutzer:
-python3 scripts/start_hmmd_web.py --host 192.168.178.28 --user niko
-```
-
-Unter Windows lautet der Python-Aufruf üblicherweise `py scripts/start_hmmd_web.py`. Lass das PC-Terminal geöffnet; `Strg+C` beendet den vom Skript gestarteten Tunnel. Ein bereits belegter lokaler Port 9090 wird gemeldet; beende dann den alten Tunnel oder öffne bei einem bereits laufenden CM5-Tunnel direkt die Browser-URL.
+Ein bereits belegter lokaler Port 9090 wird gemeldet; beende dann den alten Tunnel oder öffne bei einem bereits laufenden CM5-Tunnel direkt die Browser-URL.
 
 3. Prüfe den Verbindungsstatus getrennt vom HMMD-Status. „Connected“ bestätigt nur die Browser-Bridge-Verbindung. „Receiving sensor frames“ erfordert frische `/hmmd/status`-Daten mit `connected=true` und `stale=false`; die Heatmap wird erst mit einem gültigen 20×16-Frame frisch. Bei unterbrochenen Frames bleibt der zuletzt empfangene Frame sichtbar, ist aber als veraltet markiert. Nach einer Bridge-Neuverbindung wartet die Seite auf neue Nachrichten und markiert alte Samples nicht wieder als frisch.
 
