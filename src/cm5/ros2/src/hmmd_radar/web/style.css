@@ -78,7 +78,7 @@ h2 { margin-bottom: 4px; font-size: 1.1rem; }
 
 .panel-header { align-items: flex-start; margin-bottom: 14px; }
 .control { display: grid; gap: 6px; color: #9caabd; font-size: 0.76rem; }
-select {
+select, input[type="number"] {
   min-width: 180px;
   border: 1px solid #445164;
   border-radius: 8px;
@@ -87,7 +87,12 @@ select {
   background: #202936;
   font: inherit;
 }
-select:focus-visible { outline: 2px solid #72d4c8; outline-offset: 2px; }
+select:focus-visible, input:focus-visible { outline: 2px solid #72d4c8; outline-offset: 2px; }
+input:disabled { opacity: 0.5; }
+input[aria-invalid="true"] { border-color: #ffb9c2; }
+.map-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin-bottom: 16px; }
+.map-controls input { width: 240px; max-width: 100%; }
+.map-controls .muted { flex: 1; min-width: 220px; padding-bottom: 8px; }
 
 .map-wrap { overflow-x: auto; }
 #heatmap { display: block; width: min(100%, 900px); height: auto; margin: 0 auto; }
@@ -115,6 +120,6 @@ select:focus-visible { outline: 2px solid #72d4c8; outline-offset: 2px; }
   .page-header, .panel-header { align-items: stretch; flex-direction: column; }
   .connection-stack { min-width: 0; }
   .control { width: 100%; }
-  .control select { width: 100%; }
+  .control select, .control input { width: 100%; }
   .panel { padding: 15px; }
 }

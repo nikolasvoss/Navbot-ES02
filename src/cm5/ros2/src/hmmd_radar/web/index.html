@@ -35,6 +35,20 @@
             </select>
           </label>
         </div>
+        <div class="map-controls">
+          <label class="control">
+            <span>Color maximum</span>
+            <select id="maximum-mode" aria-label="Color scale maximum mode">
+              <option value="dynamic">Dynamic (each frame)</option>
+              <option value="fixed">Fixed</option>
+            </select>
+          </label>
+          <label class="control">
+            <span>Fixed maximum (raw amplitude squared)</span>
+            <input id="fixed-maximum" type="number" min="0" step="any" value="10000000" disabled aria-describedby="maximum-hint">
+          </label>
+          <p id="maximum-hint" class="muted" aria-live="polite">Dynamic: color limits follow each frame.</p>
+        </div>
         <div class="map-wrap">
           <canvas id="heatmap" width="900" height="560" role="img" aria-label="HMMD heatmap with no data yet"></canvas>
         </div>

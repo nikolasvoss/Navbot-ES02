@@ -247,6 +247,8 @@ Unter Windows lautet der Python-Aufruf üblicherweise `py scripts/start_hmmd_web
 
 Die Karte wird höchstens mit 10 Hz aktualisiert, verwendet eine Keep-Last-Tiefe von 1 und fordert Best-Effort-QoS an, passend zum `/hmmd/rdmap`-Publisher. Die Topic-Auswahl zeigt die jüngste Nachricht eines freigegebenen Topics. Für weitere Topics müssen sowohl `topic_registry.mjs` in der Browseranwendung als auch die serverseitige `topics_sub_glob`-Freigabe geändert werden; Nachrichten werden nicht dynamisch über rosapi entdeckt.
 
+Unter „Color maximum“ folgt „Dynamic (each frame)“ dem Minimum und Maximum des jeweiligen Frames. „Fixed“ setzt die Farbskala auf null bis zum eingegebenen festen Maximum. Beim ersten Umschalten wird das aktuelle Frame-Maximum übernommen; danach kannst du einen positiven festen Wert eingeben. Dieser Wert bezieht sich immer auf die rohe Amplitude zum Quadrat, auch in der log1p-Ansicht. Dort wird die feste Grenze ebenfalls mit log1p umgerechnet. Größere Werte erhalten die hellste Farbe; Rohdaten bleiben unverändert. Die Einstellung gilt für die geöffnete Seite und wird beim Neuladen zurückgesetzt.
+
 ### Python-Beispiel mit roslibpy
 
 Das folgende Beispiel läuft auf dem PC durch denselben SSH-Tunnel. Es braucht kein lokales ROS und keine generierten `hmmd_interfaces`-Pakete. `roslibpy` 2.1.0 wurde in einer isolierten Umgebung ohne importierbare ROS-Pakete erfolgreich mit rosbridge 2.7.1 geprüft. `roslibpy.Topic` setzt selbst kein QoS-Profil; rosbridge nimmt für Topics ohne QoS-Angabe einen Best-Effort-Subscriber und gleicht vorhandene Publisher ab. Dieser Standardpfad empfing die HMMD-Map mit Best-Effort-QoS.

@@ -18,6 +18,9 @@ const ui = {
   mapMeta: document.querySelector("#map-meta"),
   mapScale: document.querySelector("#map-scale"),
   scale: document.querySelector("#scale-select"),
+  maximumMode: document.querySelector("#maximum-mode"),
+  fixedMaximum: document.querySelector("#fixed-maximum"),
+  maximumHint: document.querySelector("#maximum-hint"),
   topic: document.querySelector("#topic-select"),
   topicName: document.querySelector("#topic-name"),
   topicAge: document.querySelector("#topic-age"),
@@ -35,11 +38,29 @@ const client = new RosbridgeClient({ url: BRIDGE_URL });
 ui.topic.value = STATUS_TOPIC;
 let state = client.snapshot();
 let logarithmic = false;
+let fixedMaximum = Number(ui.fixedMaximum.value);
+let fixedMaximumInitialized = false;
 
 client.onChange((next) => { state = next; });
 ui.topic.addEventListener("change", () => client.selectTopic(ui.topic.value));
 ui.scale.addEventListener("change", () => {
   logarithmic = ui.scale.value === "log1p";
+  render();
+});
+ui.maximumMode.addEventListener("change", () => {
+  const fixed = ui.maximumMode.value === "fixed";
+  ui.fixedMaximum.disabled = !fixed;
+  render();
+});
+ui.fixedMaximum.addEventListener("input", () => {
+  const value = ui.fixedMaximum.valueAsNumber;
+  const valid = Number.isFinite(value) && value > 0;
+  ui.fixedMaximum.setCustomValidity(valid ? "" : "Enter a finite number greater than zero.");
+  ui.fixedMaximum.setAttribute("aria-invalid", String(!valid));
+  if (valid) {
+    fixedMaximum = value;
+    fixedMaximumInitialized = true;
+  }
   render();
 });
 
@@ -124,6 +145,21 @@ function drawHeatmap(sample) {
     high = Math.max(...values.flat());
     if (high <= low) high = low + 1;
   }
+  const fixed = ui.maximumMode.value === "fixed";
+  if (fixed) {
+    if (!fixedMaximumInitialized && sample && ui.fixedMaximum.validity.valid) {
+      fixedMaximum = Math.max(1, ...sample.message.amplitude_squared);
+      ui.fixedMaximum.value = String(fixedMaximum);
+      fixedMaximumInitialized = true;
+    }
+    low = 0;
+    high = logarithmic ? Math.log1p(fixedMaximum) : fixedMaximum;
+  }
+  ui.maximumHint.textContent = !fixed
+    ? "Dynamic: color limits follow each frame."
+    : ui.fixedMaximum.validity.valid
+      ? "Fixed: scale starts at zero; values above the maximum use the brightest color."
+      : `Enter a number greater than zero. Using the last valid maximum: ${fixedMaximum}.`;
 
   for (let doppler = 0; doppler < 20; doppler += 1) {
     const y = top + (19 - doppler) * cellHeight;
