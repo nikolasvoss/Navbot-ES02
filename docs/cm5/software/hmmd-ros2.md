@@ -1,0 +1,185 @@
+# HMMD ROS 2 developer guide
+
+Use this guide to build, start, inspect, and record the HMMD ROS 2 software. The implementation lives in `src/cm5/ros2/`. The launcher lives at `scripts/start_hmmd.py`.
+
+The software has a sensor node on the CM5, a loopback-only rosbridge server, a static browser page, and a launcher that can start the services locally or over SSH. In remote mode, the launcher opens a tunnel to the browser and rosbridge ports. The CM5 services stay up after the tunnel ends.
+
+## Check the sensor connection
+
+The documented default uses UART0 on physical CM5IO J8 pins 8 and 10. Those are GPIO14/TX and GPIO15/RX. The module TX connects to J8 pin 10, and module RX connects to J8 pin 8. Connect ground to pin 6 and 3.3 V to pin 1 or 17.
+
+Use the pin 1 marker to identify the header orientation. The HMMD vendor documents a 3.0–3.6 V supply and 0–3.3 V UART signals. Check the actual module, carrier, wiring, supply, and GPIO reference voltage before applying power. Do not connect the module to 5 V. The project has software evidence for UART0, but the physical board and current wiring have not been verified. See the [CM5IO pin reference](../hardware/compute-module-5-io-board.md) and [HMMD observations](../../../agent_notes/cm5/sensors/hmmd/observations.md).
+
+Do not infer a UART from a device name alone. The J8 UART device exists whether or not the sensor is connected. For UART0, check `/dev/ttyAMA0`, pin functions, permissions, and console ownership. If you use another UART or a USB adapter, confirm its wiring and device path before starting the node. The sensor node must be the only reader of its UART.
+
+## Build and check the workspace
+
+Run these commands on the CM5 from the project checkout. The verified setup used ROS 2 Jazzy and Python 3.12.3. Check the installed ROS distribution before building.
+
+```bash
+cd ~/Navbot-ES02-cm5-hmmd
+source /opt/ros/jazzy/setup.bash
+rosdep install --from-paths src/cm5/ros2/src --ignore-src -r -y --skip-keys=ament_python
+colcon --log-base src/cm5/ros2/log build --base-paths src/cm5/ros2/src --build-base src/cm5/ros2/build --install-base src/cm5/ros2/install
+source src/cm5/ros2/install/setup.bash
+```
+
+Source both setup files in each new terminal. The `ament_python` build type comes from the ROS installation; `rosdep` has no system key for it, so the command skips that key.
+
+Run the software checks from the project root with the ROS environment active:
+
+```bash
+PYTHONPATH="src/cm5/ros2/src/hmmd_radar${PYTHONPATH:+:$PYTHONPATH}" python3 -m unittest discover -s src/cm5/ros2/src/hmmd_radar/test -v
+python3 scripts/test_start_hmmd.py -v
+node --test src/cm5/ros2/src/hmmd_radar/test/web/client.test.mjs
+```
+
+The Python unit tests use synthetic frames and a mock serial port. They do not prove live sensor reception. A ROS build and live sensor check still require the CM5 and sensor.
+
+## Start the services
+
+On the CM5, run the launcher from the checkout:
+
+```bash
+python3 scripts/start_hmmd.py
+```
+
+From a PC, run the same script with an SSH alias or `user@host`:
+
+```bash
+python3 scripts/start_hmmd.py --ssh cm5
+```
+
+The remote default workspace is `$HOME/Navbot-ES02-cm5-hmmd`. The local default is the checkout containing the script. Use `--workspace PATH` for another workspace. Use `--device PATH` for a confirmed UART path, `--baud-rate N` for another baud rate, or `--startup-timeout N` to change the service wait. The defaults are `/dev/ttyAMA0`, `115200`, and `30` seconds.
+
+The launcher starts or reuses the sensor node, rosbridge, and static web server. It refuses an unknown UART owner or a service with the wrong identity or configuration. It does not stop existing processes. Do not start a second `hmmd_sensor` manually.
+
+In remote mode, the launcher checks that local ports 8080 and 9090 are available, starts or checks the CM5 services, then forwards both ports to local loopback. Keep the terminal open while you use `http://127.0.0.1:8080/`. Press Ctrl+C to end the tunnel. The CM5 services keep running. Add `--no-browser` to suppress opening a browser window; the tunnel still stays open.
+
+Newly started service logs are `/tmp/navbot-hmmd-sensor.log`, `/tmp/navbot-hmmd-rosbridge.log`, and `/tmp/navbot-hmmd-web.log` on the CM5. The launcher uses `ws://127.0.0.1:9090` for rosbridge and binds rosbridge to loopback. Do not expose port 9090 directly to the LAN. The installed rosbridge version still offers operations beyond subscriptions, so the browser's read-only behavior does not make the server read-only.
+
+For manual diagnosis, first check that no process owns the sensor UART. With ROS and the workspace sourced, run:
+
+```bash
+ros2 run hmmd_radar hmmd_sensor --ros-args -p port:=/dev/ttyAMA0 -p baud_rate:=115200
+```
+
+In another terminal, inspect status and map rate:
+
+```bash
+ros2 topic echo /hmmd/status
+ros2 topic hz /hmmd/rdmap
+```
+
+The launcher is for live-sensor startup. Do not use it for bag replay because it starts the sensor node.
+
+## ROS topics and parameters
+
+| Topic | Type | Meaning |
+| --- | --- | --- |
+| `/hmmd/rdmap` | `hmmd_interfaces/msg/RangeDopplerMap` | Raw 20 by 16 matrix and host receive timestamp. |
+| `/hmmd/status` | `diagnostic_msgs/msg/DiagnosticArray` | UART state, frame rate, counters, and last-frame age. |
+
+`RangeDopplerMap` carries `doppler_bins`, `range_gates`, and 320 `uint32` values in `amplitude_squared`. The flat index is `doppler_bin * 16 + range_gate`. The header timestamp is the ROS host receive time, not a sensor measurement time. The display uses bin indices; physical range, speed, orientation, and Doppler sign have not been established.
+
+| Sensor parameter | Default | Meaning |
+| --- | --- | --- |
+| `port` | empty | Empty disables serial access. |
+| `baud_rate` | `115200` | UART baud rate. |
+| `poll_period_sec` | `0.01` | Maximum interval between bounded input polls. |
+| `stale_timeout_sec` | `1.0` | Age after which a frame or partial frame is stale. |
+| `diagnostics_period_sec` | `1.0` | Interval between status messages. |
+
+The node publishes `/hmmd/rdmap` with Best Effort QoS and depth 5. It publishes `/hmmd/status` with Reliable QoS. Parameters are read-only after startup. Status fields include `connected`, `stale`, `last_frame_age_sec`, `frames_received`, `frame_rate_hz`, `malformed_candidates`, `discarded_bytes`, `reconnects`, `input_backlog_overflows`, and `last_io_error`.
+
+`connected=true` means the host opened the UART; it does not prove that the sensor sent a frame. `stale=true` means the last complete frame is older than `stale_timeout_sec`. `last_frame_age_sec` uses monotonic host time. The frame and error counters cover decoded frames, malformed candidates, discarded bytes, reconnects, and input backlog overflows. `last_io_error` contains the latest serial error.
+
+The browser subscribes only to `/hmmd/rdmap` and `/hmmd/status`. It keeps the latest message for each topic, requests at most 10 updates per second, and marks map and status samples stale after 1.5 and 3 seconds without new messages. A reconnect does not make an old sample fresh. Add a topic to both `web/topic_registry.mjs` and the server's `topics_sub_glob` before using it in the browser.
+
+The browser shows raw values or `log1p` values. Its color scale can follow each frame or use a fixed maximum. These display choices do not change the ROS message. The axes show bin indices because physical range, speed, and orientation are unconfirmed.
+
+For a Python client on the PC, install `roslibpy` in a virtual environment. This example uses the same SSH tunnel as the browser:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install roslibpy==2.1.0
+```
+
+```python
+import roslibpy
+from threading import Event
+
+client = roslibpy.Ros(host="127.0.0.1", port=9090)
+client.run()
+topic = roslibpy.Topic(
+    client,
+    "/hmmd/rdmap",
+    "hmmd_interfaces/msg/RangeDopplerMap",
+    throttle_rate=100,
+    queue_length=1,
+)
+topic.subscribe(lambda message: print(
+    message["doppler_bins"], message["range_gates"],
+    len(message["amplitude_squared"]), message["header"]["stamp"],
+))
+wait = Event()
+try:
+    while client.is_connected:
+        wait.wait(1)
+finally:
+    topic.unsubscribe()
+    client.terminate()
+```
+
+The PC client does not need ROS or generated HMMD message packages. Keep the process open while you receive messages. Call `topic.unsubscribe()` and `client.terminate()` when the client exits.
+
+## Record and replay data
+
+Record the three planned scenes while the sensor node is running: an empty scene, a stationary person, and a moving person. The example below records the empty scene:
+
+```bash
+ros2 bag record -o hmmd-empty /hmmd/rdmap /hmmd/status
+```
+
+Stop the recorder with Ctrl+C. Use `hmmd-stationary` and `hmmd-moving` for the other two bags. Check each bag with `ros2 bag info` and confirm that it contains map messages. Add the setup, position, duration, rate, and observations to [HMMD observations](../../../agent_notes/cm5/sensors/hmmd/observations.md).
+
+For replay, stop the live sensor node first. In one sourced terminal on the CM5, start rosbridge with the same loopback address and topic limits as the managed launcher:
+
+```bash
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
+  address:=127.0.0.1 port:=9090 \
+  'topics_glob:=""' \
+  'topics_pub_glob:="[]"' \
+  'topics_sub_glob:="[/hmmd/rdmap,/hmmd/status]"' \
+  'services_glob:="[]"' \
+  'params_glob:="[]"'
+```
+
+In another CM5 terminal, start the static server from the project root:
+
+```bash
+cd ~/Navbot-ES02-cm5-hmmd
+python3 -m http.server 8080 --bind 0.0.0.0 --directory src/cm5/ros2/src/hmmd_radar/web
+```
+
+On the PC, forward both CM5 loopback ports and open `http://127.0.0.1:8080/`:
+
+```bash
+ssh -N -L 127.0.0.1:8080:127.0.0.1:8080 -L 127.0.0.1:9090:127.0.0.1:9090 cm5
+```
+
+The rosbridge filter arguments are strings. Keep the inner quotes around the topic list. The service filter still leaves rosapi operations available, so bind rosbridge to loopback and use the SSH tunnel. Keep rosbridge and the static web server running, then replay a bag in a sourced ROS terminal:
+
+```bash
+ros2 bag info hmmd-empty
+ros2 bag play hmmd-empty
+```
+
+Open the browser through the SSH tunnel. Pause playback and let it end to check that the map becomes stale. Do not use `scripts/start_hmmd.py` for replay because it starts a live sensor node.
+
+## Current status and remaining checks
+
+The ROS packages, parser, browser, and unified launcher are implemented. The local checks use synthetic serial data. The existing evidence records a real HMMD stream and browser access on the CM5, but the current worktree's ROS build and the planned three-scene bag recording and replay have not been verified here. The physical carrier, wiring, supply voltage, and sensor firmware remain unconfirmed. See the [dated observations and test evidence](../../../agent_notes/cm5/sensors/hmmd/observations.md).
+
+Before treating the roadmap milestone as complete, verify the current CM5 checkout and build, confirm the physical UART and voltage, record and compare all three scenes, and replay a bag without the live sensor. Keep the heatmap axes in bin indices until physical scaling and orientation have evidence.

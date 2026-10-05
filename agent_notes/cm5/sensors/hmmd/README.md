@@ -7,11 +7,9 @@ Der erste [Roadmap-Meilenstein](../../../../docs/cm5/software/roadmap.md) zeigt 
 ## Dokumente finden
 
 - [Lokale Herstellerunterlagen](vendor/README.md) enthält Wiki, Radome-Leitfaden, Beispielpaket und Prüfsummen.
-- [Start, Aufnahme und Wiedergabe](../../../../docs/cm5/software/how-to/hmmd-ros2.md) beschreibt die Bedienung der Software.
-- [ROS-2-Schnittstelle](../../../../docs/cm5/software/reference/hmmd-ros2.md) dokumentiert Topics, Matrix und QoS.
+- [HMMD ROS 2 developer guide](../../../../docs/cm5/software/hmmd-ros2.md) ist die zentrale Anleitung zum Bauen und Verwenden der Software.
 - [Protokollreferenz](protocol.md) enthält Herstellerangaben und ihre Grenzen.
 - [Beobachtungen und offene Punkte](observations.md) enthält den belegten Stand des Aufbaus.
-- [Schritt-für-Schritt-Plan](../../../../docs/cm5/software/plans/hmmd-ros2-rdmap-plan.md) beschreibt die spätere Umsetzung.
 - [Hardwareübersicht](../../../../docs/robot/hardware/system-overview.md) beschreibt die bestehende Navbot-Elektronik. Der stationäre Radaraufbau ist davon getrennt.
 - [USB- und Serial-Regeln](../../../../docs/robot/software/development/usb-serial-flashing.md) gelten vor seriellem Zugriff.
 
