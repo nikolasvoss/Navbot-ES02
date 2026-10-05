@@ -1,13 +1,5 @@
-import {
-  APPROVED_TOPICS,
-  BRIDGE_URL,
-  DISPLAY_INTERVAL_MS,
-  MAP_TOPIC,
-  MAP_STALE_AFTER_MS,
-  STATUS_TOPIC,
-  STATUS_STALE_AFTER_MS,
-} from "./topic_registry.mjs";
-import { diagnosticFields, formatRosStamp, rangeDopplerRows } from "./model.mjs";
+import { BRIDGE_URL, DISPLAY_INTERVAL_MS, loadEndpointManifest } from "./endpoint_manifest.mjs";
+import { diagnosticFields, formatRosStamp, rangeDopplerRows, validateRangeDopplerMap } from "./model.mjs";
 import { RosbridgeClient } from "./rosbridge_client.mjs";
 
 const ui = {
@@ -25,24 +17,77 @@ const ui = {
   topicName: document.querySelector("#topic-name"),
   topicAge: document.querySelector("#topic-age"),
   topicMessage: document.querySelector("#topic-message"),
+  channelForm: document.querySelector("#channel-form"),
+  endpoint: document.querySelector("#channel-endpoint"),
+  payload: document.querySelector("#channel-payload"),
+  channelResult: document.querySelector("#channel-result"),
 };
-
-for (const topic of APPROVED_TOPICS) {
+let manifestError = "";
+let manifest;
+try { manifest = await loadEndpointManifest(); }
+catch (error) { manifestError = error.message; manifest = { topics: [], services: [] }; }
+const MAP_TOPIC = "/hmmd/rdmap";
+const STATUS_TOPIC = "/hmmd/status";
+const topicByName = new Map(manifest.topics.map((topic) => [topic.name, topic]));
+const mapTopic = topicByName.get(MAP_TOPIC);
+const statusTopic = topicByName.get(STATUS_TOPIC);
+const endpointChoices = [
+  ...manifest.topics.filter((topic) => ["publish", "both"].includes(topic.direction)).map((topic) => ({ ...topic, operation: "publish" })),
+  ...manifest.services.map((service) => ({ ...service, operation: "service" })),
+];
+for (const topic of manifest.topics.filter((entry) => ["subscribe", "both"].includes(entry.direction))) {
   const option = document.createElement("option");
   option.value = topic.name;
   option.textContent = topic.label;
   ui.topic.append(option);
 }
-
-const client = new RosbridgeClient({ url: BRIDGE_URL });
-ui.topic.value = STATUS_TOPIC;
+for (const endpoint of endpointChoices) {
+  const option = document.createElement("option");
+  option.value = endpoint.name;
+  option.textContent = `${endpoint.label} (${endpoint.operation})`;
+  ui.endpoint.append(option);
+}
+const client = new RosbridgeClient({
+  url: BRIDGE_URL,
+  topics: manifest.topics,
+  services: manifest.services,
+  validators: { "hmmd_interfaces/msg/RangeDopplerMap": validateRangeDopplerMap },
+});
+let selectedTopic = statusTopic?.name || null;
+if (selectedTopic) ui.topic.value = selectedTopic;
 let state = client.snapshot();
 let logarithmic = false;
 let fixedMaximum = Number(ui.fixedMaximum.value);
 let fixedMaximumInitialized = false;
 
 client.onChange((next) => { state = next; });
-ui.topic.addEventListener("change", () => client.selectTopic(ui.topic.value));
+ui.topic.addEventListener("change", () => {
+  if (selectedTopic && !topicByName.get(selectedTopic)?.pinned) client.unsubscribe(selectedTopic);
+  selectedTopic = ui.topic.value;
+  client.subscribe(selectedTopic);
+});
+ui.endpoint.addEventListener("change", () => {
+  const endpoint = endpointChoices.find((entry) => entry.name === ui.endpoint.value);
+  ui.payload.value = JSON.stringify(endpoint?.defaultPayload || {}, null, 2);
+});
+ui.channelForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const endpoint = endpointChoices.find((entry) => entry.name === ui.endpoint.value);
+  if (!endpoint) return;
+  try {
+    const payload = JSON.parse(ui.payload.value);
+    if (endpoint.operation === "publish") {
+      client.publish(endpoint.name, payload);
+      ui.channelResult.textContent = `Submitted to rosbridge. Delivery is not acknowledged.`;
+    } else {
+      ui.channelResult.textContent = "Request pending…";
+      const values = await client.callService(endpoint.name, payload);
+      ui.channelResult.textContent = JSON.stringify(values, null, 2);
+    }
+  } catch (error) {
+    ui.channelResult.textContent = error.message;
+  }
+});
 ui.scale.addEventListener("change", () => {
   logarithmic = ui.scale.value === "log1p";
   render();
@@ -85,7 +130,7 @@ function sensorLabel(statusSample, now) {
   if (state.connection !== "connected") return ["Unavailable while bridge is disconnected", "error"];
   if (!statusSample) return ["Waiting for HMMD status", "muted"];
   if (statusSample.freshness === "waiting-after-reconnect") return ["Waiting for fresh status after reconnect", "warn"];
-  if (statusSample.freshness === "stale" || now - statusSample.receivedAt > STATUS_STALE_AFTER_MS) {
+  if (statusSample.freshness === "stale" || (statusTopic && now - statusSample.receivedAt > statusTopic.staleAfterMs)) {
     return ["HMMD status publisher is silent", "warn"];
   }
 
@@ -259,7 +304,7 @@ function render() {
   if (state.errors[MAP_TOPIC]) ui.mapMeta.textContent = `Rejected map: ${state.errors[MAP_TOPIC]}`;
   drawHeatmap(mapSample);
 
-  const selectedName = state.selectedTopic;
+  const selectedName = selectedTopic;
   const selected = selectedName ? state.topics[selectedName] : null;
   ui.topicName.textContent = selectedName || "No topic selected";
   if (selected) {
@@ -269,8 +314,18 @@ function render() {
     ui.topicAge.textContent = "Waiting for message";
     ui.topicMessage.textContent = "No message received.";
   }
+  const endpointState = state.endpoints[ui.endpoint.value];
+  if (endpointState && endpointState.state !== "pending") ui.channelResult.textContent = endpointState.detail;
 }
 
+if (!mapTopic || !statusTopic) {
+  manifestError ||= "Endpoint manifest must declare HMMD map and status receive topics.";
+  ui.channelResult.textContent = manifestError;
+}
+if (manifestError) ui.channelResult.textContent = `Manifest error: ${manifestError}`;
+ui.endpoint.value = endpointChoices[0]?.name || "";
+ui.endpoint.dispatchEvent(new Event("change"));
+if (selectedTopic) client.subscribe(selectedTopic);
 setInterval(render, DISPLAY_INTERVAL_MS);
-client.start();
+if (!manifestError) client.start();
 render();

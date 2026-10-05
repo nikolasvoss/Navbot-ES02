@@ -38,6 +38,8 @@ source /opt/ros/jazzy/setup.bash
 source "$HOST_WORKSPACE/src/cm5/ros2/install/setup.bash"
 set -u
 command -v ros2 >/dev/null || { echo "Fehlt auf dem CM5 nach ROS-Setup: ros2" >&2; exit 1; }
+FILTER_OUTPUT=$(python3 "$HOST_WORKSPACE/scripts/sensor_channel_config.py" "$WEB_ROOT/endpoint-manifest.json" --format shell) || { echo "Ungültiges Sensor-Endpoint-Manifest" >&2; exit 1; }
+mapfile -t BRIDGE_FILTER_ARGS <<<"$FILTER_OUTPUT"
 
 exec 9>/tmp/navbot-hmmd-startup.lock
 flock -w "$STARTUP_TIMEOUT" 9 || { echo "Ein anderer HMMD-Start hält die Startsperre" >&2; exit 1; }
@@ -139,9 +141,7 @@ if [[ -z "$bridge_rows" ]]; then
   bridge_state=started
   nohup ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
     address:=127.0.0.1 port:=9090 \
-    'topics_glob:=""' 'topics_pub_glob:="[]"' \
-    'topics_sub_glob:="[/hmmd/rdmap,/hmmd/status]"' \
-    'services_glob:="[]"' 'params_glob:="[]"' >"$BRIDGE_LOG" 2>&1 </dev/null 9>&- &
+    "${BRIDGE_FILTER_ARGS[@]}" >"$BRIDGE_LOG" 2>&1 </dev/null 9>&- &
   deadline=$((SECONDS + STARTUP_TIMEOUT))
   while [[ -z $(listener_rows 9090) ]]; do
     if (( SECONDS >= deadline )); then echo "rosbridge startete nicht; Log: $BRIDGE_LOG" >&2; tail -n 20 "$BRIDGE_LOG" >&2 || true; exit 1; fi
@@ -165,10 +165,7 @@ for _ in 1 2 3 4 5; do
   if [[ "$bridge_launch_args" == *rosbridge_websocket_launch.xml* ]]; then break; fi
 done
 [[ "$bridge_launch_args" == *rosbridge_websocket_launch.xml* ]] || { echo "rosbridge-Launch-Prozess in der Elternkette von PID $bridge_pids nicht gefunden" >&2; exit 1; }
-for expected in address:=127.0.0.1 \
-  'topics_glob:=""' 'topics_pub_glob:="[]"' \
-  'topics_sub_glob:="[/hmmd/rdmap,/hmmd/status]"' \
-  'services_glob:="[]"' 'params_glob:="[]"'; do
+for expected in address:=127.0.0.1 "${BRIDGE_FILTER_ARGS[@]}"; do
   [[ "$bridge_launch_args" == *"$expected"* ]] || { echo "rosbridge-Elternprozess hat eine unerwartete HMMD-Konfiguration (PID $bridge_parent): $bridge_launch_args" >&2; exit 1; }
 done
 timeout 3 bash -c '</dev/tcp/127.0.0.1/9090' || { echo "rosbridge auf 127.0.0.1:9090 antwortet nicht; Log: $BRIDGE_LOG" >&2; exit 1; }

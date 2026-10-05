@@ -3,7 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 
 import { diagnosticFields, formatRosStamp, rangeDopplerRows, validateRangeDopplerMap } from "../../web/model.mjs";
-import { APPROVED_TOPICS, MAP_TOPIC, STATUS_TOPIC } from "../../web/topic_registry.mjs";
+import { validateEndpointManifest } from "../../web/endpoint_manifest.mjs";
 import { RosbridgeClient } from "../../web/rosbridge_client.mjs";
 
 function makeMap(values = Array.from({ length: 320 }, (_, index) => index)) {
@@ -104,87 +104,134 @@ test("reads diagnostic key-values as text", () => {
   assert.equal(diagnosticFields({ status: [] }), null);
 });
 
-test("subscribes only approved topics with latest-only rate and matching QoS", () => {
+const MAP_TOPIC = "/hmmd/rdmap";
+const STATUS_TOPIC = "/hmmd/status";
+const RANGE_TOPIC = "/demo/range";
+const topics = [
+  { name: MAP_TOPIC, type: "hmmd_interfaces/msg/RangeDopplerMap", label: "Map", direction: "subscribe", reliability: "best_effort", throttleMs: 100, staleAfterMs: 1500, pinned: true },
+  { name: STATUS_TOPIC, type: "diagnostic_msgs/msg/DiagnosticArray", label: "Status", direction: "subscribe", reliability: "reliable", throttleMs: 100, staleAfterMs: 3000, pinned: true },
+  { name: RANGE_TOPIC, type: "sensor_msgs/msg/Range", label: "Range", direction: "both", reliability: "reliable", throttleMs: 50, staleAfterMs: 1000, pinned: false },
+  { name: "/demo/write", type: "std_msgs/msg/String", label: "Write", direction: "publish", reliability: "reliable", throttleMs: 0, staleAfterMs: 1, pinned: false },
+];
+const services = [{ name: "/demo/echo", type: "example_interfaces/srv/SetBool", label: "Echo", timeoutMs: 100, defaultPayload: { data: true } }];
+const makeClient = (extra = {}) => new RosbridgeClient({
+  url: "ws://127.0.0.1:9090", topics, services, WebSocketImpl: FakeWebSocket,
+  validators: { "hmmd_interfaces/msg/RangeDopplerMap": validateRangeDopplerMap }, ...extra,
+});
+
+test("validates endpoint kind, integer timing, and publish-only declarations", () => {
+  const valid = { topics, services };
+  assert.equal(validateEndpointManifest(valid), valid);
+  assert.throws(() => validateEndpointManifest({ topics: [{ ...topics[0], type: "pkg/srv/S" }], services: [] }), /Invalid or duplicate topic/);
+  assert.throws(() => validateEndpointManifest({ topics: [{ ...topics[3], throttleMs: 1.5 }], services: [] }), /Invalid topic metadata/);
+  assert.throws(() => validateEndpointManifest({ topics: [{ ...topics[3], pinned: true }], services: [] }), /Invalid topic metadata/);
+});
+
+test("subscribes declared inputs with configured throttle and freshness; validators stay injectable", () => {
   FakeWebSocket.instances = [];
   let now = 100;
-  const client = new RosbridgeClient({
-    url: "ws://127.0.0.1:9090",
-    WebSocketImpl: FakeWebSocket,
-    now: () => now,
-  });
+  const client = makeClient({ now: () => now });
   client.start();
   const socket = FakeWebSocket.instances[0];
   socket.open();
-
   const subscriptions = socket.sent.filter((item) => item.op === "subscribe");
   assert.deepEqual(subscriptions.map((item) => item.topic).sort(), [MAP_TOPIC, STATUS_TOPIC].sort());
-  const mapSubscription = subscriptions.find((item) => item.topic === MAP_TOPIC);
-  assert.equal(mapSubscription.type, "hmmd_interfaces/msg/RangeDopplerMap");
-  assert.equal(mapSubscription.throttle_rate, 100);
-  assert.equal(mapSubscription.queue_length, 1);
-  assert.deepEqual(mapSubscription.qos, {
-    history: "keep_last", depth: 1, reliability: "best_effort", durability: "volatile",
-  });
-  assert.throws(() => client.selectTopic("/not/approved"), /not approved/);
-
+  assert.equal(subscriptions.find((item) => item.topic === MAP_TOPIC).throttle_rate, 100);
+  client.subscribe(RANGE_TOPIC);
+  assert.ok(socket.sent.some((item) => item.op === "subscribe" && item.topic === RANGE_TOPIC && item.throttle_rate === 50));
   socket.publish(MAP_TOPIC, makeMap());
-  now += 1499;
-  assert.equal(client.snapshot(now).topics[MAP_TOPIC].freshness, "fresh");
-  now += 2;
+  now += 1501;
   assert.equal(client.snapshot(now).topics[MAP_TOPIC].freshness, "stale");
-
-  const original = client.snapshot(now).topics[MAP_TOPIC].message;
+  const previous = client.snapshot(now).topics[MAP_TOPIC].message;
   socket.publish(MAP_TOPIC, { ...makeMap(), doppler_bins: 21 });
-  assert.equal(client.snapshot(now).topics[MAP_TOPIC].message, original);
+  assert.equal(client.snapshot(now).topics[MAP_TOPIC].message, previous);
   assert.match(client.snapshot(now).errors[MAP_TOPIC], /dimensions/);
+  assert.throws(() => client.subscribe("/not/declared"), /not subscribable/);
   client.stop();
 });
 
-test("keeps bridge and sensor states separate and resubscribes after reconnect", async () => {
+test("publishes declared JSON once per connection and never replays after reconnect", async () => {
   FakeWebSocket.instances = [];
-  let now = 500;
-  const client = new RosbridgeClient({
-    url: "ws://127.0.0.1:9090",
-    WebSocketImpl: FakeWebSocket,
-    now: () => now,
-  });
+  const client = makeClient();
   client.start();
   const first = FakeWebSocket.instances[0];
   first.open();
-  first.publish(MAP_TOPIC, makeMap());
-  first.publish(STATUS_TOPIC, makeStatus(true, true));
-  assert.equal(client.snapshot(now).connection, "connected");
-  assert.equal(client.snapshot(now).topics[MAP_TOPIC].freshness, "fresh");
-  assert.equal(client.snapshot(now).topics[STATUS_TOPIC].message.status[0].values[1].value, "true");
-
+  client.publish(RANGE_TOPIC, { range: 1.25 });
+  const outgoing = first.sent.filter((item) => ["advertise", "publish"].includes(item.op));
+  assert.deepEqual(outgoing.map((item) => item.op), ["advertise", "publish"]);
+  assert.equal(outgoing[0].qos.reliability, "reliable");
+  assert.equal(client.snapshot().endpoints[RANGE_TOPIC].state, "submitted");
+  assert.throws(() => client.publish("/unknown", {}), /not publishable/);
   first.close();
-  assert.equal(client.snapshot(now).connection, "reconnecting");
+  assert.throws(() => client.callService("/demo/echo", { data: true }), /disconnected/);
   await delay(550);
   const second = FakeWebSocket.instances[1];
-  assert.ok(second);
   second.open();
-  assert.equal(client.snapshot(now).topics[MAP_TOPIC].freshness, "waiting-after-reconnect");
-  assert.deepEqual(second.sent.filter((item) => item.op === "subscribe").map((item) => item.topic).sort(),
-    [MAP_TOPIC, STATUS_TOPIC].sort());
-  second.publish(MAP_TOPIC, makeMap());
-  assert.equal(client.snapshot(now).topics[MAP_TOPIC].freshness, "fresh");
+  assert.equal(second.sent.some((item) => item.op === "publish" || item.op === "call_service"), false);
   client.stop();
 });
 
-test("selects another approved topic through the same client", () => {
+test("correlates service responses and rejects malformed, refused, timed out, stopped, and disconnected calls", async () => {
   FakeWebSocket.instances = [];
-  const additional = { name: "/imu/data", type: "sensor_msgs/msg/Imu", label: "IMU", kind: "json", reliability: "reliable" };
-  const client = new RosbridgeClient({
-    url: "ws://127.0.0.1:9090",
-    WebSocketImpl: FakeWebSocket,
-    topics: [...APPROVED_TOPICS, additional],
-  });
+  const client = makeClient();
   client.start();
   const socket = FakeWebSocket.instances[0];
   socket.open();
-  client.selectTopic("/imu/data");
-  assert.ok(socket.sent.some((item) => item.op === "subscribe" && item.topic === "/imu/data"));
-  socket.publish("/imu/data", { linear_acceleration: { x: 1 } });
-  assert.deepEqual(client.snapshot().topics["/imu/data"].message, { linear_acceleration: { x: 1 } });
+  const success = client.callService("/demo/echo", { data: true });
+  const request = socket.sent.find((item) => item.op === "call_service");
+  assert.equal("type" in request, false);
+  socket.emit("message", new MessageEvent("message", { data: JSON.stringify({ op: "service_response", id: request.id, service: request.service, result: true, values: { success: true } }) }));
+  assert.deepEqual(await success, { success: true });
+
+  const rejected = client.callService("/demo/echo", {});
+  const second = socket.sent.filter((item) => item.op === "call_service").at(-1);
+  socket.emit("message", new MessageEvent("message", { data: JSON.stringify({ op: "service_response", id: second.id, service: second.service, result: false, values: {} }) }));
+  await assert.rejects(rejected, /Service rejected/);
+
+  const malformed = client.callService("/demo/echo", {});
+  const third = socket.sent.filter((item) => item.op === "call_service").at(-1);
+  socket.emit("message", new MessageEvent("message", { data: JSON.stringify({ op: "service_response", id: third.id, service: third.service, result: true, values: [] }) }));
+  await assert.rejects(malformed, /Service rejected/);
+
+  const wrongService = client.callService("/demo/echo", {});
+  const fourth = socket.sent.filter((item) => item.op === "call_service").at(-1);
+  socket.emit("message", new MessageEvent("message", { data: JSON.stringify({ op: "service_response", id: fourth.id, service: "/demo/wrong", result: true, values: {} }) }));
+  await assert.rejects(wrongService, /Unexpected service response/);
+
+  const timed = client.callService("/demo/echo", {});
+  await assert.rejects(timed, /timed out/);
+
+  const stopped = client.callService("/demo/echo", {});
+  client.stop();
+  await assert.rejects(stopped, /Connection stopped/);
+});
+
+test("rejects non-JSON values in outgoing payloads", () => {
+  FakeWebSocket.instances = [];
+  const client = makeClient();
+  client.start();
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  assert.throws(() => client.publish(RANGE_TOPIC, { range: Number.NaN }), /JSON values/);
+  const circular = {};
+  circular.self = circular;
+  assert.throws(() => client.publish(RANGE_TOPIC, circular), /JSON values/);
+  assert.throws(() => client.callService("/demo/echo", { value: undefined }), /JSON values/);
+  client.stop();
+});
+
+test("rejects pending services on disconnect and routes bridge status errors", async () => {
+  FakeWebSocket.instances = [];
+  const client = makeClient();
+  client.start();
+  const socket = FakeWebSocket.instances[0];
+  socket.open();
+  const pending = client.callService("/demo/echo", {});
+  const request = socket.sent.find((item) => item.op === "call_service");
+  socket.emit("message", new MessageEvent("message", { data: JSON.stringify({ op: "status", id: request.id, level: "error", msg: "service unavailable" }) }));
+  await assert.rejects(pending, /service unavailable/);
+  const disconnected = client.callService("/demo/echo", {});
+  socket.close();
+  await assert.rejects(disconnected, /Bridge disconnected/);
   client.stop();
 });

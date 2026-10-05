@@ -61,12 +61,12 @@
       <section class="panel sensor-panel" aria-labelledby="sensor-title">
         <div class="panel-header">
           <div>
-            <h2 id="sensor-title">Approved ROS topics</h2>
+            <h2 id="sensor-title">Available ROS topics</h2>
             <p class="muted">The selector shows the latest message from the chosen topic.</p>
           </div>
           <label class="control">
             <span>Topic</span>
-            <select id="topic-select" aria-label="Approved ROS topic"></select>
+            <select id="topic-select" aria-label="Available ROS topic"></select>
           </label>
         </div>
         <div class="topic-meta">
@@ -74,6 +74,18 @@
           <span id="topic-age" class="muted">Waiting for message</span>
         </div>
         <pre id="topic-message" class="message-view">No message received.</pre>
+      </section>
+
+      <section class="panel" aria-labelledby="channel-title">
+        <div class="panel-header">
+          <div><h2 id="channel-title">ROS send and request</h2><p class="muted">Publish declared topic JSON or call a declared service.</p></div>
+        </div>
+        <form id="channel-form" class="channel-form">
+          <label class="control"><span>Endpoint</span><select id="channel-endpoint" aria-label="Outgoing ROS endpoint"></select></label>
+          <label class="control payload-control"><span>JSON payload</span><textarea id="channel-payload" rows="7" spellcheck="false" required>{}</textarea></label>
+          <button type="submit">Send request</button>
+        </form>
+        <pre id="channel-result" class="message-view" aria-live="polite">No request sent.</pre>
       </section>
 
       <p class="footnote">The bridge connection and HMMD frame freshness are separate states. Axes use bin indices; the page applies no physical-unit conversion.</p>

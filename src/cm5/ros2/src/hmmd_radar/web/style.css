@@ -87,6 +87,27 @@ select, input[type="number"] {
   background: #202936;
   font: inherit;
 }
+textarea {
+  min-width: min(100%, 520px);
+  border: 1px solid #445164;
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: #eef3fb;
+  background: #202936;
+  font: 0.8rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+button {
+  border: 1px solid #387c75;
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: #b8f2e8;
+  background: #15342f;
+  font: inherit;
+  cursor: pointer;
+}
+.channel-form { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin-bottom: 14px; }
+.payload-control { flex: 1 1 360px; }
+.payload-control textarea { width: 100%; }
 select:focus-visible, input:focus-visible { outline: 2px solid #72d4c8; outline-offset: 2px; }
 input:disabled { opacity: 0.5; }
 input[aria-invalid="true"] { border-color: #ffb9c2; }

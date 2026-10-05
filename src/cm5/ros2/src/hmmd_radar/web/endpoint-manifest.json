@@ -1,0 +1,33 @@
+{
+  "topics": [
+    {
+      "name": "/hmmd/rdmap",
+      "type": "hmmd_interfaces/msg/RangeDopplerMap",
+      "label": "HMMD range-Doppler map",
+      "direction": "subscribe",
+      "reliability": "best_effort",
+      "throttleMs": 100,
+      "staleAfterMs": 1500,
+      "pinned": true
+    },
+    {
+      "name": "/hmmd/status",
+      "type": "diagnostic_msgs/msg/DiagnosticArray",
+      "label": "HMMD status",
+      "direction": "subscribe",
+      "reliability": "reliable",
+      "throttleMs": 100,
+      "staleAfterMs": 3000,
+      "pinned": true
+    }
+  ],
+  "services": [
+    {
+      "name": "/hmmd_sensor/get_parameters",
+      "type": "rcl_interfaces/srv/GetParameters",
+      "label": "Read HMMD node parameters",
+      "timeoutMs": 5000,
+      "defaultPayload": { "names": ["port", "baud_rate", "poll_period_sec", "stale_timeout_sec", "diagnostics_period_sec"] }
+    }
+  ]
+}

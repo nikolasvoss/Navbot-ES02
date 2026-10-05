@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 import start_hmmd
+import sensor_channel_config
 
 
 class StartHmmdTests(unittest.TestCase):
@@ -174,6 +175,28 @@ class StartHmmdTests(unittest.TestCase):
     def test_shell_payload_has_valid_bash_syntax(self):
         result = subprocess.run(["bash", "-n"], input=start_hmmd.STARTUP_BASH, text=True)
         self.assertEqual(result.returncode, 0)
+
+    def test_manifest_filters_bound_each_bridge_direction(self):
+        root = Path(start_hmmd.__file__).resolve().parent.parent
+        manifest = __import__("json").loads((root / "src/cm5/ros2/src/hmmd_radar/web/endpoint-manifest.json").read_text())
+        filters = sensor_channel_config.validate_manifest(manifest)
+        self.assertEqual(filters["topics_glob"], "[]")
+        self.assertEqual(filters["topics_pub_glob"], "[]")
+        self.assertEqual(filters["topics_sub_glob"], "[/hmmd/rdmap,/hmmd/status]")
+        self.assertEqual(filters["services_glob"], "[/hmmd_sensor/get_parameters]")
+        self.assertEqual(start_hmmd.STARTUP_BASH.count("sensor_channel_config.py"), 1)
+        self.assertNotIn("[/hmmd/rdmap,/hmmd/status]", start_hmmd.STARTUP_BASH)
+
+    def test_filter_validation_rejects_ros_globs_and_wrong_endpoint_type(self):
+        manifest = {"topics": [{"name": "/demo/*", "type": "sensor_msgs/msg/Range", "direction": "subscribe",
+                                 "reliability": "reliable", "throttleMs": 0, "staleAfterMs": 10, "pinned": False}],
+                    "services": []}
+        with self.assertRaisesRegex(ValueError, "invalid ROS name"):
+            sensor_channel_config.validate_manifest(manifest)
+        manifest["topics"][0]["name"] = "/demo/range"
+        manifest["topics"][0]["type"] = "example_interfaces/srv/SetBool"
+        with self.assertRaisesRegex(ValueError, "wrong ROS type kind"):
+            sensor_channel_config.validate_manifest(manifest)
 
 
 if __name__ == "__main__":

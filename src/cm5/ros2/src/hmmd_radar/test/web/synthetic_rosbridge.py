@@ -15,6 +15,7 @@ from pathlib import Path
 
 
 WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+FIXTURE_MANIFEST = Path(__file__).with_name("fixture-endpoint-manifest.json")
 HTTP_HOST = "127.0.0.1"
 HTTP_PORT = 8080
 WS_HOST = "127.0.0.1"
@@ -109,6 +110,13 @@ class SyntheticWebSocketHandler(socketserver.BaseRequestHandler):
                                 topics.add(message.get("topic"))
                             elif message.get("op") == "unsubscribe":
                                 topics.discard(message.get("topic"))
+                            elif message.get("op") == "publish":
+                                print(f"Synthetic publish {message.get('topic')}: {json.dumps(message.get('msg'))}", flush=True)
+                            elif message.get("op") == "call_service":
+                                response = {"op": "service_response", "id": message.get("id"),
+                                            "service": message.get("service"), "result": True,
+                                            "values": {"success": True, "message": json.dumps(message.get("args"))}}
+                                client.sendall(websocket_frame(json.dumps(response)))
                         except (json.JSONDecodeError, AttributeError):
                             pass
             except (OSError, TimeoutError):
@@ -155,6 +163,12 @@ class SyntheticWebSocketHandler(socketserver.BaseRequestHandler):
                 }
                 client.sendall(websocket_frame(json.dumps({"op": "publish", "topic": "/hmmd/status", "msg": message})))
 
+            if "/demo/range" in topics:
+                message = {"header": {"frame_id": "synthetic_range"}, "radiation_type": 1,
+                           "field_of_view": 0.25, "min_range": 0.1, "max_range": 10.0,
+                           "range": 1.0 + (count % 10) / 10}
+                client.sendall(websocket_frame(json.dumps({"op": "publish", "topic": "/demo/range", "msg": message})))
+
 
 class ThreadedTCPServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
@@ -181,9 +195,22 @@ def input_controls():
 
 
 def main():
-    handler = lambda *args, **kwargs: http.server.SimpleHTTPRequestHandler(
-        *args, directory=str(WEB_DIR), **kwargs
-    )
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/endpoint-manifest.json":
+                body = FIXTURE_MANIFEST.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            super().do_GET()
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=str(WEB_DIR), **kwargs)
+
+    handler = Handler
     http_server = http.server.ThreadingHTTPServer((HTTP_HOST, HTTP_PORT), handler)
     ws_server = ThreadedTCPServer((WS_HOST, WS_PORT), SyntheticWebSocketHandler)
     threading.Thread(target=http_server.serve_forever, daemon=True).start()

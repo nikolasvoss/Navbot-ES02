@@ -94,7 +94,60 @@ The node publishes `/hmmd/rdmap` with Best Effort QoS and depth 5. It publishes 
 
 `connected=true` means the host opened the UART; it does not prove that the sensor sent a frame. `stale=true` means the last complete frame is older than `stale_timeout_sec`. `last_frame_age_sec` uses monotonic host time. The frame and error counters cover decoded frames, malformed candidates, discarded bytes, reconnects, and input backlog overflows. `last_io_error` contains the latest serial error.
 
-The browser subscribes only to `/hmmd/rdmap` and `/hmmd/status`. It keeps the latest message for each topic, requests at most 10 updates per second, and marks map and status samples stale after 1.5 and 3 seconds without new messages. A reconnect does not make an old sample fresh. Add a topic to both `web/topic_registry.mjs` and the server's `topics_sub_glob` before using it in the browser.
+The browser reads endpoint declarations from `web/endpoint-manifest.json`. The launcher reads the same file and derives rosbridge topic and service filters with `scripts/sensor_channel_config.py`. Topic records use `name`, `type`, `label`, `direction`, `reliability`, `throttleMs`, `staleAfterMs`, and `pinned`; `defaultPayload` is optional. Set `direction` to `subscribe`, `publish`, or `both`. Service records use `name`, `type`, `label`, and `timeoutMs`, with an optional `defaultPayload`. The current manifest subscribes to the HMMD topics and exposes `/hmmd_sensor/get_parameters` as a read-only `rcl_interfaces/srv/GetParameters` request. That service reads node parameters. It does not configure HMMD hardware.
+
+The browser keeps the latest message for each active receive topic and applies the manifest freshness limit. HMMD validation stays in `model.mjs` and is injected into the generic `RosbridgeClient`; other topic JSON remains opaque. Reconnects resubscribe active receive topics but do not replay publications or service calls. A publish status means that the browser submitted the JSON message to rosbridge. ROS topic publication has no delivery acknowledgement. Service responses use request IDs and fail on bridge rejection, malformed response, disconnect, stop, or timeout.
+
+The generic controls list manifest-declared publish topics and services. Select an endpoint, edit its JSON object, and submit it. A receive-only endpoint cannot be published, and a publish-only endpoint is not subscribed. The production manifest has no publish endpoint because the HMMD driver has no corresponding command interface.
+
+### Sensor-channel interface baseline
+
+This is the initial comparison baseline for future sensor-channel changes. It describes the public contract at the manifest and browser-client boundary; rosbridge remains the transport. A later change should state which rows it extends or changes and keep the existing HMMD behavior unless an intentional migration is documented.
+
+| Surface | Current contract |
+| --- | --- |
+| Stream endpoint | ROS topic declaration with exact `name`, message `type`, UI `label`, `direction`, `reliability`, `throttleMs`, `staleAfterMs`, and `pinned` fields. Optional `defaultPayload` is a JSON object. |
+| Request endpoint | ROS service declaration with exact `name`, service `type`, UI `label`, and `timeoutMs`. Optional `defaultPayload` is a JSON object. |
+| Receive API | `subscribe(name)` and `unsubscribe(name)` operate only on declared receive-capable topics. `snapshot()` returns the connection generation, endpoint errors and each topic's latest message, receipt time, age, generation, and freshness. |
+| Send API | `publish(name, object)` accepts a declared publish-capable topic and JSON object. It reports submission to rosbridge; it cannot confirm subscriber delivery. The bridge's correlated error status is surfaced as an endpoint error. |
+| Request API | `callService(name, object)` accepts a declared service and returns a promise for response `values`. Requests have unique IDs and a finite timeout; rejection, malformed/mismatched response, disconnect, stop, or send failure rejects the promise. |
+| Reconnect | Active subscriptions are restored. Publications and service calls are never queued or replayed. An older sample does not become fresh solely because the bridge reconnects. |
+| Validation | The endpoint manifest is validated at the browser and launch boundary. Type-specific validation is optional and injected by the owning view; without it, received message objects are opaque. |
+| Permissions | The launcher derives topic subscribe, topic publish, and service allowlists from the same manifest. The list bounds this managed launcher but does not disable rosapi or replace network isolation. |
+
+The `RosbridgeClient` browser surface is `new RosbridgeClient({ url, topics, services, validators })` followed by `start`, `stop`, `subscribe`, `unsubscribe`, `onChange`, `snapshot`, `publish`, or `callService`. Methods that send data resolve endpoint names and direction against the declarations; callers do not send raw rosbridge envelopes. Invalid JSON objects, undeclared operations, and disconnected sends fail at the client boundary. Keep sensor-specific parsing, configuration semantics, and rendering in the owning ROS driver or browser view.
+
+Current production capabilities are deliberately smaller than the generic channel:
+
+| Endpoint | Direction | Payload / effect |
+| --- | --- | --- |
+| `/hmmd/rdmap` | Receive | Existing `hmmd_interfaces/msg/RangeDopplerMap`; the view validates its 20 by 16 uint32 matrix and renders the heatmap. |
+| `/hmmd/status` | Receive | Existing `diagnostic_msgs/msg/DiagnosticArray`; the view shows HMMD serial and frame status. |
+| `/hmmd_sensor/get_parameters` | Request | Read-only `rcl_interfaces/srv/GetParameters` for the listed ROS node parameters. |
+| HMMD setting writes | Not available | The current sensor node exposes no runtime hardware write operation. The browser has no production publish endpoint. |
+
+Synthetic `/demo/*` endpoints exist only in the test fixture and are not part of production permissions. Future radar configuration work must add a real driver-owned ROS operation before declaring it in the production manifest. Its user-visible result should state whether the driver accepted the request and, where hardware supports acknowledgement, whether the setting was confirmed by the device. A generic rosbridge submission message alone is not a configuration success.
+
+For comparable future changes, record the endpoint additions, ROS types, direction, timeout/freshness/QoS policy, response semantics, and any payload-size or compatibility changes. Demonstrate the new path in the synthetic fixture and test both successful and failed operations. Keep the original HMMD map/status path covered. Do not silently turn read-only parameters into writable configuration or add a command until the device protocol and driver behavior are verified.
+
+To add another sensor, add its exact ROS endpoint name, type, direction, and metadata to the manifest. For example, a driver that publishes radar detections using [`radar_msgs/msg/RadarScan`](https://github.com/ros-perception/radar_msgs/blob/ros2/msg/RadarScan.msg) could declare:
+
+```json
+{
+  "name": "/front_radar/scan",
+  "type": "radar_msgs/msg/RadarScan",
+  "label": "Front radar scan",
+  "direction": "subscribe",
+  "reliability": "best_effort",
+  "throttleMs": 50,
+  "staleAfterMs": 500,
+  "pinned": false
+}
+```
+
+For planar LiDAR, use the standard [`sensor_msgs/msg/LaserScan` definition](https://github.com/ros2/common_interfaces/blob/jazzy/sensor_msgs/msg/LaserScan.msg). For compressed camera frames, use [`sensor_msgs/msg/CompressedImage`](https://github.com/ros2/common_interfaces/blob/jazzy/sensor_msgs/msg/CompressedImage.msg); rosbridge represents its `uint8[]` data as base64 JSON. The browser transport currently sends each topic message or service call as one JSON WebSocket message; it does not chunk or fragment large payloads. Keep the encoded message below the configured rosbridge message-size limit. Array-valued scans grow with the number of returns, and base64 expands image data, so reduce rate, resolution, or payload size when needed. Large camera frames, point clouds, or raw radar matrices may need a different transport. Keep acquisition, validation, and device configuration in the sensor's ROS driver. Keep sensor-specific rendering in the browser view that owns it. Service payloads use the declared ROS service request and response fields.
+
+`RosbridgeClient` accepts `{ url, topics, services, validators }`. It exposes `start`, `stop`, `subscribe`, `unsubscribe`, `onChange`, `snapshot`, `publish`, and `callService`. `publish` throws on an undeclared direction, invalid JSON object, disconnect, or send failure. `callService` returns a promise for response values and rejects on failure or timeout. The manifest bounds the managed launch configuration. It is not a complete authorization boundary because installed rosbridge versions can still expose `/rosapi/*` services. Bind rosbridge to loopback and use the SSH tunnel.
 
 The browser shows raw values or `log1p` values. Its color scale can follow each frame or use a fixed maximum. These display choices do not change the ROS message. The axes show bin indices because physical range, speed, and orientation are unconfirmed.
 
@@ -147,13 +200,11 @@ Stop the recorder with Ctrl+C. Use `hmmd-stationary` and `hmmd-moving` for the o
 For replay, stop the live sensor node first. In one sourced terminal on the CM5, start rosbridge with the same loopback address and topic limits as the managed launcher:
 
 ```bash
+mapfile -t BRIDGE_FILTER_ARGS < <(python3 scripts/sensor_channel_config.py \
+  src/cm5/ros2/src/hmmd_radar/web/endpoint-manifest.json --format shell)
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
   address:=127.0.0.1 port:=9090 \
-  'topics_glob:=""' \
-  'topics_pub_glob:="[]"' \
-  'topics_sub_glob:="[/hmmd/rdmap,/hmmd/status]"' \
-  'services_glob:="[]"' \
-  'params_glob:="[]"'
+  "${BRIDGE_FILTER_ARGS[@]}"
 ```
 
 In another CM5 terminal, start the static server from the project root:
@@ -169,7 +220,7 @@ On the PC, forward both CM5 loopback ports and open `http://127.0.0.1:8080/`:
 ssh -N -L 127.0.0.1:8080:127.0.0.1:8080 -L 127.0.0.1:9090:127.0.0.1:9090 cm5
 ```
 
-The rosbridge filter arguments are strings. Keep the inner quotes around the topic list. The service filter still leaves rosapi operations available, so bind rosbridge to loopback and use the SSH tunnel. Keep rosbridge and the static web server running, then replay a bag in a sourced ROS terminal:
+The helper rejects wildcard names and malformed endpoint declarations. It generates the filters used by the managed launcher. The service filter still leaves rosapi operations available, so bind rosbridge to loopback and use the SSH tunnel. Keep rosbridge and the static web server running, then replay a bag in a sourced ROS terminal:
 
 ```bash
 ros2 bag info hmmd-empty

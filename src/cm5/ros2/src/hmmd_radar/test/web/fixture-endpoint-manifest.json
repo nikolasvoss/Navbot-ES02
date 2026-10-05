@@ -1,0 +1,10 @@
+{
+  "topics": [
+    {"name":"/hmmd/rdmap","type":"hmmd_interfaces/msg/RangeDopplerMap","label":"HMMD range-Doppler map","direction":"subscribe","reliability":"best_effort","throttleMs":100,"staleAfterMs":1500,"pinned":true},
+    {"name":"/hmmd/status","type":"diagnostic_msgs/msg/DiagnosticArray","label":"HMMD status","direction":"subscribe","reliability":"reliable","throttleMs":100,"staleAfterMs":3000,"pinned":true},
+    {"name":"/demo/range","type":"sensor_msgs/msg/Range","label":"Synthetic range sensor","direction":"both","reliability":"reliable","throttleMs":50,"staleAfterMs":1000,"pinned":false,"defaultPayload":{"range":1.25}}
+  ],
+  "services": [
+    {"name":"/demo/echo","type":"example_interfaces/srv/SetBool","label":"Synthetic echo request","timeoutMs":1000,"defaultPayload":{"data":true}}
+  ]
+}
