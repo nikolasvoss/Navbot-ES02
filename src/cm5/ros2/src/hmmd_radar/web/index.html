@@ -56,6 +56,44 @@
           <span id="map-state" class="badge badge-muted">Waiting for frame</span>
           <span id="map-scale" class="muted">Amplitude squared</span>
         </div>
+        <section class="radar-settings" aria-labelledby="radar-settings-title">
+          <div class="settings-header">
+            <div>
+              <h3 id="radar-settings-title">Radar settings</h3>
+              <p id="radar-settings-state" class="muted" aria-live="polite">Waiting for radar connection.</p>
+            </div>
+            <button id="radar-settings-refresh" type="button">Refresh values</button>
+          </div>
+          <p class="muted settings-note">A save acknowledgement confirms command acceptance. Power-cycle persistence has not been verified.</p>
+          <form id="radar-settings-form" class="settings-grid">
+            <div class="setting-row">
+              <label class="control" for="maximum-distance-gate">
+                <span>Maximum distance gate</span>
+                <span class="setting-help">Limits the farthest distance gate used for detections.</span>
+                <input id="maximum-distance-gate" data-setting="maximumDistanceGate" type="number" min="0" max="15" step="1" inputmode="numeric" aria-describedby="maximum-distance-gate-help maximum-distance-gate-state" required>
+                <span id="maximum-distance-gate-help" class="muted">0–15 gates</span>
+              </label>
+              <div class="setting-result">
+                <span id="maximum-distance-gate-confirmed" class="muted">Device value: not read</span>
+                <button type="submit" data-setting="maximumDistanceGate">Apply</button>
+                <p id="maximum-distance-gate-state" class="setting-state muted" aria-live="polite"></p>
+              </div>
+            </div>
+            <div class="setting-row">
+              <label class="control" for="target-disappearance-delay">
+                <span>Target disappearance delay</span>
+                <span class="setting-help">How long a target remains reported after it disappears.</span>
+                <input id="target-disappearance-delay" data-setting="targetDisappearanceDelaySeconds" type="number" min="0" max="65535" step="1" inputmode="numeric" aria-describedby="target-disappearance-delay-help target-disappearance-delay-state" required>
+                <span id="target-disappearance-delay-help" class="muted">0–65,535 seconds</span>
+              </label>
+              <div class="setting-result">
+                <span id="target-disappearance-delay-confirmed" class="muted">Device value: not read</span>
+                <button type="submit" data-setting="targetDisappearanceDelaySeconds">Apply</button>
+                <p id="target-disappearance-delay-state" class="setting-state muted" aria-live="polite"></p>
+              </div>
+            </div>
+          </form>
+        </section>
       </section>
 
       <section class="panel sensor-panel" aria-labelledby="sensor-title">

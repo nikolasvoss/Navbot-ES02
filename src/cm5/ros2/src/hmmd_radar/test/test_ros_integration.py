@@ -11,6 +11,7 @@ if ROS_AVAILABLE:
     from rclpy.parameter import Parameter
     from hmmd_radar.sensor_node import HmmdSensorNode
     from hmmd_interfaces.msg import RangeDopplerMap
+    from hmmd_interfaces.srv import GetRadarConfig, SetRadarSetting
     from rclpy.node import Node
     from rclpy.qos import QoSProfile, ReliabilityPolicy
 
@@ -23,15 +24,18 @@ class FakeSerial:
     def __init__(self, data):
         self.data = bytearray(data)
         self.is_open = False
+        self.calls = []
 
     @property
     def in_waiting(self):
         return len(self.data)
 
     def open(self):
+        self.calls.append(("open",))
         self.is_open = True
 
     def write(self, data):
+        self.calls.append(("write", bytes(data)))
         return len(data)
 
     def read(self, size):
@@ -96,6 +100,29 @@ class RosGraphTests(unittest.TestCase):
         finally:
             sensor.destroy_node()
             subscriber.destroy_node()
+
+    def test_radar_services_are_declared_and_invalid_write_stops_before_uart_io(self):
+        fake = FakeSerial(b"")
+        sensor = HmmdSensorNode(
+            serial_factory=lambda: fake,
+            parameter_overrides=[Parameter("port", value="fake")],
+        )
+        try:
+            service_types = dict(sensor.get_service_names_and_types())
+            self.assertIn("hmmd_interfaces/srv/GetRadarConfig", service_types["/hmmd_sensor/get_radar_config"])
+            self.assertIn("hmmd_interfaces/srv/SetRadarSetting", service_types["/hmmd_sensor/set_radar_setting"])
+
+            request = SetRadarSetting.Request()
+            request.setting = SetRadarSetting.Request.SETTING_MAXIMUM_DISTANCE_GATE
+            request.value = 16
+            response = sensor._set_radar_setting(request, SetRadarSetting.Response())
+
+            self.assertFalse(response.success)
+            self.assertEqual(response.outcome, SetRadarSetting.Response.OUTCOME_INVALID_REQUEST)
+            self.assertFalse(fake.calls)
+            self.assertTrue(callable(sensor._get_radar_config))
+        finally:
+            sensor.destroy_node()
 
 
 if __name__ == "__main__":

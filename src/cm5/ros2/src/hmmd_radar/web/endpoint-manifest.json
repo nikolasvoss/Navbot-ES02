@@ -23,11 +23,16 @@
   ],
   "services": [
     {
-      "name": "/hmmd_sensor/get_parameters",
-      "type": "rcl_interfaces/srv/GetParameters",
-      "label": "Read HMMD node parameters",
-      "timeoutMs": 5000,
-      "defaultPayload": { "names": ["port", "baud_rate", "poll_period_sec", "stale_timeout_sec", "diagnostics_period_sec"] }
+      "name": "/hmmd_sensor/get_radar_config",
+      "type": "hmmd_interfaces/srv/GetRadarConfig",
+      "label": "Read HMMD radar settings",
+      "timeoutMs": 5000
+    },
+    {
+      "name": "/hmmd_sensor/set_radar_setting",
+      "type": "hmmd_interfaces/srv/SetRadarSetting",
+      "label": "Set one HMMD radar setting",
+      "timeoutMs": 5000
     }
   ]
 }

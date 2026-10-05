@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { diagnosticFields, formatRosStamp, rangeDopplerRows, validateRangeDopplerMap } from "../../web/model.mjs";
 import { validateEndpointManifest } from "../../web/endpoint_manifest.mjs";
+import { RADAR_SETTINGS, RadarSettings, validateRadarSettingValue } from "../../web/radar_settings.mjs";
 import { RosbridgeClient } from "../../web/rosbridge_client.mjs";
 
 function makeMap(values = Array.from({ length: 320 }, (_, index) => index)) {
@@ -125,6 +126,102 @@ test("validates endpoint kind, integer timing, and publish-only declarations", (
   assert.throws(() => validateEndpointManifest({ topics: [{ ...topics[0], type: "pkg/srv/S" }], services: [] }), /Invalid or duplicate topic/);
   assert.throws(() => validateEndpointManifest({ topics: [{ ...topics[3], throttleMs: 1.5 }], services: [] }), /Invalid topic metadata/);
   assert.throws(() => validateEndpointManifest({ topics: [{ ...topics[3], pinned: true }], services: [] }), /Invalid topic metadata/);
+});
+
+test("radar settings validate only the two user-scoped integer ranges", () => {
+  assert.equal(validateRadarSettingValue("maximumDistanceGate", 0), 0);
+  assert.equal(validateRadarSettingValue("maximumDistanceGate", 15), 15);
+  assert.equal(validateRadarSettingValue("targetDisappearanceDelaySeconds", 65535), 65535);
+  assert.throws(() => validateRadarSettingValue("maximumDistanceGate", true), /integer/);
+  assert.throws(() => validateRadarSettingValue("maximumDistanceGate", 1.5), /integer/);
+  assert.throws(() => validateRadarSettingValue("maximumDistanceGate", 16), /0–15/);
+  assert.throws(() => validateRadarSettingValue("targetDisappearanceDelaySeconds", 65536), /0–65535/);
+  assert.throws(() => validateRadarSettingValue("other", 1), /Unknown radar setting/);
+  assert.deepEqual(Object.keys(RADAR_SETTINGS), ["maximumDistanceGate", "targetDisappearanceDelaySeconds"]);
+});
+
+test("radar settings keep drafts separate until device readback confirms a write", async () => {
+  const requests = [];
+  const client = {
+    connection: "connected",
+    snapshot() { return { connection: this.connection }; },
+    onChange() { return () => {}; },
+    async callService(name, payload) {
+      requests.push({ name, payload });
+      if (name.endsWith("get_radar_config")) {
+        return { success: true, outcome: 0, maximum_distance_gate: 12, target_disappearance_delay_seconds: 30, detail: "Read confirmed values." };
+      }
+      return {
+        success: true, outcome: 0, write_acknowledged: true, has_observed_value: true,
+        observed_value: payload.value, readback_matched: true, save_acknowledged: true,
+        detail: "Readback matched and save was acknowledged.",
+      };
+    },
+  };
+  const settings = new RadarSettings(client);
+  settings.setDraft("maximumDistanceGate", "15");
+  assert.equal(settings.snapshot().confirmed, null);
+  await settings.read();
+  assert.deepEqual(settings.snapshot().confirmed, { maximumDistanceGate: 12, targetDisappearanceDelaySeconds: 30 });
+  assert.equal(settings.snapshot().drafts.maximumDistanceGate, "12");
+  settings.setDraft("maximumDistanceGate", "13");
+  await settings.read();
+  assert.equal(settings.snapshot().confirmed.maximumDistanceGate, 12);
+  assert.equal(settings.snapshot().drafts.maximumDistanceGate, "13");
+  await settings.set("maximumDistanceGate", 13);
+  assert.equal(settings.snapshot().confirmed.maximumDistanceGate, 13);
+  assert.equal(settings.snapshot().lastWrite.readbackMatched, true);
+  assert.deepEqual(requests, [
+    { name: "/hmmd_sensor/get_radar_config", payload: {} },
+    { name: "/hmmd_sensor/get_radar_config", payload: {} },
+    { name: "/hmmd_sensor/set_radar_setting", payload: { setting: 0, value: 13 } },
+  ]);
+  settings.unsubscribe();
+});
+
+test("radar settings preserve last confirmed value and mark it stale after service failure", async () => {
+  let fail = false;
+  const client = {
+    connection: "connected",
+    snapshot() { return { connection: this.connection }; },
+    onChange() { return () => {}; },
+    async callService() {
+      if (fail) throw new Error("Bridge disconnected");
+      return { success: true, outcome: 0, maximum_distance_gate: 12, target_disappearance_delay_seconds: 30 };
+    },
+  };
+  const settings = new RadarSettings(client);
+  await settings.read();
+  fail = true;
+  await assert.rejects(settings.read(), /Bridge disconnected/);
+  assert.equal(settings.snapshot().confirmed.maximumDistanceGate, 12);
+  assert.equal(settings.snapshot().state, "stale");
+  settings.unsubscribe();
+});
+
+test("radar settings reject malformed service flags without changing confirmed values", async () => {
+  const client = {
+    connection: "connected",
+    snapshot() { return { connection: this.connection }; },
+    onChange() { return () => {}; },
+    async callService(name, payload) {
+      if (name.endsWith("get_radar_config")) {
+        return { success: true, outcome: 0, maximum_distance_gate: 12, target_disappearance_delay_seconds: 30 };
+      }
+      return {
+        success: true, outcome: 0, write_acknowledged: "yes", has_observed_value: true,
+        observed_value: payload.value, readback_matched: true, save_acknowledged: true,
+      };
+    },
+  };
+  const settings = new RadarSettings(client);
+  await settings.read();
+
+  await assert.rejects(settings.set("maximumDistanceGate", 13), /must be boolean/);
+
+  assert.equal(settings.snapshot().confirmed.maximumDistanceGate, 12);
+  assert.equal(settings.snapshot().state, "stale");
+  settings.unsubscribe();
 });
 
 test("subscribes declared inputs with configured throttle and freshness; validators stay injectable", () => {

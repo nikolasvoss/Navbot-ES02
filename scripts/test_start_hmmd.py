@@ -183,7 +183,7 @@ class StartHmmdTests(unittest.TestCase):
         self.assertEqual(filters["topics_glob"], "[]")
         self.assertEqual(filters["topics_pub_glob"], "[]")
         self.assertEqual(filters["topics_sub_glob"], "[/hmmd/rdmap,/hmmd/status]")
-        self.assertEqual(filters["services_glob"], "[/hmmd_sensor/get_parameters]")
+        self.assertEqual(filters["services_glob"], "[/hmmd_sensor/get_radar_config,/hmmd_sensor/set_radar_setting]")
         self.assertEqual(start_hmmd.STARTUP_BASH.count("sensor_channel_config.py"), 1)
         self.assertNotIn("[/hmmd/rdmap,/hmmd/status]", start_hmmd.STARTUP_BASH)
 

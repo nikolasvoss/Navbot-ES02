@@ -1,5 +1,6 @@
 import { BRIDGE_URL, DISPLAY_INTERVAL_MS, loadEndpointManifest } from "./endpoint_manifest.mjs";
 import { diagnosticFields, formatRosStamp, rangeDopplerRows, validateRangeDopplerMap } from "./model.mjs";
+import { RADAR_SETTINGS, RadarSettings } from "./radar_settings.mjs";
 import { RosbridgeClient } from "./rosbridge_client.mjs";
 
 const ui = {
@@ -21,6 +22,9 @@ const ui = {
   endpoint: document.querySelector("#channel-endpoint"),
   payload: document.querySelector("#channel-payload"),
   channelResult: document.querySelector("#channel-result"),
+  settingsState: document.querySelector("#radar-settings-state"),
+  settingsRefresh: document.querySelector("#radar-settings-refresh"),
+  settingsForm: document.querySelector("#radar-settings-form"),
 };
 let manifestError = "";
 let manifest;
@@ -53,6 +57,19 @@ const client = new RosbridgeClient({
   services: manifest.services,
   validators: { "hmmd_interfaces/msg/RangeDopplerMap": validateRangeDopplerMap },
 });
+const radarSettings = new RadarSettings(client);
+const settingElements = {
+  maximumDistanceGate: {
+    input: document.querySelector("#maximum-distance-gate"),
+    confirmed: document.querySelector("#maximum-distance-gate-confirmed"),
+    state: document.querySelector("#maximum-distance-gate-state"),
+  },
+  targetDisappearanceDelaySeconds: {
+    input: document.querySelector("#target-disappearance-delay"),
+    confirmed: document.querySelector("#target-disappearance-delay-confirmed"),
+    state: document.querySelector("#target-disappearance-delay-state"),
+  },
+};
 let selectedTopic = statusTopic?.name || null;
 if (selectedTopic) ui.topic.value = selectedTopic;
 let state = client.snapshot();
@@ -108,10 +125,58 @@ ui.fixedMaximum.addEventListener("input", () => {
   }
   render();
 });
+for (const [setting, elements] of Object.entries(settingElements)) {
+  elements.input.addEventListener("input", () => radarSettings.setDraft(setting, elements.input.value));
+}
+ui.settingsForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const setting = event.submitter?.dataset.setting;
+  if (!setting || !RADAR_SETTINGS[setting]) return;
+  const input = settingElements[setting].input;
+  input.setCustomValidity("");
+  if (!input.validity.valid) input.setCustomValidity("Enter an integer in the allowed range.");
+  if (!input.reportValidity()) return;
+  try { await radarSettings.set(setting, input.valueAsNumber); }
+  catch {}
+});
+ui.settingsRefresh.addEventListener("click", async () => {
+  try { await radarSettings.read(); }
+  catch {}
+});
+radarSettings.onChange(renderRadarSettings);
 
 function setBadge(element, label, tone = "muted") {
   element.textContent = label;
   element.className = `badge badge-${tone}`;
+}
+
+function renderRadarSettings(settings) {
+  const labels = {
+    confirmed: ["Values confirmed", "ok"],
+    pending: ["Request pending", "warn"],
+    stale: ["Last values may be stale", "warn"],
+    reconnect: ["Waiting for connection", "warn"],
+    error: ["Could not read settings", "error"],
+  };
+  const label = labels[settings.state] || labels.reconnect;
+  setBadge(ui.settingsState, label[0], label[1]);
+  ui.settingsState.title = settings.detail;
+  ui.settingsRefresh.disabled = settings.readPending || settings.writePending || state.connection !== "connected";
+  for (const [setting, elements] of Object.entries(settingElements)) {
+    const confirmed = settings.confirmed?.[setting];
+    const info = RADAR_SETTINGS[setting];
+    elements.confirmed.textContent = confirmed === undefined ? "Device value: not read" : `Device value: ${confirmed} ${info.unit}`;
+    if (document.activeElement !== elements.input && settings.drafts[setting] !== "") elements.input.value = settings.drafts[setting];
+    elements.input.disabled = settings.state !== "confirmed" || settings.readPending || settings.writePending || state.connection !== "connected" || confirmed === undefined;
+    const apply = ui.settingsForm.querySelector(`button[data-setting="${setting}"]`);
+    apply.disabled = elements.input.disabled;
+    const write = settings.lastWrite;
+    const lastWriteState = write
+      ? `Write ACK ${write.writeAcknowledged ? "yes" : "no"} · readback ${write.readbackMatched ? "matched" : "not confirmed"} · save ACK ${write.saveAcknowledged ? "yes" : "no"}. `
+      : "";
+    elements.state.textContent = `${lastWriteState}${settings.detail}`;
+    elements.state.className = `setting-state ${settings.state === "error" ? "badge-error" : settings.state === "confirmed" ? "badge-ok" : "muted"}`;
+  }
 }
 
 function bridgeLabel(connection) {
@@ -276,6 +341,7 @@ function drawHeatmap(sample) {
 function render() {
   const now = performance.now();
   state = client.snapshot(now);
+  renderRadarSettings(radarSettings.snapshot());
   const bridge = bridgeLabel(state.connection);
   setBadge(ui.bridge, bridge[0], bridge[1]);
 
@@ -328,4 +394,5 @@ ui.endpoint.dispatchEvent(new Event("change"));
 if (selectedTopic) client.subscribe(selectedTopic);
 setInterval(render, DISPLAY_INTERVAL_MS);
 if (!manifestError) client.start();
+renderRadarSettings(radarSettings.snapshot());
 render();

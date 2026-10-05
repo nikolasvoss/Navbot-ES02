@@ -10,12 +10,13 @@
 | 04.10.2026 | Das aktive WLAN war `192.168.178.28/24`; ein PC-Browser mit Quelladresse `192.168.178.22` lud HTML, CSS und JavaScript vom statischen Server erfolgreich. | `ip -br addr`; HTTP-Serverzugriffe auf `/`, `/style.css`, `/app.mjs`, `/topic_registry.mjs`, `/model.mjs` und `/rosbridge_client.mjs` mit HTTP 200 am 04.10.2026. | Browser-URL zum Zeitpunkt der Prüfung: `http://192.168.178.28:8080/`. Die HMMD-WebSocket-Anzeige vom PC ist erst nach lokalem SSH-Tunnel auf dem PC erreichbar. |
 | 04.10.2026 | Nutzer meldet den HMMD-Sensor am J8 angeschlossen und nennt „GPIO10, GPIO8 usw.“; ob GPIO-Nummern oder physische J8-Pinnummern gemeint sind und welche Moduldrähte dort liegen, ist noch ungeklärt. | Nutzerbericht in der Anleitungskorrektur. Keine Sichtprüfung oder elektrische Messung liegt vor. | Vor dem Einschalten physische J8-Pinnummern, Modul-TX/RX, Masse und 3,3-V-Versorgung anhand der realen Markierungen prüfen. GPIO8/GPIO10 sind kein UART3-TX/RX-Paar. |
 | 04.10.2026 | Roadmap-Punkt 1 verlangt einen stationären HMMD-Test mit Heatmap und Bag-Wiedergabe. | `docs/cm5/software/roadmap.md`, Abschnitt 1. | Radar zunächst getrennt von der Fahrsteuerung betreiben. |
+| 05.10.2026 | Das installierte HMMD meldete Firmware v1.6.1. Parameter-ID 1 las Maximum Distance Gate 12; Parameter-ID 4 las Target Disappearance Delay 30 Sekunden. Unveränderte Schreibvorgänge beider Werte wurden mit ACK, passendem Readback und Save/Exit-ACK bestätigt. | Direkter serieller Mitschnitt über CM5 `/dev/ttyAMA0` bei 115200 Baud am 05.10.2026; die erfassten Anfrage- und Antwortbytes stehen in `protocol.md`, Abschnitt „HMMD-Konfiguration, am Modul geprüft“. | Der Treiber kann nur die geprüften IDs, Antwortformate und Bereiche verwenden. Die Prüfung nach Aus- und Einschalten fehlt; Save/Exit-ACK nicht als Power-Cycle-Persistenz ausgeben. Während des Mitschnitts wurde `hmmd_sensor` pausiert und danach wieder als alleiniger UART-Eigentümer gestartet. |
 
 ## Noch nicht beobachtet
 
-- Konkrete HMMD-Modul- und Firmwareversion.
+- Konkrete HMMD-Modulvariante; die Firmwareversion v1.6.1 ist für das vorhandene Gerät beobachtet.
 - CM5-Trägerboard, tatsächliche J8-Verdrahtung, Versorgung und Signalpegel.
-- Baudrate, erfolgreiche Debug-Initialisierung und ACK.
+- Verhalten nach Aus- und Einschalten sowie Persistenz der Radarwerte.
 - Byte-Reihenfolge, physikalische Skalierung und Sensororientierung über die vorhandenen Softwarebefunde hinaus.
 - Lastverhalten unter längerer oder höherer Bridge-Last.
 

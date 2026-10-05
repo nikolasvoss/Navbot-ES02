@@ -5,6 +5,7 @@ import rclpy
 import serial
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from hmmd_interfaces.msg import RangeDopplerMap
+from hmmd_interfaces.srv import GetRadarConfig, SetRadarSetting
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
@@ -43,6 +44,16 @@ class HmmdSensorNode(Node):
             QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT),
         )
         self.status_publisher = self.create_publisher(DiagnosticArray, "/hmmd/status", 5)
+        self.get_radar_config_service = self.create_service(
+            GetRadarConfig,
+            "/hmmd_sensor/get_radar_config",
+            self._get_radar_config,
+        )
+        self.set_radar_setting_service = self.create_service(
+            SetRadarSetting,
+            "/hmmd_sensor/set_radar_setting",
+            self._set_radar_setting,
+        )
         self.poll_timer = self.create_timer(self.poll_period, self._poll, clock=self._steady_clock)
         self.status_timer = self.create_timer(self.diagnostics_period, self._publish_status, clock=self._steady_clock)
 
@@ -55,7 +66,10 @@ class HmmdSensorNode(Node):
     def _poll(self):
         if self.session is None:
             return
-        for frame in self.session.poll():
+        self._publish_maps(self.session.poll())
+
+    def _publish_maps(self, frames):
+        for frame in frames:
             message = RangeDopplerMap()
             message.header.stamp = self.get_clock().now().to_msg()
             message.header.frame_id = "hmmd_sensor"
@@ -63,6 +77,94 @@ class HmmdSensorNode(Node):
             message.range_gates = RANGE_GATES
             message.amplitude_squared = frame.amplitude_squared
             self.map_publisher.publish(message)
+
+    def _get_radar_config(self, request, response):
+        del request
+        if self.session is None:
+            outcome, stage, detail = "not_connected", "enter_config", "UART is not configured."
+            result = None
+        else:
+            result = self.session.read_radar_config()
+            outcome, stage, detail = result.outcome, result.stage, result.detail
+            self._publish_maps(self.session.poll())
+        response.success = bool(result and result.success)
+        response.maximum_distance_gate = result.maximum_distance_gate if result else 0
+        response.target_disappearance_delay_seconds = result.target_disappearance_delay_seconds if result else 0
+        response.outcome = self._outcome_code(GetRadarConfig.Response, outcome)
+        response.stage = self._read_stage_code(stage)
+        response.detail = detail
+        return response
+
+    def _set_radar_setting(self, request, response):
+        if (
+            isinstance(request.setting, bool)
+            or not isinstance(request.setting, int)
+            or isinstance(request.value, bool)
+            or not isinstance(request.value, int)
+        ):
+            result = None
+            outcome, stage, detail = "invalid_request", "none", "Setting and value must be integers."
+        elif request.setting not in (SetRadarSetting.Request.SETTING_MAXIMUM_DISTANCE_GATE, SetRadarSetting.Request.SETTING_TARGET_DISAPPEARANCE_DELAY):
+            result = None
+            outcome, stage, detail = "invalid_request", "none", "Unknown radar setting selector."
+        elif request.setting == SetRadarSetting.Request.SETTING_MAXIMUM_DISTANCE_GATE and not 0 <= request.value <= 15:
+            result = None
+            outcome, stage, detail = "invalid_request", "none", "Maximum distance gate must be an integer from 0 to 15."
+        elif request.setting == SetRadarSetting.Request.SETTING_TARGET_DISAPPEARANCE_DELAY and not 0 <= request.value <= 65535:
+            result = None
+            outcome, stage, detail = "invalid_request", "none", "Target disappearance delay must be an integer from 0 to 65535."
+        elif self.session is None:
+            result = None
+            outcome, stage, detail = "not_connected", "enter_config", "UART is not configured."
+        else:
+            result = self.session.set_radar_setting(request.setting, request.value)
+            outcome, stage, detail = result.outcome, result.stage, result.detail
+            self._publish_maps(self.session.poll())
+        response.success = bool(result and result.success)
+        response.write_acknowledged = result.write_acknowledged if result else False
+        response.has_observed_value = result.has_observed_value if result else False
+        response.observed_value = result.observed_value if result else 0
+        response.readback_matched = result.readback_matched if result else False
+        response.save_acknowledged = result.save_acknowledged if result else False
+        response.outcome = self._outcome_code(SetRadarSetting.Response, outcome)
+        response.stage = self._write_stage_code(stage)
+        response.detail = detail
+        return response
+
+    @staticmethod
+    def _outcome_code(response_type, outcome):
+        names = {
+            "ok": "OUTCOME_OK",
+            "invalid_request": "OUTCOME_INVALID_REQUEST",
+            "not_connected": "OUTCOME_NOT_CONNECTED",
+            "timeout": "OUTCOME_TIMEOUT",
+            "device_rejected": "OUTCOME_DEVICE_REJECTED",
+            "readback_mismatch": "OUTCOME_READBACK_MISMATCH",
+            "protocol_error": "OUTCOME_PROTOCOL_ERROR",
+            "io_error": "OUTCOME_IO_ERROR",
+            "refresh_required": "OUTCOME_REFRESH_REQUIRED",
+        }
+        return getattr(response_type, names[outcome], response_type.OUTCOME_PROTOCOL_ERROR)
+
+    @staticmethod
+    def _read_stage_code(stage):
+        return {
+            "none": GetRadarConfig.Response.STAGE_NONE,
+            "enter_config": GetRadarConfig.Response.STAGE_ENTER_CONFIG,
+            "read_maximum_distance_gate": GetRadarConfig.Response.STAGE_READ_MAXIMUM_DISTANCE_GATE,
+            "read_target_disappearance_delay": GetRadarConfig.Response.STAGE_READ_TARGET_DISAPPEARANCE_DELAY,
+            "exit_config": GetRadarConfig.Response.STAGE_EXIT_CONFIG,
+        }.get(stage, GetRadarConfig.Response.STAGE_NONE)
+
+    @staticmethod
+    def _write_stage_code(stage):
+        return {
+            "none": SetRadarSetting.Response.STAGE_NONE,
+            "enter_config": SetRadarSetting.Response.STAGE_ENTER_CONFIG,
+            "write": SetRadarSetting.Response.STAGE_WRITE,
+            "readback": SetRadarSetting.Response.STAGE_READBACK,
+            "save": SetRadarSetting.Response.STAGE_SAVE,
+        }.get(stage, SetRadarSetting.Response.STAGE_NONE)
 
     def _publish_status(self):
         message = DiagnosticArray()
@@ -76,7 +178,7 @@ class HmmdSensorNode(Node):
             stale = True
             age = "unknown"
             last_io_error = ""
-            counters = (0, 0, 0, 0, 0)
+            counters = (0, 0, 0, 0, 0, 0, 0)
             frame_rate = 0.0
         else:
             session_status = self.session.status()
@@ -89,6 +191,8 @@ class HmmdSensorNode(Node):
                 self.session.parser.discarded_bytes,
                 self.session.reconnects,
                 self.session.input_backlog_overflows,
+                self.session.deferred_map_overflows,
+                self.session.late_command_replies,
             )
             last_io_error = self.session.last_io_error
             status_time = time.monotonic()
@@ -113,6 +217,8 @@ class HmmdSensorNode(Node):
             KeyValue(key="discarded_bytes", value=str(counters[2])),
             KeyValue(key="reconnects", value=str(counters[3])),
             KeyValue(key="input_backlog_overflows", value=str(counters[4])),
+            KeyValue(key="deferred_map_overflows", value=str(counters[5])),
+            KeyValue(key="late_command_replies", value=str(counters[6])),
             KeyValue(key="last_io_error", value=last_io_error),
         ]
         message.status = [status]

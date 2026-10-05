@@ -26,6 +26,7 @@ state_lock = threading.Lock()
 publish_frames = True
 publish_status = True
 frame_count = 0
+radar_setting_values = {0: 12, 1: 30}
 
 
 def websocket_frame(payload):
@@ -113,9 +114,44 @@ class SyntheticWebSocketHandler(socketserver.BaseRequestHandler):
                             elif message.get("op") == "publish":
                                 print(f"Synthetic publish {message.get('topic')}: {json.dumps(message.get('msg'))}", flush=True)
                             elif message.get("op") == "call_service":
+                                service = message.get("service")
+                                args = message.get("args") or {}
+                                if service == "/hmmd_sensor/get_radar_config":
+                                    with state_lock:
+                                        maximum_distance_gate = radar_setting_values[0]
+                                        target_disappearance_delay = radar_setting_values[1]
+                                    values = {
+                                        "success": True,
+                                        "maximum_distance_gate": maximum_distance_gate,
+                                        "target_disappearance_delay_seconds": target_disappearance_delay,
+                                        "outcome": 0,
+                                        "stage": 0,
+                                        "detail": "Synthetic radar values were read.",
+                                    }
+                                elif service == "/hmmd_sensor/set_radar_setting":
+                                    setting = args.get("setting")
+                                    value = args.get("value")
+                                    limit = 15 if setting == 0 else 65535 if setting == 1 else -1
+                                    valid = isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= limit
+                                    if valid:
+                                        with state_lock:
+                                            radar_setting_values[setting] = value
+                                    values = {
+                                        "success": valid,
+                                        "write_acknowledged": valid,
+                                        "has_observed_value": valid,
+                                        "observed_value": value if valid else 0,
+                                        "readback_matched": valid,
+                                        "save_acknowledged": valid,
+                                        "outcome": 0 if valid else 1,
+                                        "stage": 0 if valid else 0,
+                                        "detail": "Synthetic readback matched and save was acknowledged." if valid else "Synthetic setting request is out of range.",
+                                    }
+                                else:
+                                    values = {"success": True, "message": json.dumps(args)}
                                 response = {"op": "service_response", "id": message.get("id"),
                                             "service": message.get("service"), "result": True,
-                                            "values": {"success": True, "message": json.dumps(message.get("args"))}}
+                                            "values": values}
                                 client.sendall(websocket_frame(json.dumps(response)))
                         except (json.JSONDecodeError, AttributeError):
                             pass

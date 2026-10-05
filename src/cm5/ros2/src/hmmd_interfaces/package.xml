@@ -2,7 +2,7 @@
 <package format="3">
   <name>hmmd_interfaces</name>
   <version>0.1.0</version>
-  <description>ROS interfaces for the Waveshare HMMD range-Doppler map.</description>
+  <description>ROS interfaces for the Waveshare HMMD radar.</description>
   <maintainer email="niko@example.invalid">Navbot maintainers</maintainer>
   <license>Unspecified</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
