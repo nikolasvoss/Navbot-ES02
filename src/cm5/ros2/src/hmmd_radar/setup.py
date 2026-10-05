@@ -10,15 +10,13 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
-        ("share/" + package_name + "/launch", ["launch/sensor.launch.py"]),
     ],
-    install_requires=["setuptools", "pyserial", "numpy", "matplotlib"],
+    install_requires=["setuptools", "pyserial"],
     zip_safe=True,
     license="Unspecified",
     entry_points={
         "console_scripts": [
             "hmmd_sensor = hmmd_radar.sensor_node:main",
-            "hmmd_heatmap = hmmd_radar.viewer_node:main",
         ],
     },
 )

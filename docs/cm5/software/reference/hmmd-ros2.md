@@ -4,7 +4,7 @@
 
 Die Python-Pakete benötigen Python ab Version 3.10. Beim CM5-Setup am 4. Oktober 2026 wurden Ubuntu 24.04.5 LTS, ROS 2 Jazzy und `ros-jazzy-rosbridge-server` `2.7.1-1noble.20260902.151943` und `ros-jazzy-rosbridge-library` `2.7.1-1noble.20260902.151608` beobachtet. Der HMMD-Workspace wurde unter Python 3.12.3 gebaut und aktiviert.
 
-`src/cm5/ros2/src/hmmd_interfaces` enthält die ROS-Nachricht `RangeDopplerMap`. `src/cm5/ros2/src/hmmd_radar` enthält Parser, seriellen Sensorknoten und Heatmap. Der Sensorknoten ist unabhängig von der ESP32-Firmware und ihrer Fahrsteuerung.
+`src/cm5/ros2/src/hmmd_interfaces` enthält die ROS-Nachricht `RangeDopplerMap`. `src/cm5/ros2/src/hmmd_radar` enthält Parser, seriellen Sensorknoten und Browser-Heatmap. Der Sensorknoten ist unabhängig von der ESP32-Firmware und ihrer Fahrsteuerung.
 
 | Topic | Typ | Bedeutung |
 | --- | --- | --- |
@@ -33,12 +33,7 @@ Die Anwendungsparameter werden beim Start gesetzt. Änderungen benötigen einen 
 | `stale_timeout_sec` | 1.0 | Timeout ohne vollständigen Frame und für unvollständige Frames. |
 | `diagnostics_period_sec` | 1.0 | Abstand der Statusveröffentlichungen. |
 
-| Heatmap-Parameter | Standard | Bedeutung |
-| --- | --- | --- |
-| `stale_timeout_sec` | 1.0 | Maximale Zeit seit lokaler Frame-Zustellung vor der Kennzeichnung als veraltet. |
-| `render_hz` | 10.0 | Maximale angeforderte Renderfrequenz. |
-
-Das Tastenkürzel `l` schaltet die Heatmap zwischen Rohwerten und `log1p` um. Die Farbgrenzen werden je dargestellter Matrix berechnet. Ein konstantes Feld erhält eine nichtleere Farbspanne. Vergleiche deshalb bei unterschiedlichen Aufnahmen die Zahlen der Farbskala.
+Die Browseranzeige wird über `web/topic_registry.mjs` konfiguriert. Sie rendert alle 100 ms, markiert Matrixdaten nach 1.500 ms und Statusdaten nach 3.000 ms ohne neue Zustellung als veraltet. Die Auswahl „Scale“ schaltet zwischen Rohwerten und `log1p` um. „Color maximum“ verwendet dynamische Farbgrenzen je Frame oder ein festes Maximum. Diese Anzeigeoptionen ändern keine ROS-Nachrichten.
 
 ## Empfangsgrenzen und Statusfelder
 
@@ -89,7 +84,7 @@ Die Rohansicht zeigt die ganzzahligen Amplitudenquadrate. Die logarithmische Ans
 
 `src/cm5/ros2/src/hmmd_radar/web/` enthält eine statische, abhängigkeitenfreie Browseransicht. `topic_registry.mjs` begrenzt die dargestellten Topics auf `/hmmd/rdmap` (`hmmd_interfaces/msg/RangeDopplerMap`, Best Effort) und `/hmmd/status` (`diagnostic_msgs/msg/DiagnosticArray`, Reliable). Der Browser sendet die [Standard-JSON-Nachrichten](https://github.com/RobotWebTools/rosbridge_suite/blob/ros2/ROSBRIDGE_PROTOCOL.md) `subscribe` und `unsubscribe` und empfängt `publish`-Nachrichten; er implementiert keine Publish-, Service- oder Action-Aufrufe. Neue Topics benötigen eine explizite Registry-Änderung und eine passende serverseitige Abonnementfreigabe.
 
-Der Standard-Endpunkt ist `ws://127.0.0.1:9090`. Auf dem CM5 ist rosbridge an `127.0.0.1:9090` gebunden. Der PC-Tunnel beim Setup lautet `ssh -N -L 127.0.0.1:9090:127.0.0.1:9090 niko@192.168.178.28`. Die statische Seite wird über `0.0.0.0:8080` ausgeliefert; die beim Setup beobachtete Browser-URL ist `http://192.168.178.28:8080/`. Diese WLAN-Adresse ist DHCP-abhängig.
+Der Standard-Endpunkt ist `ws://127.0.0.1:9090`. Auf dem CM5 ist rosbridge an `127.0.0.1:9090` gebunden. Das gemeinsame Programm `scripts/start_hmmd.py` startet oder prüft Sensor, rosbridge und den statischen Webserver lokal auf dem CM5 oder über ein explizites `--ssh USER@HOST`. Im Remote-Modus leitet es beide Ports 8080 und 9090 per SSH von Loopback zu Loopback weiter; die Browseradresse lautet daher `http://127.0.0.1:8080/`. Das Terminal hält den Tunnel offen. Beim Beenden bleiben die CM5-Dienste aktiv. Ohne `--workspace` nutzt der Remote-Aufruf `$HOME/Navbot-ES02-cm5-hmmd`, während der lokale Aufruf den Checkout des Skripts verwendet. `--no-browser` unterdrückt das Browserfenster, nicht den Remote-Tunnel.
 
 Der Client fordert maximal 10 Hz mit `throttle_rate: 100` Millisekunden, Keep-Last-Tiefe 1 und Volatile-Durability an. Für `/hmmd/rdmap` ist die Reliability Best Effort; für `/hmmd/status` Reliable. Er hält nur den zuletzt empfangenen Wert pro Topic, verwendet monotone lokale Empfangszeiten und verwirft die Frische alter Samples nach Bridge-Neuverbindungen, bis neue Daten eintreffen. HMMD-Portverbindung, Sensor-Frame-Frische und rosbridge-Verbindung werden als getrennte Zustände dargestellt.
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Start/reuse the CM5 HMMD services and open the browser view through SSH."""
+"""Start or reuse the HMMD sensor, rosbridge, and web server."""
 
 import argparse
 import errno
+import re
 import shlex
 import shutil
 import socket
@@ -10,11 +11,12 @@ import subprocess
 import sys
 import time
 import webbrowser
+from pathlib import Path
 
 
-REMOTE_STARTUP = r'''#!/usr/bin/env bash
+STARTUP_BASH = r'''#!/usr/bin/env bash
 set -euo pipefail
-HOST_WORKSPACE=$1
+HOST_WORKSPACE=${1:-"$HOME/Navbot-ES02-cm5-hmmd"}
 DEVICE=$2
 BAUD_RATE=$3
 STARTUP_TIMEOUT=$4
@@ -210,89 +212,170 @@ page=$(curl --fail --silent --show-error --max-time 3 http://127.0.0.1:8080/ 2>/
 printf 'HMMD bereit: Sensor %s, rosbridge %s, Web %s\nLogs für neu gestartete Dienste: %s %s %s\n' "$sensor_state" "$bridge_state" "$web_state" "$SENSOR_LOG" "$BRIDGE_LOG" "$WEB_LOG"
 '''
 
+SSH_OPTIONS = [
+    "-o", "ConnectTimeout=10",
+    "-o", "ServerAliveInterval=15",
+    "-o", "ServerAliveCountMax=3",
+]
+SSH_DESTINATION = re.compile(r"(?:[A-Za-z0-9_][A-Za-z0-9_.-]*@)?[A-Za-z0-9_][A-Za-z0-9_.-]*\Z")
 
-def main():
+
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="192.168.178.28", help="CM5-Adresse")
-    parser.add_argument("--user", default="niko", help="SSH-Benutzer auf dem CM5")
-    parser.add_argument("--workspace", default="/home/niko/Navbot-ES02-cm5-hmmd", help="Projektpfad auf dem CM5")
-    parser.add_argument("--device", default="/dev/ttyAMA0", help="HMMD-UART auf dem CM5")
+    parser.add_argument("--ssh", metavar="USER@HOST", help="SSH-Ziel; ohne diese Option lokal auf dem CM5 starten")
+    parser.add_argument("--workspace", help="Projektpfad; lokal standardmäßig der Checkout, remote ~/Navbot-ES02-cm5-hmmd")
+    parser.add_argument("--device", default="/dev/ttyAMA0", help="HMMD-UART auf dem Zielsystem")
     parser.add_argument("--baud-rate", type=int, default=115200, help="UART-Baudrate")
     parser.add_argument("--startup-timeout", type=int, default=30, help="Wartezeit pro Dienst in Sekunden")
-    args = parser.parse_args()
-    if not shutil.which("ssh"):
-        parser.error("OpenSSH (ssh) muss auf dem PC installiert sein.")
+    parser.add_argument("--no-browser", action="store_true", help="keinen Browser öffnen")
+    args = parser.parse_args(argv)
+    if args.ssh is not None and not SSH_DESTINATION.fullmatch(args.ssh):
+        parser.error("SSH-Ziel muss ein Hostalias oder user@host ohne Shell-Sonderzeichen sein.")
     if args.baud_rate <= 0 or args.startup_timeout <= 0:
         parser.error("Baudrate und Start-Zeitlimit müssen positiv sein.")
-    url = f"http://{args.host}:8080/"
-    try:
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 9090))
-    except OSError as error:
-        if error.errno != errno.EADDRINUSE:
-            print(f"Lokaler Port 9090 kann nicht geöffnet werden: {error}", file=sys.stderr)
-            return 1
-        print("Port 9090 ist belegt. Beende zuerst den vorhandenen Tunnel.", file=sys.stderr)
-        print(f"Falls der CM5-Tunnel bereits läuft, öffne direkt {url}")
-        return 1
+    if "\0" in args.device or not args.device:
+        parser.error("Gerätepfad darf nicht leer sein.")
+    if args.workspace is not None and (not args.workspace or "\0" in args.workspace):
+        parser.error("Workspace-Pfad ist ungültig.")
+    return args
 
-    remote_args = [args.workspace, args.device, str(args.baud_rate), str(args.startup_timeout)]
-    remote_command = shlex.join(["bash", "-s", "--", *remote_args])
-    bootstrap = [
-        "ssh", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3",
-        f"{args.user}@{args.host}", remote_command,
-    ]
-    print("CM5-Dienste starten oder laufende Instanzen prüfen …", flush=True)
+
+def workspace_for(args):
+    if args.workspace is not None:
+        return args.workspace
+    if args.ssh:
+        return ""
+    return str(Path(__file__).resolve().parent.parent)
+
+
+def startup_command(args):
+    parameters = [workspace_for(args), args.device, str(args.baud_rate), str(args.startup_timeout)]
+    if args.ssh:
+        return ["ssh", *SSH_OPTIONS, args.ssh, shlex.join(["bash", "-s", "--", *parameters])]
+    return ["bash", "-s", "--", *parameters]
+
+
+def check_local_ports(ports=(8080, 9090)):
+    for port in ports:
+        try:
+            with socket.socket() as probe:
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                probe.bind(("127.0.0.1", port))
+        except OSError as error:
+            if error.errno == errno.EADDRINUSE:
+                print(f"Lokaler Port {port} ist belegt. Beende zuerst den vorhandenen Tunnel oder Dienst.", file=sys.stderr)
+            else:
+                print(f"Lokaler Port {port} kann nicht geöffnet werden: {error}", file=sys.stderr)
+            return False
+    return True
+
+
+def run_startup(args):
+    command = startup_command(args)
+    if args.ssh:
+        if not shutil.which("ssh"):
+            print("OpenSSH (ssh) muss für --ssh installiert sein.", file=sys.stderr)
+            return 1
+        print("CM5-Dienste starten oder laufende Instanzen prüfen …", flush=True)
+    else:
+        print("HMMD-Dienste lokal starten oder laufende Instanzen prüfen …", flush=True)
     try:
-        result = subprocess.run(bootstrap, input=REMOTE_STARTUP, text=True,
-                                timeout=args.startup_timeout * 5 + 30)
+        result = subprocess.run(
+            command,
+            input=STARTUP_BASH,
+            text=True,
+            timeout=args.startup_timeout * 5 + 30,
+        )
     except KeyboardInterrupt:
-        print("\nCM5-Start abgebrochen. Bereits gestartete Dienste bleiben aktiv.")
-        return 0
+        print("\nStart abgebrochen. Bereits gestartete Dienste bleiben aktiv.")
+        return 130
     except subprocess.TimeoutExpired:
-        print("Zeitüberschreitung beim Einrichten der CM5-Dienste.", file=sys.stderr)
+        print("Zeitüberschreitung beim Einrichten der HMMD-Dienste.", file=sys.stderr)
+        return 1
+    except OSError as error:
+        print(f"Startprogramm kann nicht ausgeführt werden: {error}", file=sys.stderr)
         return 1
     if result.returncode:
-        print("CM5-Start fehlgeschlagen. Laufende Prozesse wurden nicht beendet.", file=sys.stderr)
+        print("HMMD-Start fehlgeschlagen. Laufende Prozesse wurden nicht beendet.", file=sys.stderr)
         return result.returncode
+    return 0
 
-    command = [
+
+def tunnel_command(args):
+    return [
         "ssh", "-N", "-o", "ConnectTimeout=10", "-o", "ExitOnForwardFailure=yes",
         "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3",
+        "-L", "127.0.0.1:8080:127.0.0.1:8080",
         "-L", "127.0.0.1:9090:127.0.0.1:9090",
-        f"{args.user}@{args.host}",
+        args.ssh,
     ]
-    print("SSH-Tunnel starten; bei Bedarf SSH-Passwort im Terminal eingeben.", flush=True)
-    tunnel = subprocess.Popen(command)
-    try:
-        deadline = time.monotonic() + 120
-        while True:
-            if tunnel.poll() is not None:
-                print("SSH-Tunnel konnte nicht gestartet werden.", file=sys.stderr)
-                return tunnel.returncode or 1
+
+
+def wait_for_tunnel(tunnel, ports=(8080, 9090), timeout=120):
+    deadline = time.monotonic() + timeout
+    ready = set()
+    while len(ready) < len(ports):
+        if tunnel.poll() is not None:
+            return False
+        for port in ports:
+            if port in ready:
+                continue
             try:
-                with socket.create_connection(("127.0.0.1", 9090), timeout=0.2):
-                    break
+                with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                    ready.add(port)
             except OSError:
-                if time.monotonic() >= deadline:
-                    print("Zeitüberschreitung beim Start des SSH-Tunnels.", file=sys.stderr)
-                    return 1
-                time.sleep(0.2)
+                pass
+        if len(ready) == len(ports):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.2)
+    return True
+
+
+def stop_tunnel(tunnel):
+    if tunnel.poll() is None:
+        tunnel.terminate()
+        try:
+            tunnel.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            tunnel.kill()
+            tunnel.wait()
+
+
+def run_tunnel(args):
+    print("SSH-Tunnel starten; bei Bedarf SSH-Passwort im Terminal eingeben.", flush=True)
+    tunnel = subprocess.Popen(tunnel_command(args))
+    try:
+        if not wait_for_tunnel(tunnel):
+            print("SSH-Tunnel konnte nicht gestartet werden oder die Wartezeit ist abgelaufen.", file=sys.stderr)
+            return tunnel.poll() or 1
+        url = "http://127.0.0.1:8080/"
         print(f"Browser: {url}\nTerminal offen lassen. Strg+C beendet den Tunnel; CM5-Dienste bleiben aktiv.", flush=True)
-        if not webbrowser.open(url):
+        if not args.no_browser and not webbrowser.open(url):
             print("Bitte die URL manuell im Browser öffnen.", flush=True)
         return tunnel.wait()
     except KeyboardInterrupt:
         print("\nTunnel wird beendet.")
         return 0
     finally:
-        if tunnel.poll() is None:
-            tunnel.terminate()
-            try:
-                tunnel.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                tunnel.kill()
-                tunnel.wait()
+        stop_tunnel(tunnel)
+
+
+def main(argv=None):
+    args = parse_args(argv)
+    if args.ssh and not check_local_ports():
+        return 1
+    result = run_startup(args)
+    if result:
+        return result
+    url = "http://127.0.0.1:8080/"
+    if not args.ssh:
+        print(f"HMMD-Seite: {url}")
+        if not args.no_browser and not webbrowser.open(url):
+            print("Bitte die URL manuell im Browser öffnen.")
+        return 0
+    return run_tunnel(args)
 
 
 if __name__ == "__main__":

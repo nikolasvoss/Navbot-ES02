@@ -146,50 +146,58 @@ source src/cm5/ros2/install/setup.bash
 
 Passe den `cd`-Pfad an, falls der Checkout an einem anderen Ort liegt. Ohne das Workspace-Setup meldet `ros2 run`, dass `hmmd_radar` nicht gefunden wurde.
 
-5. Prüfe Parser, Verbindungsablauf und Anzeigenmodell.
+5. Prüfe Parser, Verbindungsablauf und ROS-Veröffentlichung.
 
 ```bash
 PYTHONPATH="src/cm5/ros2/src/hmmd_radar${PYTHONPATH:+:$PYTHONPATH}" python3 -m unittest discover -s src/cm5/ros2/src/hmmd_radar/test -v
 ```
 
-Die Ergänzung der vorhandenen `PYTHONPATH`-Variable erhält die ROS-Python-Module, damit auch der ROS-Graph-Test ausgeführt wird. Diese Tests verwenden synthetische Frames und einen nachgebildeten seriellen Anschluss. Sie ersetzen keine Live-Prüfung am Sensor. Die grafischen Tests benötigen Matplotlib.
+Die Ergänzung der vorhandenen `PYTHONPATH`-Variable erhält die ROS-Python-Module, damit auch der ROS-Graph-Test ausgeführt wird. Diese Tests verwenden synthetische Frames und einen nachgebildeten seriellen Anschluss. Sie ersetzen keine Live-Prüfung am Sensor.
 
-## Starte den Sensor
+## Starte die HMMD-Dienste
 
-1. Aktiviere nach dem Paketbau im selben Terminal die ROS-Umgebung und `source src/cm5/ros2/install/setup.bash`. Verwende den oben geprüften J8-Port. Setze die Variable nach einem neuen Login oder in einem neuen Terminal erneut. Für die alternative UART3-Belegung lautet der Pfad `/dev/ttyAMA3`.
-2. Starte den Knoten mit 115200 Baud und dem geprüften Pfad.
+Das zentrale Startprogramm läuft direkt auf dem CM5 oder auf einem PC mit explizitem SSH-Ziel. Es startet beziehungsweise prüft Sensor, rosbridge und Webserver gemeinsam. Vorhandene Dienste werden nur bei passender Sensor-UART-, rosbridge- und Webserver-Konfiguration wiederverwendet; unbekannte Konflikte führen zum Abbruch, ohne Prozesse zu beenden. Die Dienste bleiben nach Ende des Aufrufs oder SSH-Tunnels aktiv.
 
-```bash
-export HMMD_PORT=/dev/ttyAMA0
-ros2 run hmmd_radar hmmd_sensor --ros-args -p "port:=$HMMD_PORT" -p baud_rate:=115200
-```
-
-Der Port muss ausdrücklich angegeben werden. Der Knoten sendet beim Öffnen den dokumentierten Befehl für den Debug-Modus. Er schreibt keine persistenten Sensorparameter. Beim CM5-Setup wurden echte Frames beobachtet; eine ACK-Sequenz oder die Sensor-Firmwareversion wurde dabei nicht bestätigt. Siehe die [Beobachtungen mit Evidenz](../../../../agent_notes/cm5/sensors/hmmd/observations.md). Läuft bereits ein `hmmd_sensor`, starte keinen zweiten UART-Leser.
-
-Alternativ starte den Knoten mit dem geprüften Pfad über das lokale [Startskript](../../../../scripts/start_hmmd_sensor.sh). Das Skript aktiviert ROS und den Workspace, prüft den Port und verwendet standardmäßig 115200 Baud:
+Nach dem Paketbau starte auf dem CM5 lokal aus dem Checkout:
 
 ```bash
-HMMD_PORT=/dev/ttyAMA0 scripts/start_hmmd_sensor.sh
+python3 scripts/start_hmmd.py
 ```
 
-Der Gerätepfad kann auch als erstes Argument übergeben werden. Das Skript läuft im Vordergrund und wird mit `Ctrl+C` beendet. Starte es nur, wenn kein anderer Leser den Port verwendet.
+Der lokale Workspace ist standardmäßig der Checkout, in dem die Skriptdatei liegt. Für einen abweichenden UART verwende `--device /dev/ttyAMA3`; Baudrate und Wartezeit lassen sich mit `--baud-rate` und `--startup-timeout` setzen. `--no-browser` startet die Dienste ohne Browserfenster. Liegt die einzelne Skriptdatei außerhalb des Checkouts, gib den gebauten Workspace mit `--workspace /absoluter/Projektpfad` an.
+
+Ein einzelnes kopiertes Skript kann auf dem PC die Dienste auf dem CM5 starten. `--ssh` nimmt einen SSH-Alias oder `user@host` entgegen. Ohne `--workspace` verwendet das Remote-System `$HOME/Navbot-ES02-cm5-hmmd`:
+
+```bash
+python3 scripts/start_hmmd.py --ssh niko@192.168.178.28
+# Headless, etwa für einen späteren Browserzugriff:
+python3 scripts/start_hmmd.py --ssh niko@192.168.178.28 --no-browser
+# Abweichender Remote-Checkout:
+python3 scripts/start_hmmd.py --ssh niko@192.168.178.28 --workspace /srv/Navbot-ES02-cm5-hmmd
+```
+
+Der PC benötigt Python 3 und OpenSSH; auf dem CM5 müssen ROS 2 Jazzy, der gebaute Workspace, der geprüfte Sensorport und die für den Start verwendeten Systemwerkzeuge vorhanden sein. Der Aufruf prüft lokal die Ports 8080 und 9090, bevor er Remote-Dienste startet. Danach leitet ein SSH-Tunnel beide Ports nur an lokale Loopback-Adressen weiter und öffnet `http://127.0.0.1:8080/`. Halte das Terminal für den Browserzugriff offen. `Strg+C` beendet nur den Tunnel; die CM5-Dienste laufen weiter. Mit `--no-browser` bleibt der Tunnel ebenfalls aktiv, bis er beendet wird.
+
+Die UART-, rosbridge- und HTTP-Identitätsprüfungen schützen vor einem zweiten UART-Leser und vor der Übernahme fremder Listener. Sensorstatus ohne aktuelle Frames verhindert den Browserstart nicht; die Seite zeigt den Zustand an. Logs neu gestarteter Dienste liegen auf dem CM5 unter `/tmp/navbot-hmmd-sensor.log`, `/tmp/navbot-hmmd-rosbridge.log` und `/tmp/navbot-hmmd-web.log`.
+
+Der Standardport ist der am CM5 geprüfte J8-UART `/dev/ttyAMA0`. Gib bei anderer Verkabelung den bestätigten Gerätepfad mit `--device` an. Der Knoten sendet beim Öffnen den dokumentierten Befehl für den Debug-Modus. Er schreibt keine persistenten Sensorparameter. Beim CM5-Setup wurden echte Frames beobachtet; eine ACK-Sequenz oder die Sensor-Firmwareversion wurde dabei nicht bestätigt. Siehe die [Beobachtungen mit Evidenz](../../../../agent_notes/cm5/sensors/hmmd/observations.md). Läuft bereits ein `hmmd_sensor`, starte keinen zweiten UART-Leser.
+
 
 Falls du statt des geprüften J8-UART einen USB-Adapter verwendest, ermittle dessen tatsächlichen Gerätepfad mit `ls -l /dev/serial/by-id/` und übergib genau diesen Pfad. Verwechsle den USB-Adapter der ESP32-Fahrsteuerung nicht mit dem Radar. Fehlt das Verzeichnis oder ist es leer, prüfe zuerst die Erkennung des HMMD-Adapters; rate keinen Gerätenamen. Prüfe Port und Zugriffsrechte. Verwende `/dev/ttyAMA*` oder `/dev/ttyS*` nur mit bestätigter Verbindung und Pinbelegung; bei einer direkt benutzten CM5-UART muss die serielle Konsole dort deaktiviert sein.
 
-3. Prüfe in einem zweiten Terminal mit aktivierter ROS- und Workspace-Umgebung die Daten und den Status.
+
+Für manuelle Diagnose aktiviere ROS und den Workspace. Ein direkter Sensorstart ist nur zulässig, wenn kein anderer Prozess den UART liest:
 
 ```bash
-ros2 topic info /hmmd/rdmap --verbose
-ros2 topic echo /hmmd/status
+ros2 run hmmd_radar hmmd_sensor --ros-args -p port:=/dev/ttyAMA0 -p baud_rate:=115200
 ```
 
-Beende die laufende Statusausgabe mit `Ctrl+C` und prüfe anschließend die Datenrate.
+Prüfe den Status und die Datenrate jeweils in einem eigenen Terminal:
 
 ```bash
+ros2 topic echo /hmmd/status
 ros2 topic hz /hmmd/rdmap
 ```
-
-Erfolgreicher Empfang zeigt `connected=true`, `stale=false`, einen steigenden Zähler `frames_received` und den Status `receiving frames`. Erst dann starte die Heatmap im nächsten Abschnitt. Der geöffnete Port allein bestätigt nur den Zugriff auf den CM5-UART.
 
 | Beobachtung | Nächster Schritt |
 | --- | --- |
@@ -198,20 +206,6 @@ Erfolgreicher Empfang zeigt `connected=true`, `stale=false`, einen steigenden Z�
 | `connected=true`, aber `frames_received=0` und `no recent frames` | Versorgung, gemeinsame Masse, gekreuzte TX/RX-Leitungen, Pin-Funktionen und andere Portbenutzer prüfen. Der UART kann sich auch ohne angeschlossenen Sensor öffnen. |
 | Frames kommen an, aber die zweite ROS-Sitzung sieht keine Topics | ROS- und Workspace-Umgebung sowie dieselbe `ROS_DOMAIN_ID` in beiden Terminals prüfen. |
 
-## Zeige die Heatmap
-
-1. Starte die Anzeige in einem Terminal mit grafischer Sitzung und aktivierter Workspace-Umgebung.
-
-```bash
-ros2 run hmmd_radar hmmd_heatmap
-```
-
-2. Drücke im Heatmap-Fenster `l`, um zwischen Rohwerten und logarithmischer Ansicht umzuschalten.
-3. Prüfe 16 Entfernungszellen auf der x-Achse und 20 Doppler-Bins auf der y-Achse. Die Beschriftung verwendet Indizes. Physikalische Skalierung und Orientierung sind noch nicht bestätigt.
-4. Unterbrich den Sensorprozess oder die Verbindung. Prüfe, dass die Anzeige ausbleibende Daten sichtbar kennzeichnet.
-5. Starte den Empfang erneut. Prüfe, dass ein neuer Frame die Kennzeichnung für veraltete Daten aufhebt.
-
-Starte die Heatmap auf einem Rechner mit grafischem Display und Zugriff auf dieselbe ROS-Domäne, wenn der CM5 ohne Display läuft. Dort müssen der Nachrichtentyp und das Anzeigepaket ebenfalls gebaut und aktiviert sein.
 
 ## Zeige die HMMD-Daten im PC-Browser
 
@@ -240,42 +234,28 @@ ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
 
 Ein leerer Glob-String bedeutet in dieser Version keine Filterung. `topics_pub_glob:="[]"` verweigert Publish/Advertise, und `topics_sub_glob` beschränkt Abos auf die beiden HMMD-Topics. Bei `services_glob:="[]"` hängt der Server automatisch `/rosapi/*` an; `/rosapi/topics` wurde mit einer auf die freigegebenen HMMD-Topics beschränkten Liste beantwortet, während `/hmmd_sensor/get_parameters` abgewiesen wurde. ROS-API-Dienste unter `/rosapi/*` bleiben damit erreichbar. `actions_glob` existiert als Serverparameter, wird aber von der Launch-Datei nicht angeboten und bleibt bei diesem Befehl ungefiltert. Der rosbridge-Server ist damit keine nachgewiesene reine Empfangsschnittstelle. Der Loopback-Port darf nicht direkt im LAN geöffnet werden.
 
-2. Für den normalen PC-Start übernimmt das Startscript die CM5-Prozesse automatisch. Es startet den HMMD-Sensor, rosbridge und den statischen Dateiserver oder verwendet passende, bereits laufende Instanzen. Die Prozesse bleiben nach dem Beenden des PC-Tunnels auf dem CM5 aktiv und werden beim nächsten Start wiederverwendet.
-
-   Starte auf dem PC aus einem lokalen Checkout oder mit der einzelnen Datei `scripts/start_hmmd_web.py`:
+2. Verwende für den normalen verwalteten Start das gemeinsame Programm aus dem vorherigen Abschnitt. Auf dem PC funktioniert es ohne lokalen HMMD-Checkout, wenn du die einzelne Datei `scripts/start_hmmd.py` kopierst. Setze das SSH-Ziel ausdrücklich:
 
 ```bash
-python3 scripts/start_hmmd_web.py
-# Bei anderer CM5-Adresse oder anderem SSH-Benutzer:
-python3 scripts/start_hmmd_web.py --host 192.168.178.28 --user niko
+python3 scripts/start_hmmd.py --ssh niko@192.168.178.28
 ```
 
-Unter Windows lautet der Python-Aufruf üblicherweise `py scripts/start_hmmd_web.py`. Das Script benötigt Python 3, OpenSSH und eine funktionierende SSH-Anmeldung zum CM5. Beim ersten Verbinden kann SSH nach Bestätigung des Hosts oder einem Passwort fragen. Das Terminal bleibt während des lokalen Tunnels geöffnet; `Strg+C` beendet den Tunnel. Die CM5-Dienste bleiben für die nächste Sitzung aktiv.
+Ohne `--ssh` startet es lokal auf dem CM5. Der Remote-Workspace ist standardmäßig `$HOME/Navbot-ES02-cm5-hmmd`; `--workspace`, `--device`, `--baud-rate` und `--startup-timeout` überschreiben Workspace, UART, Baudrate und Wartezeit. `--no-browser` unterdrückt das Öffnen eines Browserfensters. Der PC benötigt Python 3 und OpenSSH; der Remote-Aufruf benötigt einen gebauten ROS-Workspace und SSH-Zugriff.
 
-Passe bei abweichender CM5-Installation die Optionen an: `--workspace` setzt den Remote-Projektpfad (Standard `/home/niko/Navbot-ES02-cm5-hmmd`), `--device` den UART (Standard `/dev/ttyAMA0`), `--baud-rate` die Baudrate (Standard `115200`) und `--startup-timeout` die Wartezeit pro Dienststart in Sekunden (Standard `30`). Zum Beispiel:
+Im Remote-Modus prüft das Programm beide lokalen Ports 8080 und 9090, bevor es die CM5-Dienste startet. Es leitet danach beide Remote-Loopback-Ports ebenfalls auf lokale Loopback-Ports weiter. Browser und rosbridge verwenden damit `http://127.0.0.1:8080/` und `ws://127.0.0.1:9090`. Das Terminal bleibt während des Tunnels geöffnet. `Strg+C` beendet nur den Tunnel, die CM5-Dienste bleiben aktiv. Bei `--no-browser` öffne die URL selbst, während das Terminal den Tunnel hält.
 
-```bash
-python3 scripts/start_hmmd_web.py --startup-timeout 45
-```
-
-Das Script prüft die UART-Belegung, rosbridge und den HTTP-Endpunkt, bevor es fehlende Dienste startet. Läuft ein erwarteter Dienst bereits, wird er wiederverwendet. Ein laufender Sensorknoten mit abweichender UART- oder Baud-Konfiguration, eine unbekannte Belegung von `/dev/ttyAMA0` oder ein nicht eindeutig passender Prozess auf Port 9090/8080 führt zu einer Fehlermeldung, statt einen Prozess zu beenden oder einen zweiten UART-Leser zu starten. Ein laufender, gerade getrennter Sensor wird ebenfalls wiederverwendet. Sensorstatus mit „keine Frames“ verhindert den Browserstart nicht; die Seite zeigt diesen Zustand selbst an. Vom Script neu gestartete Dienste schreiben ihre Protokolle auf dem CM5 unter `/tmp/navbot-hmmd-sensor.log`, `/tmp/navbot-hmmd-rosbridge.log` und `/tmp/navbot-hmmd-web.log`.
-
-Für manuelle Diagnose oder einen Start ohne PC-Script kann der statische Dateiserver weiterhin separat gestartet werden:
+Für Diagnose oder Bag-Wiedergabe ohne Live-Sensor starte bei Bedarf nur rosbridge mit dem manuellen Befehl aus Schritt 1 und den statischen Dateiserver auf dem CM5:
 
 ```bash
 cd /home/niko/Navbot-ES02-cm5-hmmd
 python3 -m http.server 8080 --bind 0.0.0.0 --directory src/cm5/ros2/src/hmmd_radar/web
 ```
 
-Öffne auf dem PC `http://192.168.178.28:8080/`. Diese WLAN-Adresse war beim Setup aktiv und kann sich durch DHCP ändern. Der HTTP-Server enthält nur statische Browserdateien. Für den rosbridge-Zugriff starte auf dem PC einen SSH-Tunnel, der das lokale Port 9090 an den CM5-Loopback-Port weiterleitet:
+Halte beide Prozesse geöffnet. Starte auf dem PC den Tunnel und öffne `http://127.0.0.1:8080/`:
 
 ```bash
-ssh -N -L 127.0.0.1:9090:127.0.0.1:9090 niko@192.168.178.28
+ssh -N -L 127.0.0.1:8080:127.0.0.1:8080 -L 127.0.0.1:9090:127.0.0.1:9090 niko@192.168.178.28
 ```
-
-Die Seite verbindet sich mit `ws://127.0.0.1:9090`. Halte den Sensor, rosbridge, den HTTP-Server und den Tunnel geöffnet. Auf dem PC war der Alias `cm5` nicht auflösbar. Ermittle die aktuelle CM5-Adresse bei Bedarf mit `ip -br addr`.
-
-Ein bereits belegter lokaler Port 9090 wird gemeldet; beende dann den alten Tunnel oder öffne bei einem bereits laufenden CM5-Tunnel direkt die Browser-URL.
 
 3. Prüfe den Verbindungsstatus getrennt vom HMMD-Status. „Connected“ bestätigt nur die Browser-Bridge-Verbindung. „Receiving sensor frames“ erfordert frische `/hmmd/status`-Daten mit `connected=true` und `stale=false`; die Heatmap wird erst mit einem gültigen 20×16-Frame frisch. Bei unterbrochenen Frames bleibt der zuletzt empfangene Frame sichtbar, ist aber als veraltet markiert. Nach einer Bridge-Neuverbindung wartet die Seite auf neue Nachrichten und markiert alte Samples nicht wieder als frisch.
 
@@ -331,7 +311,7 @@ Der Browser-Client und dieses Beispiel führen keine Schreiboperationen durch. D
 
 ## Zeichne die drei Situationen auf
 
-1. Starte Sensor und Heatmap.
+1. Starte den Sensor und öffne die Browser-Heatmap wie oben beschrieben.
 2. Zeichne den leeren Messbereich auf.
 
 ```bash
@@ -347,8 +327,8 @@ Die Frame-Veröffentlichung verwendet Best-Effort-QoS. Prüfe nach jeder Aufnahm
 ## Spiele eine Aufnahme ohne Sensor ab
 
 1. Beende den Sensorknoten, damit er keine Live-Daten parallel veröffentlicht.
-2. Starte die Heatmap mit der aktiven Workspace-Umgebung.
-3. Spiele eine Aufnahme ab.
+2. Starte rosbridge und den statischen Dateiserver auf dem CM5 mit den manuellen Befehlen aus „Zeige die HMMD-Daten im PC-Browser“, falls sie noch nicht laufen. Öffne auf dem PC den SSH-Tunnel und die Browserseite. Verwende für die Wiedergabe nicht `scripts/start_hmmd.py`, da es den Live-Sensorknoten wieder startet.
+3. Spiele die Aufnahme auf dem CM5 in einem Terminal mit aktivierter ROS- und Workspace-Umgebung ab.
 
 ```bash
 ros2 bag info hmmd-empty
@@ -363,4 +343,16 @@ Die Heatmap benutzt die lokale Zeit seit dem letzten empfangenen Frame für die 
 
 ## Prüfe den aktuellen Implementierungsstand
 
-Der Parser, das Anzeigenmodell und die Paketquellen können lokal geprüft werden. Ein ROS-2-Build, der echte Sensorempfang und die rosbag2-Aufnahme/Wiedergabe auf dem CM5 müssen mit erreichbarer Hardware separat bestätigt werden. Der Roadmap-Meilenstein ist erst nach den dort genannten Live-Kriterien abgeschlossen.
+Prüfe die Startlogik einschließlich SSH-Argumenttransport, Portvorprüfung und Tunnel-Lebenszyklus mit:
+
+```bash
+python3 scripts/test_start_hmmd.py -v
+```
+
+Der Parser und die serielle Sitzung können mit dem Python-Testlauf aus „Baue die Pakete“ geprüft werden. Prüfe den rosbridge-Client mit:
+
+```bash
+node --test src/cm5/ros2/src/hmmd_radar/test/web/client.test.mjs
+```
+
+Ein ROS-2-Build, der echte Sensorempfang und die rosbag2-Aufnahme/Wiedergabe auf dem CM5 müssen mit erreichbarer Hardware separat bestätigt werden. Der Roadmap-Meilenstein ist erst nach den dort genannten Live-Kriterien abgeschlossen.
