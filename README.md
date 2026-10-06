@@ -82,7 +82,7 @@ The command builds the NavBot sketch into `build/flash`. Run `python3 scripts/bu
 
 ### Safe sensor diagnostics
 
-The full, current procedure is in the [sensor diagnostic guide](docs/robot/software/diagnostics/sensor-diagnostic-mode.md), including safe motor outputs, build and flash steps, SerialPlot settings, the 14-column channel map, and reset troubleshooting. The source defaults to `SENSOR_DIAGNOSTIC_MODE=0`; enabling it skips motor and servo initialization and holds the wheel-driver enable pins low. Support the robot mechanically because the legs are not driven. The diagnostic stream uses 115200 baud and does not establish stability under motor load.
+The [sensor diagnostic guide](docs/robot/software/diagnostics/sensor-diagnostic-mode.md) covers SerialPlot setup, channel units, CSV capture, build, and flash steps. The source defaults to `SENSOR_DIAGNOSTIC_MODE=0`; enabling it skips motor and servo initialization and holds the wheel-driver enable pins low. Support the robot mechanically because the legs are not driven. The diagnostic stream uses 115200 baud and does not establish stability under motor load.
 
 ### Capture a balance shutdown
 

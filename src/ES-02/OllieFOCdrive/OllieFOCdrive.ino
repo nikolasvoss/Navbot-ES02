@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 #include <SimpleFOC.h>
 #include <Preferences.h>  // This library is used for key-value data storage and retrieval in ESP32, enabling data persistence
 #include "SlotCalibration.h"
@@ -12,6 +13,7 @@
 #include "touchscreen.h"
 #include "ble.h"
 #include "robot.h"
+#include "Telemetry.h"
 
 
 // commander communication instance
@@ -90,7 +92,7 @@ Commander command = Commander(Serial);
 #define SERIAL_BAUD_RATE 115200
 #define DIAGNOSTIC_SERIAL_BAUD_RATE 115200
 #define LIVE_TUNING_SERIAL_BAUD_RATE 115200
-#define DIAGNOSTIC_PLOT_INTERVAL_MS 50
+#define DIAGNOSTIC_FRAME_INTERVAL_MS 50
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
 constexpr float DRIVE_BODY_X_LIMIT_M = 0.010f;
 constexpr float DRIVE_WHEEL_FEEDBACK_LIMIT = 8.0f;
@@ -2428,19 +2430,38 @@ void DiagnosticLoop(void) {
     lastVoltageMs = nowMs;
     ReadVoltage();
   }
-  if (nowMs - lastPrintMs >= DIAGNOSTIC_PLOT_INTERVAL_MS) {
+  if (nowMs - lastPrintMs >= DIAGNOSTIC_FRAME_INTERVAL_MS) {
     lastPrintMs = nowMs;
     const long rcAgeMs = diagnosticHasRcFrame ? (long)(nowMs - diagnosticLastRcFrameMs) : -1;
     const int rcFailsafe = diagnosticHasRcFrame ? sBus.Failsafe() : -1;
     const float batteryRawV = (float)7.77 / 813.43 * VoltageADC;
-    // SerialPlot ASCII/CSV: fixed column count, numeric samples only.
-    // Order and units are documented in README.md.
-    Serial.printf("%.2f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.2f,%.2f,%.2f,%.3f,%ld,%d,%d\n",
-                  nowMs * 0.001f,
-                  attitude.gyro.x, attitude.gyro.y, attitude.gyro.z,
-                  attitude.acc.x, attitude.acc.y, attitude.acc.z,
-                  attitude.roll, attitude.pitch, attitude.yaw,
-                  batteryRawV, rcAgeMs, rcFailsafe, diagnosticImuReady ? 1 : 0);
+    Telemetry::Frame frame;
+    frame.timestampUs = static_cast<uint64_t>(esp_timer_get_time());
+    frame.set(Telemetry::Channel::GyroX, attitude.gyro.x);
+    frame.set(Telemetry::Channel::GyroY, attitude.gyro.y);
+    frame.set(Telemetry::Channel::GyroZ, attitude.gyro.z);
+    frame.set(Telemetry::Channel::GyroFilteredX, attitude.gyrof.x);
+    frame.set(Telemetry::Channel::GyroFilteredY, attitude.gyrof.y);
+    frame.set(Telemetry::Channel::GyroFilteredZ, attitude.gyrof.z);
+    frame.set(Telemetry::Channel::AccelX, attitude.acc.x);
+    frame.set(Telemetry::Channel::AccelY, attitude.acc.y);
+    frame.set(Telemetry::Channel::AccelZ, attitude.acc.z);
+    frame.set(Telemetry::Channel::AccelFilteredX, attitude.accf.x);
+    frame.set(Telemetry::Channel::AccelFilteredY, attitude.accf.y);
+    frame.set(Telemetry::Channel::AccelFilteredZ, attitude.accf.z);
+    frame.set(Telemetry::Channel::MahonyRoll, attitude.roll);
+    frame.set(Telemetry::Channel::MahonyPitch, attitude.pitch);
+    frame.set(Telemetry::Channel::MahonyYaw, attitude.yaw);
+    frame.set(Telemetry::Channel::ComplementaryRoll, angleX);
+    frame.set(Telemetry::Channel::ComplementaryPitch, angleY);
+    frame.set(Telemetry::Channel::ComplementaryYaw, angleZ);
+    frame.set(Telemetry::Channel::Temperature, attitude.temp);
+    frame.set(Telemetry::Channel::BatteryRaw, batteryRawV);
+    frame.set(Telemetry::Channel::BatteryFiltered, Voltage);
+    frame.set(Telemetry::Channel::RcFrameAge, rcAgeMs);
+    frame.set(Telemetry::Channel::RcFailsafe, rcFailsafe);
+    frame.set(Telemetry::Channel::ImuReady, diagnosticImuReady ? 1.0f : 0.0f);
+    Telemetry::writeCsv(Serial, frame);
   }
   delay(1);
 }

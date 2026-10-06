@@ -26,4 +26,4 @@
 ## Sensor data
 
 - The ICM42688 is read over SPI in `src/ES-02/OllieFOCdrive/ICM42688.cpp`. `ImuUpdate()` in `OllieFOCdrive.ino` updates acceleration, gyro, temperature, and orientation values in `attitude`.
-- The diagnostic firmware now exports 14-column numeric CSV at 20 Hz for SerialPlot over the existing `Serial`/CH340 connection while motor and servo initialization is skipped. README.md defines column order and units. The normal control mode still does not continuously export IMU values. Enabling USB CDC does not add telemetry.
+- The diagnostic firmware exports 25-field CSV rows at a nominal 20 Hz over the existing `Serial`/CH340 connection while motor and servo initialization is skipped. Each row contains 24 numeric sensor/status fields and a monotonic timestamp in seconds, with no prefix or header. README.md and the sensor diagnostic guide define the field order and units. The normal control mode still does not continuously export IMU values. Enabling USB CDC does not add telemetry.
