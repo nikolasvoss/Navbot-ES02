@@ -8,15 +8,6 @@ export const RADAR_SETTINGS = Object.freeze({
     selector: 0,
     responseField: "maximum_distance_gate",
   }),
-  targetDisappearanceDelaySeconds: Object.freeze({
-    label: "Target disappearance delay",
-    minimum: 0,
-    maximum: 65535,
-    unit: "seconds",
-    help: "How long a target remains reported after it disappears.",
-    selector: 1,
-    responseField: "target_disappearance_delay_seconds",
-  }),
 });
 
 const READ_SERVICE = "/hmmd_sensor/get_radar_config";

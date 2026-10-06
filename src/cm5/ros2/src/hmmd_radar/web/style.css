@@ -123,7 +123,7 @@ input[aria-invalid="true"] { border-color: #ffb9c2; }
 .radar-settings { margin-top: 18px; padding-top: 17px; border-top: 1px solid #2d3746; }
 .settings-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .settings-header h3 { margin: 0 0 4px; font-size: 0.98rem; }
-.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.settings-grid { display: grid; grid-template-columns: minmax(0, 560px); max-width: 560px; gap: 12px; }
 .setting-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 13px; border: 1px solid #2d3746; border-radius: 10px; background: #131a23; }
 .setting-control { display: grid; gap: 8px; min-width: 0; }
 .setting-label { display: flex; align-items: center; gap: 8px; color: #9caabd; font-size: 0.8rem; }

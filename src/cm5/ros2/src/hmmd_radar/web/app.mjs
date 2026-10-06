@@ -63,11 +63,6 @@ const settingElements = {
     confirmed: document.querySelector("#maximum-distance-gate-confirmed"),
     state: document.querySelector("#maximum-distance-gate-state"),
   },
-  targetDisappearanceDelaySeconds: {
-    input: document.querySelector("#target-disappearance-delay"),
-    confirmed: document.querySelector("#target-disappearance-delay-confirmed"),
-    state: document.querySelector("#target-disappearance-delay-state"),
-  },
 };
 let selectedTopic = statusTopic?.name || null;
 if (selectedTopic) ui.topic.value = selectedTopic;

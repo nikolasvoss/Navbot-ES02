@@ -128,16 +128,15 @@ test("validates endpoint kind, integer timing, and publish-only declarations", (
   assert.throws(() => validateEndpointManifest({ topics: [{ ...topics[3], pinned: true }], services: [] }), /Invalid topic metadata/);
 });
 
-test("radar settings validate only the two user-scoped integer ranges", () => {
+test("browser radar settings expose only maximum distance gate", () => {
   assert.equal(validateRadarSettingValue("maximumDistanceGate", 0), 0);
   assert.equal(validateRadarSettingValue("maximumDistanceGate", 15), 15);
-  assert.equal(validateRadarSettingValue("targetDisappearanceDelaySeconds", 65535), 65535);
   assert.throws(() => validateRadarSettingValue("maximumDistanceGate", true), /integer/);
   assert.throws(() => validateRadarSettingValue("maximumDistanceGate", 1.5), /integer/);
   assert.throws(() => validateRadarSettingValue("maximumDistanceGate", 16), /0–15/);
-  assert.throws(() => validateRadarSettingValue("targetDisappearanceDelaySeconds", 65536), /0–65535/);
+  assert.throws(() => validateRadarSettingValue("targetDisappearanceDelaySeconds", 30), /Unknown radar setting/);
   assert.throws(() => validateRadarSettingValue("other", 1), /Unknown radar setting/);
-  assert.deepEqual(Object.keys(RADAR_SETTINGS), ["maximumDistanceGate", "targetDisappearanceDelaySeconds"]);
+  assert.deepEqual(Object.keys(RADAR_SETTINGS), ["maximumDistanceGate"]);
 });
 
 test("radar settings keep drafts separate until device readback confirms a write", async () => {
@@ -162,7 +161,7 @@ test("radar settings keep drafts separate until device readback confirms a write
   settings.setDraft("maximumDistanceGate", "15");
   assert.equal(settings.snapshot().confirmed, null);
   await settings.read();
-  assert.deepEqual(settings.snapshot().confirmed, { maximumDistanceGate: 12, targetDisappearanceDelaySeconds: 30 });
+  assert.deepEqual(settings.snapshot().confirmed, { maximumDistanceGate: 12 });
   assert.equal(settings.snapshot().drafts.maximumDistanceGate, "12");
   settings.setDraft("maximumDistanceGate", "13");
   await settings.read();
