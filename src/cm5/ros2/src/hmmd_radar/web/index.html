@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>HMMD radar data</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <main>
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">CM5 · ROS 2</p>
+          <h1>HMMD radar data</h1>
+          <p class="lede"><button class="info-tip" type="button" aria-label="About this page" data-tooltip="Live range-Doppler map from the HMMD radar over rosbridge.">i</button></p>
+        </div>
+        <div class="connection-stack" aria-live="polite">
+          <div><span class="label">Browser to bridge</span><span id="bridge-state" class="badge">Connecting</span></div>
+          <div><span class="label">HMMD sensor</span><span id="sensor-state" class="badge badge-muted">Waiting for status</span></div>
+        </div>
+      </header>
+
+      <section class="panel map-panel" aria-labelledby="map-title">
+        <div class="panel-header">
+          <div>
+            <h2 id="map-title">Range-Doppler map <button class="info-tip" type="button" aria-label="About the range-Doppler map axes" data-tooltip="X: approx. 0.7 m per gate (Waveshare; uncalibrated here). Y: Doppler bins group motion-related signals. Rows are bin numbers, not speeds; this view has no verified m/s or toward/away scale.">i</button></h2>
+            <p id="map-meta" class="muted">Waiting for the first HMMD frame.</p>
+          </div>
+          <label class="control">
+            <span>Display</span>
+            <select id="scale-select" aria-label="Heatmap display scale">
+              <option value="raw">Raw values</option>
+              <option value="log1p">log1p values</option>
+            </select>
+          </label>
+        </div>
+        <div class="map-controls">
+          <label class="control">
+            <span>Color maximum</span>
+            <select id="maximum-mode" aria-label="Color scale maximum mode">
+              <option value="dynamic">Dynamic (each frame)</option>
+              <option value="fixed">Fixed</option>
+            </select>
+          </label>
+          <label class="control">
+            <span>Fixed maximum (raw amplitude squared)</span>
+          <input id="fixed-maximum" type="number" min="0" step="any" value="10000000" disabled>
+          </label>
+          <button id="maximum-hint" class="info-tip" type="button" aria-label="Color scale help" data-tooltip="Dynamic: color limits follow each frame.">i</button>
+        </div>
+        <div class="map-wrap">
+          <canvas id="heatmap" width="900" height="560" role="img" aria-label="HMMD heatmap with no data yet"></canvas>
+        </div>
+        <section class="radar-settings" aria-labelledby="radar-settings-title">
+          <div class="settings-header">
+            <div>
+              <h3 id="radar-settings-title">Radar settings <button class="info-tip" type="button" aria-label="About radar settings" data-tooltip="A save acknowledgement confirms command acceptance. Power-cycle persistence has not been verified.">i</button></h3>
+              <p id="radar-settings-state" class="muted" aria-live="polite">Waiting for radar connection.</p>
+            </div>
+            <button id="radar-settings-refresh" type="button">Refresh values</button>
+          </div>
+          <form id="radar-settings-form" class="settings-grid">
+            <div class="setting-row">
+              <div class="setting-control">
+                <div class="setting-label">
+                  <label for="maximum-distance-gate">Maximum distance gate</label>
+                  <button class="info-tip" type="button" aria-label="Maximum distance gate help" data-tooltip="The chart uses the device-confirmed gate count. Apply a value, then refresh or wait for device confirmation. Valid range: 0 to 15 gates.">i</button>
+                </div>
+                <input id="maximum-distance-gate" data-setting="maximumDistanceGate" type="number" min="0" max="15" step="1" inputmode="numeric" required>
+              </div>
+              <div class="setting-result">
+                <span id="maximum-distance-gate-confirmed" class="muted">Device value: not read</span>
+                <button type="submit" data-setting="maximumDistanceGate">Apply</button>
+                <p id="maximum-distance-gate-state" class="setting-state muted" aria-live="polite"></p>
+              </div>
+            </div>
+          </form>
+        </section>
+      </section>
+
+      <section class="panel sensor-panel" aria-labelledby="sensor-title">
+        <div class="panel-header">
+          <div>
+            <h2 id="sensor-title">Available ROS topics <button class="info-tip" type="button" aria-label="About ROS topics" data-tooltip="The selector shows the latest message received from the chosen topic.">i</button></h2>
+          </div>
+          <label class="control">
+            <span>Topic</span>
+            <select id="topic-select" aria-label="Available ROS topic"></select>
+          </label>
+        </div>
+        <div class="topic-meta">
+          <code id="topic-name">/hmmd/status</code>
+          <span id="topic-age" class="muted">Waiting for message</span>
+        </div>
+        <pre id="topic-message" class="message-view">No message received.</pre>
+      </section>
+
+      <section class="panel" aria-labelledby="channel-title">
+        <div class="panel-header">
+          <div><h2 id="channel-title">ROS send and request <button class="info-tip" type="button" aria-label="About ROS send and request" data-tooltip="Send JSON to a declared topic or call a declared service.">i</button></h2></div>
+        </div>
+        <form id="channel-form" class="channel-form">
+          <label class="control endpoint-control"><span>Endpoint</span><select id="channel-endpoint" aria-label="Outgoing ROS endpoint"></select></label>
+          <label class="control payload-control"><span>JSON payload</span><textarea id="channel-payload" rows="4" spellcheck="false" required>{}</textarea></label>
+          <button type="submit">Send request</button>
+        </form>
+        <pre id="channel-result" class="message-view channel-result" aria-live="polite">No request sent.</pre>
+      </section>
+
+    </main>
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>

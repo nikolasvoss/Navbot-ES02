@@ -1,0 +1,23 @@
+[
+  {
+    "file": "HMMD-waveshare-wiki.html",
+    "source_url": "https://www.waveshare.com/wiki/HMMD_mmWave_Sensor",
+    "download_date": "2026-10-04",
+    "bytes": 59063,
+    "sha256": "4ffb54c512fe3e08648c605faa00b097c732f172bda375169ee4fd3c5edab17f"
+  },
+  {
+    "file": "HMMD-radome-design-guide.pdf",
+    "source_url": "https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD-mmWave-Sensor%20Radome%20Design%20Guide%20.pdf",
+    "download_date": "2026-10-04",
+    "bytes": 175962,
+    "sha256": "ca73511f65953a4aa113283bf5ad841756e4d72aafc907985256fa0799dea8e1"
+  },
+  {
+    "file": "HMMD_mmWave_Sensor.zip",
+    "source_url": "https://files.waveshare.com/wiki/HMMD-mmWave-Sensor/HMMD_mmWave_Sensor.zip",
+    "download_date": "2026-10-04",
+    "bytes": 3611,
+    "sha256": "84fcbb7e5c6cbfe2f1a5ab23486497c2cae9b40a2a15e58cc2a85e071081de7c"
+  }
+]
