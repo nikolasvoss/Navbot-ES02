@@ -92,6 +92,7 @@ export class RadarSettings {
   async read() {
     if (this.readPending || this.writePending) throw new Error("A radar settings request is already pending.");
     this.readPending = true;
+    this.lastWrite = null;
     this.state = "pending";
     this.detail = "Reading confirmed values from the radar.";
     this.#notify();
@@ -135,6 +136,7 @@ export class RadarSettings {
         saveAcknowledged: responseBoolean(response, "save_acknowledged"),
       };
       this.lastWrite = {
+        setting,
         writeAcknowledged: responseFlags.writeAcknowledged,
         readbackMatched: responseFlags.readbackMatched,
         saveAcknowledged: responseFlags.saveAcknowledged,

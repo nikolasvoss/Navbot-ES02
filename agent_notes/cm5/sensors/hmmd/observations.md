@@ -11,13 +11,14 @@
 | 04.10.2026 | Nutzer meldet den HMMD-Sensor am J8 angeschlossen und nennt „GPIO10, GPIO8 usw.“; ob GPIO-Nummern oder physische J8-Pinnummern gemeint sind und welche Moduldrähte dort liegen, ist noch ungeklärt. | Nutzerbericht in der Anleitungskorrektur. Keine Sichtprüfung oder elektrische Messung liegt vor. | Vor dem Einschalten physische J8-Pinnummern, Modul-TX/RX, Masse und 3,3-V-Versorgung anhand der realen Markierungen prüfen. GPIO8/GPIO10 sind kein UART3-TX/RX-Paar. |
 | 04.10.2026 | Roadmap-Punkt 1 verlangt einen stationären HMMD-Test mit Heatmap und Bag-Wiedergabe. | `docs/cm5/software/roadmap.md`, Abschnitt 1. | Radar zunächst getrennt von der Fahrsteuerung betreiben. |
 | 05.10.2026 | Das installierte HMMD meldete Firmware v1.6.1. Parameter-ID 1 las Maximum Distance Gate 12; Parameter-ID 4 las Target Disappearance Delay 30 Sekunden. Unveränderte Schreibvorgänge beider Werte wurden mit ACK, passendem Readback und Save/Exit-ACK bestätigt. | Direkter serieller Mitschnitt über CM5 `/dev/ttyAMA0` bei 115200 Baud am 05.10.2026; die erfassten Anfrage- und Antwortbytes stehen in `protocol.md`, Abschnitt „HMMD-Konfiguration, am Modul geprüft“. | Der Treiber kann nur die geprüften IDs, Antwortformate und Bereiche verwenden. Die Prüfung nach Aus- und Einschalten fehlt; Save/Exit-ACK nicht als Power-Cycle-Persistenz ausgeben. Während des Mitschnitts wurde `hmmd_sensor` pausiert und danach wieder als alleiniger UART-Eigentümer gestartet. |
+| 06.10.2026 | Bei Handbewegungen vor dem installierten Radar zeigte die aktuelle Debug-Map im Stillstand typischerweise Doppler-Bins 10–11, bei Bewegung zum Radar niedrigere Bins (etwa 5) und bei Bewegung vom Radar weg höhere Bins (etwa 15); die konkreten Werte variierten mit der Bewegung. | Nutzerbericht aus visueller Beobachtung der laufenden Doppler-Map; kein Rohmitschnitt und keine Bewegung mit bekannter Geschwindigkeit. | Für dieses Gerät ist die Richtung qualitativ beobachtet: niedriger = Annäherung, höher = Entfernung, Mitte um 10–11 = Stillstand. Keine m/s-Angabe ohne bekannte Bin-Frequenzzuordnung und Kalibrierung; dies ist nur die radiale Bewegung zum/vom Radar. |
 
 ## Noch nicht beobachtet
 
 - Konkrete HMMD-Modulvariante; die Firmwareversion v1.6.1 ist für das vorhandene Gerät beobachtet.
 - CM5-Trägerboard, tatsächliche J8-Verdrahtung, Versorgung und Signalpegel.
 - Verhalten nach Aus- und Einschalten sowie Persistenz der Radarwerte.
-- Byte-Reihenfolge, physikalische Skalierung und Sensororientierung über die vorhandenen Softwarebefunde hinaus.
+- Kalibrierung der Doppler-Bins auf radiale Geschwindigkeit in m/s und Verhalten bei bekannten Geschwindigkeiten.
 - Lastverhalten unter längerer oder höherer Bridge-Last.
 
 ## Schema für neue Befunde

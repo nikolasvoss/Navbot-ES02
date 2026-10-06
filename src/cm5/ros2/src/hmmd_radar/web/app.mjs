@@ -1,5 +1,5 @@
 import { BRIDGE_URL, DISPLAY_INTERVAL_MS, loadEndpointManifest } from "./endpoint_manifest.mjs";
-import { diagnosticFields, formatRosStamp, rangeDopplerRows, validateRangeDopplerMap } from "./model.mjs";
+import { diagnosticFields, formatRosStamp, rangeDopplerRows, RANGE_GATES, validateRangeDopplerMap } from "./model.mjs";
 import { RADAR_SETTINGS, RadarSettings } from "./radar_settings.mjs";
 import { RosbridgeClient } from "./rosbridge_client.mjs";
 
@@ -7,9 +7,7 @@ const ui = {
   bridge: document.querySelector("#bridge-state"),
   sensor: document.querySelector("#sensor-state"),
   map: document.querySelector("#heatmap"),
-  mapState: document.querySelector("#map-state"),
   mapMeta: document.querySelector("#map-meta"),
-  mapScale: document.querySelector("#map-scale"),
   scale: document.querySelector("#scale-select"),
   maximumMode: document.querySelector("#maximum-mode"),
   fixedMaximum: document.querySelector("#fixed-maximum"),
@@ -32,6 +30,7 @@ try { manifest = await loadEndpointManifest(); }
 catch (error) { manifestError = error.message; manifest = { topics: [], services: [] }; }
 const MAP_TOPIC = "/hmmd/rdmap";
 const STATUS_TOPIC = "/hmmd/status";
+const METERS_PER_RANGE_GATE = 0.7;
 const topicByName = new Map(manifest.topics.map((topic) => [topic.name, topic]));
 const mapTopic = topicByName.get(MAP_TOPIC);
 const statusTopic = topicByName.get(STATUS_TOPIC);
@@ -160,7 +159,7 @@ function renderRadarSettings(settings) {
   };
   const label = labels[settings.state] || labels.reconnect;
   setBadge(ui.settingsState, label[0], label[1]);
-  ui.settingsState.title = settings.detail;
+  ui.settingsState.title = settings.state === "confirmed" ? "" : settings.detail;
   ui.settingsRefresh.disabled = settings.readPending || settings.writePending || state.connection !== "connected";
   for (const [setting, elements] of Object.entries(settingElements)) {
     const confirmed = settings.confirmed?.[setting];
@@ -171,10 +170,18 @@ function renderRadarSettings(settings) {
     const apply = ui.settingsForm.querySelector(`button[data-setting="${setting}"]`);
     apply.disabled = elements.input.disabled;
     const write = settings.lastWrite;
-    const lastWriteState = write
+    const writeAppliesToSetting = write?.setting === setting;
+    const writeState = writeAppliesToSetting
       ? `Write ACK ${write.writeAcknowledged ? "yes" : "no"} · readback ${write.readbackMatched ? "matched" : "not confirmed"} · save ACK ${write.saveAcknowledged ? "yes" : "no"}. `
       : "";
-    elements.state.textContent = `${lastWriteState}${settings.detail}`;
+    if (settings.state === "confirmed") {
+      elements.state.textContent = writeState;
+    } else if (write?.setting) {
+      elements.state.textContent = writeAppliesToSetting ? `${writeState}${settings.detail}` : "";
+    } else {
+      elements.state.textContent = settings.detail;
+    }
+    elements.state.hidden = elements.state.textContent === "";
     elements.state.className = `setting-state ${settings.state === "error" ? "badge-error" : settings.state === "confirmed" ? "badge-ok" : "muted"}`;
   }
 }
@@ -222,18 +229,21 @@ function rgb(value, low, high) {
   return `rgb(${channels.join(",")})`;
 }
 
-function drawHeatmap(sample) {
+function drawHeatmap(sample, confirmedMaximumDistanceGate) {
   const canvas = ui.map;
   const context = canvas.getContext("2d");
   const width = 900;
   const height = 560;
   const left = 54;
   const top = 20;
-  const right = 105;
+  const right = 140;
   const bottom = 54;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
-  const cellWidth = plotWidth / 16;
+  const rangeGateCount = Number.isInteger(confirmedMaximumDistanceGate)
+    ? Math.max(0, Math.min(RANGE_GATES, confirmedMaximumDistanceGate))
+    : RANGE_GATES;
+  const cellWidth = plotWidth / Math.max(1, rangeGateCount);
   const cellHeight = plotHeight / 20;
 
   context.clearRect(0, 0, width, height);
@@ -244,7 +254,7 @@ function drawHeatmap(sample) {
   context.textBaseline = "middle";
   context.fillStyle = "#aab7c8";
 
-  let values = Array.from({ length: 20 }, () => Array(16).fill(0));
+  let values = Array.from({ length: 20 }, () => Array(RANGE_GATES).fill(0));
   let freshness = "waiting";
   let low = 0;
   let high = 1;
@@ -265,15 +275,17 @@ function drawHeatmap(sample) {
     low = 0;
     high = logarithmic ? Math.log1p(fixedMaximum) : fixedMaximum;
   }
-  ui.maximumHint.textContent = !fixed
+  const colorScaleHelp = !fixed
     ? "Dynamic: color limits follow each frame."
     : ui.fixedMaximum.validity.valid
       ? "Fixed: scale starts at zero; values above the maximum use the brightest color."
       : `Enter a number greater than zero. Using the last valid maximum: ${fixedMaximum}.`;
+  ui.maximumHint.dataset.tooltip = colorScaleHelp;
+  ui.maximumHint.setAttribute("aria-label", colorScaleHelp);
 
   for (let doppler = 0; doppler < 20; doppler += 1) {
     const y = top + (19 - doppler) * cellHeight;
-    for (let range = 0; range < 16; range += 1) {
+    for (let range = 0; range < rangeGateCount; range += 1) {
       const x = left + range * cellWidth;
       context.fillStyle = rgb(values[doppler][range], low, high);
       context.fillRect(x, y, cellWidth, cellHeight);
@@ -284,19 +296,20 @@ function drawHeatmap(sample) {
   }
 
   context.fillStyle = "#b7c3d3";
-  for (let range = 0; range < 16; range += 1) {
-    context.fillText(String(range), left + (range + 0.5) * cellWidth, top + plotHeight + 19);
+  for (let range = 0; range < rangeGateCount; range += 1) {
+    const distanceMeters = ((range + 1) * METERS_PER_RANGE_GATE).toFixed(1);
+    context.fillText(distanceMeters, left + (range + 0.5) * cellWidth, top + plotHeight + 19);
   }
   for (let doppler = 0; doppler < 20; doppler += 1) {
     context.fillText(String(doppler), left - 23, top + (19 - doppler + 0.5) * cellHeight);
   }
   context.fillStyle = "#d5deea";
   context.font = "13px system-ui, sans-serif";
-  context.fillText("Range gate index", left + plotWidth / 2, height - 12);
+  context.fillText("Approx. distance (m)", left + plotWidth / 2, height - 12);
   context.save();
   context.translate(13, top + plotHeight / 2);
   context.rotate(-Math.PI / 2);
-  context.fillText("Doppler bin index", 0, 0);
+  context.fillText("Doppler-bin index", 0, 0);
   context.restore();
 
   const barX = left + plotWidth + 30;
@@ -316,6 +329,14 @@ function drawHeatmap(sample) {
   context.fillText(high.toPrecision(4), barX + 19, barY);
   context.textBaseline = "bottom";
   context.fillText(low.toPrecision(4), barX + 19, barY + barHeight);
+  const colorScaleLabel = logarithmic ? "log1p(amplitude squared)" : "Amplitude squared";
+  const colorScaleLabelLines = logarithmic ? ["log1p", "(amplitude squared)"] : ["Amplitude", "squared"];
+  context.save();
+  context.textAlign = "center";
+  context.textBaseline = "top";
+  context.fillText(colorScaleLabelLines[0], barX + 43, barY + barHeight + 8);
+  context.fillText(colorScaleLabelLines[1], barX + 43, barY + barHeight + 21);
+  context.restore();
 
   if (freshness !== "fresh") {
     const labels = {
@@ -334,14 +355,14 @@ function drawHeatmap(sample) {
     context.fillText(label, left + plotWidth / 2, top + plotHeight * 0.43 + 20);
   }
 
-  canvas.setAttribute("aria-label", `20 by 16 HMMD heatmap, ${freshness} data`);
-  ui.mapScale.textContent = logarithmic ? "log1p(amplitude squared)" : "Amplitude squared";
+  canvas.setAttribute("aria-label", `20 by ${rangeGateCount} HMMD heatmap, ${freshness} data, color scale ${colorScaleLabel}`);
 }
 
 function render() {
   const now = performance.now();
   state = client.snapshot(now);
-  renderRadarSettings(radarSettings.snapshot());
+  const radarConfiguration = radarSettings.snapshot();
+  renderRadarSettings(radarConfiguration);
   const bridge = bridgeLabel(state.connection);
   setBadge(ui.bridge, bridge[0], bridge[1]);
 
@@ -350,17 +371,6 @@ function render() {
   const sensor = sensorLabel(statusSample, now);
   setBadge(ui.sensor, sensor[0], sensor[1]);
 
-  const mapFreshness = mapSample?.freshness || (state.connection === "connected" ? "waiting" : "bridge-disconnected");
-  const mapLabels = {
-    fresh: ["Fresh frames", "ok"],
-    stale: ["No recent frames", "warn"],
-    waiting: ["Waiting for frame", "muted"],
-    "bridge-disconnected": ["Bridge disconnected", "error"],
-    "waiting-after-reconnect": ["Waiting for a new frame", "warn"],
-  };
-  const mapBadge = mapLabels[mapFreshness] || mapLabels.waiting;
-  setBadge(ui.mapState, mapBadge[0], mapBadge[1]);
-
   if (mapSample) {
     const stamp = formatRosStamp(mapSample.message.header.stamp);
     ui.mapMeta.textContent = `Frame ${mapSample.message.header.frame_id || "(no frame id)"} · ROS stamp ${stamp} · received ${formatAge(mapSample.ageMs)}`;
@@ -368,7 +378,7 @@ function render() {
     ui.mapMeta.textContent = "Waiting for the first HMMD frame.";
   }
   if (state.errors[MAP_TOPIC]) ui.mapMeta.textContent = `Rejected map: ${state.errors[MAP_TOPIC]}`;
-  drawHeatmap(mapSample);
+  drawHeatmap(mapSample, radarConfiguration.confirmed?.maximumDistanceGate);
 
   const selectedName = selectedTopic;
   const selected = selectedName ? state.topics[selectedName] : null;

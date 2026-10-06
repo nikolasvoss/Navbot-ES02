@@ -15,7 +15,7 @@ Quelle ist das [Waveshare HMMD-Wiki](https://www.waveshare.com/wiki/HMMD_mmWave_
 | Footer | `FD FC FB FA` |
 | Abgeleitete Gesamtlänge | 1.288 Bytes einschließlich Header und Footer |
 
-Die Herstellerbeschreibung nennt die Sendereihenfolge anhand von Chirps und jeweils 16 Entfernungszellen. Die erste Darstellung behält die vom Hersteller beschriebene Sensorreihenfolge bei. Die Implementierung verwendet Little-Endian-`uint32` gemäß Herstellerprotokoll. Datentyp, Indexformel und physikalische Bedeutung der Doppler-Bins bleiben am Mitschnitt des vorhandenen Moduls zu bestätigen.
+Die Herstellerbeschreibung nennt die Sendereihenfolge anhand von Chirps und jeweils 16 Entfernungszellen. Die erste Darstellung behält die vom Hersteller beschriebene Sensorreihenfolge bei. Die Implementierung verwendet Little-Endian-`uint32` gemäß Herstellerprotokoll. Laut Nutzerbeobachtung am 06.10.2026 liegt Stillstand typischerweise bei Doppler-Bin 10–11; Annäherung erscheint bei niedrigeren Bins (etwa 5), Entfernung bei höheren (etwa 15). Diese qualitative Zuordnung ist noch nicht mit einem Rohmitschnitt oder bekannten Geschwindigkeiten kalibriert; eine Umrechnung in m/s ist nicht belegt. Siehe [Beobachtungen](observations.md).
 
 ## Befehl für Debug-Modus
 

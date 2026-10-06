@@ -13,7 +13,7 @@
         <div>
           <p class="eyebrow">CM5 · ROS 2</p>
           <h1>HMMD radar data</h1>
-          <p class="lede">Live range-Doppler map over rosbridge.</p>
+          <p class="lede"><button class="info-tip" type="button" aria-label="About this page" data-tooltip="Live range-Doppler map from the HMMD radar over rosbridge.">i</button></p>
         </div>
         <div class="connection-stack" aria-live="polite">
           <div><span class="label">Browser to bridge</span><span id="bridge-state" class="badge">Connecting</span></div>
@@ -24,7 +24,7 @@
       <section class="panel map-panel" aria-labelledby="map-title">
         <div class="panel-header">
           <div>
-            <h2 id="map-title">Range-Doppler map</h2>
+            <h2 id="map-title">Range-Doppler map <button class="info-tip" type="button" aria-label="About the range-Doppler map axes" data-tooltip="X: approx. 0.7 m per gate (Waveshare; uncalibrated here). Y: Doppler bins group motion-related signals. Rows are bin numbers, not speeds; this view has no verified m/s or toward/away scale.">i</button></h2>
             <p id="map-meta" class="muted">Waiting for the first HMMD frame.</p>
           </div>
           <label class="control">
@@ -45,34 +45,30 @@
           </label>
           <label class="control">
             <span>Fixed maximum (raw amplitude squared)</span>
-            <input id="fixed-maximum" type="number" min="0" step="any" value="10000000" disabled aria-describedby="maximum-hint">
+          <input id="fixed-maximum" type="number" min="0" step="any" value="10000000" disabled>
           </label>
-          <p id="maximum-hint" class="muted" aria-live="polite">Dynamic: color limits follow each frame.</p>
+          <button id="maximum-hint" class="info-tip" type="button" aria-label="Color scale help" data-tooltip="Dynamic: color limits follow each frame.">i</button>
         </div>
         <div class="map-wrap">
           <canvas id="heatmap" width="900" height="560" role="img" aria-label="HMMD heatmap with no data yet"></canvas>
         </div>
-        <div class="map-footer">
-          <span id="map-state" class="badge badge-muted">Waiting for frame</span>
-          <span id="map-scale" class="muted">Amplitude squared</span>
-        </div>
         <section class="radar-settings" aria-labelledby="radar-settings-title">
           <div class="settings-header">
             <div>
-              <h3 id="radar-settings-title">Radar settings</h3>
+              <h3 id="radar-settings-title">Radar settings <button class="info-tip" type="button" aria-label="About radar settings" data-tooltip="A save acknowledgement confirms command acceptance. Power-cycle persistence has not been verified.">i</button></h3>
               <p id="radar-settings-state" class="muted" aria-live="polite">Waiting for radar connection.</p>
             </div>
             <button id="radar-settings-refresh" type="button">Refresh values</button>
           </div>
-          <p class="muted settings-note">A save acknowledgement confirms command acceptance. Power-cycle persistence has not been verified.</p>
           <form id="radar-settings-form" class="settings-grid">
             <div class="setting-row">
-              <label class="control" for="maximum-distance-gate">
-                <span>Maximum distance gate</span>
-                <span class="setting-help">Limits the farthest distance gate used for detections.</span>
-                <input id="maximum-distance-gate" data-setting="maximumDistanceGate" type="number" min="0" max="15" step="1" inputmode="numeric" aria-describedby="maximum-distance-gate-help maximum-distance-gate-state" required>
-                <span id="maximum-distance-gate-help" class="muted">0–15 gates</span>
-              </label>
+              <div class="setting-control">
+                <div class="setting-label">
+                  <label for="maximum-distance-gate">Maximum distance gate</label>
+                  <button class="info-tip" type="button" aria-label="Maximum distance gate help" data-tooltip="The chart uses the device-confirmed gate count. Apply a value, then refresh or wait for device confirmation. Valid range: 0 to 15 gates.">i</button>
+                </div>
+                <input id="maximum-distance-gate" data-setting="maximumDistanceGate" type="number" min="0" max="15" step="1" inputmode="numeric" required>
+              </div>
               <div class="setting-result">
                 <span id="maximum-distance-gate-confirmed" class="muted">Device value: not read</span>
                 <button type="submit" data-setting="maximumDistanceGate">Apply</button>
@@ -80,12 +76,13 @@
               </div>
             </div>
             <div class="setting-row">
-              <label class="control" for="target-disappearance-delay">
-                <span>Target disappearance delay</span>
-                <span class="setting-help">How long a target remains reported after it disappears.</span>
-                <input id="target-disappearance-delay" data-setting="targetDisappearanceDelaySeconds" type="number" min="0" max="65535" step="1" inputmode="numeric" aria-describedby="target-disappearance-delay-help target-disappearance-delay-state" required>
-                <span id="target-disappearance-delay-help" class="muted">0–65,535 seconds</span>
-              </label>
+              <div class="setting-control">
+                <div class="setting-label">
+                  <label for="target-disappearance-delay">Target disappearance delay</label>
+                  <button class="info-tip" type="button" aria-label="Target disappearance delay help" data-tooltip="How long a target remains reported after it disappears. Valid range: 0 to 65,535 seconds.">i</button>
+                </div>
+                <input id="target-disappearance-delay" data-setting="targetDisappearanceDelaySeconds" type="number" min="0" max="65535" step="1" inputmode="numeric" required>
+              </div>
               <div class="setting-result">
                 <span id="target-disappearance-delay-confirmed" class="muted">Device value: not read</span>
                 <button type="submit" data-setting="targetDisappearanceDelaySeconds">Apply</button>
@@ -99,8 +96,7 @@
       <section class="panel sensor-panel" aria-labelledby="sensor-title">
         <div class="panel-header">
           <div>
-            <h2 id="sensor-title">Available ROS topics</h2>
-            <p class="muted">The selector shows the latest message from the chosen topic.</p>
+            <h2 id="sensor-title">Available ROS topics <button class="info-tip" type="button" aria-label="About ROS topics" data-tooltip="The selector shows the latest message received from the chosen topic.">i</button></h2>
           </div>
           <label class="control">
             <span>Topic</span>
@@ -116,17 +112,16 @@
 
       <section class="panel" aria-labelledby="channel-title">
         <div class="panel-header">
-          <div><h2 id="channel-title">ROS send and request</h2><p class="muted">Publish declared topic JSON or call a declared service.</p></div>
+          <div><h2 id="channel-title">ROS send and request <button class="info-tip" type="button" aria-label="About ROS send and request" data-tooltip="Send JSON to a declared topic or call a declared service.">i</button></h2></div>
         </div>
         <form id="channel-form" class="channel-form">
-          <label class="control"><span>Endpoint</span><select id="channel-endpoint" aria-label="Outgoing ROS endpoint"></select></label>
-          <label class="control payload-control"><span>JSON payload</span><textarea id="channel-payload" rows="7" spellcheck="false" required>{}</textarea></label>
+          <label class="control endpoint-control"><span>Endpoint</span><select id="channel-endpoint" aria-label="Outgoing ROS endpoint"></select></label>
+          <label class="control payload-control"><span>JSON payload</span><textarea id="channel-payload" rows="4" spellcheck="false" required>{}</textarea></label>
           <button type="submit">Send request</button>
         </form>
-        <pre id="channel-result" class="message-view" aria-live="polite">No request sent.</pre>
+        <pre id="channel-result" class="message-view channel-result" aria-live="polite">No request sent.</pre>
       </section>
 
-      <p class="footnote">The bridge connection and HMMD frame freshness are separate states. Axes use bin indices; the page applies no physical-unit conversion.</p>
     </main>
     <script type="module" src="./app.mjs"></script>
   </body>
