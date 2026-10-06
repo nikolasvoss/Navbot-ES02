@@ -1,0 +1,12 @@
+{
+  "topics": [
+    {"name":"/hmmd/rdmap","type":"hmmd_interfaces/msg/RangeDopplerMap","label":"HMMD range-Doppler map","direction":"subscribe","reliability":"best_effort","throttleMs":100,"staleAfterMs":1500,"pinned":true},
+    {"name":"/hmmd/status","type":"diagnostic_msgs/msg/DiagnosticArray","label":"HMMD status","direction":"subscribe","reliability":"reliable","throttleMs":100,"staleAfterMs":3000,"pinned":true},
+    {"name":"/demo/range","type":"sensor_msgs/msg/Range","label":"Synthetic range sensor","direction":"both","reliability":"reliable","throttleMs":50,"staleAfterMs":1000,"pinned":false,"defaultPayload":{"range":1.25}}
+  ],
+  "services": [
+    {"name":"/demo/echo","type":"example_interfaces/srv/SetBool","label":"Synthetic echo request","timeoutMs":1000,"defaultPayload":{"data":true}},
+    {"name":"/hmmd_sensor/get_radar_config","type":"hmmd_interfaces/srv/GetRadarConfig","label":"Read HMMD radar settings","timeoutMs":5000},
+    {"name":"/hmmd_sensor/set_radar_setting","type":"hmmd_interfaces/srv/SetRadarSetting","label":"Set one HMMD radar setting","timeoutMs":5000}
+  ]
+}

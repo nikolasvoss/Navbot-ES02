@@ -2,52 +2,11 @@
 
 ## 1. HMMD-Radar als 20 × 16 Range-Doppler-Map in ROS 2 anzeigen
 
-Status: geplant. Erster ROS-2-Meilenstein.
+Status: Software implementiert; Live-Abnahme noch offen.
 
-Der CM5 liest den HMMD-Radarsensor und veröffentlicht seine Range-Doppler-Map
-als ROS-2-Daten. Eine Live-Heatmap zeigt, wie sich die Radarantwort bei Anwesenheit
-und Bewegung verändert. Der Einstieg erfolgt mit stationärem Sensor unabhängig
-von der Fahrsteuerung des Navbot.
+Der CM5-Sensorknoten, die ROS-Topics, die Browseranzeige und der gemeinsame lokale oder entfernte Start sind implementiert. Die vorhandene Evidenz umfasst echte HMMD-Frames und Browserzugriff auf dem CM5. Die vollständige Abnahme steht noch aus.
 
-### Grundlage und offene Fragen
-
-Das [Waveshare-Wiki zum HMMD](https://www.waveshare.com/wiki/HMMD_mmWave_Sensor)
-beschreibt im Debug-Modus eine RDMAP mit 20 Doppler-Bins und 16 Entfernungszellen.
-Jeder Wert belegt vier Bytes und beschreibt das Quadrat der Amplitude.
-Damit enthält eine Map 1.280 Bytes Nutzdaten.
-
-Das Wiki beschreibt die Übertragungsreihenfolge zugleich anhand von Chirps.
-Die Anordnung der Matrix, die Bedeutung der Doppler-Bins und die tatsächlich
-erreichbare Bildrate müssen deshalb am Sensor geprüft werden.
-Die erste Ansicht verwendet Bin-Indizes. Physikalische Achsen in Metern oder
-Metern pro Sekunde folgen erst mit belegter Skalierung und Vorzeichenkonvention.
-Die Map enthält keine Links-rechts-Ortung und ist keine räumliche Umgebungskarte.
-
-### Geplanter Umfang
-
-- Anbindung an den CM5 über eine separate UART-Verbindung oder einen USB-UART-Adapter
-  mit passenden 3,3-V-Signalpegeln.
-- ROS-2-Sensorknoten für den dokumentierten Debug-Modus, mit begrenztem Empfangspuffer
-  und Wiederaufnahme nach unvollständigen oder beschädigten Frames.
-- Veröffentlichung der unveränderten Matrixwerte mit Empfangszeitstempel,
-  Matrixdimensionen und dokumentierter Reihenfolge.
-- Live-Heatmap mit beschrifteten Achsen und Farbskala. Eine logarithmische Ansicht
-  ergänzt die Rohwerte. Die Anzeige kann zunächst in einem eigenen ROS-2-Fenster laufen.
-- Aufzeichnung und Wiedergabe mit rosbag2 für wiederholbare Vergleiche.
-- Anzeige von Empfangsrate, verworfenen Frames und ausbleibenden Daten.
-
-### Fertig, wenn
-
-- Echte Sensordaten erscheinen fortlaufend als 20 × 16 Heatmap.
-- Beobachtungen mit leerem Messbereich, ruhender Person und bewegter Person
-  sind aufgezeichnet und miteinander verglichen.
-- Eine Aufzeichnung lässt sich ohne angeschlossenen Sensor erneut anzeigen.
-- Eine unterbrochene Verbindung wird angezeigt; alte Daten erscheinen nicht als aktuell.
-- Beobachtete Datenrate, Matrixanordnung und offene Skalierungsfragen sind dokumentiert.
-
-Spätere Messungen auf dem Roboter vergleichen Ruhe, Balancebewegungen und Fahrt.
-Sie klären, wie stark Eigenbewegung die Radarantwort verändert, bevor diese Daten
-Fahrentscheidungen beeinflussen.
+Vor Abschluss sind der aktuelle ROS-2-Build auf dem CM5, die physische UART- und Spannungsprüfung, Aufzeichnungen eines leeren Messbereichs sowie einer ruhenden und einer bewegten Person und die Wiedergabe ohne Live-Sensor zu bestätigen. Die [HMMD ROS 2 developer guide](hmmd-ros2.md) enthält die aktuellen Befehle und Grenzen.
 
 ## 2. Roborock-LiDAR in ROS 2 integrieren
 

@@ -1,0 +1,30 @@
+uint8 SETTING_MAXIMUM_DISTANCE_GATE=0
+uint8 SETTING_TARGET_DISAPPEARANCE_DELAY=1
+uint8 setting
+int32 value
+---
+uint8 OUTCOME_OK=0
+uint8 OUTCOME_INVALID_REQUEST=1
+uint8 OUTCOME_NOT_CONNECTED=2
+uint8 OUTCOME_TIMEOUT=3
+uint8 OUTCOME_DEVICE_REJECTED=4
+uint8 OUTCOME_READBACK_MISMATCH=5
+uint8 OUTCOME_PROTOCOL_ERROR=6
+uint8 OUTCOME_IO_ERROR=7
+uint8 OUTCOME_REFRESH_REQUIRED=8
+
+uint8 STAGE_NONE=0
+uint8 STAGE_ENTER_CONFIG=1
+uint8 STAGE_WRITE=2
+uint8 STAGE_READBACK=3
+uint8 STAGE_SAVE=4
+
+bool success
+bool write_acknowledged
+bool has_observed_value
+int32 observed_value
+bool readback_matched
+bool save_acknowledged
+uint8 outcome
+uint8 stage
+string detail
