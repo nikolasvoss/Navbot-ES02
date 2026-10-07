@@ -15,3 +15,4 @@ Die Filterung läuft digital auf dem ESP32 und teilweise im ICM42688. Gyro- und 
 5. Natives USB-CDC auf dem vorhandenen ESP32-S3-Board prüfen. Am USB-C-Anschluss wurde bisher nur der CH340-USB-UART beobachtet. Das Datenformat bleibt vom Transport getrennt.
 6. Pufferung oder binäre Frames erst einführen, wenn Messungen zeigen, dass CSV die festgelegte Datenrate nicht zuverlässig erreicht.
 7. Später ein Werkzeug prüfen, das aus CSV-Aufzeichnungen die FFT eines ausgewählten Messkanals anzeigt. Eine Live-FFT würde einen eigenen seriellen Client benötigen, da SerialPlot keine FFT-Plots bietet.
+8. Logging-Kommandos bereinigen. Auswahl von Messwerten, Ausgabeformate und Verhalten im Diagnose- und Normalmodus eindeutig dokumentieren.

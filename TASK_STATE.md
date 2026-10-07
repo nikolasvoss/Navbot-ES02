@@ -1,18 +1,19 @@
-# Task state: merge filter correction into sensor roadmap
+# Task state: sensor roadmap review fixes
 
-Goal: merge commit `c61c3f9` from `codex/filter-unit-correction` into `codex/sensor-data-roadmap`, preserving the target branch's SerialLogger format and behavior.
+Goal: fix the two confirmed findings from the full review of codex/sensor-data-roadmap.
+Baseline: 49fbc524d96f80a29ebc36e95aeb677c0e165ef8; target worktree was clean.
+Scope and frozen plan: work/review-fixes.scope.md.
 
-Target baseline: `59a35d0b485a6b111762d25490dfc92e16ad846b`. The source commit shares ancestor `a9c2131f5a8bce64755541241d8f7cd793e1601e` and was independently scope-reviewed before integration.
+Decisions:
+- Pace selected debug records to at most 50 Hz within SerialLoggerSubmit. The first record is immediate; intentional pacing does not increment failure counters. Trace/diagnostic rates and sticky real-failure behavior remain unchanged.
+- Correct README to state that the default is normal motor-control firmware and diagnostics require setting SENSOR_DIAGNOSTIC_MODE to 1.
 
-Decision: retain the target branch's baud values, 17-field asynchronous diagnostic logger, and microsecond IMU schedule. Merge the filter coefficient and caller updates. Treat the live 25-field capture as evidence for the earlier diagnostic image only; it does not validate the target branch's current SerialLogger transport.
+Completed:
+- Baud-limited 1 kHz K9 regression failed before the fix with `1 kHz selected debug submissions overflowed the UART queue`.
+- The same regression passes after the fix with `selected_debug_accepted=50 trace_after_1khz=verified`.
+- Existing queue, formatter, and filter host tests pass.
+- Normal and diagnostic firmware builds pass. The diagnostic build uses a separate temporary sketch copy; the verified snapshot defaults to normal mode. A separate local edit now sets SENSOR_DIAGNOSTIC_MODE to 1; it remains unstaged and excluded from this commit.
+- Independent Luna correctness review returned PASS. Gemini CLI was unavailable after a 90-second timeout.
 
-Progress:
-- [x] Verify target branch and worktree are clean.
-- [x] Merge the scoped filter correction and resolve conflicts in `TASK_STATE.md`, `sensor-diagnostic-mode.md`, and `OllieFOCdrive.ino`.
-- [x] Host filter regression passed: gain 0.707107 at 20 Hz / 100 Hz.
-- [x] Normal firmware build passed: 737064 bytes program storage and 40848 bytes globals.
-- [x] Diagnostic firmware build passed: 407262 bytes program storage and 33328 bytes globals.
-- [x] Inspect all filter call sites and the complete merge diff; `git diff --check` passed.
-- [ ] Run the independent final scope check and commit the merge.
-
-Hardware: no new hardware action during this merge. The existing diagnostic image remains from the earlier live test; no firmware was flashed as part of this integration.
+Delivery: the tested fixes were applied after an independent scope verdict of OK. The user then requested a logging-command cleanup note and a local commit. The roadmap records that follow-up; cleanup itself is not implemented.
+Next step: commit the verified fixes and roadmap note after the final scope check, preserving the separate local diagnostic-mode edit. No firmware upload or hardware action was performed.

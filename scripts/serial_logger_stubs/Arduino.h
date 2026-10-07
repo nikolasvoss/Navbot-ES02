@@ -10,6 +10,8 @@ class HostSerial {
 };
 
 extern HostSerial Serial;
+uint32_t micros();
+void limitSerialBaud(uint32_t baud);
 void blockSerialWrites();
 bool waitForSerialWriteBlocked();
 void releaseSerialWrites();

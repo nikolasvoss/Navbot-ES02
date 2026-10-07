@@ -10,6 +10,7 @@
 namespace {
 constexpr UBaseType_t kQueueDepth = kSerialLoggerQueueDepth;
 constexpr size_t kRowBufferSize = 384;
+constexpr uint32_t kSelectedDebugIntervalMicros = 20000;
 StaticQueue_t queueControl DRAM_ATTR;
 uint8_t queueStorage[kQueueDepth * sizeof(SerialLogRecord)] DRAM_ATTR;
 QueueHandle_t logQueue;
@@ -18,6 +19,8 @@ std::atomic<uint32_t> uartWriteFailures{0};
 std::atomic<bool> selectedModeActive{false};
 std::atomic<uint8_t> incompleteReason{static_cast<uint8_t>(SerialLoggerIncompleteReason::None)};
 std::atomic<uint8_t> rejectedRecords{0};
+uint32_t lastSelectedDebugMicros = 0;
+bool selectedDebugSubmitted = false;
 
 void latchIncomplete(SerialLoggerIncompleteReason reason) {
   uint8_t expected = static_cast<uint8_t>(SerialLoggerIncompleteReason::None);
@@ -76,9 +79,20 @@ bool SerialLoggerSubmit(SerialLogRecord row) {
     countRejected();
     return false;
   }
+  const bool selectedDebug = row.kind == SERIAL_LOG_SELECTED_DEBUG;
+  const uint32_t submittedAt = selectedDebug ? micros() : 0;
+  if (selectedDebug && selectedDebugSubmitted &&
+      static_cast<uint32_t>(submittedAt - lastSelectedDebugMicros) < kSelectedDebugIntervalMicros)
+    return false;
   row.dropped = droppedRecords.load(std::memory_order_relaxed);
   row.writeFailures = uartWriteFailures.load(std::memory_order_relaxed);
-  if (xQueueSend(logQueue, &row, 0) == pdTRUE) return true;
+  if (xQueueSend(logQueue, &row, 0) == pdTRUE) {
+    if (selectedDebug) {
+      lastSelectedDebugMicros = submittedAt;
+      selectedDebugSubmitted = true;
+    }
+    return true;
+  }
   droppedRecords.fetch_add(1, std::memory_order_relaxed);
   latchIncomplete(SerialLoggerIncompleteReason::QueueFull);
   countRejected();

@@ -4,14 +4,17 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <sstream>
 #include <string>
+#include <thread>
 
 namespace {
 void require(bool condition, const char *message) {
   if (!condition) {
     std::fprintf(stderr, "%s\n", message);
-    std::exit(1);
+    std::fflush(stderr);
+    std::_Exit(1);
   }
 }
 
@@ -33,7 +36,44 @@ size_t lineCount(const std::string &bytes) {
 }
 }
 
-int main() {
+int main(int argc, char **argv) {
+  if (argc > 1 && std::strcmp(argv[1], "overload") == 0) {
+    limitSerialBaud(576000);
+    SerialLoggerSetSelectedMode(9);
+    SerialLoggerBegin();
+    auto selected = sample(SERIAL_LOG_SELECTED_DEBUG);
+    selected.selected.selector = 9;
+    for (float &value : selected.selected.values) value = 0.0f;
+    selected.selected.values[9] = 0.001f;
+    require(SerialLoggerSubmit(selected), "first selected debug record was not accepted immediately");
+
+    const auto start = std::chrono::steady_clock::now();
+    size_t accepted = 1;
+    for (uint32_t id = 1; id < 1000; ++id) {
+      std::this_thread::sleep_until(start + std::chrono::milliseconds(id));
+      selected.timestamp = id;
+      if (SerialLoggerSubmit(selected)) ++accepted;
+    }
+    require(SerialLoggerIncomplete() == SerialLoggerIncompleteReason::None,
+            "1 kHz selected debug submissions overflowed the UART queue");
+    require(SerialLoggerRejectedCount() == 0,
+            "paced selected debug records incremented the rejected-record counter");
+    require(accepted >= 45 && accepted <= 51, "selected debug cadence was not limited to 50 Hz");
+
+    SerialLoggerSetSelectedMode(55);
+    require(SerialLoggerSubmit(sample(SERIAL_LOG_TRACE, 1000)),
+            "trace submission failed after sustained selected debug output");
+    require(waitForSerialLines(accepted + 1), "trace sender did not drain after selected debug output");
+    std::istringstream rows(serialOutput());
+    std::string row;
+    std::string last;
+    while (std::getline(rows, row)) last = row;
+    require(last.rfind("TRACE,1000,", 0) == 0, "subsequent trace row was not emitted after selected debug output");
+    std::printf("selected_debug_accepted=%zu trace_after_1khz=verified\n", accepted);
+    std::fflush(stdout);
+    std::_Exit(0);
+  }
+
   SerialLoggerSetSelectedMode(55);
   require(SerialLoggerSelectedMode(), "trace mode 55 was not selected");
   SerialLoggerSetSelectedMode(4);

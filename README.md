@@ -82,7 +82,7 @@ The command builds the NavBot sketch into `build/flash`. Run `python3 scripts/bu
 
 ### Safe sensor diagnostics
 
-The full, current procedure is in the [sensor diagnostic guide](docs/robot/software/diagnostics/sensor-diagnostic-mode.md), including safe motor outputs, build and flash steps, SerialPlot settings, the 17-column channel map, and reset troubleshooting. The source currently sets `SENSOR_DIAGNOSTIC_MODE=1`; this skips motor and servo initialization and holds the wheel-driver enable pins low. Set it to `0` and rebuild to select normal motor-control firmware. Support the robot mechanically because the legs are not driven. The diagnostic stream currently uses 576000 baud through the CH340 UART at the user's direction. The hardware UART rate at 576000 has not yet been measured, and this setting is not hardware-accepted.
+The full, current procedure is in the [sensor diagnostic guide](docs/robot/software/diagnostics/sensor-diagnostic-mode.md), including safe motor outputs, build and flash steps, SerialPlot settings, the 17-column channel map, and reset troubleshooting. The source currently sets `SENSOR_DIAGNOSTIC_MODE=0`, which builds normal motor-control firmware. Set it to `1` and rebuild for sensor diagnostics. Diagnostic mode skips motor and servo initialization and holds the wheel-driver enable pins low. Support the robot mechanically because the legs are not driven. The diagnostic stream currently uses 576000 baud through the CH340 UART at the user's direction. The hardware UART rate at 576000 has not yet been measured, and this setting is not hardware-accepted.
 
 ### Capture a balance shutdown
 

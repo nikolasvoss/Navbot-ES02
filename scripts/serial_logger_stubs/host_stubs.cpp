@@ -2,6 +2,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -17,15 +18,40 @@ bool writesBlocked = false;
 bool writeStarted = false;
 std::string serialBytes;
 size_t serialLineCount = 0;
+uint32_t serialBaud = 0;
+std::chrono::steady_clock::time_point nextWriteAvailable{};
+const auto clockOrigin = std::chrono::steady_clock::now();
 }
 
 HostSerial Serial;
+
+uint32_t micros() {
+  return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+      std::chrono::steady_clock::now() - clockOrigin).count());
+}
+
+void limitSerialBaud(uint32_t baud) {
+  std::lock_guard<std::mutex> lock(serialMutex);
+  serialBaud = baud;
+  nextWriteAvailable = std::chrono::steady_clock::now();
+}
 
 size_t HostSerial::write(const uint8_t *data, size_t length) {
   std::unique_lock<std::mutex> lock(serialMutex);
   writeStarted = true;
   serialChanged.notify_all();
   serialChanged.wait(lock, [] { return !writesBlocked; });
+  if (serialBaud) {
+    const auto now = std::chrono::steady_clock::now();
+    const auto start = std::max(now, nextWriteAvailable);
+    const auto duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+        std::chrono::duration<double>(static_cast<double>(length) * 10.0 / serialBaud));
+    nextWriteAvailable = start + duration;
+    const auto available = nextWriteAvailable;
+    lock.unlock();
+    std::this_thread::sleep_until(available);
+    lock.lock();
+  }
   serialBytes.append(reinterpret_cast<const char *>(data), length);
   for (size_t i = 0; i < length; ++i) if (data[i] == '\n') ++serialLineCount;
   serialChanged.notify_all();

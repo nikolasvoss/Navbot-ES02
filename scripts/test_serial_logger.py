@@ -23,6 +23,7 @@ def main():
             "-o", str(executable),
         ], check=True)
         subprocess.run([str(executable)], check=True)
+        subprocess.run([str(executable), "overload"], check=True)
 
 
 if __name__ == "__main__":
