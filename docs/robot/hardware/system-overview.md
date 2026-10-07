@@ -36,6 +36,8 @@ Das EasyEDA-Projekt enthält **MAIN** (Steuerung, Versorgung, Motortreiber, Ansc
 
 ## Wichtige Feststellungen und Konsequenzen
 
+- **Natives USB CDC erfordert eine Hardwareänderung:** Im PCB-Netzplan führt USB-C zu CH340X, nicht zu den nativen USB-Pins des ESP32-S3. GPIO19/20 sind für Touch-UART belegt. Natives USB CDC ist daher über den vorhandenen USB-C-Anschluss ohne Hardwareänderung nicht möglich. Eine Firmwareoption allein genügt nicht. Siehe [serielle Schnittstellen](electronics/reference.md#serielle-schnittstellen).
+
 - **Kein externer RAM:** Laut Nutzerbestätigung vom 28.09.2026 ist ESP32-S3-WROOM-1 bestückt, ohne externen RAM; die Pinbelegung ist korrekt. Die N8R8-Angabe der Netzliste weicht von dieser Hardwareangabe ab. Nur internen SRAM für Logging einplanen; siehe [Hardware constraints for logging](wireless-logging-constraints.md).
 
 - **Servo-Stromschiene:** `H11` verbindet den gemeinsamen Versorgungs-Pin der Servostecker wahlweise mit `+5V` oder `VIN`. Vor Anschluss und Belastung die tatsächlich gesteckte Brücke und die Spannungsverträglichkeit der Servos prüfen. Die Servos hängen nicht am 3,3-V-Regler. Quelle: MAIN-PCB-Netzliste (`H9`, `H10`, `H11`).

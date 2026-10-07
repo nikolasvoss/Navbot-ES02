@@ -59,6 +59,8 @@ Der [Startup-Mitschnitt nach dem Bibliothekswechsel](../../../../build/serial-st
 
 ## Serielle Schnittstellen
 
+**Natives USB CDC ist über den vorhandenen USB-C-Anschluss ohne Hardwareänderung nicht möglich.** Laut PCB-Netzliste verbinden `D+` und `D−` den Anschluss `USB1` mit CH340X `U3`. Die nativen USB-Pins des ESP32-S3, GPIO20 für D+ und GPIO19 für D−, liegen dagegen auf `TX1` und `RX1` für Touch-UART. Natives USB würde eine separate Verbindung zu diesen Pins und die Auflösung des Touch-UART-Konflikts erfordern. Die Firmwareoption „USB CDC On Boot“ ändert diese Verdrahtung nicht. Quellen: [PCB-Netzliste](netlist.md), [Espressif USB-Anschlussbelegung](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/usb-serial-jtag-console.html#hardware-requirements) und [Beobachtungen am vorhandenen Board](../../software/development/usb-serial-flashing.md).
+
 | Pfad | Steck-/Netzseite | Firmware und Einschränkung |
 | --- | --- | --- |
 | USB/Debug | USB-C `USB1` → CH340X `U3` → `RX0/TX0`; `H1`: 1 +5 V, 2 GND, 3 RX0, 4 TX0 | Flash/`Serial`; am vorhandenen Board als CH340 `/dev/ttyUSB*` beobachtet. Normalmodus 2 Mbaud, Sensordiagnose 115200 Baud. [USB/serial guide](../../software/development/usb-serial-flashing.md) vor Änderungen lesen. |
