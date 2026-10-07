@@ -1137,16 +1137,16 @@ void ImuUpdate(void) {
   angleAccX = atan2(attitude.acc.y, attitude.acc.z + abs(attitude.acc.x)) * 360 / 2.0 / PI;
   angleAccY = atan2(attitude.acc.x, attitude.acc.z + abs(attitude.acc.y)) * 360 / -2.0 / PI;
 
-  gyroX = (float)gyroX * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0;
-  gyroY = (float)gyroY * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0;
-  gyroZ = (float)gyroZ * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0;
+  const float gyroRateX = (float)gyroX * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0;
+  const float gyroRateY = (float)gyroY * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0;
+  const float gyroRateZ = (float)gyroZ * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0;
 
-  angleGyroX += gyroX * IMUtime_dt;
-  angleGyroY += gyroY * IMUtime_dt;
-  angleGyroZ += gyroZ * IMUtime_dt;
+  angleGyroX += gyroRateX * IMUtime_dt;
+  angleGyroY += gyroRateY * IMUtime_dt;
+  angleGyroZ += gyroRateZ * IMUtime_dt;
 
-  angleX = (gyroCoef * (angleX + gyroX * IMUtime_dt)) + (accCoef * angleAccX);
-  angleY = (gyroCoef * (angleY + gyroY * IMUtime_dt)) + (accCoef * angleAccY);
+  angleX = (gyroCoef * (angleX + gyroRateX * IMUtime_dt)) + (accCoef * angleAccX);
+  angleY = (gyroCoef * (angleY + gyroRateY * IMUtime_dt)) + (accCoef * angleAccY);
   angleZ = angleGyroZ;
 
   timestamp_prev = timestamp_now;

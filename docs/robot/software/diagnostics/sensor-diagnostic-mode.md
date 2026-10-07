@@ -15,7 +15,7 @@ Open SerialPlot and configure its ASCII reader:
 
 Use SerialPlot's snapshot/export control to save a CSV capture. Each firmware row contains 24 sensor/status values and the monotonic timestamp in seconds as column 25. Rows contain only comma-separated numeric values and end with a newline. The nominal cadence is 50 ms (20 Hz) over the current CH340 USB-UART connection. A device check observed approximately 50 ms between frames in this motor-disabled diagnostic mode; behavior under motor load has not been measured.
 
-SerialPlot provides live multi-channel plots and CSV snapshots; its upstream feature list does not include FFT plots. Use the exported CSV for offline FFT analysis, and measure the sample intervals before trusting the frequency axis. Column 25 is the monotonic timestamp; columns 1–24 are listed below.
+SerialPlot provides live multi-channel plots and CSV snapshots; its upstream feature list does not include FFT plots. Snapshot exports use the default six significant digits, which rounds timestamps to 0.1-second increments near 10,000 seconds of uptime and can collapse some 50 ms samples to the same timestamp. Use raw serial captures for precise timing and FFT validation. Column 25 is the monotonic timestamp; columns 1–24 are listed below.
 
 ## Channel map
 
