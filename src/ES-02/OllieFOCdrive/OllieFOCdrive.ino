@@ -1392,530 +1392,329 @@ void FlashSave(int sw) {
  */
 void print_data(void) {
   static unsigned long lastSbusPrintMs = 0;
-  switch ((int)Select) {
+  SerialLogRecord selected{};
+  selected.kind = SERIAL_LOG_SELECTED_DEBUG;
+  selected.selected.selector = static_cast<int32_t>(Select);
+  size_t fi = 0;
+  size_t ni = 0;
+  bool shouldEnqueue = false;
+#define LOG_F(value) selected.selected.values[fi++] = (value)
+#define LOG_I(value) selected.selected.integers[ni++] = static_cast<int32_t>(value)
+  switch (selected.selected.selector) {
     case 1:
-      // Output Euler angle
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" Roll:");
-      Serial.print(attitude.roll);
-      Serial.print(" Pitch:");
-      Serial.print(attitude.pitch);
-      Serial.print(" Yaw:");
-      Serial.println(attitude.yaw);
-
+      LOG_F(time_dt);
+      LOG_F(attitude.roll);
+      LOG_F(attitude.pitch);
+      LOG_F(attitude.yaw);
+      shouldEnqueue = true;
       break;
-
     case 2:
-      // Output acc
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" accx:");
-      Serial.print(attitude.acc.x);
-      Serial.print(" accy:");
-      Serial.print(attitude.acc.y);
-      Serial.print(" accz:");
-      Serial.println(attitude.acc.z);
-
+      LOG_F(time_dt);
+      LOG_F(attitude.acc.x);
+      LOG_F(attitude.acc.y);
+      LOG_F(attitude.acc.z);
+      shouldEnqueue = true;
       break;
-
     case 3:
-      // Output
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" gyrox:");
-      Serial.print(attitude.gyro.x, 4);
-      Serial.print(" gyroy:");
-      Serial.print(attitude.gyro.y, 4);
-      Serial.print(" gyroz:");
-      Serial.println(attitude.gyro.z, 4);
-
+      LOG_F(time_dt);
+      LOG_F(attitude.gyro.x);
+      LOG_F(attitude.gyro.y);
+      LOG_F(attitude.gyro.z);
+      shouldEnqueue = true;
       break;
-
     case 4:
-      // Output Euler angle
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" Roll:");
-      Serial.print(attitude.roll - zeroBias.roll);
-      Serial.print(" Pitch:");
-      Serial.print(attitude.pitch - zeroBias.pitch);
-      Serial.print(" Yaw:");
-      Serial.println(attitude.yaw - zeroBias.yaw);
-
+      LOG_F(time_dt);
+      LOG_F(attitude.roll-zeroBias.roll);
+      LOG_F(attitude.pitch-zeroBias.pitch);
+      LOG_F(attitude.yaw-zeroBias.yaw);
+      shouldEnqueue = true;
       break;
-
     case 5:
-      //
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" eRoll:");
-      Serial.print(zeroBias.roll);
-      Serial.print(" ePitch:");
-      Serial.print(zeroBias.pitch);
-      Serial.print(" eYaw:");
-      Serial.println(zeroBias.yaw);
-
+      LOG_F(time_dt);
+      LOG_F(zeroBias.roll);
+      LOG_F(zeroBias.pitch);
+      LOG_F(zeroBias.yaw);
+      shouldEnqueue = true;
       break;
-
     case 6:
-      //
-      Serial.print(" v1:");
-      Serial.print(Motor1_Velocity);
-      Serial.print(" v2:");
-      Serial.println(Motor2_Velocity);
-
+      LOG_F(Motor1_Velocity);
+      LOG_F(Motor2_Velocity);
+      shouldEnqueue = true;
       break;
-
     case 7:
-      //
-      Serial.print(" v1:");
-      Serial.print(Motor1_Velocity);
-      Serial.print(" v1f:");
-      Serial.println(Motor1_Velocity_f);
+      LOG_F(Motor1_Velocity);
+      LOG_F(Motor1_Velocity_f);
+      shouldEnqueue = true;
       break;
-
     case 8:
-      //
-      // K8 is also used over the live-tuning connection. The
-      // control loop runs much faster than that link can carry these lines.
-      if (millis() - lastSbusPrintMs < 50)
-        break;
+      if (millis() - lastSbusPrintMs < 50) break;
       lastSbusPrintMs = millis();
-
-      for (int i = 0; i < 10; i++) {
-        Serial.print(" ch:");
-        Serial.print(sBus.channels[i]);
-      }
-
-      Serial.print(" sbus_dt_ms:");
-      Serial.print(sbus_dt_ms);
-      Serial.println(" ");
+      for (int i = 0; i < 10; ++i) LOG_I(sBus.channels[i]);
+      LOG_F(sbus_dt_ms);
+      shouldEnqueue = true;
       break;
-
     case 9:
-      //
-      Serial.print(" PP:");
-      Serial.print(Angle_Pid.Kp);
-      Serial.print(" PI:");
-      Serial.print(Angle_Pid.Ki);
-      Serial.print(" PD:");
-      Serial.print(Angle_Pid.Kd);
-
-      Serial.print(" SP:");
-      Serial.print(Speed_Pid.Kp);
-      Serial.print(" SI:");
-      Serial.print(Speed_Pid.Ki);
-      Serial.print(" SD:");
-      Serial.print(Speed_Pid.Kd);
-
-      Serial.print(" YP:");
-      Serial.print(Yaw_Pid.Kp);
-      Serial.print(" YI:");
-      Serial.print(Yaw_Pid.Ki);
-      Serial.print(" YD:");
-      Serial.print(Yaw_Pid.Kd);
-
-      Serial.print("dt:");
-      Serial.println(time_dt, 6);
-
+      LOG_F(Angle_Pid.Kp);
+      LOG_F(Angle_Pid.Ki);
+      LOG_F(Angle_Pid.Kd);
+      LOG_F(Speed_Pid.Kp);
+      LOG_F(Speed_Pid.Ki);
+      LOG_F(Speed_Pid.Kd);
+      LOG_F(Yaw_Pid.Kp);
+      LOG_F(Yaw_Pid.Ki);
+      LOG_F(Yaw_Pid.Kd);
+      LOG_F(time_dt);
+      shouldEnqueue = true;
       break;
-
     case 10:
-      //
-      Serial.print(" twoKp:");
-      Serial.print(mahonyFilter.twoKp);
-      Serial.print(" twoKi:");
-      Serial.print(mahonyFilter.twoKi);
-
-      Serial.print(" Roll:");
-      Serial.print(attitude.roll);
-      Serial.print(" Pitch:");
-      Serial.print(attitude.pitch);
-
-      Serial.print("IMUdt:");
-      Serial.println(IMUtime_dt, 6);
+      LOG_F(mahonyFilter.twoKp);
+      LOG_F(mahonyFilter.twoKi);
+      LOG_F(attitude.roll);
+      LOG_F(attitude.pitch);
+      LOG_F(IMUtime_dt);
+      shouldEnqueue = true;
       break;
-
     case 11:
-      //
-
-      Serial.print(" x:");
-      Serial.print(angleX);
-      Serial.print(" y:");
-      Serial.print(angleY);
-      Serial.print(" z:");
-      Serial.print(angleZ);
-
-      Serial.print(" gx:");
-      Serial.print(angleGyroX);
-      Serial.print(" gy:");
-      Serial.print(angleGyroY);
-      Serial.print(" gz:");
-      Serial.print(angleGyroZ);
-
-      Serial.print(" IMUdt:");
-      Serial.println(IMUtime_dt, 6);
-
+      LOG_F(angleX);
+      LOG_F(angleY);
+      LOG_F(angleZ);
+      LOG_F(angleGyroX);
+      LOG_F(angleGyroY);
+      LOG_F(angleGyroZ);
+      LOG_F(IMUtime_dt);
+      shouldEnqueue = true;
       break;
-
     case 12:
-      //
-
-      Serial.print(" x:");
-      Serial.print(angleX);
-
-      Serial.print(" Roll:");
-      Serial.println(attitude.roll);
-
-
+      LOG_F(angleX);
+      LOG_F(attitude.roll);
+      shouldEnqueue = true;
       break;
-
     case 13:
-      // Output
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" gyroxf:");
-      Serial.print(attitude.gyrof.x);
-      Serial.print(" gyroyf:");
-      Serial.print(attitude.gyrof.y);
-      Serial.print(" gyrozf:");
-      Serial.println(attitude.gyrof.z);
+      LOG_F(time_dt);
+      LOG_F(attitude.gyrof.x);
+      LOG_F(attitude.gyrof.y);
+      LOG_F(attitude.gyrof.z);
+      shouldEnqueue = true;
       break;
-
     case 14:
-      // Output acc
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" accx:");
-      Serial.print(attitude.accf.x);
-      Serial.print(" accy:");
-      Serial.print(attitude.accf.y);
-      Serial.print(" accz:");
-      Serial.println(attitude.accf.z);
+      LOG_F(time_dt);
+      LOG_F(attitude.accf.x);
+      LOG_F(attitude.accf.y);
+      LOG_F(attitude.accf.z);
+      shouldEnqueue = true;
       break;
-
     case 15:
-      // Output acc
-      Serial.print(" accy:");
-      Serial.print(attitude.acc.y);
-      Serial.print(" accyf:");
-      Serial.println(attitude.accf.y);
+      LOG_F(attitude.acc.y);
+      LOG_F(attitude.accf.y);
+      shouldEnqueue = true;
       break;
-
     case 16:
-      // Output acc
-      Serial.print(" gyro:");
-      Serial.print(attitude.gyro.y);
-      Serial.print(" gyrof:");
-      Serial.println(attitude.gyrof.y);
+      LOG_F(attitude.gyro.y);
+      LOG_F(attitude.gyrof.y);
+      shouldEnqueue = true;
       break;
-
     case 17:
-      // Output acc
-      Serial.print(" current_sp:");
-      Serial.println(motor2.current_sp, 6);
+      LOG_F(motor2.current_sp);
+      shouldEnqueue = true;
       break;
-
     case 18:
-      // Output acc
-      Serial.print(" t:");
-      Serial.print(motor2.target, 6);
-      Serial.print(" a1:");
-      Serial.print(sensor1.getAngle(), 6);
-      Serial.print(" a11:");
-      Serial.print(sensor1.getMechanicalAngle(), 6);
-
-      Serial.print(" a2:");
-      Serial.print(sensor2.getAngle(), 6);
-      Serial.print(" a22:");
-      Serial.println(sensor2.getMechanicalAngle(), 6);
+      LOG_F(motor2.target);
+      LOG_F(sensor1.getAngle());
+      LOG_F(sensor1.getMechanicalAngle());
+      LOG_F(sensor2.getAngle());
+      LOG_F(sensor2.getMechanicalAngle());
+      shouldEnqueue = true;
       break;
-
     case 19:
-      //
-      Serial.print(" servo1:");
-      Serial.print(zeroBias.servo1);
-      Serial.print(" servo2:");
-      Serial.print(zeroBias.servo2);
-      Serial.print(" servo3:");
-      Serial.print(zeroBias.servo3);
-      Serial.print(" servo4:");
-      Serial.println(zeroBias.servo4);
+      LOG_F(zeroBias.servo1);
+      LOG_F(zeroBias.servo2);
+      LOG_F(zeroBias.servo3);
+      LOG_F(zeroBias.servo4);
+      shouldEnqueue = true;
       break;
-
     case 20:
-      Serial.print(" vra:");
-      Serial.print(top_ball_x, 6);
-      Serial.print(" BodyRoll:");
-      Serial.print(BodyRoll, 6);
-      Serial.print(" LegLength:");
-      Serial.println(LegLength, 6);
+      LOG_F(top_ball_x);
+      LOG_F(BodyRoll);
+      LOG_F(LegLength);
+      shouldEnqueue = true;
       break;
-
     case 21:
-      Serial.print(" roll_ok:");
-      Serial.print(roll_ok, 6);
-      Serial.print(" BodyPitching:");
-      Serial.println(BodyPitching, 6);
+      LOG_F(roll_ok);
+      LOG_F(BodyPitching);
+      shouldEnqueue = true;
       break;
-
     case 22:
-      Serial.print(" it:");
-      Serial.print(Angle_Pid.iLimit, 5);
-      Serial.print(" il:");
-      Serial.print(Angle_Pid.integral, 5);
-      Serial.print(" oI:");
-      Serial.print(Angle_Pid.outI, 5);
-      Serial.print(" out:");
-      Serial.println(Angle_Pid.output, 5);
+      LOG_F(Angle_Pid.iLimit);
+      LOG_F(Angle_Pid.integral);
+      LOG_F(Angle_Pid.outI);
+      LOG_F(Angle_Pid.output);
+      shouldEnqueue = true;
       break;
-
     case 23:
-      Serial.print(" it:");
-      Serial.print(Speed_Pid.iLimit, 5);
-      Serial.print(" il:");
-      Serial.print(Speed_Pid.integral, 5);
-      Serial.print(" oI:");
-      Serial.print(Speed_Pid.outI, 5);
-      Serial.print(" A:");
-      Serial.print(BodyPitching_f, 5);
-      Serial.print(" out:");
-      Serial.println(Speed_Pid.output, 5);
+      LOG_F(Speed_Pid.iLimit);
+      LOG_F(Speed_Pid.integral);
+      LOG_F(Speed_Pid.outI);
+      LOG_F(BodyPitching_f);
+      LOG_F(Speed_Pid.output);
+      shouldEnqueue = true;
       break;
-
     case 24:
-      Serial.print(" EN:");
-      Serial.print(enableDFilter);
-      Serial.print(" HZ:");
-      Serial.println(cutoffFreq, 5);
+      LOG_F(enableDFilter);
+      LOG_F(cutoffFreq);
+      shouldEnqueue = true;
       break;
-
     case 25:
-      Serial.print(" LpfOut:");
-      Serial.print(BodyPitching_f, 6);
-      Serial.print(" BodyPitching:");
-      Serial.println(BodyPitching, 6);
+      LOG_F(BodyPitching_f);
+      LOG_F(BodyPitching);
+      shouldEnqueue = true;
       break;
-
     case 26:
-
       if (Touch.state == 1) {
-        Serial.print("  aX:");
-        Serial.print(Touch.XPdat);
-        Serial.print("  aY:");
-        Serial.println(Touch.YPdat);
+        LOG_I(Touch.state);
+        LOG_I(Touch.XPdat);
+        LOG_I(Touch.YPdat);
+        shouldEnqueue = true;
       } else if (Touch.state == 0) {
-        Serial.print("  tX:");
-        Serial.print(Touch.XLdat);
-        Serial.print("  tY:");
-        Serial.println(Touch.YLdat);
+        LOG_I(Touch.state);
+        LOG_I(Touch.XLdat);
+        LOG_I(Touch.YLdat);
+        shouldEnqueue = true;
       }
       break;
-
     case 27:
-
-      Serial.print("  aX:");
-      Serial.print(Touch.XPdat);
-      Serial.print("  aY:");
-      Serial.print(Touch.YPdat);
-      Serial.print("  aXF:");
-      Serial.print(Touch.XPdatF);
-      Serial.print("  aYF:");
-      Serial.println(Touch.YPdatF);
+      LOG_I(Touch.XPdat);
+      LOG_I(Touch.YPdat);
+      LOG_F(Touch.XPdatF);
+      LOG_F(Touch.YPdatF);
+      shouldEnqueue = true;
       break;
-
     case 28:
-
-      Serial.print("  P:");
-      Serial.print(BodyPitching_f);
-      Serial.print("  R:");
-      Serial.print(BodyRoll_f, 5);
-      Serial.print("  H:");
-      Serial.print(LegLength_f, 5);
-      Serial.print("  S:");
-      Serial.print(SlideStep_f);
-      Serial.print("  vra:");
-      Serial.print(top_ball_x);
-      Serial.print("  vra:");
-      Serial.println(top_ball_y);
+      LOG_F(BodyPitching_f);
+      LOG_F(BodyRoll_f);
+      LOG_F(LegLength_f);
+      LOG_F(SlideStep_f);
+      LOG_F(top_ball_x);
+      LOG_F(top_ball_y);
+      shouldEnqueue = true;
       break;
-
     case 29:
-      Serial.print(" Kp:");
-      Serial.print(TouchY_Pid.Kp, 6);
-      Serial.print(" Ki:");
-      Serial.print(TouchY_Pid.Ki, 6);
-      Serial.print(" Kd:");
-      Serial.print(TouchY_Pid.Kd, 6);
-
-      Serial.print(" deriv:");
-      Serial.print(TouchY_Pid.deriv);
-      Serial.print(" out:");
-      Serial.println(TouchY_Pid.output);
+      LOG_F(TouchY_Pid.Kp);
+      LOG_F(TouchY_Pid.Ki);
+      LOG_F(TouchY_Pid.Kd);
+      LOG_F(TouchY_Pid.deriv);
+      LOG_F(TouchY_Pid.output);
+      shouldEnqueue = true;
       break;
-
     case 30:
-      Serial.print(" deriv:");
-      Serial.println(TouchY_Pid.deriv);
+      LOG_F(TouchY_Pid.deriv);
+      shouldEnqueue = true;
       break;
-
     case 31:
-      Serial.print(" E:");
-      Serial.print(Roll_Pid.error, 6);
-      Serial.print(" it:");
-      Serial.print(Roll_Pid.iLimit, 5);
-      Serial.print(" il:");
-      Serial.print(Roll_Pid.integral, 5);
-      Serial.print(" oI:");
-      Serial.print(Roll_Pid.outI, 5);
-      Serial.print(" out:");
-      Serial.println(Roll_Pid.output, 5);
+      LOG_F(Roll_Pid.error);
+      LOG_F(Roll_Pid.iLimit);
+      LOG_F(Roll_Pid.integral);
+      LOG_F(Roll_Pid.outI);
+      LOG_F(Roll_Pid.output);
+      shouldEnqueue = true;
       break;
-
     case 32:
-
-      Serial.print(" RP:");
-      Serial.print(Roll_Pid.Kp, 6);
-      Serial.print(" RI:");
-      Serial.print(Roll_Pid.Ki, 6);
-      Serial.print(" RD:");
-      Serial.println(Roll_Pid.Kd, 6);
+      LOG_F(Roll_Pid.Kp);
+      LOG_F(Roll_Pid.Ki);
+      LOG_F(Roll_Pid.Kd);
+      shouldEnqueue = true;
       break;
-
     case 33:
-      Serial.print(" it:");
-      Serial.print(Yaw_Pid.iLimit, 5);
-      Serial.print(" il:");
-      Serial.print(Yaw_Pid.integral, 5);
-      Serial.print(" oI:");
-      Serial.print(Yaw_Pid.outI, 5);
-      Serial.print(" A:");
-      Serial.print(BodyPitching_f, 5);
-      Serial.print(" out:");
-      Serial.println(Yaw_Pid.output, 5);
+      LOG_F(Yaw_Pid.iLimit);
+      LOG_F(Yaw_Pid.integral);
+      LOG_F(Yaw_Pid.outI);
+      LOG_F(BodyPitching_f);
+      LOG_F(Yaw_Pid.output);
+      shouldEnqueue = true;
       break;
-
     case 34:
-      Serial.print(" Kp:");
-      Serial.print(TouchX_Pid.Kp, 6);
-      Serial.print(" Ki:");
-      Serial.print(TouchX_Pid.Ki, 6);
-      Serial.print(" Kd:");
-      Serial.print(TouchX_Pid.Kd, 6);
-
-      Serial.print(" deriv:");
-      Serial.print(TouchX_Pid.deriv);
-      Serial.print(" out:");
-      Serial.println(TouchX_Pid.output);
+      LOG_F(TouchX_Pid.Kp);
+      LOG_F(TouchX_Pid.Ki);
+      LOG_F(TouchX_Pid.Kd);
+      LOG_F(TouchX_Pid.deriv);
+      LOG_F(TouchX_Pid.output);
+      shouldEnqueue = true;
       break;
-
     case 35:
-      Serial.print(" deriv:");
-      Serial.println(TouchX_Pid.deriv);
+      LOG_F(TouchX_Pid.deriv);
+      shouldEnqueue = true;
       break;
-
     case 36:
-      Serial.print(" state:");
-      Serial.print(Touch.state);
-      Serial.print(" start:");
-      Serial.println(Touch.start);
+      LOG_I(Touch.state);
+      LOG_I(Touch.start);
+      shouldEnqueue = true;
       break;
-
     case 37:
-      Serial.print(" sbus_vra:");
-      Serial.print(top_ball_x);
-      Serial.print(" sbus_vraf:");
-      Serial.print(sbus_top_ball_x_smoothed);
-      Serial.print(" sbus_vrb:");
-      Serial.print(top_ball_y);
-      Serial.print(" sbus_vrbf:");
-      Serial.println(sbus_top_ball_y_smoothed);
+      LOG_F(top_ball_x);
+      LOG_F(sbus_top_ball_x_smoothed);
+      LOG_F(top_ball_y);
+      LOG_F(sbus_top_ball_y_smoothed);
+      shouldEnqueue = true;
       break;
-
     case 38:
-      Serial.print(" X OUT:");
-      Serial.print(BodyPitching);
-      Serial.print(" Y OUT:");
-      Serial.println(TouchY_Pid.output);
+      LOG_F(BodyPitching);
+      LOG_F(TouchY_Pid.output);
+      shouldEnqueue = true;
       break;
-
     case 39:
-      Serial.print(" it:");
-      Serial.print(TouchY_Pid.iLimit, 5);
-      Serial.print(" il:");
-      Serial.print(TouchY_Pid.integral, 5);
-      Serial.print(" oI:");
-      Serial.print(TouchY_Pid.outI, 5);
-      Serial.print(" out:");
-      Serial.println(TouchY_Pid.output, 5);
+      LOG_F(TouchY_Pid.iLimit);
+      LOG_F(TouchY_Pid.integral);
+      LOG_F(TouchY_Pid.outI);
+      LOG_F(TouchY_Pid.output);
+      shouldEnqueue = true;
       break;
-
     case 40:
-
       if (Touch.state == 1) {
-        Serial.print("  aX:");
-        Serial.print(Touch.XPressDat);
-        Serial.print("  aY:");
-        Serial.println(Touch.YPressDat);
+        LOG_I(Touch.state);
+        LOG_I(Touch.XPressDat);
+        LOG_I(Touch.YPressDat);
+        shouldEnqueue = true;
       } else if (Touch.state == 0) {
-        Serial.print("  tX:");
-        Serial.print(Touch.XPressDat);
-        Serial.print("  tX:");
-        Serial.println(Touch.YPressDat);
+        LOG_I(Touch.state);
+        LOG_I(Touch.XPressDat);
+        LOG_I(Touch.YPressDat);
+        shouldEnqueue = true;
       }
       break;
-
     case 41:
-
-      Serial.print(" roll_ok:");
-      Serial.print(roll_ok, 5);
-      Serial.print(" pa:");
-      Serial.print(BodyPitching, 5);
-      Serial.print(" out:");
-      Serial.println(Speed_Pid.output, 5);
+      LOG_F(roll_ok);
+      LOG_F(BodyPitching);
+      LOG_F(Speed_Pid.output);
+      shouldEnqueue = true;
       break;
-
     case 42:
-
-      Serial.print(" P:");
-      Serial.print(roll_ok, 5);
-      Serial.print(" P1:");
-      Serial.print(BodyPitching, 5);
-      Serial.print(" P3:");
-      Serial.println(BodyPitchingCorrect(BodyPitching_f), 5);
+      LOG_F(roll_ok);
+      LOG_F(BodyPitching);
+      LOG_F(BodyPitchingCorrect(BodyPitching_f));
+      shouldEnqueue = true;
       break;
-
     case 43:
-
-      Serial.print(" Vdat:");
-      Serial.print(VoltageADC);
-      Serial.print(" Vdatf:");
-      Serial.print(VoltageADCf);
-      Serial.print(" V:");
-      Serial.println(Voltage, 5);
+      LOG_I(VoltageADC);
+      LOG_F(VoltageADCf);
+      LOG_F(Voltage);
+      shouldEnqueue = true;
       break;
-
     case 44:
-
-      Serial.print(" PidParameterTuning:");
-      Serial.print(PidParameterTuning);
-      Serial.print(" TargetLegLength:");
-      Serial.println(TargetLegLength, 6);
-
+      LOG_I(PidParameterTuning);
+      LOG_F(TargetLegLength);
+      shouldEnqueue = true;
       break;
-
     case 45:
-
-      Serial.print(" RobotTumble:");
-      Serial.print(RobotTumble);
-      Serial.print(" roll_ok:");
-      Serial.print(roll_ok, 6);
-      Serial.print(" Angle_Pid.error:");
-      Serial.println(Angle_Pid.error, 6);
-
+      LOG_I(RobotTumble);
+      LOG_F(roll_ok);
+      LOG_F(Angle_Pid.error);
+      shouldEnqueue = true;
       break;
-
+    default: break;
+  }
+  if (shouldEnqueue) SerialLoggerSubmit(selected);
+#undef LOG_F
+#undef LOG_I
+  switch ((int)Select) {
     case 55: {
       if (controlGateSequence % 7 == 0) {
         const uint32_t traceMs = millis();
@@ -2544,7 +2343,7 @@ void loop() {
 
   // user communication
   command.run();
-  SerialLoggerSetTraceMode((int)Select);
+  SerialLoggerSetSelectedMode((int)Select);
 
   ImuUpdate();  // Update IMU data
   CtrlInput();  // BLE or remote control input

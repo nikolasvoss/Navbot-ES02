@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string>
 
 class HostSerial {
  public:
@@ -12,3 +13,5 @@ extern HostSerial Serial;
 void blockSerialWrites();
 bool waitForSerialWriteBlocked();
 void releaseSerialWrites();
+bool waitForSerialLines(size_t count);
+std::string serialOutput();

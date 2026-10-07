@@ -2,9 +2,9 @@
 #include "robot.h"
 #include "SerialLogger.h"
 
-#define DEBUG_SERIAL_PRINT(...) do { if (!SerialLoggerTraceModeSelected()) Serial.print(__VA_ARGS__); } while (0)
-#define DEBUG_SERIAL_PRINTLN(...) do { if (!SerialLoggerTraceModeSelected()) Serial.println(__VA_ARGS__); } while (0)
-#define DEBUG_SERIAL_PRINTF(...) do { if (!SerialLoggerTraceModeSelected()) Serial.printf(__VA_ARGS__); } while (0)
+#define DEBUG_SERIAL_PRINT(...) do { if (!SerialLoggerSelectedMode()) Serial.print(__VA_ARGS__); } while (0)
+#define DEBUG_SERIAL_PRINTLN(...) do { if (!SerialLoggerSelectedMode()) Serial.println(__VA_ARGS__); } while (0)
+#define DEBUG_SERIAL_PRINTF(...) do { if (!SerialLoggerSelectedMode()) Serial.printf(__VA_ARGS__); } while (0)
 #include <ArduinoJson.h>
 #include <vector>
 #include <esp_mac.h>

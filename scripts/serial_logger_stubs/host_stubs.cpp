@@ -7,6 +7,7 @@
 #include <cstring>
 #include <mutex>
 #include <new>
+#include <string>
 #include <thread>
 
 namespace {
@@ -14,21 +15,27 @@ std::mutex serialMutex;
 std::condition_variable serialChanged;
 bool writesBlocked = false;
 bool writeStarted = false;
+std::string serialBytes;
+size_t serialLineCount = 0;
 }
 
 HostSerial Serial;
 
-size_t HostSerial::write(const uint8_t *, size_t length) {
+size_t HostSerial::write(const uint8_t *data, size_t length) {
   std::unique_lock<std::mutex> lock(serialMutex);
   writeStarted = true;
   serialChanged.notify_all();
   serialChanged.wait(lock, [] { return !writesBlocked; });
+  serialBytes.append(reinterpret_cast<const char *>(data), length);
+  for (size_t i = 0; i < length; ++i) if (data[i] == '\n') ++serialLineCount;
+  serialChanged.notify_all();
   return length;
 }
 
 void blockSerialWrites() {
   std::lock_guard<std::mutex> lock(serialMutex);
   writesBlocked = true;
+  writeStarted = false;
 }
 
 bool waitForSerialWriteBlocked() {
@@ -40,6 +47,17 @@ void releaseSerialWrites() {
   std::lock_guard<std::mutex> lock(serialMutex);
   writesBlocked = false;
   serialChanged.notify_all();
+}
+
+
+bool waitForSerialLines(size_t count) {
+  std::unique_lock<std::mutex> lock(serialMutex);
+  return serialChanged.wait_for(lock, std::chrono::seconds(2), [count] { return serialLineCount >= count; });
+}
+
+std::string serialOutput() {
+  std::lock_guard<std::mutex> lock(serialMutex);
+  return serialBytes;
 }
 
 QueueHandle_t xQueueCreateStatic(UBaseType_t depth, UBaseType_t itemSize, uint8_t *, StaticQueue_t *control) {
