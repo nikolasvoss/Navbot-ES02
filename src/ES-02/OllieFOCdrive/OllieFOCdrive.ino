@@ -93,6 +93,7 @@ Commander command = Commander(Serial);
 #define DIAGNOSTIC_SERIAL_BAUD_RATE 576000
 #define LIVE_TUNING_SERIAL_BAUD_RATE 576000
 #define DIAGNOSTIC_IMU_INTERVAL_US 10000
+constexpr unsigned int DIAGNOSTIC_IMU_SAMPLE_RATE_HZ = 1000000U / DIAGNOSTIC_IMU_INTERVAL_US;
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
 constexpr float DRIVE_BODY_X_LIMIT_M = 0.010f;
 constexpr float DRIVE_WHEEL_FEEDBACK_LIMIT = 8.0f;
@@ -468,9 +469,9 @@ void setup() {
   delay(500);
 
 #if SENSOR_DIAGNOSTIC_MODE
-  biquadFilterInitLPF(&VoltageFilterLPF, 20, 10000);
+  biquadFilterInitLPF(&VoltageFilterLPF, 20, DIAGNOSTIC_IMU_SAMPLE_RATE_HZ);
   for (int axis = 0; axis < 6; axis++) {
-    biquadFilterInitLPF(&ImuFilterLPF[axis], 20, 10000);
+    biquadFilterInitLPF(&ImuFilterLPF[axis], 20, DIAGNOSTIC_IMU_SAMPLE_RATE_HZ);
   }
   diagnosticImuReady = initICM42688();
   sBus.begin();
@@ -488,7 +489,7 @@ void setup() {
     biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)LPF_CUTOFF_FREQ, (unsigned int)RATE_HZ);
   }
 
-  biquadFilterInitLPF(&VoltageFilterLPF, 50.0f, 100);  // Voltage filter function initialization
+  biquadFilterInitLPF(&VoltageFilterLPF, 50, 1000);
 
   //  Initialize servo
   servoControl.initialize();
@@ -509,15 +510,15 @@ void setup() {
   sBus.begin();
 
   for (int i = 0; i < 6; i++)
-    biquadFilterInitLPF(&FilterLPF[i], 100, (unsigned int)cutoffFreq);  // Remote control filter
+    biquadFilterInitLPF(&FilterLPF[i], (unsigned int)cutoffFreq, 1000);
 
-  biquadFilterInitLPF(&FilterLPF[8], 50, (unsigned int)cutoffFreq);   // Remote control filter
-  biquadFilterInitLPF(&FilterLPF[9], 50, (unsigned int)cutoffFreq);   // Remote control filter
-  biquadFilterInitLPF(&FilterLPF[10], 200, (unsigned int)400);        // Touchscreen PID filter
-  biquadFilterInitLPF(&FilterLPF[11], 200, (unsigned int)400);        // Touchscreen PID filter
+  biquadFilterInitLPF(&FilterLPF[8], 50, 1000);
+  biquadFilterInitLPF(&FilterLPF[9], 50, 1000);
+  biquadFilterInitLPF(&FilterLPF[10], 200, 1000);
+  biquadFilterInitLPF(&FilterLPF[11], 200, 1000);
 
   // use monitoring with serial
-  TouchscreenInit(500);
+  TouchscreenInit(1000);
   // enable more verbose output for debugging
   // comment out if not needed
   SimpleFOCDebug::enable(&Serial);
@@ -2191,7 +2192,7 @@ void RemoteControlFiltering(void)  // Remote control filter
 
   if (((int)enableDFilter != enableDFilter_last) || ((int)cutoffFreq != cutoffFreq_last)) {
     for (int i = 0; i < 6; i++) {
-      biquadFilterInitLPF(&FilterLPF[i], 100, (unsigned int)cutoffFreq);  // Remote control filter
+      biquadFilterInitLPF(&FilterLPF[i], (unsigned int)cutoffFreq, 1000);
     }
 
     enableDFilter_last = (int)enableDFilter;

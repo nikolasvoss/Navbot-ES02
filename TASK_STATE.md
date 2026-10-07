@@ -1,20 +1,18 @@
-# Task state: merge bounded serial logging
+# Task state: merge filter correction into sensor roadmap
 
-Goal: merge source commit `5aa6f78cad350b6058b18ef35d7841934db1a0cb` into `codex/sensor-data-roadmap` while preserving the target branch's existing serial formats, capture tools, rates, and control behavior.
+Goal: merge commit `c61c3f9` from `codex/filter-unit-correction` into `codex/sensor-data-roadmap`, preserving the target branch's SerialLogger format and behavior.
 
-Target baseline: `f4e16591aaed9f4354f32242f9265d729bc33685`. The source commit was based on `a9c2131f5a8bce64755541241d8f7cd793e1601e`; the branches diverged after that base.
+Target baseline: `59a35d0b485a6b111762d25490dfc92e16ad846b`. The source commit shares ancestor `a9c2131f5a8bce64755541241d8f7cd793e1601e` and was independently scope-reviewed before integration.
 
-Decision: extend the target branch's existing `SerialLogger` as the sole bounded queue and asynchronous logger. A second `Telemetry` sender would duplicate queue ownership and risk changing the target CSV contracts. The logger now accepts selected-debug snapshots, uses one statically allocated 32-record internal-RAM queue, formats in its sender, and latches a sticky incomplete reason on failure. The target's diagnostic and TRACE/CTRL/BAL/DRIVE formats, CH340 baud, trace cadence, diagnostic interval, motor logic, and safety behavior remain the target contracts. No incomplete marker is emitted.
+Decision: retain the target branch's baud values, 17-field asynchronous diagnostic logger, and microsecond IMU schedule. Merge the filter coefficient and caller updates. Treat the live 25-field capture as evidence for the earlier diagnostic image only; it does not validate the target branch's current SerialLogger transport.
 
 Progress:
-- [x] Inspect both branch histories, target logger, telemetry helper, producer paths, capture consumers, and serial notes.
-- [x] Resolve the merge conflict with one queue and one asynchronous log sender.
-- [x] Move selected `print_data()` cases 1–45 to fixed snapshots; retain the target TRACE/CTRL/BAL/DRIVE producer rows and their cadence.
-- [x] Add bounded overflow status and blocked-sender host checks.
-- [x] Host logger test passed: blocked write, immediate producer return, depth 32, sticky overflow/rejection, FIFO, and queue reuse.
-- [x] Normal firmware build passed: 737,236 bytes flash; 40,976 bytes globals.
-- [x] Diagnostic firmware build passed with the source macro restored to normal mode afterward: 407,414 bytes flash; 33,456 bytes globals.
-- [ ] Finish independent scope review and final diff check.
-- [ ] Create the merge commit on `codex/sensor-data-roadmap` (no push requested).
+- [x] Verify target branch and worktree are clean.
+- [x] Merge the scoped filter correction and resolve conflicts in `TASK_STATE.md`, `sensor-diagnostic-mode.md`, and `OllieFOCdrive.ino`.
+- [x] Host filter regression passed: gain 0.707107 at 20 Hz / 100 Hz.
+- [x] Normal firmware build passed: 737064 bytes program storage and 40848 bytes globals.
+- [x] Diagnostic firmware build passed: 407262 bytes program storage and 33328 bytes globals.
+- [x] Inspect all filter call sites and the complete merge diff; `git diff --check` passed.
+- [ ] Run the independent final scope check and commit the merge.
 
-Hardware activity: none during this merge. Balance timing quality under motor load remains unmeasured.
+Hardware: no new hardware action during this merge. The existing diagnostic image remains from the earlier live test; no firmware was flashed as part of this integration.

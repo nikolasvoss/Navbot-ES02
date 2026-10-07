@@ -36,7 +36,7 @@ typedef struct
 } Touch_t;
 
 
-void TouchscreenInit(unsigned int cutoffFreq);
+void TouchscreenInit(unsigned int samplingRateHz);
 void ReadTouchDat(void);
 void TouchBiquadFilter(void);
 
