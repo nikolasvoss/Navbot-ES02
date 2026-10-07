@@ -29,7 +29,7 @@ Commander command = Commander(Serial);
 
 // Safe bring-up: read sensors and receiver without energizing wheels or servos.
 // Set to 0 only after the diagnostic readings and power supply are checked.
-#define SENSOR_DIAGNOSTIC_MODE 1
+#define SENSOR_DIAGNOSTIC_MODE 0
 
 // Tuned two-wheel drive defaults, including corrected wheel-speed timing and
 // CH3 scaling. Apply them at startup and through a CH5 switch transition.
