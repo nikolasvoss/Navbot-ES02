@@ -16,7 +16,7 @@ def main():
                         help="new log path (default: drive-YYYYMMDD-HHMMSS.log)")
     parser.add_argument("--seconds", type=float, default=25)
     parser.add_argument("--port", help="CH340 serial port; default from capture_balance_trace.py")
-    parser.add_argument("--baud-rate", type=int, default=115200)
+    parser.add_argument("--baud-rate", type=int, default=576_000)
     parser.add_argument("--interactive", action="store_true",
                         help="allow documented live-gain commands during capture")
     args = parser.parse_args()

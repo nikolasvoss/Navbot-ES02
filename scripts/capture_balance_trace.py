@@ -24,8 +24,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--port", default="/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0")
-    parser.add_argument("--baud-rate", type=int, default=2_000_000,
-                        help="serial baud rate (default: 2000000; use 115200 for diagnostic live-tuning firmware)")
+    parser.add_argument("--baud-rate", type=int, default=576_000,
+                        help="serial baud rate (default: 576000)")
     parser.add_argument("--seconds", type=float, default=20, help="capture time after trace starts (default: 20)")
     parser.add_argument("--output", type=Path, default=Path("balance-trace.log"))
     parser.add_argument("--trace-mode", type=int, choices=(55, 56, 57, 58), default=55,
@@ -44,13 +44,13 @@ def main():
     try:
         with connection, args.output.open("w", encoding="utf-8") as log:
             if args.trace_mode == 55:
-                log.write("# TRACE,time_ms,ch5_mode,ch6_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,pitch_deg,servo1_cmd_deg,servo2_cmd_deg,servo3_cmd_deg,servo4_cmd_deg,servo1_range_deg,servo2_range_deg,servo3_range_deg,servo4_range_deg,motor1_target,motor2_target\n")
+                log.write("# TRACE,time_ms,ch5_mode,ch6_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,pitch_deg,servo1_cmd_deg,servo2_cmd_deg,servo3_cmd_deg,servo4_cmd_deg,servo1_range_deg,servo2_range_deg,servo3_range_deg,servo4_range_deg,motor1_target,motor2_target,sequence,logger_dropped,uart_write_failures\n")
             elif args.trace_mode == 56:
-                log.write("# CTRL,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,gyro_z_rad_s,body_turn_command,angle_error_deg,angle_output,yaw_error,yaw_output,motor1_target,motor2_target,max_servo_range_deg\n")
+                log.write("# CTRL,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,gyro_z_rad_s,body_turn_command,angle_error_deg,angle_output,yaw_error,yaw_output,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures\n")
             elif args.trace_mode == 57:
-                log.write("# BAL,time_ms,ch5_mode,voltage_min_raw_v,roll_deg,angle_error_deg,angle_out_p,angle_out_i,angle_out_d,body_x,motor1_target,motor2_target,max_servo_range_deg\n")
+                log.write("# BAL,time_ms,ch5_mode,voltage_min_raw_v,roll_deg,angle_error_deg,angle_out_p,angle_out_i,angle_out_d,body_x,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures\n")
             else:
-                log.write("# DRIVE,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,ch3_target,effective_speed_target,motor1_velocity_f,motor2_velocity_f,tick_dt_s,speed_error,speed_out_p,speed_out_i,speed_out_d,speed_output,speed_body_x_raw,body_x,body_pitching_f,roll_ok,angle_output,angle_out_p,angle_out_i,angle_out_d,wheel_speed_feedback,motor1_target,motor2_target,top_ball_x,touch_x,body_pitching,max_servo_range_deg\n")
+                log.write("# DRIVE,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,ch3_target,effective_speed_target,motor1_velocity_f,motor2_velocity_f,tick_dt_s,speed_error,speed_out_p,speed_out_i,speed_out_d,speed_output,speed_body_x_raw,body_x,body_pitching_f,roll_ok,angle_output,angle_out_p,angle_out_i,angle_out_d,wheel_speed_feedback,motor1_target,motor2_target,top_ball_x,touch_x,body_pitching,max_servo_range_deg,sequence,logger_dropped,uart_write_failures\n")
             print(f"Waiting for firmware startup on {args.port}...", flush=True)
             startup_deadline = time.monotonic() + 12
             while time.monotonic() < startup_deadline:

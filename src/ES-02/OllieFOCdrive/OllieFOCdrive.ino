@@ -13,7 +13,7 @@
 #include "touchscreen.h"
 #include "ble.h"
 #include "robot.h"
-#include "Telemetry.h"
+#include "SerialLogger.h"
 
 
 // commander communication instance
@@ -29,7 +29,7 @@ Commander command = Commander(Serial);
 
 // Safe bring-up: read sensors and receiver without energizing wheels or servos.
 // Set to 0 only after the diagnostic readings and power supply are checked.
-#define SENSOR_DIAGNOSTIC_MODE 0
+#define SENSOR_DIAGNOSTIC_MODE 1
 
 // Tuned two-wheel drive defaults, including corrected wheel-speed timing and
 // CH3 scaling. Apply them at startup and through a CH5 switch transition.
@@ -89,10 +89,10 @@ Commander command = Commander(Serial);
 #define SBUS_CHANNEL_MAX 1792
 #define SBUS_CHANNEL_MIN 192
 
-#define SERIAL_BAUD_RATE 115200
-#define DIAGNOSTIC_SERIAL_BAUD_RATE 115200
-#define LIVE_TUNING_SERIAL_BAUD_RATE 115200
-#define DIAGNOSTIC_FRAME_INTERVAL_MS 50
+#define SERIAL_BAUD_RATE 576000
+#define DIAGNOSTIC_SERIAL_BAUD_RATE 576000
+#define LIVE_TUNING_SERIAL_BAUD_RATE 576000
+#define DIAGNOSTIC_IMU_INTERVAL_US 10000
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
 constexpr float DRIVE_BODY_X_LIMIT_M = 0.010f;
 constexpr float DRIVE_WHEEL_FEEDBACK_LIMIT = 8.0f;
@@ -153,6 +153,9 @@ float pitch_ok;  //
 
 zeroBias_t zeroBias;  // Zero offset
 unsigned long timestamp_prev = 0;
+uint32_t controlGateSequence = 0;
+uint32_t activeTraceSequence = 0;
+uint32_t diagnosticSequence = 0;
 float IMUtime_dt = 0;
 
 /* Low-pass filter parameters */
@@ -457,6 +460,7 @@ void setup() {
 
   Serial.begin(SENSOR_DIAGNOSTIC_MODE ? DIAGNOSTIC_SERIAL_BAUD_RATE :
                (DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? LIVE_TUNING_SERIAL_BAUD_RATE : SERIAL_BAUD_RATE));
+  SerialLoggerBegin();
   FlashInit();  // Read flash data
   pinMode(BOARD_PIN_LED, OUTPUT);
   digitalWrite(BOARD_PIN_LED, LOW);  // 亮
@@ -464,9 +468,9 @@ void setup() {
   delay(500);
 
 #if SENSOR_DIAGNOSTIC_MODE
-  biquadFilterInitLPF(&VoltageFilterLPF, 20, 100);
+  biquadFilterInitLPF(&VoltageFilterLPF, 20, 10000);
   for (int axis = 0; axis < 6; axis++) {
-    biquadFilterInitLPF(&ImuFilterLPF[axis], 20, 100);
+    biquadFilterInitLPF(&ImuFilterLPF[axis], 20, 10000);
   }
   diagnosticImuReady = initICM42688();
   sBus.begin();
@@ -878,8 +882,7 @@ void RXsbus() {
     BodyRoll = mapf(sBus.channels[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);
 
     if (Voltage <= 7.4) {
-      // K56/K57/K58 already include voltage; avoid interleaving warnings with CSV rows.
-      if ((int)Select != 56 && (int)Select != 57 && (int)Select != 58) {
+      if ((int)Select < 55 || (int)Select > 58) {
         Serial.print(" Voltage:");
         Serial.println(Voltage, 5);
       }
@@ -1474,7 +1477,7 @@ void print_data(void) {
 
     case 8:
       //
-      // K8 is also used over the 115200-baud live-tuning connection. The
+      // K8 is also used over the 576000-baud live-tuning connection. The
       // control loop runs much faster than that link can carry these lines.
       if (millis() - lastSbusPrintMs < 50)
         break;
@@ -1914,32 +1917,34 @@ void print_data(void) {
       break;
 
     case 55: {
-      // One row every 20 ms; voltage_min_v includes every raw ADC read in that interval.
-      static unsigned long lastTraceMs = 0;
-      const unsigned long traceMs = millis();
-      if (traceMs - lastTraceMs >= 20) {
-        lastTraceMs = traceMs;
-        const float rawMinV = (float)7.77 / 813.43 * VoltageADCMin;
-        Serial.printf("TRACE,%lu,%d,%d,%.3f,%.3f,%.2f,%.2f,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f\n",
-                      traceMs, pid_gains_mode, posture_or_mark_mode, rawMinV, Voltage,
-                      roll_ok, pitch_ok, servoTraceAngle[0], servoTraceAngle[1],
-                      servoTraceAngle[2], servoTraceAngle[3],
-                      servoTraceMax[0] - servoTraceMin[0], servoTraceMax[1] - servoTraceMin[1],
-                      servoTraceMax[2] - servoTraceMin[2], servoTraceMax[3] - servoTraceMin[3],
-                      motor1.target, motor2.target);
-        VoltageADCMin = VoltageADC;
-        for (int i = 0; i < 4; i++)
+      if (controlGateSequence % 7 == 0) {
+        const uint32_t traceMs = millis();
+        SerialLogRecord row{};
+        row.kind = SERIAL_LOG_TRACE;
+        row.timestamp = traceMs;
+        row.sequence = activeTraceSequence++;
+        row.values[0] = pid_gains_mode;
+        row.values[1] = posture_or_mark_mode;
+        row.values[2] = (float)7.77 / 813.43 * VoltageADCMin;
+        row.values[3] = Voltage;
+        row.values[4] = roll_ok;
+        row.values[5] = pitch_ok;
+        for (int i = 0; i < 4; i++) {
+          row.values[6 + i] = servoTraceAngle[i];
+          row.values[10 + i] = servoTraceMax[i] - servoTraceMin[i];
           servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
+        }
+        row.values[14] = motor1.target;
+        row.values[15] = motor2.target;
+        SerialLoggerSubmit(row);
+        VoltageADCMin = VoltageADC;
       }
       break;
     }
 
     case 56: {
-      // Compact control decomposition for diagnosing opposite wheel targets.
-      static unsigned long lastTraceMs = 0;
-      const unsigned long traceMs = millis();
-      if (traceMs - lastTraceMs >= 20) {
-        lastTraceMs = traceMs;
+      if (controlGateSequence % 7 == 0) {
+        const uint32_t traceMs = millis();
         const float rawMinV = (float)7.77 / 813.43 * VoltageADCMin;
         const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
         int maxServoRange = 0;
@@ -1947,70 +1952,101 @@ void print_data(void) {
           maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
           servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
         }
-        Serial.printf("CTRL,%lu,%d,%.3f,%.3f,%.2f,%.4f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d\n",
-                      traceMs, pid_gains_mode, rawMinV, Voltage, roll_ok,
-                      attitude.gyro.z, BodyTurn,
-                      active ? Angle_Pid.error : 0.0f, active ? Angle_Pid.output : 0.0f,
-                      active ? Yaw_Pid.error : 0.0f, active ? Yaw_Pid.output : 0.0f,
-                      motor1.target, motor2.target, maxServoRange);
+        SerialLogRecord row{};
+        row.kind = SERIAL_LOG_CONTROL;
+        row.timestamp = traceMs;
+        row.sequence = activeTraceSequence++;
+        row.values[0] = pid_gains_mode;
+        row.values[1] = rawMinV;
+        row.values[2] = Voltage;
+        row.values[3] = roll_ok;
+        row.values[4] = attitude.gyro.z;
+        row.values[5] = BodyTurn;
+        row.values[6] = active ? Angle_Pid.error : 0.0f;
+        row.values[7] = active ? Angle_Pid.output : 0.0f;
+        row.values[8] = active ? Yaw_Pid.error : 0.0f;
+        row.values[9] = active ? Yaw_Pid.output : 0.0f;
+        row.values[10] = motor1.target;
+        row.values[11] = motor2.target;
+        row.values[12] = maxServoRange;
+        SerialLoggerSubmit(row);
         VoltageADCMin = VoltageADC;
       }
       break;
     }
 
     case 57: {
-      // Short balance decomposition to reduce serial-line corruption at 2 Mbaud.
-      static unsigned long lastTraceMs = 0;
-      const unsigned long traceMs = millis();
-      if (traceMs - lastTraceMs >= 20) {
-        lastTraceMs = traceMs;
+      if (controlGateSequence % 7 == 0) {
+        const uint32_t traceMs = millis();
         const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
         int maxServoRange = 0;
         for (int i = 0; i < 4; i++) {
           maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
           servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
         }
-        Serial.printf("BAL,%lu,%d,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.4f,%.2f,%.2f,%d\n",
-                      traceMs, pid_gains_mode, (float)7.77 / 813.43 * VoltageADCMin,
-                      roll_ok, active ? Angle_Pid.error : 0.0f,
-                      active ? Angle_Pid.outP : 0.0f, active ? Angle_Pid.outI : 0.0f,
-                      active ? Angle_Pid.outD : 0.0f, active ? BodyX : 0.0f,
-                      motor1.target, motor2.target, maxServoRange);
+        SerialLogRecord row{};
+        row.kind = SERIAL_LOG_BALANCE;
+        row.timestamp = traceMs;
+        row.sequence = activeTraceSequence++;
+        row.values[0] = pid_gains_mode;
+        row.values[1] = (float)7.77 / 813.43 * VoltageADCMin;
+        row.values[2] = roll_ok;
+        row.values[3] = active ? Angle_Pid.error : 0.0f;
+        row.values[4] = active ? Angle_Pid.outP : 0.0f;
+        row.values[5] = active ? Angle_Pid.outI : 0.0f;
+        row.values[6] = active ? Angle_Pid.outD : 0.0f;
+        row.values[7] = active ? BodyX : 0.0f;
+        row.values[8] = motor1.target;
+        row.values[9] = motor2.target;
+        row.values[10] = maxServoRange;
+        SerialLoggerSubmit(row);
         VoltageADCMin = VoltageADC;
       }
       break;
     }
 
     case 58: {
-      // Compact drive-stop trace: correlate speed, posture, balance, and supply
-      // without saturating the serial link during a controlled test.
-      static unsigned long lastTraceMs = 0;
-      const unsigned long traceMs = millis();
-      if (traceMs - lastTraceMs >= 50) {
-        lastTraceMs = traceMs;
+      if (controlGateSequence % 7 == 0) {
+        const uint32_t traceMs = millis();
         const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
         int maxServoRange = 0;
         for (int i = 0; i < 4; i++) {
           maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
           servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
         }
-        Serial.printf("DRIVE,%lu,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.6f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%d\n",
-                      traceMs, pid_gains_mode,
-                      (float)7.77 / 813.43 * VoltageADCMin, Voltage,
-                      MovementSpeed, active ? driveEffectiveSpeed : 0.0f,
-                      Motor1_Velocity_f, Motor2_Velocity_f, time_dt,
-                      active ? Speed_Pid.error : 0.0f,
-                      active ? Speed_Pid.outP : 0.0f, active ? Speed_Pid.outI : 0.0f,
-                      active ? Speed_Pid.outD : 0.0f, active ? Speed_Pid.output : 0.0f,
-                      active ? driveSpeedBodyXRaw : 0.0f,
-                      active ? BodyX : 0.0f, BodyPitching_f, roll_ok,
-                      active ? Angle_Pid.output : 0.0f,
-                      active ? Angle_Pid.outP : 0.0f,
-                      active ? Angle_Pid.outI : 0.0f,
-                      active ? Angle_Pid.outD : 0.0f,
-                      active ? wheelSpeedFeedbackOutput : 0.0f,
-                      motor1.target, motor2.target,
-                      top_ball_x, Touch.XPdatF, BodyPitching, maxServoRange);
+        SerialLogRecord row{};
+        row.kind = SERIAL_LOG_DRIVE;
+        row.timestamp = traceMs;
+        row.sequence = activeTraceSequence++;
+        row.values[0] = pid_gains_mode;
+        row.values[1] = (float)7.77 / 813.43 * VoltageADCMin;
+        row.values[2] = Voltage;
+        row.values[3] = MovementSpeed;
+        row.values[4] = active ? driveEffectiveSpeed : 0.0f;
+        row.values[5] = Motor1_Velocity_f;
+        row.values[6] = Motor2_Velocity_f;
+        row.values[7] = time_dt;
+        row.values[8] = active ? Speed_Pid.error : 0.0f;
+        row.values[9] = active ? Speed_Pid.outP : 0.0f;
+        row.values[10] = active ? Speed_Pid.outI : 0.0f;
+        row.values[11] = active ? Speed_Pid.outD : 0.0f;
+        row.values[12] = active ? Speed_Pid.output : 0.0f;
+        row.values[13] = active ? driveSpeedBodyXRaw : 0.0f;
+        row.values[14] = active ? BodyX : 0.0f;
+        row.values[15] = BodyPitching_f;
+        row.values[16] = roll_ok;
+        row.values[17] = active ? Angle_Pid.output : 0.0f;
+        row.values[18] = active ? Angle_Pid.outP : 0.0f;
+        row.values[19] = active ? Angle_Pid.outI : 0.0f;
+        row.values[20] = active ? Angle_Pid.outD : 0.0f;
+        row.values[21] = active ? wheelSpeedFeedbackOutput : 0.0f;
+        row.values[22] = motor1.target;
+        row.values[23] = motor2.target;
+        row.values[24] = top_ball_x;
+        row.values[25] = Touch.XPdatF;
+        row.values[26] = BodyPitching;
+        row.values[27] = maxServoRange;
+        SerialLoggerSubmit(row);
         VoltageADCMin = VoltageADC;
       }
       break;
@@ -2409,10 +2445,10 @@ void Robot_Tumble(void) {
 }
 
 void DiagnosticLoop(void) {
-  static unsigned long lastImuMs = 0;
+  static uint32_t lastImuScheduleUs = 0;
   static unsigned long lastVoltageMs = 0;
-  static unsigned long lastPrintMs = 0;
   const unsigned long nowMs = millis();
+  const uint32_t nowUs = micros();
 
   sBus.FeedLine();
   if (sBus.toChannels == 1) {
@@ -2422,50 +2458,37 @@ void DiagnosticLoop(void) {
     diagnosticHasRcFrame = true;
   }
 
-  if (diagnosticImuReady && nowMs - lastImuMs >= 10) {
-    lastImuMs = nowMs;
+  if (diagnosticImuReady && (uint32_t)(nowUs - lastImuScheduleUs) >= DIAGNOSTIC_IMU_INTERVAL_US) {
+    lastImuScheduleUs = nowUs;
     ImuUpdate();
+    const long rcAgeMs = diagnosticHasRcFrame ? (long)(nowMs - diagnosticLastRcFrameMs) : -1;
+    const int rcFailsafe = diagnosticHasRcFrame ? sBus.Failsafe() : -1;
+    const float batteryRawV = (float)7.77 / 813.43 * VoltageADC;
+    SerialLogRecord row{};
+    row.kind = SERIAL_LOG_DIAGNOSTIC;
+    row.timestamp = (uint32_t)timestamp_prev;
+    row.sequence = diagnosticSequence++;
+    row.values[0] = attitude.gyro.x;
+    row.values[1] = attitude.gyro.y;
+    row.values[2] = attitude.gyro.z;
+    row.values[3] = attitude.acc.x;
+    row.values[4] = attitude.acc.y;
+    row.values[5] = attitude.acc.z;
+    row.values[6] = attitude.roll;
+    row.values[7] = attitude.pitch;
+    row.values[8] = attitude.yaw;
+    row.values[9] = batteryRawV;
+    row.values[10] = (float)rcAgeMs;
+    row.values[11] = (float)rcFailsafe;
+    row.values[12] = diagnosticImuReady ? 1.0f : 0.0f;
+    SerialLoggerSubmit(row);
   }
   if (nowMs - lastVoltageMs >= 10) {
     lastVoltageMs = nowMs;
     ReadVoltage();
   }
-  if (nowMs - lastPrintMs >= DIAGNOSTIC_FRAME_INTERVAL_MS) {
-    lastPrintMs = nowMs;
-    const long rcAgeMs = diagnosticHasRcFrame ? (long)(nowMs - diagnosticLastRcFrameMs) : -1;
-    const int rcFailsafe = diagnosticHasRcFrame ? sBus.Failsafe() : -1;
-    const float batteryRawV = (float)7.77 / 813.43 * VoltageADC;
-    Telemetry::Frame frame;
-    frame.timestampUs = static_cast<uint64_t>(esp_timer_get_time());
-    frame.set(Telemetry::Channel::GyroX, attitude.gyro.x);
-    frame.set(Telemetry::Channel::GyroY, attitude.gyro.y);
-    frame.set(Telemetry::Channel::GyroZ, attitude.gyro.z);
-    frame.set(Telemetry::Channel::GyroFilteredX, attitude.gyrof.x);
-    frame.set(Telemetry::Channel::GyroFilteredY, attitude.gyrof.y);
-    frame.set(Telemetry::Channel::GyroFilteredZ, attitude.gyrof.z);
-    frame.set(Telemetry::Channel::AccelX, attitude.acc.x);
-    frame.set(Telemetry::Channel::AccelY, attitude.acc.y);
-    frame.set(Telemetry::Channel::AccelZ, attitude.acc.z);
-    frame.set(Telemetry::Channel::AccelFilteredX, attitude.accf.x);
-    frame.set(Telemetry::Channel::AccelFilteredY, attitude.accf.y);
-    frame.set(Telemetry::Channel::AccelFilteredZ, attitude.accf.z);
-    frame.set(Telemetry::Channel::MahonyRoll, attitude.roll);
-    frame.set(Telemetry::Channel::MahonyPitch, attitude.pitch);
-    frame.set(Telemetry::Channel::MahonyYaw, attitude.yaw);
-    frame.set(Telemetry::Channel::ComplementaryRoll, angleX);
-    frame.set(Telemetry::Channel::ComplementaryPitch, angleY);
-    frame.set(Telemetry::Channel::ComplementaryYaw, angleZ);
-    frame.set(Telemetry::Channel::Temperature, attitude.temp);
-    frame.set(Telemetry::Channel::BatteryRaw, batteryRawV);
-    frame.set(Telemetry::Channel::BatteryFiltered, Voltage);
-    frame.set(Telemetry::Channel::RcFrameAge, rcAgeMs);
-    frame.set(Telemetry::Channel::RcFailsafe, rcFailsafe);
-    frame.set(Telemetry::Channel::ImuReady, diagnosticImuReady ? 1.0f : 0.0f);
-    Telemetry::writeCsv(Serial, frame);
-  }
   delay(1);
 }
-
 /**
  * @brief The main execution loop of the program.
  *
@@ -2521,6 +2544,7 @@ void loop() {
 
   // user communication
   command.run();
+  SerialLoggerSetTraceMode((int)Select);
 
   ImuUpdate();  // Update IMU data
   CtrlInput();  // BLE or remote control input
@@ -2530,6 +2554,7 @@ void loop() {
 
   time_dt = (now_us - now_us1) / 1000000.0f;
   if (time_dt >= 0.001f) {   //1kHz
+    controlGateSequence++;
     TouchBiquadFilter();  // Touch screen filter
 
     RemoteControlFiltering();  // Remote control signal filtering

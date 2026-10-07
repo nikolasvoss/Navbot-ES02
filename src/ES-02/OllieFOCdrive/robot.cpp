@@ -1,5 +1,10 @@
 
 #include "robot.h"
+#include "SerialLogger.h"
+
+#define DEBUG_SERIAL_PRINT(...) do { if (!SerialLoggerTraceModeSelected()) Serial.print(__VA_ARGS__); } while (0)
+#define DEBUG_SERIAL_PRINTLN(...) do { if (!SerialLoggerTraceModeSelected()) Serial.println(__VA_ARGS__); } while (0)
+#define DEBUG_SERIAL_PRINTF(...) do { if (!SerialLoggerTraceModeSelected()) Serial.printf(__VA_ARGS__); } while (0)
 #include <ArduinoJson.h>
 #include <vector>
 #include <esp_mac.h>
@@ -41,21 +46,21 @@ void RobotProtocol::build_dev_name(char dev_name[]) {
 
 void RobotProtocol::parseJson(StaticJsonDocument<300> &doc) {
   if (doc["type"].isNull() == true) {
-    Serial.println("JSON type is null ");
+    DEBUG_SERIAL_PRINTLN("JSON type is null ");
   } else {
-    Serial.println("JSON type is sys");
+    DEBUG_SERIAL_PRINTLN("JSON type is sys");
     isSys(doc);
   }
 }
 
 void RobotProtocol::isSys(StaticJsonDocument<300> &doc) {
   String type = doc["type"];
-  Serial.print("type:");
-  Serial.println(type);
+  DEBUG_SERIAL_PRINT("type:");
+  DEBUG_SERIAL_PRINTLN(type);
  if (type == MESSAGE_TYPE.GET_DEVICE_INFO) {
     send_device_info();
   } else {
-    Serial.println("Invalid json keyworeds.\r\n");
+    DEBUG_SERIAL_PRINTLN("Invalid json keyworeds.\r\n");
   }
 }
 
@@ -66,9 +71,9 @@ void RobotProtocol::send_device_info() {
   String device_info = get_device_info();
 
   // Send data according to the specified channel
-  Serial.print("device info:");
+  DEBUG_SERIAL_PRINT("device info:");
 
-  Serial.println(device_info);
+  DEBUG_SERIAL_PRINTLN(device_info);
 
   ble_tx_add_string(device_info);
 }
@@ -128,13 +133,13 @@ double RobotProtocol::get_battery_level() {
   return battery_level;
 }
 void RobotProtocol::json_test(char *json_arr) {
-  Serial.print("json test: ");
-  Serial.println(json_arr);
+  DEBUG_SERIAL_PRINT("json test: ");
+  DEBUG_SERIAL_PRINTLN(json_arr);
   String payload_str = String(json_arr);
   StaticJsonDocument<300> doc;
   DeserializationError error = deserializeJson(doc, payload_str);
   if (error) {
-    Serial.println("json data error");
+    DEBUG_SERIAL_PRINTLN("json data error");
   } else {
     parseJson(doc);
   }

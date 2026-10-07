@@ -1,43 +1,26 @@
-# Plot and capture sensor data with SerialPlot
+# Use the sensor diagnostic mode
 
-The sensor diagnostic mode reads the IMU, battery ADC, and SBUS receiver without initializing motor or servo control. It holds both motor-driver enable pins low and returns from setup before BLE, FOC, servos, or balance control are initialized. `SENSOR_DIAGNOSTIC_MODE` defaults to `0`; enable it in the sketch and rebuild before using this procedure.
+The sensor diagnostic mode reads the IMU, battery ADC, and SBUS receiver without initializing motor or servo control. It holds the two motor-driver enable pins low and returns from normal setup before initializing BLE, FOC, servos, or balance control. The source currently sets `SENSOR_DIAGNOSTIC_MODE` to `1`. Set it to `0` and rebuild for normal motor-control firmware.
 
-Support the robot mechanically during this check. The legs do not move in diagnostic mode. The diagnostic stream does not calculate controller outputs and cannot establish safe or stable behavior under motor load.
+Support the robot mechanically during this check. The legs do not move in diagnostic mode. This mode does not establish safe or stable behavior under motor load.
 
-## Connect and record
+## Read the serial stream
 
-Open SerialPlot and configure its ASCII reader:
+The diagnostic firmware sends 17 numeric CSV fields at 576000 baud over the existing CH340 UART, provisionally pending a future measurement of the physical UART rate. It schedules one row after each fresh software SPI IMU read, nominally every 10 ms (100 Hz). The row contains the pre-read `time_us`, a monotonic `sequence`, the existing sensor/receiver values, and cumulative logger queue-drop and UART-write-failure counters. `time_us` marks the start of the SPI read, not PC receipt time. The sensor remains configured at its existing 1 kHz output rate; the software reads the latest sample at nominal 100 Hz, so this does not mean a new conversion is produced only every 10 ms. Close SerialPlot or another serial monitor before opening the port because the port allows one client at a time.
 
-- Select the CH340 serial port at 115200 baud. Keep DTR and RTS deasserted; asserted RTS can hold the ESP32 in reset.
-- Choose ASCII data, comma as the column delimiter, and 25 channels (or automatic channel detection).
-- Leave **Filter by Prefix** disabled. This option filters whole lines; it does not remove characters from CSV rows.
-- Connect. Close other serial monitors first because the port accepts one client at a time.
+For plain text output, run:
 
-Use SerialPlot's snapshot/export control to save a CSV capture. Each firmware row contains 24 sensor/status values and the monotonic timestamp in seconds as column 25. Rows contain only comma-separated numeric values and end with a newline. The nominal cadence is 50 ms (20 Hz) over the current CH340 USB-UART connection. A device check observed approximately 50 ms between frames in this motor-disabled diagnostic mode; behavior under motor load has not been measured.
+```bash
+python3 scripts/sensor_monitor.py
+```
 
-SerialPlot provides live multi-channel plots and CSV snapshots; its upstream feature list does not include FFT plots. Snapshot exports use the default six significant digits, which rounds timestamps to 0.1-second increments near 10,000 seconds of uptime and can collapse some 50 ms samples to the same timestamp. Use raw serial captures for precise timing and FFT validation. Column 25 is the monotonic timestamp; columns 1–24 are listed below.
+The monitor leaves DTR and RTS deasserted. In SerialPlot, select the current `/dev/ttyUSB*` port, set DTR and RTS off, and choose ASCII, comma delimiter, and 17 channels. The first channel is `time_us`, followed by `sequence`; the remaining fields are gyro XYZ (rad/s), acceleration XYZ (g), roll/pitch/yaw (degrees), raw battery voltage, receiver age/failsafe, IMU-ready, queue drops, and UART-write failures. Port names can change, so identify the connected device before use.
 
-## Channel map
+Historical hardware capture at 921600 baud on 2026-10-07 did not pass: across 95.54 seconds of device timestamps, 7,824 valid 17-field rows arrived (81.89 rows/s) out of about 100.01 producer records/s inferred from sequence IDs. There were 1,714 malformed numeric lines, 1,731 missing sequence IDs, and zero reported firmware queue drops or UART-write failures. The host receive path was losing or corrupting bytes; the test did not isolate the CH340, cable, host driver, or MCP. The current 576000-baud setting was selected later by the user and has not yet been measured on the hardware. Schedule a UART rate/integrity capture at this setting before treating it as accepted.
 
-The catalog order is fixed because SerialPlot reads values by position. Do not reorder or remove fields without updating this table. “Unfiltered” means bias-corrected and scaled sensor values before the software biquad filter; raw IMU integer counts are not included. Gyroscope values are in radians per second despite stale comments elsewhere in the firmware.
+The software IMU read rate is nominally 100 Hz. The diagnostic LPF cutoff is 20 Hz at a nominal 100 Hz software sample rate (10,000 µs period), giving a 50 Hz Nyquist limit. Raw gyro and acceleration fields bypass that LPF, so content above 50 Hz can alias; the 20 Hz filter does not protect those raw fields. Actual timing is determined by software scheduling and must be checked from `time_us` intervals. The first serial lines contain boot and setup text before the CSV rows. The `DIAG,boot` line reports the reset reason and IMU status. The voltage field uses direct ADC conversion and does not have the filtered value's startup delay.
 
-| CSV index | Signal | Unit |
-| ---: | --- | --- |
-| 1–3 | Unfiltered gyro X, Y, Z | rad/s |
-| 4–6 | Filtered gyro X, Y, Z | rad/s |
-| 7–9 | Unfiltered acceleration X, Y, Z | g |
-| 10–12 | Filtered acceleration X, Y, Z | g |
-| 13–15 | Mahony roll, pitch, yaw | deg |
-| 16–18 | Complementary roll, pitch, yaw | deg |
-| 19 | IMU temperature | °C |
-| 20 | Battery voltage from the current raw ADC sample | V |
-| 21 | Battery voltage from the filtered ADC value | V |
-| 22 | Age of the last SBUS frame (`-1` before the first frame) | ms |
-| 23 | SBUS failsafe (`-1` before the first frame) | numeric flag |
-| 24 | IMU initialization status | numeric flag |
-| 25 | Monotonic timestamp since boot | seconds |
-
-Controller and motor outputs are not part of this sensor-only diagnostic stream. The safe startup path does not run controller calculations; capturing those values needs a separate decision about how the controller should run and whether motor actuation is allowed.
+If the ROM reports `DOWNLOAD(USB/UART0)` and waits for download, the ESP32 entered its flash loader. Keep DTR off, then pulse RTS or press RESET/EN. A normal firmware boot reports `SPI_FAST_FLASH_BOOT`. Do not run `sensor_monitor.py` and SerialPlot at the same time.
 
 ## Build and upload the diagnostic image
 
@@ -47,6 +30,6 @@ Set `SENSOR_DIAGNOSTIC_MODE` to `1` in `src/ES-02/OllieFOCdrive/OllieFOCdrive.in
 python3 scripts/build_firmware.py
 ```
 
-Upload the resulting `build/flash` image with the configured `navbot_flash` MCP tool. Follow `AGENTS.md`; close the serial connection before uploading and keep balance disabled with motor outputs safe. Set the define back to `0` and rebuild when you need the normal motor-control firmware.
+Upload the resulting `build/flash` image with the configured `navbot_flash` MCP tool. Follow the current project instructions in `AGENTS.md`; close the serial connection before uploading and keep the motor outputs safe. Set the define back to `0` and rebuild when you need the normal motor-control firmware.
 
-If the ROM reports `DOWNLOAD(USB/UART0)` and waits for download, the ESP32 entered its flash loader. Keep DTR off, then pulse RTS or press RESET/EN. A normal firmware boot reports `SPI_FAST_FLASH_BOOT`.
+Sensor readings establish that the sensors and receiver respond with motor control disabled. They do not establish that the robot is safe or stable under motor load.

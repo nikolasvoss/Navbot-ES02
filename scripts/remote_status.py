@@ -21,7 +21,7 @@ except ImportError:
     sys.exit("pyserial is required: python3 -m pip install pyserial")
 
 
-BAUD_RATE = 2_000_000
+BAUD_RATE = 576_000
 CHANNEL_PATTERN = re.compile(r"\bch:(\d+)")
 INTERVAL_PATTERN = re.compile(r"\bsbus_dt_ms:(\d+)")
 SWITCH_NAMES = {
@@ -100,7 +100,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", help="USB serial port; auto-detected if exactly one exists")
     parser.add_argument("--baud-rate", type=int, default=BAUD_RATE,
-                        help="serial baud rate (default: 2000000; use 115200 for diagnostic live-tuning firmware)")
+                        help="serial baud rate (default: 576000)")
     parser.add_argument("--timeout", type=float, default=15.0, help="seconds to wait (default: 15)")
     args = parser.parse_args()
     if args.timeout <= 0:

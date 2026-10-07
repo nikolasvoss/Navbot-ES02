@@ -127,6 +127,14 @@ def summarize(path):
         lines.append(f"- Zeitspanne der gültigen Datensätze: **{duration:.2f} s**"
                      + (f"; Medianabstand zwischen gültigen Datensätzen: **{statistics.median(intervals):.1f} ms**"
                         if intervals else ""))
+    if header and "sequence" in header:
+        sequence = [int(row["sequence"]) for row in data]
+        missing = sum(max(0, current - previous - 1) for previous, current in zip(sequence, sequence[1:]))
+        lines.append(f"- Sequenzlücken: **{missing}**; Gerätezeitstempel: `time_ms`, nicht PC-Empfangszeit")
+    if header and "logger_dropped" in header:
+        dropped = max(int(row["logger_dropped"]) for row in data)
+        write_failures = max(int(row["uart_write_failures"]) for row in data)
+        lines.append(f"- Senderzähler am letzten erfassten Snapshot: verworfene Queue-Datensätze **{dropped}**, UART-Schreibfehler **{write_failures}**")
 
     if "ch5_mode" in (header or []):
         modes = [int(row["ch5_mode"]) for row in data if "ch5_mode" in row]
