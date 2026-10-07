@@ -6,9 +6,6 @@ Use `docs/robot/` and `docs/cm5/` for complete hardware and software documentati
 
 Build the default firmware from the project root with `python3 scripts/build_firmware.py`. The script writes Arduino CLI output to `build/flash`; pass `--help` for sketch, board, output, and build-property options. To flash a compiled build, use the configured `navbot_flash` MCP tool `flash_firmware` and pass the absolute build directory from the active worktree. Check the serial MCP `list_ports` before reporting that the board is disconnected, and close the serial MCP connection before flashing. Keep balance disabled and motor outputs safe.
 
-## Continuity for Long Tasks
-For multi-step tasks, keep TASK_STATE.md in project root up to date with the goal, decisions, progress, open items, and next step. Update it instead of accumulating old versions. When resuming, read it and verify the actual project state. Short tasks don’t need a state file.
-
 ## How to use the hardware documentation
 
 1. For a hardware-related task, read the canonical [robot hardware overview](docs/robot/hardware/system-overview.md) first. It identifies the relevant board, subsystem, and source of evidence.
