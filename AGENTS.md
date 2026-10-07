@@ -4,7 +4,7 @@ Before changing USB, serial, telemetry, or flashing behavior, read the agent-onl
 
 Use `docs/robot/` and `docs/cm5/` for complete hardware and software documentation. `dev_notes/` is for concise developer reminders; `agent_notes/` is agent-only working context and evidence, not a normal developer entry point.
 
-Build the default firmware from the project root with `python3 scripts/build_firmware.py`. The script writes Arduino CLI output to `build/flash`; pass `--help` for sketch, board, output, and build-property options. To flash a compiled build, use the configured `navbot_flash` MCP tool `flash_firmware` and pass the absolute build directory from the active worktree. Check the serial MCP `list_ports` before reporting that the board is disconnected, and close the serial MCP connection before flashing. Keep balance disabled and motor outputs safe.
+Build the default firmware from the project root with `python3 scripts/build_firmware.py`. The script writes Arduino CLI output to `build/flash`; pass `--help` for sketch, board, output, and build-property options. To flash a compiled build, use the configured `navbot_flash` MCP tool `flash_firmware` and pass the absolute build directory from the active worktree. Do not infer that the board is disconnected from an empty sandbox `/dev` or Arduino CLI `operation not permitted`; check the serial MCP `list_ports` before reporting it as disconnected. Close the serial MCP connection before flashing. Keep balance disabled and motor outputs safe.
 
 ## How to use the hardware documentation
 
