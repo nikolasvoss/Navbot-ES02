@@ -26,14 +26,14 @@ typedef struct biquadFilter_s {
 
 float filterGetNotchQ(float centerFreq, float cutoffFreq);
 //二阶滤波器初始化
-void biquadFilterUpdate(biquadFilter_t *filter, unsigned int filterFreq, unsigned int refreshRate, float Q, biquadFilterType_e filterType);
+void biquadFilterUpdate(biquadFilter_t *filter, unsigned int cutoffHz, unsigned int samplingRateHz, float Q, biquadFilterType_e filterType);
 //二阶陷波器初始化
-void biquadFilterInitNotch(biquadFilter_t *filter, unsigned int samplingFreq, unsigned int filterFreq, unsigned int cutoffHz);
+void biquadFilterInitNotch(biquadFilter_t *filter, unsigned int samplingRateHz, unsigned int centerFrequencyHz, unsigned int cutoffHz);
 //二阶低通滤波器初始化
-void biquadFilterInitLPF(biquadFilter_t *filter, unsigned int filterFreq ,unsigned int samplingFreq);
+void biquadFilterInitLPF(biquadFilter_t *filter, unsigned int cutoffHz, unsigned int samplingRateHz);
 // Computes a biquad_t filter on a sample
 float biquadFilterApply(biquadFilter_t *filter, float input);
-void biquadFilterInit(biquadFilter_t *filter, float filterFreq, unsigned int refreshRate, float Q, biquadFilterType_e filterType);
+void biquadFilterInit(biquadFilter_t *filter, float cutoffHz, unsigned int samplingRateHz, float Q, biquadFilterType_e filterType);
 //pt1获取滤波增益(截止频率 采样时间)
 float pt1FilterGain(float f_cut, float dT);
 //pt1初始化低通滤波器

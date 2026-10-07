@@ -41,15 +41,15 @@ float filterGetNotchQ(float centerFreq, float cutoffFreq)
 }
 
 // Initialize second-order low-pass filter
-void biquadFilterInitLPF(biquadFilter_t *filter, unsigned int filterFreq ,unsigned int samplingFreq)
+void biquadFilterInitLPF(biquadFilter_t *filter, unsigned int cutoffHz, unsigned int samplingRateHz)
 {
-    biquadFilterInit(filter, filterFreq, samplingFreq,  BIQUAD_Q, FILTER_LPF);
+    biquadFilterInit(filter, cutoffHz, samplingRateHz, BIQUAD_Q, FILTER_LPF);
 }
 
 
-void biquadFilterInit(biquadFilter_t *filter, float filterFreq, unsigned int refreshRate, float Q, biquadFilterType_e filterType)
+void biquadFilterInit(biquadFilter_t *filter, float cutoffHz, unsigned int samplingRateHz, float Q, biquadFilterType_e filterType)
 {
-    biquadFilterUpdate(filter, (unsigned int)filterFreq, (unsigned int)refreshRate, Q, filterType);
+    biquadFilterUpdate(filter, (unsigned int)cutoffHz, samplingRateHz, Q, filterType);
 
     // zero initial samples
     filter->x1 = filter->x2 = 0;
@@ -60,10 +60,10 @@ void biquadFilterInit(biquadFilter_t *filter, float filterFreq, unsigned int ref
 
 
 // Initialize second-order filter
-void biquadFilterUpdate(biquadFilter_t *filter, unsigned int filterFreq, unsigned int refreshRate, float Q, biquadFilterType_e filterType)
+void biquadFilterUpdate(biquadFilter_t *filter, unsigned int cutoffHz, unsigned int samplingRateHz, float Q, biquadFilterType_e filterType)
 {
     // setup variables
-    const float omega = 2.0f * M_PIf * filterFreq * refreshRate * 0.000001f;
+    const float omega = 2.0f * M_PIf * cutoffHz / samplingRateHz;
     const float sn = sinf(omega);
     const float cs = cosf(omega);
     const float alpha = sn / (2.0f * Q);
@@ -111,10 +111,10 @@ void biquadFilterUpdate(biquadFilter_t *filter, unsigned int filterFreq, unsigne
 
 
 // Initialize second-order notch filter (struct variable, sampling frequency, center frequency, cutoff frequency)
-void biquadFilterInitNotch(biquadFilter_t *filter, unsigned int samplingFreq, unsigned int filterFreq, unsigned int cutoffHz)
+void biquadFilterInitNotch(biquadFilter_t *filter, unsigned int samplingRateHz, unsigned int centerFrequencyHz, unsigned int cutoffHz)
 {
-    float Q = filterGetNotchQ(filterFreq, cutoffHz);
-    biquadFilterInit(filter, samplingFreq, filterFreq, Q, FILTER_NOTCH);
+    float Q = filterGetNotchQ(centerFrequencyHz, cutoffHz);
+    biquadFilterInit(filter, centerFrequencyHz, samplingRateHz, Q, FILTER_NOTCH);
 }
 
 

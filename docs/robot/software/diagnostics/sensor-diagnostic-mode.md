@@ -8,14 +8,16 @@ Support the robot mechanically during this check. The legs do not move in diagno
 
 Open SerialPlot and configure its ASCII reader:
 
-- Select the CH340 serial port at 115200 baud. Keep DTR and RTS deasserted; asserted RTS can hold the ESP32 in reset.
+- Select the CH340 serial port at 576000 baud. Keep DTR and RTS deasserted; asserted RTS can hold the ESP32 in reset.
 - Choose ASCII data, comma as the column delimiter, and 25 channels (or automatic channel detection).
 - Leave **Filter by Prefix** disabled. This option filters whole lines; it does not remove characters from CSV rows.
 - Connect. Close other serial monitors first because the port accepts one client at a time.
 
-Use SerialPlot's snapshot/export control to save a CSV capture. Each firmware row contains 24 sensor/status values and the monotonic timestamp in seconds as column 25. Rows contain only comma-separated numeric values and end with a newline. The nominal cadence is 50 ms (20 Hz) over the current CH340 USB-UART connection. A device check observed approximately 50 ms between frames in this motor-disabled diagnostic mode; behavior under motor load has not been measured.
+Use SerialPlot's snapshot/export control to save a CSV capture. Each firmware row contains 24 sensor/status values and the monotonic timestamp in seconds as column 25. Rows contain only comma-separated numeric values and end with a newline. The configured cadence is 10 ms (100 Hz) over the CH340 USB-UART connection, matching the diagnostic IMU update interval. A motor-disabled capture on 2026-10-07 contained 250 complete rows with `imu_ok=1`. Its 249 timestamp intervals had a 10.000 ms median and ranged from 9.966 to 10.040 ms; none exceeded 15 ms. This timing check does not measure the filter's frequency response. Behavior under motor load has not been measured.
 
-SerialPlot provides live multi-channel plots and CSV snapshots; its upstream feature list does not include FFT plots. Snapshot exports use the default six significant digits, which rounds timestamps to 0.1-second increments near 10,000 seconds of uptime and can collapse some 50 ms samples to the same timestamp. Use raw serial captures for precise timing and FFT validation. Column 25 is the monotonic timestamp; columns 1–24 are listed below.
+The same stationary capture showed filtered-to-unfiltered standard-deviation ratios of 0.641 for gyro X and 0.733 for acceleration Z. Raw battery readings ranged from 7.250077 to 7.307390 V, while filtered readings ranged from 7.262542 to 7.293375 V. These values show smoothing of the stationary signals. They do not verify a 20 Hz cutoff because no controlled vibration or frequency sweep was applied. The host regression test exercises the production filter functions for the 20 Hz and 100 Hz case.
+
+SerialPlot provides live multi-channel plots and CSV snapshots; its upstream feature list does not include FFT plots. Snapshot exports use the default six significant digits, which rounds timestamps to 0.1-second increments near 10,000 seconds of uptime and can collapse short-interval samples. Use raw serial captures for precise timing and FFT validation. Column 25 is the monotonic timestamp; columns 1–24 are listed below.
 
 ## Channel map
 

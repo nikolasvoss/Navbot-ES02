@@ -7,11 +7,11 @@ biquadFilter_t TouchLPF[2]; // Second-order low-pass filter
 uint8_t TouchOk = 0;
 uint8_t TouchList = 0;
 
-void TouchscreenInit(unsigned int cutoffFreq)
+void TouchscreenInit(unsigned int samplingRateHz)
 {
     Serial1.begin(115200, SERIAL_8N1, RXD1, TXD1);
-    biquadFilterInitLPF(&TouchLPF[0], (unsigned int)100, (unsigned int)cutoffFreq);
-    biquadFilterInitLPF(&TouchLPF[1], (unsigned int)100, (unsigned int)cutoffFreq);
+    biquadFilterInitLPF(&TouchLPF[0], 100, samplingRateHz);
+    biquadFilterInitLPF(&TouchLPF[1], 100, samplingRateHz);
 }
 
 

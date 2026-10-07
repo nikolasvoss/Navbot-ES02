@@ -90,9 +90,9 @@ Commander command = Commander(Serial);
 #define SBUS_CHANNEL_MIN 192
 
 #define SERIAL_BAUD_RATE 115200
-#define DIAGNOSTIC_SERIAL_BAUD_RATE 115200
+#define DIAGNOSTIC_SERIAL_BAUD_RATE 576000
 #define LIVE_TUNING_SERIAL_BAUD_RATE 115200
-#define DIAGNOSTIC_FRAME_INTERVAL_MS 50
+#define DIAGNOSTIC_FRAME_INTERVAL_MS 10
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
 constexpr float DRIVE_BODY_X_LIMIT_M = 0.010f;
 constexpr float DRIVE_WHEEL_FEEDBACK_LIMIT = 8.0f;
@@ -484,7 +484,7 @@ void setup() {
     biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)LPF_CUTOFF_FREQ, (unsigned int)RATE_HZ);
   }
 
-  biquadFilterInitLPF(&VoltageFilterLPF, 50.0f, 100);  // Voltage filter function initialization
+  biquadFilterInitLPF(&VoltageFilterLPF, 50, 1000);
 
   //  Initialize servo
   servoControl.initialize();
@@ -505,15 +505,15 @@ void setup() {
   sBus.begin();
 
   for (int i = 0; i < 6; i++)
-    biquadFilterInitLPF(&FilterLPF[i], 100, (unsigned int)cutoffFreq);  // Remote control filter
+    biquadFilterInitLPF(&FilterLPF[i], (unsigned int)cutoffFreq, 1000);
 
-  biquadFilterInitLPF(&FilterLPF[8], 50, (unsigned int)cutoffFreq);   // Remote control filter
-  biquadFilterInitLPF(&FilterLPF[9], 50, (unsigned int)cutoffFreq);   // Remote control filter
-  biquadFilterInitLPF(&FilterLPF[10], 200, (unsigned int)400);        // Touchscreen PID filter
-  biquadFilterInitLPF(&FilterLPF[11], 200, (unsigned int)400);        // Touchscreen PID filter
+  biquadFilterInitLPF(&FilterLPF[8], 50, 1000);
+  biquadFilterInitLPF(&FilterLPF[9], 50, 1000);
+  biquadFilterInitLPF(&FilterLPF[10], 200, 1000);
+  biquadFilterInitLPF(&FilterLPF[11], 200, 1000);
 
   // use monitoring with serial
-  TouchscreenInit(500);
+  TouchscreenInit(1000);
   // enable more verbose output for debugging
   // comment out if not needed
   SimpleFOCDebug::enable(&Serial);
@@ -2356,7 +2356,7 @@ void RemoteControlFiltering(void)  // Remote control filter
 
   if (((int)enableDFilter != enableDFilter_last) || ((int)cutoffFreq != cutoffFreq_last)) {
     for (int i = 0; i < 6; i++) {
-      biquadFilterInitLPF(&FilterLPF[i], 100, (unsigned int)cutoffFreq);  // Remote control filter
+      biquadFilterInitLPF(&FilterLPF[i], (unsigned int)cutoffFreq, 1000);
     }
 
     enableDFilter_last = (int)enableDFilter;

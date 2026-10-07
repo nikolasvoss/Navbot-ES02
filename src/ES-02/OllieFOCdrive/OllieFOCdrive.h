@@ -122,7 +122,7 @@ class MyPIDController {
       
       if ((int)enableDFilter==1)
       {
-        biquadFilterInitLPF(&dFilter, (1.0f/dt), (unsigned int)cutoffFreq);
+        biquadFilterInitLPF(&dFilter, (unsigned int)cutoffFreq, (unsigned int)(1.0f / dt));
       }      
       
     }
@@ -185,7 +185,7 @@ class MyPIDController {
       
       if ((int)enableDFilter)
       {
-        biquadFilterInitLPF(&dFilter, (1.0f/dt), (unsigned int)cutoffFreq);
+        biquadFilterInitLPF(&dFilter, (unsigned int)cutoffFreq, (unsigned int)(1.0f / dt));
       }    
     }
 };
