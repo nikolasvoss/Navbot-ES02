@@ -1477,7 +1477,7 @@ void print_data(void) {
 
     case 8:
       //
-      // K8 is also used over the 576000-baud live-tuning connection. The
+      // K8 is also used over the live-tuning connection. The
       // control loop runs much faster than that link can carry these lines.
       if (millis() - lastSbusPrintMs < 50)
         break;
