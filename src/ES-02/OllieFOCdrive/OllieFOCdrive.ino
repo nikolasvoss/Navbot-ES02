@@ -457,6 +457,7 @@ void setup() {
 
   Serial.begin(SENSOR_DIAGNOSTIC_MODE ? DIAGNOSTIC_SERIAL_BAUD_RATE :
                (DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? LIVE_TUNING_SERIAL_BAUD_RATE : SERIAL_BAUD_RATE));
+  Telemetry::startSender();
   FlashInit();  // Read flash data
   pinMode(BOARD_PIN_LED, OUTPUT);
   digitalWrite(BOARD_PIN_LED, LOW);  // 亮
@@ -1389,637 +1390,71 @@ void FlashSave(int sw) {
  */
 void print_data(void) {
   static unsigned long lastSbusPrintMs = 0;
-  switch ((int)Select) {
-    case 1:
-      // Output Euler angle
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" Roll:");
-      Serial.print(attitude.roll);
-      Serial.print(" Pitch:");
-      Serial.print(attitude.pitch);
-      Serial.print(" Yaw:");
-      Serial.println(attitude.yaw);
-
-      break;
-
-    case 2:
-      // Output acc
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" accx:");
-      Serial.print(attitude.acc.x);
-      Serial.print(" accy:");
-      Serial.print(attitude.acc.y);
-      Serial.print(" accz:");
-      Serial.println(attitude.acc.z);
-
-      break;
-
-    case 3:
-      // Output
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" gyrox:");
-      Serial.print(attitude.gyro.x, 4);
-      Serial.print(" gyroy:");
-      Serial.print(attitude.gyro.y, 4);
-      Serial.print(" gyroz:");
-      Serial.println(attitude.gyro.z, 4);
-
-      break;
-
-    case 4:
-      // Output Euler angle
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" Roll:");
-      Serial.print(attitude.roll - zeroBias.roll);
-      Serial.print(" Pitch:");
-      Serial.print(attitude.pitch - zeroBias.pitch);
-      Serial.print(" Yaw:");
-      Serial.println(attitude.yaw - zeroBias.yaw);
-
-      break;
-
-    case 5:
-      //
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" eRoll:");
-      Serial.print(zeroBias.roll);
-      Serial.print(" ePitch:");
-      Serial.print(zeroBias.pitch);
-      Serial.print(" eYaw:");
-      Serial.println(zeroBias.yaw);
-
-      break;
-
-    case 6:
-      //
-      Serial.print(" v1:");
-      Serial.print(Motor1_Velocity);
-      Serial.print(" v2:");
-      Serial.println(Motor2_Velocity);
-
-      break;
-
-    case 7:
-      //
-      Serial.print(" v1:");
-      Serial.print(Motor1_Velocity);
-      Serial.print(" v1f:");
-      Serial.println(Motor1_Velocity_f);
-      break;
-
+  Telemetry::SelectedDebug row;
+  row.selector = static_cast<int32_t>(Select);
+  size_t fi = 0;
+  size_t ni = 0;
+  bool shouldEnqueue = false;
+#define LOG_F(value) row.values[fi++] = (value)
+#define LOG_I(value) row.integers[ni++] = static_cast<int32_t>(value)
+  switch (row.selector) {
+    case 1: LOG_F(time_dt); LOG_F(attitude.roll); LOG_F(attitude.pitch); LOG_F(attitude.yaw); shouldEnqueue = true; break;
+    case 2: LOG_F(time_dt); LOG_F(attitude.acc.x); LOG_F(attitude.acc.y); LOG_F(attitude.acc.z); shouldEnqueue = true; break;
+    case 3: LOG_F(time_dt); LOG_F(attitude.gyro.x); LOG_F(attitude.gyro.y); LOG_F(attitude.gyro.z); shouldEnqueue = true; break;
+    case 4: LOG_F(time_dt); LOG_F(attitude.roll-zeroBias.roll); LOG_F(attitude.pitch-zeroBias.pitch); LOG_F(attitude.yaw-zeroBias.yaw); shouldEnqueue = true; break;
+    case 5: LOG_F(time_dt); LOG_F(zeroBias.roll); LOG_F(zeroBias.pitch); LOG_F(zeroBias.yaw); shouldEnqueue = true; break;
+    case 6: LOG_F(Motor1_Velocity); LOG_F(Motor2_Velocity); shouldEnqueue = true; break;
+    case 7: LOG_F(Motor1_Velocity); LOG_F(Motor1_Velocity_f); shouldEnqueue = true; break;
     case 8:
-      //
-      // K8 is also used over the 115200-baud live-tuning connection. The
-      // control loop runs much faster than that link can carry these lines.
-      if (millis() - lastSbusPrintMs < 50)
-        break;
-      lastSbusPrintMs = millis();
-
-      for (int i = 0; i < 10; i++) {
-        Serial.print(" ch:");
-        Serial.print(sBus.channels[i]);
-      }
-
-      Serial.print(" sbus_dt_ms:");
-      Serial.print(sbus_dt_ms);
-      Serial.println(" ");
-      break;
-
-    case 9:
-      //
-      Serial.print(" PP:");
-      Serial.print(Angle_Pid.Kp);
-      Serial.print(" PI:");
-      Serial.print(Angle_Pid.Ki);
-      Serial.print(" PD:");
-      Serial.print(Angle_Pid.Kd);
-
-      Serial.print(" SP:");
-      Serial.print(Speed_Pid.Kp);
-      Serial.print(" SI:");
-      Serial.print(Speed_Pid.Ki);
-      Serial.print(" SD:");
-      Serial.print(Speed_Pid.Kd);
-
-      Serial.print(" YP:");
-      Serial.print(Yaw_Pid.Kp);
-      Serial.print(" YI:");
-      Serial.print(Yaw_Pid.Ki);
-      Serial.print(" YD:");
-      Serial.print(Yaw_Pid.Kd);
-
-      Serial.print("dt:");
-      Serial.println(time_dt, 6);
-
-      break;
-
-    case 10:
-      //
-      Serial.print(" twoKp:");
-      Serial.print(mahonyFilter.twoKp);
-      Serial.print(" twoKi:");
-      Serial.print(mahonyFilter.twoKi);
-
-      Serial.print(" Roll:");
-      Serial.print(attitude.roll);
-      Serial.print(" Pitch:");
-      Serial.print(attitude.pitch);
-
-      Serial.print("IMUdt:");
-      Serial.println(IMUtime_dt, 6);
-      break;
-
-    case 11:
-      //
-
-      Serial.print(" x:");
-      Serial.print(angleX);
-      Serial.print(" y:");
-      Serial.print(angleY);
-      Serial.print(" z:");
-      Serial.print(angleZ);
-
-      Serial.print(" gx:");
-      Serial.print(angleGyroX);
-      Serial.print(" gy:");
-      Serial.print(angleGyroY);
-      Serial.print(" gz:");
-      Serial.print(angleGyroZ);
-
-      Serial.print(" IMUdt:");
-      Serial.println(IMUtime_dt, 6);
-
-      break;
-
-    case 12:
-      //
-
-      Serial.print(" x:");
-      Serial.print(angleX);
-
-      Serial.print(" Roll:");
-      Serial.println(attitude.roll);
-
-
-      break;
-
-    case 13:
-      // Output
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" gyroxf:");
-      Serial.print(attitude.gyrof.x);
-      Serial.print(" gyroyf:");
-      Serial.print(attitude.gyrof.y);
-      Serial.print(" gyrozf:");
-      Serial.println(attitude.gyrof.z);
-      break;
-
-    case 14:
-      // Output acc
-      Serial.print("dt:");
-      Serial.print(time_dt, 6);
-      Serial.print(" accx:");
-      Serial.print(attitude.accf.x);
-      Serial.print(" accy:");
-      Serial.print(attitude.accf.y);
-      Serial.print(" accz:");
-      Serial.println(attitude.accf.z);
-      break;
-
-    case 15:
-      // Output acc
-      Serial.print(" accy:");
-      Serial.print(attitude.acc.y);
-      Serial.print(" accyf:");
-      Serial.println(attitude.accf.y);
-      break;
-
-    case 16:
-      // Output acc
-      Serial.print(" gyro:");
-      Serial.print(attitude.gyro.y);
-      Serial.print(" gyrof:");
-      Serial.println(attitude.gyrof.y);
-      break;
-
-    case 17:
-      // Output acc
-      Serial.print(" current_sp:");
-      Serial.println(motor2.current_sp, 6);
-      break;
-
-    case 18:
-      // Output acc
-      Serial.print(" t:");
-      Serial.print(motor2.target, 6);
-      Serial.print(" a1:");
-      Serial.print(sensor1.getAngle(), 6);
-      Serial.print(" a11:");
-      Serial.print(sensor1.getMechanicalAngle(), 6);
-
-      Serial.print(" a2:");
-      Serial.print(sensor2.getAngle(), 6);
-      Serial.print(" a22:");
-      Serial.println(sensor2.getMechanicalAngle(), 6);
-      break;
-
-    case 19:
-      //
-      Serial.print(" servo1:");
-      Serial.print(zeroBias.servo1);
-      Serial.print(" servo2:");
-      Serial.print(zeroBias.servo2);
-      Serial.print(" servo3:");
-      Serial.print(zeroBias.servo3);
-      Serial.print(" servo4:");
-      Serial.println(zeroBias.servo4);
-      break;
-
-    case 20:
-      Serial.print(" vra:");
-      Serial.print(top_ball_x, 6);
-      Serial.print(" BodyRoll:");
-      Serial.print(BodyRoll, 6);
-      Serial.print(" LegLength:");
-      Serial.println(LegLength, 6);
-      break;
-
-    case 21:
-      Serial.print(" roll_ok:");
-      Serial.print(roll_ok, 6);
-      Serial.print(" BodyPitching:");
-      Serial.println(BodyPitching, 6);
-      break;
-
-    case 22:
-      Serial.print(" it:");
-      Serial.print(Angle_Pid.iLimit, 5);
-      Serial.print(" il:");
-      Serial.print(Angle_Pid.integral, 5);
-      Serial.print(" oI:");
-      Serial.print(Angle_Pid.outI, 5);
-      Serial.print(" out:");
-      Serial.println(Angle_Pid.output, 5);
-      break;
-
-    case 23:
-      Serial.print(" it:");
-      Serial.print(Speed_Pid.iLimit, 5);
-      Serial.print(" il:");
-      Serial.print(Speed_Pid.integral, 5);
-      Serial.print(" oI:");
-      Serial.print(Speed_Pid.outI, 5);
-      Serial.print(" A:");
-      Serial.print(BodyPitching_f, 5);
-      Serial.print(" out:");
-      Serial.println(Speed_Pid.output, 5);
-      break;
-
-    case 24:
-      Serial.print(" EN:");
-      Serial.print(enableDFilter);
-      Serial.print(" HZ:");
-      Serial.println(cutoffFreq, 5);
-      break;
-
-    case 25:
-      Serial.print(" LpfOut:");
-      Serial.print(BodyPitching_f, 6);
-      Serial.print(" BodyPitching:");
-      Serial.println(BodyPitching, 6);
-      break;
-
-    case 26:
-
-      if (Touch.state == 1) {
-        Serial.print("  aX:");
-        Serial.print(Touch.XPdat);
-        Serial.print("  aY:");
-        Serial.println(Touch.YPdat);
-      } else if (Touch.state == 0) {
-        Serial.print("  tX:");
-        Serial.print(Touch.XLdat);
-        Serial.print("  tY:");
-        Serial.println(Touch.YLdat);
-      }
-      break;
-
-    case 27:
-
-      Serial.print("  aX:");
-      Serial.print(Touch.XPdat);
-      Serial.print("  aY:");
-      Serial.print(Touch.YPdat);
-      Serial.print("  aXF:");
-      Serial.print(Touch.XPdatF);
-      Serial.print("  aYF:");
-      Serial.println(Touch.YPdatF);
-      break;
-
-    case 28:
-
-      Serial.print("  P:");
-      Serial.print(BodyPitching_f);
-      Serial.print("  R:");
-      Serial.print(BodyRoll_f, 5);
-      Serial.print("  H:");
-      Serial.print(LegLength_f, 5);
-      Serial.print("  S:");
-      Serial.print(SlideStep_f);
-      Serial.print("  vra:");
-      Serial.print(top_ball_x);
-      Serial.print("  vra:");
-      Serial.println(top_ball_y);
-      break;
-
-    case 29:
-      Serial.print(" Kp:");
-      Serial.print(TouchY_Pid.Kp, 6);
-      Serial.print(" Ki:");
-      Serial.print(TouchY_Pid.Ki, 6);
-      Serial.print(" Kd:");
-      Serial.print(TouchY_Pid.Kd, 6);
-
-      Serial.print(" deriv:");
-      Serial.print(TouchY_Pid.deriv);
-      Serial.print(" out:");
-      Serial.println(TouchY_Pid.output);
-      break;
-
-    case 30:
-      Serial.print(" deriv:");
-      Serial.println(TouchY_Pid.deriv);
-      break;
-
-    case 31:
-      Serial.print(" E:");
-      Serial.print(Roll_Pid.error, 6);
-      Serial.print(" it:");
-      Serial.print(Roll_Pid.iLimit, 5);
-      Serial.print(" il:");
-      Serial.print(Roll_Pid.integral, 5);
-      Serial.print(" oI:");
-      Serial.print(Roll_Pid.outI, 5);
-      Serial.print(" out:");
-      Serial.println(Roll_Pid.output, 5);
-      break;
-
-    case 32:
-
-      Serial.print(" RP:");
-      Serial.print(Roll_Pid.Kp, 6);
-      Serial.print(" RI:");
-      Serial.print(Roll_Pid.Ki, 6);
-      Serial.print(" RD:");
-      Serial.println(Roll_Pid.Kd, 6);
-      break;
-
-    case 33:
-      Serial.print(" it:");
-      Serial.print(Yaw_Pid.iLimit, 5);
-      Serial.print(" il:");
-      Serial.print(Yaw_Pid.integral, 5);
-      Serial.print(" oI:");
-      Serial.print(Yaw_Pid.outI, 5);
-      Serial.print(" A:");
-      Serial.print(BodyPitching_f, 5);
-      Serial.print(" out:");
-      Serial.println(Yaw_Pid.output, 5);
-      break;
-
-    case 34:
-      Serial.print(" Kp:");
-      Serial.print(TouchX_Pid.Kp, 6);
-      Serial.print(" Ki:");
-      Serial.print(TouchX_Pid.Ki, 6);
-      Serial.print(" Kd:");
-      Serial.print(TouchX_Pid.Kd, 6);
-
-      Serial.print(" deriv:");
-      Serial.print(TouchX_Pid.deriv);
-      Serial.print(" out:");
-      Serial.println(TouchX_Pid.output);
-      break;
-
-    case 35:
-      Serial.print(" deriv:");
-      Serial.println(TouchX_Pid.deriv);
-      break;
-
-    case 36:
-      Serial.print(" state:");
-      Serial.print(Touch.state);
-      Serial.print(" start:");
-      Serial.println(Touch.start);
-      break;
-
-    case 37:
-      Serial.print(" sbus_vra:");
-      Serial.print(top_ball_x);
-      Serial.print(" sbus_vraf:");
-      Serial.print(sbus_top_ball_x_smoothed);
-      Serial.print(" sbus_vrb:");
-      Serial.print(top_ball_y);
-      Serial.print(" sbus_vrbf:");
-      Serial.println(sbus_top_ball_y_smoothed);
-      break;
-
-    case 38:
-      Serial.print(" X OUT:");
-      Serial.print(BodyPitching);
-      Serial.print(" Y OUT:");
-      Serial.println(TouchY_Pid.output);
-      break;
-
-    case 39:
-      Serial.print(" it:");
-      Serial.print(TouchY_Pid.iLimit, 5);
-      Serial.print(" il:");
-      Serial.print(TouchY_Pid.integral, 5);
-      Serial.print(" oI:");
-      Serial.print(TouchY_Pid.outI, 5);
-      Serial.print(" out:");
-      Serial.println(TouchY_Pid.output, 5);
-      break;
-
-    case 40:
-
-      if (Touch.state == 1) {
-        Serial.print("  aX:");
-        Serial.print(Touch.XPressDat);
-        Serial.print("  aY:");
-        Serial.println(Touch.YPressDat);
-      } else if (Touch.state == 0) {
-        Serial.print("  tX:");
-        Serial.print(Touch.XPressDat);
-        Serial.print("  tX:");
-        Serial.println(Touch.YPressDat);
-      }
-      break;
-
-    case 41:
-
-      Serial.print(" roll_ok:");
-      Serial.print(roll_ok, 5);
-      Serial.print(" pa:");
-      Serial.print(BodyPitching, 5);
-      Serial.print(" out:");
-      Serial.println(Speed_Pid.output, 5);
-      break;
-
-    case 42:
-
-      Serial.print(" P:");
-      Serial.print(roll_ok, 5);
-      Serial.print(" P1:");
-      Serial.print(BodyPitching, 5);
-      Serial.print(" P3:");
-      Serial.println(BodyPitchingCorrect(BodyPitching_f), 5);
-      break;
-
-    case 43:
-
-      Serial.print(" Vdat:");
-      Serial.print(VoltageADC);
-      Serial.print(" Vdatf:");
-      Serial.print(VoltageADCf);
-      Serial.print(" V:");
-      Serial.println(Voltage, 5);
-      break;
-
-    case 44:
-
-      Serial.print(" PidParameterTuning:");
-      Serial.print(PidParameterTuning);
-      Serial.print(" TargetLegLength:");
-      Serial.println(TargetLegLength, 6);
-
-      break;
-
-    case 45:
-
-      Serial.print(" RobotTumble:");
-      Serial.print(RobotTumble);
-      Serial.print(" roll_ok:");
-      Serial.print(roll_ok, 6);
-      Serial.print(" Angle_Pid.error:");
-      Serial.println(Angle_Pid.error, 6);
-
-      break;
-
-    case 55: {
-      // One row every 20 ms; voltage_min_v includes every raw ADC read in that interval.
-      static unsigned long lastTraceMs = 0;
-      const unsigned long traceMs = millis();
-      if (traceMs - lastTraceMs >= 20) {
-        lastTraceMs = traceMs;
-        const float rawMinV = (float)7.77 / 813.43 * VoltageADCMin;
-        Serial.printf("TRACE,%lu,%d,%d,%.3f,%.3f,%.2f,%.2f,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f\n",
-                      traceMs, pid_gains_mode, posture_or_mark_mode, rawMinV, Voltage,
-                      roll_ok, pitch_ok, servoTraceAngle[0], servoTraceAngle[1],
-                      servoTraceAngle[2], servoTraceAngle[3],
-                      servoTraceMax[0] - servoTraceMin[0], servoTraceMax[1] - servoTraceMin[1],
-                      servoTraceMax[2] - servoTraceMin[2], servoTraceMax[3] - servoTraceMin[3],
-                      motor1.target, motor2.target);
-        VoltageADCMin = VoltageADC;
-        for (int i = 0; i < 4; i++)
-          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
-      }
-      break;
-    }
-
-    case 56: {
-      // Compact control decomposition for diagnosing opposite wheel targets.
-      static unsigned long lastTraceMs = 0;
-      const unsigned long traceMs = millis();
-      if (traceMs - lastTraceMs >= 20) {
-        lastTraceMs = traceMs;
-        const float rawMinV = (float)7.77 / 813.43 * VoltageADCMin;
-        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
-        int maxServoRange = 0;
-        for (int i = 0; i < 4; i++) {
-          maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
-          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
-        }
-        Serial.printf("CTRL,%lu,%d,%.3f,%.3f,%.2f,%.4f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d\n",
-                      traceMs, pid_gains_mode, rawMinV, Voltage, roll_ok,
-                      attitude.gyro.z, BodyTurn,
-                      active ? Angle_Pid.error : 0.0f, active ? Angle_Pid.output : 0.0f,
-                      active ? Yaw_Pid.error : 0.0f, active ? Yaw_Pid.output : 0.0f,
-                      motor1.target, motor2.target, maxServoRange);
-        VoltageADCMin = VoltageADC;
-      }
-      break;
-    }
-
-    case 57: {
-      // Short balance decomposition to reduce serial-line corruption at 2 Mbaud.
-      static unsigned long lastTraceMs = 0;
-      const unsigned long traceMs = millis();
-      if (traceMs - lastTraceMs >= 20) {
-        lastTraceMs = traceMs;
-        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
-        int maxServoRange = 0;
-        for (int i = 0; i < 4; i++) {
-          maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
-          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
-        }
-        Serial.printf("BAL,%lu,%d,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.4f,%.2f,%.2f,%d\n",
-                      traceMs, pid_gains_mode, (float)7.77 / 813.43 * VoltageADCMin,
-                      roll_ok, active ? Angle_Pid.error : 0.0f,
-                      active ? Angle_Pid.outP : 0.0f, active ? Angle_Pid.outI : 0.0f,
-                      active ? Angle_Pid.outD : 0.0f, active ? BodyX : 0.0f,
-                      motor1.target, motor2.target, maxServoRange);
-        VoltageADCMin = VoltageADC;
-      }
-      break;
-    }
-
-    case 58: {
-      // Compact drive-stop trace: correlate speed, posture, balance, and supply
-      // without saturating the serial link during a controlled test.
-      static unsigned long lastTraceMs = 0;
-      const unsigned long traceMs = millis();
-      if (traceMs - lastTraceMs >= 50) {
-        lastTraceMs = traceMs;
-        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
-        int maxServoRange = 0;
-        for (int i = 0; i < 4; i++) {
-          maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
-          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
-        }
-        Serial.printf("DRIVE,%lu,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.6f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%d\n",
-                      traceMs, pid_gains_mode,
-                      (float)7.77 / 813.43 * VoltageADCMin, Voltage,
-                      MovementSpeed, active ? driveEffectiveSpeed : 0.0f,
-                      Motor1_Velocity_f, Motor2_Velocity_f, time_dt,
-                      active ? Speed_Pid.error : 0.0f,
-                      active ? Speed_Pid.outP : 0.0f, active ? Speed_Pid.outI : 0.0f,
-                      active ? Speed_Pid.outD : 0.0f, active ? Speed_Pid.output : 0.0f,
-                      active ? driveSpeedBodyXRaw : 0.0f,
-                      active ? BodyX : 0.0f, BodyPitching_f, roll_ok,
-                      active ? Angle_Pid.output : 0.0f,
-                      active ? Angle_Pid.outP : 0.0f,
-                      active ? Angle_Pid.outI : 0.0f,
-                      active ? Angle_Pid.outD : 0.0f,
-                      active ? wheelSpeedFeedbackOutput : 0.0f,
-                      motor1.target, motor2.target,
-                      top_ball_x, Touch.XPdatF, BodyPitching, maxServoRange);
-        VoltageADCMin = VoltageADC;
-      }
-      break;
-    }
-
-    default:
-
-      break;
+      if (millis()-lastSbusPrintMs < 50) break;
+      lastSbusPrintMs=millis(); for(int i=0;i<10;++i) LOG_I(sBus.channels[i]);
+      LOG_F(sbus_dt_ms); shouldEnqueue=true; break;
+    case 9: LOG_F(Angle_Pid.Kp); LOG_F(Angle_Pid.Ki); LOG_F(Angle_Pid.Kd); LOG_F(Speed_Pid.Kp); LOG_F(Speed_Pid.Ki); LOG_F(Speed_Pid.Kd); LOG_F(Yaw_Pid.Kp); LOG_F(Yaw_Pid.Ki); LOG_F(Yaw_Pid.Kd); LOG_F(time_dt); shouldEnqueue=true; break;
+    case 10: LOG_F(mahonyFilter.twoKp); LOG_F(mahonyFilter.twoKi); LOG_F(attitude.roll); LOG_F(attitude.pitch); LOG_F(IMUtime_dt); shouldEnqueue=true; break;
+    case 11: LOG_F(angleX); LOG_F(angleY); LOG_F(angleZ); LOG_F(angleGyroX); LOG_F(angleGyroY); LOG_F(angleGyroZ); LOG_F(IMUtime_dt); shouldEnqueue=true; break;
+    case 12: LOG_F(angleX); LOG_F(attitude.roll); shouldEnqueue=true; break;
+    case 13: LOG_F(time_dt); LOG_F(attitude.gyrof.x); LOG_F(attitude.gyrof.y); LOG_F(attitude.gyrof.z); shouldEnqueue=true; break;
+    case 14: LOG_F(time_dt); LOG_F(attitude.accf.x); LOG_F(attitude.accf.y); LOG_F(attitude.accf.z); shouldEnqueue=true; break;
+    case 15: LOG_F(attitude.acc.y); LOG_F(attitude.accf.y); shouldEnqueue=true; break;
+    case 16: LOG_F(attitude.gyro.y); LOG_F(attitude.gyrof.y); shouldEnqueue=true; break;
+    case 17: LOG_F(motor2.current_sp); shouldEnqueue=true; break;
+    case 18: LOG_F(motor2.target); LOG_F(sensor1.getAngle()); LOG_F(sensor1.getMechanicalAngle()); LOG_F(sensor2.getAngle()); LOG_F(sensor2.getMechanicalAngle()); shouldEnqueue=true; break;
+    case 19: LOG_F(zeroBias.servo1); LOG_F(zeroBias.servo2); LOG_F(zeroBias.servo3); LOG_F(zeroBias.servo4); shouldEnqueue=true; break;
+    case 20: LOG_F(top_ball_x); LOG_F(BodyRoll); LOG_F(LegLength); shouldEnqueue=true; break;
+    case 21: LOG_F(roll_ok); LOG_F(BodyPitching); shouldEnqueue=true; break;
+    case 22: LOG_F(Angle_Pid.iLimit); LOG_F(Angle_Pid.integral); LOG_F(Angle_Pid.outI); LOG_F(Angle_Pid.output); shouldEnqueue=true; break;
+    case 23: LOG_F(Speed_Pid.iLimit); LOG_F(Speed_Pid.integral); LOG_F(Speed_Pid.outI); LOG_F(BodyPitching_f); LOG_F(Speed_Pid.output); shouldEnqueue=true; break;
+    case 24: LOG_F(enableDFilter); LOG_F(cutoffFreq); shouldEnqueue=true; break;
+    case 25: LOG_F(BodyPitching_f); LOG_F(BodyPitching); shouldEnqueue=true; break;
+    case 26: if(Touch.state==1){LOG_I(Touch.state);LOG_I(Touch.XPdat);LOG_I(Touch.YPdat);shouldEnqueue=true;}else if(Touch.state==0){LOG_I(Touch.state);LOG_I(Touch.XLdat);LOG_I(Touch.YLdat);shouldEnqueue=true;} break;
+    case 27: LOG_I(Touch.XPdat); LOG_I(Touch.YPdat); LOG_F(Touch.XPdatF); LOG_F(Touch.YPdatF); shouldEnqueue=true; break;
+    case 28: LOG_F(BodyPitching_f); LOG_F(BodyRoll_f); LOG_F(LegLength_f); LOG_F(SlideStep_f); LOG_F(top_ball_x); LOG_F(top_ball_y); shouldEnqueue=true; break;
+    case 29: LOG_F(TouchY_Pid.Kp); LOG_F(TouchY_Pid.Ki); LOG_F(TouchY_Pid.Kd); LOG_F(TouchY_Pid.deriv); LOG_F(TouchY_Pid.output); shouldEnqueue=true; break;
+    case 30: LOG_F(TouchY_Pid.deriv); shouldEnqueue=true; break;
+    case 31: LOG_F(Roll_Pid.error); LOG_F(Roll_Pid.iLimit); LOG_F(Roll_Pid.integral); LOG_F(Roll_Pid.outI); LOG_F(Roll_Pid.output); shouldEnqueue=true; break;
+    case 32: LOG_F(Roll_Pid.Kp); LOG_F(Roll_Pid.Ki); LOG_F(Roll_Pid.Kd); shouldEnqueue=true; break;
+    case 33: LOG_F(Yaw_Pid.iLimit); LOG_F(Yaw_Pid.integral); LOG_F(Yaw_Pid.outI); LOG_F(BodyPitching_f); LOG_F(Yaw_Pid.output); shouldEnqueue=true; break;
+    case 34: LOG_F(TouchX_Pid.Kp); LOG_F(TouchX_Pid.Ki); LOG_F(TouchX_Pid.Kd); LOG_F(TouchX_Pid.deriv); LOG_F(TouchX_Pid.output); shouldEnqueue=true; break;
+    case 35: LOG_F(TouchX_Pid.deriv); shouldEnqueue=true; break;
+    case 36: LOG_I(Touch.state); LOG_I(Touch.start); shouldEnqueue=true; break;
+    case 37: LOG_F(top_ball_x); LOG_F(sbus_top_ball_x_smoothed); LOG_F(top_ball_y); LOG_F(sbus_top_ball_y_smoothed); shouldEnqueue=true; break;
+    case 38: LOG_F(BodyPitching); LOG_F(TouchY_Pid.output); shouldEnqueue=true; break;
+    case 39: LOG_F(TouchY_Pid.iLimit); LOG_F(TouchY_Pid.integral); LOG_F(TouchY_Pid.outI); LOG_F(TouchY_Pid.output); shouldEnqueue=true; break;
+    case 40: if(Touch.state==1){LOG_I(Touch.state);LOG_I(Touch.XPressDat);LOG_I(Touch.YPressDat);shouldEnqueue=true;}else if(Touch.state==0){LOG_I(Touch.state);LOG_I(Touch.XPressDat);LOG_I(Touch.YPressDat);shouldEnqueue=true;} break;
+    case 41: LOG_F(roll_ok); LOG_F(BodyPitching); LOG_F(Speed_Pid.output); shouldEnqueue=true; break;
+    case 42: LOG_F(roll_ok); LOG_F(BodyPitching); LOG_F(BodyPitchingCorrect(BodyPitching_f)); shouldEnqueue=true; break;
+    case 43: LOG_I(VoltageADC); LOG_F(VoltageADCf); LOG_F(Voltage); shouldEnqueue=true; break;
+    case 44: LOG_I(PidParameterTuning); LOG_F(TargetLegLength); shouldEnqueue=true; break;
+    case 45: LOG_I(RobotTumble); LOG_F(roll_ok); LOG_F(Angle_Pid.error); shouldEnqueue=true; break;
+    case 55: { static unsigned long lastTraceMs=0; const unsigned long t=millis(); if(t-lastTraceMs>=20){lastTraceMs=t;row.timestampMs=t;LOG_I(pid_gains_mode);LOG_I(posture_or_mark_mode);LOG_F((float)7.77/813.43*VoltageADCMin);LOG_F(Voltage);LOG_F(roll_ok);LOG_F(pitch_ok);for(int i=0;i<4;++i)LOG_I(servoTraceAngle[i]);for(int i=0;i<4;++i)LOG_I(servoTraceMax[i]-servoTraceMin[i]);LOG_F(motor1.target);LOG_F(motor2.target);VoltageADCMin=VoltageADC;for(int i=0;i<4;++i)servoTraceMin[i]=servoTraceMax[i]=servoTraceAngle[i];shouldEnqueue=true;} break;}
+    case 56: { static unsigned long lastTraceMs=0;const unsigned long t=millis();if(t-lastTraceMs>=20){lastTraceMs=t;row.timestampMs=t;const float raw=(float)7.77/813.43*VoltageADCMin;const bool active=pid_gains_mode_is_enabled(pid_gains_mode)&&RobotTumble==ROBOT_TUMBLE_NO;int range=0;for(int i=0;i<4;++i){range=max(range,servoTraceMax[i]-servoTraceMin[i]);servoTraceMin[i]=servoTraceMax[i]=servoTraceAngle[i];}LOG_I(pid_gains_mode);LOG_F(raw);LOG_F(Voltage);LOG_F(roll_ok);LOG_F(attitude.gyro.z);LOG_F(BodyTurn);LOG_F(active?Angle_Pid.error:0.0f);LOG_F(active?Angle_Pid.output:0.0f);LOG_F(active?Yaw_Pid.error:0.0f);LOG_F(active?Yaw_Pid.output:0.0f);LOG_F(motor1.target);LOG_F(motor2.target);LOG_I(range);VoltageADCMin=VoltageADC;shouldEnqueue=true;}break;}
+    case 57: { static unsigned long lastTraceMs=0;const unsigned long t=millis();if(t-lastTraceMs>=20){lastTraceMs=t;row.timestampMs=t;const bool active=pid_gains_mode_is_enabled(pid_gains_mode)&&RobotTumble==ROBOT_TUMBLE_NO;int range=0;for(int i=0;i<4;++i){range=max(range,servoTraceMax[i]-servoTraceMin[i]);servoTraceMin[i]=servoTraceMax[i]=servoTraceAngle[i];}LOG_I(pid_gains_mode);LOG_F((float)7.77/813.43*VoltageADCMin);LOG_F(roll_ok);LOG_F(active?Angle_Pid.error:0.0f);LOG_F(active?Angle_Pid.outP:0.0f);LOG_F(active?Angle_Pid.outI:0.0f);LOG_F(active?Angle_Pid.outD:0.0f);LOG_F(active?BodyX:0.0f);LOG_F(motor1.target);LOG_F(motor2.target);LOG_I(range);VoltageADCMin=VoltageADC;shouldEnqueue=true;}break;}
+    case 58: { static unsigned long lastTraceMs=0;const unsigned long t=millis();if(t-lastTraceMs>=50){lastTraceMs=t;row.timestampMs=t;const bool active=pid_gains_mode_is_enabled(pid_gains_mode)&&RobotTumble==ROBOT_TUMBLE_NO;int range=0;for(int i=0;i<4;++i){range=max(range,servoTraceMax[i]-servoTraceMin[i]);servoTraceMin[i]=servoTraceMax[i]=servoTraceAngle[i];}LOG_I(pid_gains_mode);LOG_F((float)7.77/813.43*VoltageADCMin);LOG_F(Voltage);LOG_F(MovementSpeed);LOG_F(active?driveEffectiveSpeed:0.0f);LOG_F(Motor1_Velocity_f);LOG_F(Motor2_Velocity_f);LOG_F(time_dt);LOG_F(active?Speed_Pid.error:0.0f);LOG_F(active?Speed_Pid.outP:0.0f);LOG_F(active?Speed_Pid.outI:0.0f);LOG_F(active?Speed_Pid.outD:0.0f);LOG_F(active?Speed_Pid.output:0.0f);LOG_F(active?driveSpeedBodyXRaw:0.0f);LOG_F(active?BodyX:0.0f);LOG_F(BodyPitching_f);LOG_F(roll_ok);LOG_F(active?Angle_Pid.output:0.0f);LOG_F(active?Angle_Pid.outP:0.0f);LOG_F(active?Angle_Pid.outI:0.0f);LOG_F(active?Angle_Pid.outD:0.0f);LOG_F(active?wheelSpeedFeedbackOutput:0.0f);LOG_F(motor1.target);LOG_F(motor2.target);LOG_F(top_ball_x);LOG_F(Touch.XPdatF);LOG_F(BodyPitching);LOG_I(range);VoltageADCMin=VoltageADC;shouldEnqueue=true;}break;}
+    default: break;
   }
+#undef LOG_F
+#undef LOG_I
+  if (shouldEnqueue) Telemetry::enqueueSelected(row);
 }
 
 /**
@@ -2461,7 +1896,7 @@ void DiagnosticLoop(void) {
     frame.set(Telemetry::Channel::RcFrameAge, rcAgeMs);
     frame.set(Telemetry::Channel::RcFailsafe, rcFailsafe);
     frame.set(Telemetry::Channel::ImuReady, diagnosticImuReady ? 1.0f : 0.0f);
-    Telemetry::writeCsv(Serial, frame);
+    Telemetry::enqueueDiagnostic(frame);
   }
   delay(1);
 }

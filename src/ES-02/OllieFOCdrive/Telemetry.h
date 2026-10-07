@@ -49,7 +49,41 @@ struct Frame {
   }
 };
 
+constexpr size_t kQueueCapacity = 32;
+constexpr size_t kSelectedFloatCount = 26;
+constexpr size_t kSelectedIntegerCount = 10;
+
+struct SelectedDebug {
+  int32_t selector = 0;
+  uint32_t timestampMs = 0;
+  float values[kSelectedFloatCount] = {};
+  int32_t integers[kSelectedIntegerCount] = {};
+};
+
+enum class RecordKind : uint8_t {
+  Diagnostic,
+  SelectedDebug,
+};
+
+struct Record {
+  RecordKind kind = RecordKind::Diagnostic;
+  Frame diagnostic;
+  SelectedDebug selected;
+};
+
+enum class IncompleteReason : uint8_t {
+  None,
+  BufferFull,
+  SenderStartFailed,
+  SenderWriteFailed,
+};
+
 const ChannelInfo &channelInfo(Channel channel);
-bool writeCsv(Print &sink, const Frame &frame);
+bool enqueueDiagnostic(const Frame &frame);
+bool enqueueSelected(const SelectedDebug &selected);
+bool sendOne(Print &sink);
+bool startSender();
+IncompleteReason incompleteReason();
+uint8_t rejectedCount();
 
 }  // namespace Telemetry
