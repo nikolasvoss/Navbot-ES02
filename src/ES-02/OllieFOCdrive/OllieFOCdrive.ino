@@ -50,7 +50,7 @@ CalibrationStore calibrationStore;
 // Tuned two-wheel drive defaults, including corrected wheel-speed timing and
 // CH3 scaling. Apply them at startup and through a CH5 switch transition.
 // Set to 0 to restore the repository's mode-dependent defaults.
-#define DIAGNOSTIC_LIVE_TUNING_DEFAULTS 1 // TODO in which case is this really needed? it looks like a legacy feature
+#define DIAGNOSTIC_LIVE_TUNING_DEFAULTS 1
 
 #define AdjusParameter ADJUST_BALANCE_SPEED_YAW_ROLL        // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
 
@@ -85,15 +85,16 @@ CalibrationStore calibrationStore;
 #define IMU_SAMPLING_RATE_HZ 1000.0f  // Sampling frequency
 #define IMU_LPF_CUTOFF_FREQ_HZ 50.0f  // Cutoff frequency for low-pass filter TODO why is this so low?
 #define BOARD_PIN_LED 35        // LED IO
-#define BOARD_PIN_ANALOG_IN 17  // Battery voltage IO TODO rename define
+#define BOARD_PIN_BATTERY_VOLTAGE_ADC 17  // Battery voltage IO
 
 #define IMU_ACCEL_RANGE_G 8.0              // Unit: g
 #define IMU_GYRO_RANGE_DEG_PER_SEC 2000.0  // Unit: °/s
 
-#define CUSTOM_SERVO_1_PIN 11 // what are these pins for? TODO
-#define CUSTOM_SERVO_2_PIN 12
-#define CUSTOM_SERVO_3_PIN 21
-#define CUSTOM_SERVO_4_PIN 14
+// GPIOs for the four leg-servo signals, in ServoControl order.
+#define LEG_SERVO_1_SIGNAL_PIN 11
+#define LEG_SERVO_2_SIGNAL_PIN 12
+#define LEG_SERVO_3_SIGNAL_PIN 21
+#define LEG_SERVO_4_SIGNAL_PIN 14
 
 #define SBUS_CHANNEL_MAX 1792
 #define SBUS_CHANNEL_MIN 192
@@ -101,8 +102,8 @@ CalibrationStore calibrationStore;
 #define SERIAL_BAUD_RATE 576000
 #define DIAGNOSTIC_SERIAL_BAUD_RATE 576000
 #define LIVE_TUNING_SERIAL_BAUD_RATE 576000
-#define DIAGNOSTIC_IMU_INTERVAL_US 10000 // TODO needed? why is diagnostic mode even different from normal operation?
-constexpr unsigned int DIAGNOSTIC_IMU_SAMPLE_RATE_HZ = 1000000U / DIAGNOSTIC_IMU_INTERVAL_US;
+#define DIAGNOSTIC_LOG_INTERVAL_US 10000 // Diagnostic CSV rows are emitted at 100 Hz.
+constexpr unsigned int DIAGNOSTIC_LOG_SAMPLE_RATE_HZ = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
 constexpr float DRIVE_BODY_X_LIMIT_M = 0.010f;
 constexpr float DRIVE_WHEEL_FEEDBACK_LIMIT = 8.0f;
@@ -214,7 +215,8 @@ bool pid_gains_mode_is_enabled(int mode) {
 }
 
 //  Create ServoControl object
-ServoControl servoControl(CUSTOM_SERVO_1_PIN, CUSTOM_SERVO_2_PIN, CUSTOM_SERVO_3_PIN, CUSTOM_SERVO_4_PIN);
+ServoControl servoControl(LEG_SERVO_1_SIGNAL_PIN, LEG_SERVO_2_SIGNAL_PIN,
+                          LEG_SERVO_3_SIGNAL_PIN, LEG_SERVO_4_SIGNAL_PIN);
 int servoTraceAngle[4] = { 0, 0, 0, 0 };  // Last angle arguments sent to the four servos
 
 // Remote control
@@ -455,9 +457,10 @@ void setup() {
   delay(500);
 
 #if SENSOR_DIAGNOSTIC_MODE
-  biquadFilterInitLPF(&VoltageFilterLPF, 20, DIAGNOSTIC_IMU_SAMPLE_RATE_HZ);
+  biquadFilterInitLPF(&VoltageFilterLPF, 20, DIAGNOSTIC_LOG_SAMPLE_RATE_HZ);
   for (int axis = 0; axis < 6; axis++) {
-    biquadFilterInitLPF(&ImuFilterLPF[axis], 20, DIAGNOSTIC_IMU_SAMPLE_RATE_HZ);
+    biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)LPF_CUTOFF_FREQ,
+                        (unsigned int)RATE_HZ);
   }
   diagnosticImuReady = initICM42688();
   sBus.begin();
@@ -640,7 +643,7 @@ void setup() {
   Serial.println("Motor ready.");
 
 #if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
-  // Preload the gentle gains before CH5 can pass briefly through mode 1. // TODO still needed?
+  // Preload gains before CH5 can pass briefly through mode 1. TODO: Recheck during cleanup; see ../../../docs/robot/ROBOT_ROADMAP.md#regler-startwerte-und-diagnose-schalter-bereinigen.
   PidParameter();
 #endif
 
@@ -1517,7 +1520,7 @@ void RemoteControlFiltering(void)  // Remote control filter
  * to get a stable reading, and converts it to the actual voltage.
  */
 void ReadVoltage(void) {
-  VoltageADC = analogRead(BOARD_PIN_ANALOG_IN);
+  VoltageADC = analogRead(BOARD_PIN_BATTERY_VOLTAGE_ADC);
   if (VoltageADCMin == 0 || VoltageADC < VoltageADCMin)
     VoltageADCMin = VoltageADC;
   VoltageADCf = biquadFilterApply(&VoltageFilterLPF, VoltageADC);
@@ -1553,10 +1556,9 @@ void Robot_Tumble(void) {
 }
 
 void DiagnosticLoop(void) {
-  static uint32_t lastImuScheduleUs = 0;
+  static uint32_t lastLogScheduleUs = 0;
   static unsigned long lastVoltageMs = 0;
   const unsigned long nowMs = millis();
-  const uint32_t nowUs = micros();
 
   sBus.FeedLine();
   if (sBus.toChannels == 1) {
@@ -1566,29 +1568,32 @@ void DiagnosticLoop(void) {
     diagnosticHasRcFrame = true;
   }
 
-  if (diagnosticImuReady && (uint32_t)(nowUs - lastImuScheduleUs) >= DIAGNOSTIC_IMU_INTERVAL_US) {
-    lastImuScheduleUs = nowUs;
+  if (diagnosticImuReady) {
     ImuUpdate();
-    const long rcAgeMs = diagnosticHasRcFrame ? (long)(nowMs - diagnosticLastRcFrameMs) : -1;
-    const int rcFailsafe = diagnosticHasRcFrame ? sBus.Failsafe() : -1;
-    const float batteryRawV = (float)7.77 / 813.43 * VoltageADC;
-    Logging::DiagnosticSample sample{};
-    sample.timestampUs = (uint32_t)timestamp_prev;
-    sample.sequence = diagnosticSequence++;
-    sample.gyroX = attitude.gyro.x;
-    sample.gyroY = attitude.gyro.y;
-    sample.gyroZ = attitude.gyro.z;
-    sample.accelX = attitude.acc.x;
-    sample.accelY = attitude.acc.y;
-    sample.accelZ = attitude.acc.z;
-    sample.rollDeg = attitude.roll;
-    sample.pitchDeg = attitude.pitch;
-    sample.yawDeg = attitude.yaw;
-    sample.batteryRawV = batteryRawV;
-    sample.receiverFrameAgeMs = rcAgeMs;
-    sample.receiverFailsafe = rcFailsafe;
-    sample.imuReady = diagnosticImuReady ? 1 : 0;
-    Logging::submit(sample);
+    const uint32_t imuSampleUs = (uint32_t)timestamp_prev;
+    if ((uint32_t)(imuSampleUs - lastLogScheduleUs) >= DIAGNOSTIC_LOG_INTERVAL_US) {
+      lastLogScheduleUs = imuSampleUs;
+      const long rcAgeMs = diagnosticHasRcFrame ? (long)(nowMs - diagnosticLastRcFrameMs) : -1;
+      const int rcFailsafe = diagnosticHasRcFrame ? sBus.Failsafe() : -1;
+      const float batteryRawV = (float)7.77 / 813.43 * VoltageADC;
+      Logging::DiagnosticSample sample{};
+      sample.timestampUs = imuSampleUs;
+      sample.sequence = diagnosticSequence++;
+      sample.gyroX = attitude.gyro.x;
+      sample.gyroY = attitude.gyro.y;
+      sample.gyroZ = attitude.gyro.z;
+      sample.accelX = attitude.acc.x;
+      sample.accelY = attitude.acc.y;
+      sample.accelZ = attitude.acc.z;
+      sample.rollDeg = attitude.roll;
+      sample.pitchDeg = attitude.pitch;
+      sample.yawDeg = attitude.yaw;
+      sample.batteryRawV = batteryRawV;
+      sample.receiverFrameAgeMs = rcAgeMs;
+      sample.receiverFailsafe = rcFailsafe;
+      sample.imuReady = diagnosticImuReady ? 1 : 0;
+      Logging::submit(sample);
+    }
   }
   if (nowMs - lastVoltageMs >= 10) {
     lastVoltageMs = nowMs;

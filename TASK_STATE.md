@@ -1,37 +1,26 @@
-# Task state: FOC configuration cleanup
+# Task state: diagnostic defaults explanation and servo pin naming
 
-Goal: finish the first five FOC sketch TODOs and apply the user's follow-up cleanup across directly affected firmware files.
+Goal: explain the reasons for the diagnostic tuning defaults and IMU sampling cadence, then rename the four servo signal pin macros.
 
-Active contracts: `work/first-five-ino-todos.scope.md` and `work/remove-torque-compensation.scope.md`. The original request and follow-up are preserved verbatim. The user explicitly authorized removing `SwitchUser`, moving and later removing the table-based `TorqueCompensation` feature, deleting both unsupported current-loop paths, and removing `SENSOR_SWITCH_*`. After an impact warning, the user chose to delete the dependent encoder diagnostics, direct torque/angle modes, and firmware torque-table sampling.
+Active contract: `work/servo-diagnostic-followup.scope.md`.
 
 ## Decisions
 
-- Keep the documented I2C AS5600 setup and GPIO assignments.
-- Fix both motors to velocity control and voltage torque control, which match the prior defaults.
-- The table-based compensation setting was moved beside its ON/OFF definitions, then removed with the table feature after the user follow-up.
-- Remove unsupported current sensing and its current-only controller setup.
-- Initially preserved the two baked correction tables while removing their sampler. A later explicit user request superseded that choice; the disabled, unverified table feature and its data are now removed.
-- Remove angle-only PID setup and the unused torque-sampling communication value.
-- Preserve the two-wheel balance path, other communication modes, runtime `control_torque_compensation` command, current limit assignments, and pre-existing user edits.
-- No tests will be added or run. Verify the default firmware build, stale-symbol searches, table-data identity, and final source diff. Do not flash or operate hardware.
+- Keep `DIAGNOSTIC_LIVE_TUNING_DEFAULTS=1`. The flag supplies the documented startup profile, live tuning, CH3 scaling, and measured wheel timing. Its name understates its normal-control effects.
+- Keep the 10 ms diagnostic IMU interval. The sensor-only logger reads at nominal 100 Hz while the IMU continues producing samples at 1 kHz. The 100 Hz cadence aligns its 20 Hz filters and keeps the serial log at 100 rows/s; docs do not establish why 100 Hz is uniquely best.
+- Rename the servo constants to `LEG_SERVO_n_SIGNAL_PIN` to express that they select four leg-servo signal GPIOs in constructor order.
+- Make no control or timing changes.
 
 ## Progress
 
-- Removed the fixed-board SPI encoder selector/path. The default firmware build passed after that first cleanup.
-- Completed the how trace and architecture comparison. The native Luna cross-judge selected candidate 2 with the angle-loop cleanup from candidate 3. Gemini CLI timed out after 90 seconds and provided no review.
-- Independent scope guard approved the user-amended four-file plan and the angle/sample-enum cleanup additions.
-- Implemented the approved changes in `OllieFOCdrive.ino`, `OllieFOCdrive.h`, `SlotCalibration.h`, and `SlotCalibration.cpp` from an isolated copy. The baked table initializer text matched the pre-edit copy by SHA-256.
-- Default firmware build passes: 741,928 bytes program storage (56%) and 39,648 bytes global RAM (12%).
-- Stale-symbol search found no removed selectors, current-loop modes, user-mode selector, or sampler API in the firmware source and documentation.
-- At the prior checkpoint, the diff was limited to the four planned source files plus this task-state record, and the baked tables were unchanged. A later user follow-up removed the tables.
-- The previous cleanup checkpoint had two trailing-space findings on pre-existing TODO-edited `.ino` lines.
-- Final independent scope check returned STATUS OK with no scope gaps.
-- Follow-up scope guard approved the user's request to remove `TorqueCompensation` and `SlotCalibration`; deleted the setting, lookup path, and table source files while preserving the separate runtime wheel-target adjustment.
-- Removed the table feature's setting, lookup path, and both `SlotCalibration` files. The separate runtime wheel-target adjustment remains.
-- Clean default firmware build passes: 741,908 bytes program storage (56%) and 39,648 bytes global RAM (12%). The earlier incremental build used a zero-byte cached `Commander.cpp.o` left by an interrupted build; `--clean` rebuilt it successfully.
-- Active-source search found no remaining table macro, array, sampler, slot-calibration file, or lookup references. The separate runtime `control_torque_compensation` command remains by explicit user choice.
-- Final independent scope check for the removal follow-up returned STATUS OK with no scope gaps.
+- Read the project workflow, refactoring playbook, source, hardware reference, control/tuning docs, and sensor diagnostic guide.
+- Recorded the task baseline and pre-existing worktree edits in `work/servo-diagnostic-followup.scope.md`.
+- Read-only how review confirmed that disabling the tuning flag also restores fixed wheel-speed timing, and confirmed why diagnostic filter coefficients follow the 100 Hz software cadence.
+- Renamed all four servo pin constants and the constructor references without changing GPIO values or order.
+- Source search found no old macro names. `git diff --check` passed. The default firmware build passed at 741,908 bytes program storage and 39,648 bytes global RAM.
+- Gemini CLI review timed out after 90 seconds and returned `ok: false`; no findings were used.
+- Final independent scope check returned `STATUS: OK` with no scope gaps.
 
 ## Next step
 
-No further task steps remain. The separate runtime `control_torque_compensation` adjustment remains.
+Task complete. No control or timing behavior was changed.

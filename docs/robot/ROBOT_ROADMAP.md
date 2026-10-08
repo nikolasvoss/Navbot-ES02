@@ -16,3 +16,13 @@ Die Filterung läuft digital auf dem ESP32 und teilweise im ICM42688. Gyro- und 
 6. Pufferung oder binäre Frames erst einführen, wenn Messungen zeigen, dass CSV die festgelegte Datenrate nicht zuverlässig erreicht.
 7. Später ein Werkzeug prüfen, das aus CSV-Aufzeichnungen die FFT eines ausgewählten Messkanals anzeigt. Eine Live-FFT würde einen eigenen seriellen Client benötigen, da SerialPlot keine FFT-Plots bietet.
 8. Logging-Kommandos bereinigen. Auswahl von Messwerten, Ausgabeformate und Verhalten im Diagnose- und Normalmodus eindeutig dokumentieren.
+
+## Regler-Startwerte und Diagnose-Schalter bereinigen
+
+- `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` bündelt Verhalten für die normale Fahrt: Gain-Auswahl und Live-Tuning, CH3-Skalierung sowie die Zeitbasis der Raddrehzahl. Bei der späteren Bereinigung diese Zuständigkeiten explizit machen und prüfen, ob der Gain-Preload beim Start noch nötig ist, um den kurzen CH5-Wechsel über Modus 1 abzufangen. Bestehendes Fahrverhalten beibehalten, bis Vergleichsmessungen Änderungen stützen. Dieser Schalter ist unabhängig von `SENSOR_DIAGNOSTIC_MODE`.
+
+## IMU-Diagnosemessungen
+
+- Nach der Entkopplung der IMU-Verarbeitung von der 100-Hz-CSV-Ausgabe messen: `IMUtime_dt`-Verteilung im normalen und sensor-diagnostischen Modus; Zeitstempelabstände, Sequenzlücken und Logger-Drop-/Schreibfehler im Diagnose-CSV; sowie Filterantwort bei stationären und kontrollierten bekannten Frequenzen. Für Frequenzmessungen eine zur Zielbandbreite passende Erfassungsrate und Anti-Alias-Filterung verwenden. Die aktuelle Diagnose bleibt motorfrei und belegt kein Verhalten unter Motorlast.
+
+Diese Messungen sind wichtig, weil unterschiedliche Aktualisierungsraten und Filtereinstellungen Glättung, Verzögerung und Fusionswerte verändern können. Die 100-Hz-CSV-Ausgabe kann rohe Signale über 50 Hz aliasen, sodass schnelle Vibrationen falsch erscheinen oder unsichtbar bleiben. Ohne den Vergleich belegen Diagnoseaufzeichnungen weder die normale IMU-Verarbeitung noch das Verhalten unter Motorlast.
