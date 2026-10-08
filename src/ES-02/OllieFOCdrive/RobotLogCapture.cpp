@@ -100,7 +100,7 @@ void observeServoAngles(const int angles[4]) {
   }
 }
 
-void copyServoRanges(int32_t ranges[4]) {
+void copyServoRangesAndBeginNextWindow(int32_t ranges[4]) {
   if (ranges == nullptr) return;
 
   for (int i = 0; i < 4; ++i) {

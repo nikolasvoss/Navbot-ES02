@@ -1612,7 +1612,7 @@ void print_data(void) {
         sample.rollOk = roll_ok;
         sample.pitchOk = pitch_ok;
         int32_t ranges[4];
-        RobotLogCapture::copyServoRanges(ranges);
+        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
         for (int i = 0; i < 4; ++i) {
           sample.servoAngle[i] = servoTraceAngle[i];
           sample.servoRange[i] = ranges[i];
@@ -1631,7 +1631,7 @@ void print_data(void) {
         const float rawMinV = (float)7.77 / 813.43 * VoltageADCMin;
         const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
         int32_t ranges[4];
-        RobotLogCapture::copyServoRanges(ranges);
+        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
         const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
         Logging::ControlSample sample{};
         sample.timestampMs = traceMs;
@@ -1660,7 +1660,7 @@ void print_data(void) {
         const uint32_t traceMs = millis();
         const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
         int32_t ranges[4];
-        RobotLogCapture::copyServoRanges(ranges);
+        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
         const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
         Logging::BalanceSample sample{};
         sample.timestampMs = traceMs;
@@ -1687,7 +1687,7 @@ void print_data(void) {
         const uint32_t traceMs = millis();
         const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
         int32_t ranges[4];
-        RobotLogCapture::copyServoRanges(ranges);
+        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
         const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
         Logging::DriveSample sample{};
         sample.timestampMs = traceMs;

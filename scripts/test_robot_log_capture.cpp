@@ -54,7 +54,7 @@ int main() {
 
   RobotLogCapture::resetControlWindow();
   int32_t ranges[4] = {-1, -1, -1, -1};
-  RobotLogCapture::copyServoRanges(ranges);
+  RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
   for (int32_t range : ranges) assert(range == 0);
 
   const int32_t firstAngles[4] = {10, -10, 4, -4};
@@ -62,16 +62,16 @@ int main() {
   const int32_t thirdAngles[4] = {11, -11, 3, -3};
   RobotLogCapture::observeServoAngles(firstAngles);
   RobotLogCapture::observeServoAngles(secondAngles);
-  RobotLogCapture::copyServoRanges(ranges);
+  RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
   for (int32_t range : ranges) assert(range == 2);
 
   RobotLogCapture::observeServoAngles(thirdAngles);
-  RobotLogCapture::copyServoRanges(ranges);
+  RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
   for (int32_t range : ranges) assert(range == 1);
 
   RobotLogCapture::resetControlWindow();
   RobotLogCapture::observeServoAngles(firstAngles);
-  RobotLogCapture::copyServoRanges(ranges);
+  RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
   for (int32_t range : ranges) assert(range == 0);
   return 0;
 }
