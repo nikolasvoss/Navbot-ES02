@@ -1,4 +1,5 @@
 #include "ICM42688.h"
+#include "Logging.h"
 #include <SPI.h>
 #include <Arduino.h>
 
@@ -223,7 +224,8 @@ void readIMUData(int16_t &accelX, int16_t &accelY, int16_t &accelZ, int16_t &gyr
 
 // Gyroscope calibration function
 void calibrateGyro() {
-    Serial.println("Calibrating gyroscope. Keep the device still...");
+    if (Logging::profile() == Logging::Profile::Idle)
+        Serial.println("Calibrating gyroscope. Keep the device still...");
     const int calibrationSamples = 1000;  // Number of samples to collect
     int16_t gyroX_sum = 0, gyroY_sum = 0, gyroZ_sum = 0;
     int validSamples = 0;
@@ -242,13 +244,15 @@ void calibrateGyro() {
             validSamples++;
         } else {
             // Device moved, restart counting
-            Serial.print(" | x: ");
-            Serial.print(gyroX);
-            Serial.print(" y: ");
-            Serial.print(gyroY);
-            Serial.print(" Z: ");
-            Serial.print(gyroZ);            
-            Serial.println("Device moved during calibration. Restarting...");
+            if (Logging::profile() == Logging::Profile::Idle) {
+                Serial.print(" | x: ");
+                Serial.print(gyroX);
+                Serial.print(" y: ");
+                Serial.print(gyroY);
+                Serial.print(" Z: ");
+                Serial.print(gyroZ);
+                Serial.println("Device moved during calibration. Restarting...");
+            }
             gyroX_sum = 0;
             gyroY_sum = 0;
             gyroZ_sum = 0;
@@ -263,5 +267,6 @@ void calibrateGyro() {
     gyroBiasY = (float)gyroY_sum / calibrationSamples;
     gyroBiasZ = (float)gyroZ_sum / calibrationSamples;
 
-    Serial.println("Gyroscope calibration completed.");
+    if (Logging::profile() == Logging::Profile::Idle)
+        Serial.println("Gyroscope calibration completed.");
 }

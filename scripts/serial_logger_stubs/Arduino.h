@@ -16,4 +16,5 @@ void blockSerialWrites();
 bool waitForSerialWriteBlocked();
 void releaseSerialWrites();
 bool waitForSerialLines(size_t count);
+void shortNextSerialWrite();
 std::string serialOutput();

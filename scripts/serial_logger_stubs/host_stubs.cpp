@@ -16,6 +16,8 @@ std::mutex serialMutex;
 std::condition_variable serialChanged;
 bool writesBlocked = false;
 bool writeStarted = false;
+bool shortWrite = false;
+bool taskCreationFails = false;
 std::string serialBytes;
 size_t serialLineCount = 0;
 uint32_t serialBaud = 0;
@@ -52,10 +54,12 @@ size_t HostSerial::write(const uint8_t *data, size_t length) {
     std::this_thread::sleep_until(available);
     lock.lock();
   }
-  serialBytes.append(reinterpret_cast<const char *>(data), length);
-  for (size_t i = 0; i < length; ++i) if (data[i] == '\n') ++serialLineCount;
+  const size_t written = shortWrite && length > 0 ? length - 1 : length;
+  shortWrite = false;
+  serialBytes.append(reinterpret_cast<const char *>(data), written);
+  for (size_t i = 0; i < written; ++i) if (data[i] == '\n') ++serialLineCount;
   serialChanged.notify_all();
-  return length;
+  return written;
 }
 
 void blockSerialWrites() {
@@ -79,6 +83,11 @@ void releaseSerialWrites() {
 bool waitForSerialLines(size_t count) {
   std::unique_lock<std::mutex> lock(serialMutex);
   return serialChanged.wait_for(lock, std::chrono::seconds(2), [count] { return serialLineCount >= count; });
+}
+
+void shortNextSerialWrite() {
+  std::lock_guard<std::mutex> lock(serialMutex);
+  shortWrite = true;
 }
 
 std::string serialOutput() {
@@ -115,6 +124,12 @@ BaseType_t xQueueReceive(QueueHandle_t queue, void *item, TickType_t waitTicks) 
 
 BaseType_t xTaskCreatePinnedToCore(TaskFunction_t task, const char *, uint32_t, void *argument,
                                   UBaseType_t, void *, BaseType_t) {
+  if (taskCreationFails) {
+    taskCreationFails = false;
+    return pdFALSE;
+  }
   std::thread(task, argument).detach();
   return pdTRUE;
 }
+
+void failNextTaskCreation() { taskCreationFails = true; }

@@ -6,11 +6,7 @@
 #include "ble.h"
 #include <cppQueue.h>
 #include "robot.h"
-#include "SerialLogger.h"
-
-#define DEBUG_SERIAL_PRINT(...) do { if (!SerialLoggerSelectedMode()) Serial.print(__VA_ARGS__); } while (0)
-#define DEBUG_SERIAL_PRINTLN(...) do { if (!SerialLoggerSelectedMode()) Serial.println(__VA_ARGS__); } while (0)
-#define DEBUG_SERIAL_PRINTF(...) do { if (!SerialLoggerSelectedMode()) Serial.printf(__VA_ARGS__); } while (0)
+#include "Logging.h"
 #include "string.h"
 
 BLEServer* pServer = NULL;
@@ -61,7 +57,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
     rp.ble_connected = true;
-    DEBUG_SERIAL_PRINTLN("ble connected");
+    Logging::message(Logging::Level::Debug, "ble", "ble connected");
   };
 
   void onDisconnect(BLEServer* pServer) {
@@ -70,7 +66,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
     pServer->getAdvertising()->start();
 
     memset(&ble_ctrler, 0, sizeof(CmdManeuverTypDef));
-    DEBUG_SERIAL_PRINTLN("ble disconnected");
+    Logging::message(Logging::Level::Debug, "ble", "ble disconnected");
   }
 };
 
@@ -100,7 +96,7 @@ void ble_init() {
   pService->start();
   // Start advertising
   pServer->getAdvertising()->start();
-  DEBUG_SERIAL_PRINTLN("Waiting a client connection to notify...");
+  Logging::message(Logging::Level::Debug, "ble", "Waiting a client connection to notify...");
 
   ble_rx_data_clear();
 }
@@ -124,7 +120,7 @@ void ble_rx_processing(void) {
 
     if (ble_frames_validation() == false) {
       ble_rx_data_clear();
-      DEBUG_SERIAL_PRINTLN("ble deta err");
+      Logging::message(Logging::Level::Debug, "ble", "ble deta err");
       ble_rx.state = BLE_STATE_IDLE;
       return;
     }
@@ -179,7 +175,7 @@ void ble_tx_processing(void) {
     ble_tx_q.peek(&_ble_tx);
     ble_tx_q.drop();
     free(_ble_tx);
-    DEBUG_SERIAL_PRINT("BLE not connected, deleing queue; Queue remaining: ");DEBUG_SERIAL_PRINTLN(ble_tx_q.getCount());
+    Logging::message(Logging::Level::Debug, "ble", "BLE not connected, deleing queue; Queue remaining: %u", static_cast<unsigned int>(ble_tx_q.getCount()));
     return;
   }
   
@@ -196,10 +192,10 @@ void ble_tx_processing(void) {
   */ 
   if (ble_tx->index >= ble_tx->len) {
     ble_tx->state = BLE_STATE_SEND_FINISH;
-    DEBUG_SERIAL_PRINTF("finish!!!  ble_tx.index >= ble_tx.len  , ble_tx.index : %d , ble_tx.len : %d \r\n", ble_tx->index, ble_tx->len);
+    Logging::message(Logging::Level::Debug, "ble", "finish!!!  ble_tx.index >= ble_tx.len  , ble_tx.index : %d , ble_tx.len : %d", static_cast<int>(ble_tx->index), static_cast<int>(ble_tx->len));
     ble_tx_q.drop();
     free(ble_tx);
-    DEBUG_SERIAL_PRINT("Queue remaining: ");DEBUG_SERIAL_PRINTLN(ble_tx_q.getCount());
+    Logging::message(Logging::Level::Debug, "ble", "Queue remaining: %u", static_cast<unsigned int>(ble_tx_q.getCount()));
     return;
   }
   /*
@@ -213,7 +209,6 @@ void ble_tx_processing(void) {
     time_tick = 100;
   }
 
-  DEBUG_SERIAL_PRINT("ble send frame -> ");
   ble_tx->state = BLE_STATE_SEND_BEING;
 
   ble_tx->frame[0] = 0x55;
@@ -227,12 +222,17 @@ void ble_tx_processing(void) {
   
   ble_send_data((uint8_t*)ble_tx->frame, 20);
 
-  uint8_t i;
-  for (i = 0; i < 20; i++) {
-    DEBUG_SERIAL_PRINT(ble_tx->frame[i],HEX);
-    DEBUG_SERIAL_PRINT(" ");
-  }
-  DEBUG_SERIAL_PRINTLN("----");
+  Logging::message(Logging::Level::Debug, "ble", "ble send frame -> %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X ----",
+                   static_cast<unsigned int>(ble_tx->frame[0]), static_cast<unsigned int>(ble_tx->frame[1]),
+                   static_cast<unsigned int>(ble_tx->frame[2]), static_cast<unsigned int>(ble_tx->frame[3]),
+                   static_cast<unsigned int>(ble_tx->frame[4]), static_cast<unsigned int>(ble_tx->frame[5]),
+                   static_cast<unsigned int>(ble_tx->frame[6]), static_cast<unsigned int>(ble_tx->frame[7]),
+                   static_cast<unsigned int>(ble_tx->frame[8]), static_cast<unsigned int>(ble_tx->frame[9]),
+                   static_cast<unsigned int>(ble_tx->frame[10]), static_cast<unsigned int>(ble_tx->frame[11]),
+                   static_cast<unsigned int>(ble_tx->frame[12]), static_cast<unsigned int>(ble_tx->frame[13]),
+                   static_cast<unsigned int>(ble_tx->frame[14]), static_cast<unsigned int>(ble_tx->frame[15]),
+                   static_cast<unsigned int>(ble_tx->frame[16]), static_cast<unsigned int>(ble_tx->frame[17]),
+                   static_cast<unsigned int>(ble_tx->frame[18]), static_cast<unsigned int>(ble_tx->frame[19]));
 
   ble_tx->index += 15;
 }
@@ -318,7 +318,7 @@ void ble_cmd_json_processing(void) {
 void ble_tx_add_data(char* data, int len) {
 
   if(ble_tx_q.isFull() ==true){
-    DEBUG_SERIAL_PRINTLN("Queue is full, failed to add data");
+    Logging::message(Logging::Level::Debug, "ble", "Queue is full, failed to add data");
     return ;
   }
 
@@ -330,7 +330,7 @@ void ble_tx_add_data(char* data, int len) {
   ble_tx = (BleDataTypDef*)malloc(sizeof(BleDataTypDef));
   if(ble_tx == NULL)
   {
-    DEBUG_SERIAL_PRINTLN("error!!!!malloc false,ble txdata");
+    Logging::message(Logging::Level::Debug, "ble", "error!!!!malloc false,ble txdata");
     return;
   }
   memcpy(ble_tx->data, data, len);
@@ -350,9 +350,8 @@ void ble_tx_add_data(char* data, int len) {
   ble_tx->state = BLE_STATE_SEND_READY;
 
   ble_tx_q.push(&ble_tx);
-  DEBUG_SERIAL_PRINTLN("ble_tx_add_data:");
-  DEBUG_SERIAL_PRINTLN((char*)ble_tx->data);
-  DEBUG_SERIAL_PRINT("Queue remaining:");DEBUG_SERIAL_PRINTLN(ble_tx_q.getCount());
+  Logging::message(Logging::Level::Debug, "ble", "ble_tx_add_data: %.44s...", ble_tx->data);
+  Logging::message(Logging::Level::Debug, "ble", "Queue remaining: %u", static_cast<unsigned int>(ble_tx_q.getCount()));
 
 }
 void ble_tx_add_string(String str) {

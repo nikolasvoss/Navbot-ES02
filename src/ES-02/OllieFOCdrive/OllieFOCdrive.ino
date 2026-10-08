@@ -12,14 +12,32 @@
 #include "touchscreen.h"
 #include "ble.h"
 #include "robot.h"
-#include "SerialLogger.h"
+#include "Logging.h"
+#include "RobotLogCapture.h"
 #include "LegKinematics.h"
 #include "Calibration.h"
 #include "CalibrationStore.h"
 
+class LoggingCommandStream : public Stream {
+ public:
+  int available() override { return Serial.available(); }
+  int read() override { return Serial.read(); }
+  int peek() override { return Serial.peek(); }
+  size_t write(uint8_t value) override {
+    if (Logging::profile() != Logging::Profile::Idle) return 1;
+    return Serial.write(value);
+  }
+  size_t write(const uint8_t *buffer, size_t size) override {
+    if (Logging::profile() != Logging::Profile::Idle) return size;
+    return Serial.write(buffer, size);
+  }
+  void flush() override {
+    if (Logging::profile() == Logging::Profile::Idle) Serial.flush();
+  }
+};
 
-// commander communication instance
-Commander command = Commander(Serial);
+LoggingCommandStream commandStream;
+Commander command = Commander(commandStream);
 Calibration calibration;
 CalibrationStore calibrationStore;
 
@@ -205,9 +223,6 @@ bool pid_gains_mode_is_enabled(int mode) {
 //  Create ServoControl object, pass in the custom pin
 ServoControl servoControl(CUSTOM_SERVO_1_PIN, CUSTOM_SERVO_2_PIN, CUSTOM_SERVO_3_PIN, CUSTOM_SERVO_4_PIN);
 int servoTraceAngle[4] = { 0, 0, 0, 0 };  // Last angle arguments sent to the four servos
-int servoTraceMin[4] = { 0, 0, 0, 0 };
-int servoTraceMax[4] = { 0, 0, 0, 0 };
-bool servoTraceWindowStarted = false;
 
 // Remote control
 FUTABA_SBUS sBus;
@@ -285,6 +300,7 @@ void TwoKi(char *cmd) {
 
 void KeyScalar(char *cmd) {
   command.scalar(&Select, cmd);
+  RobotLogCapture::setProfileForSelector(static_cast<int>(Select));
 }
 void KeyCalibration(char *cmd) {
   command.scalar(&CalibrationSelect, cmd);
@@ -436,7 +452,7 @@ void setup() {
 
   Serial.begin(SENSOR_DIAGNOSTIC_MODE ? DIAGNOSTIC_SERIAL_BAUD_RATE :
                (DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? LIVE_TUNING_SERIAL_BAUD_RATE : SERIAL_BAUD_RATE));
-  SerialLoggerBegin();
+  Logging::begin();
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
   zeroBias.roll = loadedCalibration.attitude.rollDegrees;
   zeroBias.pitch = loadedCalibration.attitude.pitchDegrees;
@@ -447,26 +463,15 @@ void setup() {
   zeroBias.servo2 = loadedCalibration.servos.servo2Degrees;
   zeroBias.servo3 = loadedCalibration.servos.servo3Degrees;
   zeroBias.servo4 = loadedCalibration.servos.servo4Degrees;
-
-  Serial.println(" ");
-  Serial.print("  Roll Zero Bias: ");
-  Serial.print(zeroBias.roll);
-  Serial.print("  Pitch Zero Bias: ");
-  Serial.println(zeroBias.pitch);
-  Serial.print("  gyroBiasX:");
-  Serial.print(gyroBiasX);
-  Serial.print("  gyroBiasY:");
-  Serial.print(gyroBiasY);
-  Serial.print("  gyroBiasZ:");
-  Serial.println(gyroBiasZ);
-  Serial.print("  servo1:");
-  Serial.print(zeroBias.servo1);
-  Serial.print("  servo2:");
-  Serial.print(zeroBias.servo2);
-  Serial.print("  servo3:");
-  Serial.print(zeroBias.servo3);
-  Serial.print("  servo4:");
-  Serial.println(zeroBias.servo4);
+  Logging::message(Logging::Level::Info, "Calibration",
+                   "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
+                   zeroBias.roll, zeroBias.pitch);
+  Logging::message(Logging::Level::Info, "Calibration",
+                   "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
+                   gyroBiasX, gyroBiasY, gyroBiasZ);
+  Logging::message(Logging::Level::Info, "Calibration",
+                   "servo1: %.2f, servo2: %.2f, servo3: %.2f, servo4: %.2f",
+                   zeroBias.servo1, zeroBias.servo2, zeroBias.servo3, zeroBias.servo4);
   pinMode(BOARD_PIN_LED, OUTPUT);
   digitalWrite(BOARD_PIN_LED, LOW);  // 亮
   Serial.println("system run.");
@@ -482,6 +487,7 @@ void setup() {
   timestamp_prev = micros();
   Serial.printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n",
                 (int)esp_reset_reason(), diagnosticImuReady ? 1 : 0);
+  Logging::setProfile(Logging::Profile::Diagnostic);
   return;
 #endif
 
@@ -886,17 +892,8 @@ void RXsbus() {
 
     BodyRoll = mapf(sBus.channels[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);
 
-    if (Voltage <= 7.4) {
-      // CSV selections include their own data; avoid interleaving voltage warnings.
-      const int selection = (int)Select;
-      const bool isCsvLoggingSelection =
-          selection == 56 || selection == 57 || selection == 58 ||
-          (selection >= 60 && selection <= 75);
-      if (!isCsvLoggingSelection) {
-        Serial.print(" Voltage:");
-        Serial.println(Voltage, 5);
-      }
-    }
+  if (Voltage <= 7.4)
+    Logging::message(Logging::Level::Warning, "Voltage", "%.5f", Voltage);
 
   }
 }
@@ -982,6 +979,7 @@ void ImuUpdate(void) {
   timestamp_prev = timestamp_now;
 }
 
+
 /**
  * @brief Prints debugging data to the serial port based on a selection variable.
  *
@@ -992,367 +990,210 @@ void ImuUpdate(void) {
  * parts of the system without recompiling.
  */
 void print_data(void) {
-  static unsigned long lastSbusPrintMs = 0;
   const int selection = (int)Select;
+  const uint32_t nowMs = millis();
   if (selection >= 60 && selection <= 75) {
-    static unsigned long lastChannelTraceMs = 0;
-    const unsigned long nowMs = millis();
-    if (nowMs - lastChannelTraceMs >= 50) {
-      lastChannelTraceMs = nowMs;
-      SerialLogRecord row{};
-      row.kind = SERIAL_LOG_SELECTED_DEBUG;
-      row.selected.selector = selection;
-      row.selected.values[0] = nowMs * 0.001f;
-      row.selected.integers[0] = sBus.channels[selection - 60];
-      SerialLoggerSubmit(row);
-    }
+    const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(selection);
+    if (!RobotLogCapture::selectedDebugDue(selector, nowMs)) return;
+    Logging::DebugSample sample{};
+    sample.selector = selector;
+    sample.payload.channelState = {nowMs * 0.001f, sBus.channels[selection - 60]};
+    Logging::submit(sample);
     return;
   }
 
-  SerialLogRecord selected{};
-  selected.kind = SERIAL_LOG_SELECTED_DEBUG;
-  selected.selected.selector = static_cast<int32_t>(Select);
-  size_t fi = 0;
-  size_t ni = 0;
-  bool shouldEnqueue = false;
-#define LOG_F(value) selected.selected.values[fi++] = (value)
-#define LOG_I(value) selected.selected.integers[ni++] = static_cast<int32_t>(value)
-  switch (selected.selected.selector) {
+  const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(selection);
+  if (selection >= 1 && selection <= 45 &&
+      RobotLogCapture::selectedDebugDue(selector, nowMs)) {
+  Logging::DebugSample sample{};
+  sample.selector = selector;
+  switch (selection) {
     case 1:
-      LOG_F(time_dt);
-      LOG_F(attitude.roll);
-      LOG_F(attitude.pitch);
-      LOG_F(attitude.yaw);
-      shouldEnqueue = true;
+      sample.payload.timedVector3 = {time_dt, attitude.roll, attitude.pitch, attitude.yaw};
       break;
     case 2:
-      LOG_F(time_dt);
-      LOG_F(attitude.acc.x);
-      LOG_F(attitude.acc.y);
-      LOG_F(attitude.acc.z);
-      shouldEnqueue = true;
+      sample.payload.timedVector3 = {time_dt, attitude.acc.x, attitude.acc.y, attitude.acc.z};
       break;
     case 3:
-      LOG_F(time_dt);
-      LOG_F(attitude.gyro.x);
-      LOG_F(attitude.gyro.y);
-      LOG_F(attitude.gyro.z);
-      shouldEnqueue = true;
+      sample.payload.timedVector3 = {time_dt, attitude.gyro.x, attitude.gyro.y, attitude.gyro.z};
       break;
     case 4:
-      LOG_F(time_dt);
-      LOG_F(attitude.roll-zeroBias.roll);
-      LOG_F(attitude.pitch-zeroBias.pitch);
-      LOG_F(attitude.yaw-zeroBias.yaw);
-      shouldEnqueue = true;
+      sample.payload.timedVector3 = {time_dt, attitude.roll - zeroBias.roll,
+                                     attitude.pitch - zeroBias.pitch,
+                                     attitude.yaw - zeroBias.yaw};
       break;
     case 5:
-      LOG_F(time_dt);
-      LOG_F(zeroBias.roll);
-      LOG_F(zeroBias.pitch);
-      LOG_F(zeroBias.yaw);
-      shouldEnqueue = true;
+      sample.payload.timedVector3 = {time_dt, zeroBias.roll, zeroBias.pitch, zeroBias.yaw};
       break;
     case 6:
-      LOG_F(Motor1_Velocity);
-      LOG_F(Motor2_Velocity);
-      shouldEnqueue = true;
+      sample.payload.motorVelocities = {Motor1_Velocity, Motor2_Velocity};
       break;
     case 7:
-      LOG_F(Motor1_Velocity);
-      LOG_F(Motor1_Velocity_f);
-      shouldEnqueue = true;
+      sample.payload.pair = {Motor1_Velocity, Motor1_Velocity_f};
       break;
     case 8:
-      if (millis() - lastSbusPrintMs < 50) break;
-      lastSbusPrintMs = millis();
-      for (int i = 0; i < 10; ++i) LOG_I(sBus.channels[i]);
-      LOG_F(sbus_dt_ms);
-      shouldEnqueue = true;
+      for (int i = 0; i < 10; ++i) sample.payload.receiverChannels.channels[i] = sBus.channels[i];
+      sample.payload.receiverChannels.frameDtMs = sbus_dt_ms;
       break;
     case 9:
-      LOG_F(Angle_Pid.Kp);
-      LOG_F(Angle_Pid.Ki);
-      LOG_F(Angle_Pid.Kd);
-      LOG_F(Speed_Pid.Kp);
-      LOG_F(Speed_Pid.Ki);
-      LOG_F(Speed_Pid.Kd);
-      LOG_F(Yaw_Pid.Kp);
-      LOG_F(Yaw_Pid.Ki);
-      LOG_F(Yaw_Pid.Kd);
-      LOG_F(time_dt);
-      shouldEnqueue = true;
+      sample.payload.controllerGains = {{Angle_Pid.Kp, Angle_Pid.Ki, Angle_Pid.Kd},
+                                        {Speed_Pid.Kp, Speed_Pid.Ki, Speed_Pid.Kd},
+                                        {Yaw_Pid.Kp, Yaw_Pid.Ki, Yaw_Pid.Kd}, time_dt};
       break;
     case 10:
-      LOG_F(mahonyFilter.twoKp);
-      LOG_F(mahonyFilter.twoKi);
-      LOG_F(attitude.roll);
-      LOG_F(attitude.pitch);
-      LOG_F(IMUtime_dt);
-      shouldEnqueue = true;
+      sample.payload.mahony = {mahonyFilter.twoKp, mahonyFilter.twoKi, attitude.roll,
+                               attitude.pitch, IMUtime_dt};
       break;
     case 11:
-      LOG_F(angleX);
-      LOG_F(angleY);
-      LOG_F(angleZ);
-      LOG_F(angleGyroX);
-      LOG_F(angleGyroY);
-      LOG_F(angleGyroZ);
-      LOG_F(IMUtime_dt);
-      shouldEnqueue = true;
+      sample.payload.imuAxes = {angleX, angleY, angleZ, angleGyroX, angleGyroY, angleGyroZ, IMUtime_dt};
       break;
     case 12:
-      LOG_F(angleX);
-      LOG_F(attitude.roll);
-      shouldEnqueue = true;
+      sample.payload.pair = {angleX, attitude.roll};
       break;
     case 13:
-      LOG_F(time_dt);
-      LOG_F(attitude.gyrof.x);
-      LOG_F(attitude.gyrof.y);
-      LOG_F(attitude.gyrof.z);
-      shouldEnqueue = true;
+      sample.payload.timedVector3 = {time_dt, attitude.gyrof.x, attitude.gyrof.y, attitude.gyrof.z};
       break;
     case 14:
-      LOG_F(time_dt);
-      LOG_F(attitude.accf.x);
-      LOG_F(attitude.accf.y);
-      LOG_F(attitude.accf.z);
-      shouldEnqueue = true;
+      sample.payload.timedVector3 = {time_dt, attitude.accf.x, attitude.accf.y, attitude.accf.z};
       break;
     case 15:
-      LOG_F(attitude.acc.y);
-      LOG_F(attitude.accf.y);
-      shouldEnqueue = true;
+      sample.payload.pair = {attitude.acc.y, attitude.accf.y};
       break;
     case 16:
-      LOG_F(attitude.gyro.y);
-      LOG_F(attitude.gyrof.y);
-      shouldEnqueue = true;
+      sample.payload.pair = {attitude.gyro.y, attitude.gyrof.y};
       break;
     case 17:
-      LOG_F(motor2.current_sp);
-      shouldEnqueue = true;
+      sample.payload.currentSetpoint = {motor2.current_sp};
       break;
     case 18:
-      LOG_F(motor2.target);
-      LOG_F(sensor1.getAngle());
-      LOG_F(sensor1.getMechanicalAngle());
-      LOG_F(sensor2.getAngle());
-      LOG_F(sensor2.getMechanicalAngle());
-      shouldEnqueue = true;
+      sample.payload.sensorAngles = {motor2.target, sensor1.getAngle(), sensor1.getMechanicalAngle(),
+                                     sensor2.getAngle(), sensor2.getMechanicalAngle()};
       break;
     case 19:
-      LOG_F(zeroBias.servo1);
-      LOG_F(zeroBias.servo2);
-      LOG_F(zeroBias.servo3);
-      LOG_F(zeroBias.servo4);
-      shouldEnqueue = true;
+      sample.payload.servoOffsets = {{zeroBias.servo1, zeroBias.servo2, zeroBias.servo3, zeroBias.servo4}};
       break;
     case 20:
-      LOG_F(top_ball_x);
-      LOG_F(BodyRoll);
-      LOG_F(LegLength);
-      shouldEnqueue = true;
+      sample.payload.ballBalanceGeometry = {top_ball_x, BodyRoll, LegLength};
       break;
     case 21:
-      LOG_F(roll_ok);
-      LOG_F(BodyPitching);
-      shouldEnqueue = true;
+      sample.payload.balanceState = {roll_ok, BodyPitching};
       break;
     case 22:
-      LOG_F(Angle_Pid.iLimit);
-      LOG_F(Angle_Pid.integral);
-      LOG_F(Angle_Pid.outI);
-      LOG_F(Angle_Pid.output);
-      shouldEnqueue = true;
+      sample.payload.pidIntegralState = {Angle_Pid.iLimit, Angle_Pid.integral,
+                                         Angle_Pid.outI, Angle_Pid.output};
       break;
     case 23:
-      LOG_F(Speed_Pid.iLimit);
-      LOG_F(Speed_Pid.integral);
-      LOG_F(Speed_Pid.outI);
-      LOG_F(BodyPitching_f);
-      LOG_F(Speed_Pid.output);
-      shouldEnqueue = true;
+      sample.payload.pidIntegralOutputState = {Speed_Pid.iLimit, Speed_Pid.integral,
+                                               Speed_Pid.outI, BodyPitching_f, Speed_Pid.output};
       break;
     case 24:
-      LOG_F(enableDFilter);
-      LOG_F(cutoffFreq);
-      shouldEnqueue = true;
+      sample.payload.pair = {enableDFilter, cutoffFreq};
       break;
     case 25:
-      LOG_F(BodyPitching_f);
-      LOG_F(BodyPitching);
-      shouldEnqueue = true;
+      sample.payload.bodyPitchState = {BodyPitching_f, BodyPitching};
       break;
     case 26:
       if (Touch.state == 1) {
-        LOG_I(Touch.state);
-        LOG_I(Touch.XPdat);
-        LOG_I(Touch.YPdat);
-        shouldEnqueue = true;
+        sample.payload.touchPoint = {Touch.state, Touch.XPdat, Touch.YPdat};
       } else if (Touch.state == 0) {
-        LOG_I(Touch.state);
-        LOG_I(Touch.XLdat);
-        LOG_I(Touch.YLdat);
-        shouldEnqueue = true;
-      }
+        sample.payload.touchPoint = {Touch.state, Touch.XLdat, Touch.YLdat};
+      } else return;
       break;
     case 27:
-      LOG_I(Touch.XPdat);
-      LOG_I(Touch.YPdat);
-      LOG_F(Touch.XPdatF);
-      LOG_F(Touch.YPdatF);
-      shouldEnqueue = true;
+      sample.payload.touchFilteredPoint = {Touch.XPdat, Touch.YPdat, Touch.XPdatF, Touch.YPdatF};
       break;
     case 28:
-      LOG_F(BodyPitching_f);
-      LOG_F(BodyRoll_f);
-      LOG_F(LegLength_f);
-      LOG_F(SlideStep_f);
-      LOG_F(top_ball_x);
-      LOG_F(top_ball_y);
-      shouldEnqueue = true;
+      sample.payload.filteredGeometry = {BodyPitching_f, BodyRoll_f, LegLength_f, SlideStep_f,
+                                         top_ball_x, top_ball_y};
       break;
     case 29:
-      LOG_F(TouchY_Pid.Kp);
-      LOG_F(TouchY_Pid.Ki);
-      LOG_F(TouchY_Pid.Kd);
-      LOG_F(TouchY_Pid.deriv);
-      LOG_F(TouchY_Pid.output);
-      shouldEnqueue = true;
+      sample.payload.pidTuningState = {TouchY_Pid.Kp, TouchY_Pid.Ki, TouchY_Pid.Kd,
+                                       TouchY_Pid.deriv, TouchY_Pid.output};
       break;
     case 30:
-      LOG_F(TouchY_Pid.deriv);
-      shouldEnqueue = true;
+      sample.payload.pidDerivative = {TouchY_Pid.deriv};
       break;
     case 31:
-      LOG_F(Roll_Pid.error);
-      LOG_F(Roll_Pid.iLimit);
-      LOG_F(Roll_Pid.integral);
-      LOG_F(Roll_Pid.outI);
-      LOG_F(Roll_Pid.output);
-      shouldEnqueue = true;
+      sample.payload.pidState = {Roll_Pid.error, Roll_Pid.iLimit, Roll_Pid.integral,
+                                 Roll_Pid.outI, Roll_Pid.output};
       break;
     case 32:
-      LOG_F(Roll_Pid.Kp);
-      LOG_F(Roll_Pid.Ki);
-      LOG_F(Roll_Pid.Kd);
-      shouldEnqueue = true;
+      sample.payload.pidCoefficients = {Roll_Pid.Kp, Roll_Pid.Ki, Roll_Pid.Kd};
       break;
     case 33:
-      LOG_F(Yaw_Pid.iLimit);
-      LOG_F(Yaw_Pid.integral);
-      LOG_F(Yaw_Pid.outI);
-      LOG_F(BodyPitching_f);
-      LOG_F(Yaw_Pid.output);
-      shouldEnqueue = true;
+      sample.payload.pidIntegralOutputState = {Yaw_Pid.iLimit, Yaw_Pid.integral,
+                                               Yaw_Pid.outI, BodyPitching_f, Yaw_Pid.output};
       break;
     case 34:
-      LOG_F(TouchX_Pid.Kp);
-      LOG_F(TouchX_Pid.Ki);
-      LOG_F(TouchX_Pid.Kd);
-      LOG_F(TouchX_Pid.deriv);
-      LOG_F(TouchX_Pid.output);
-      shouldEnqueue = true;
+      sample.payload.pidTuningState = {TouchX_Pid.Kp, TouchX_Pid.Ki, TouchX_Pid.Kd,
+                                       TouchX_Pid.deriv, TouchX_Pid.output};
       break;
     case 35:
-      LOG_F(TouchX_Pid.deriv);
-      shouldEnqueue = true;
+      sample.payload.pidDerivative = {TouchX_Pid.deriv};
       break;
     case 36:
-      LOG_I(Touch.state);
-      LOG_I(Touch.start);
-      shouldEnqueue = true;
+      sample.payload.touchState = {Touch.state, Touch.start};
       break;
     case 37:
-      LOG_F(top_ball_x);
-      LOG_F(sbus_top_ball_x_smoothed);
-      LOG_F(top_ball_y);
-      LOG_F(sbus_top_ball_y_smoothed);
-      shouldEnqueue = true;
+      sample.payload.ballPosition = {top_ball_x, sbus_top_ball_x_smoothed,
+                                     top_ball_y, sbus_top_ball_y_smoothed};
       break;
     case 38:
-      LOG_F(BodyPitching);
-      LOG_F(TouchY_Pid.output);
-      shouldEnqueue = true;
+      sample.payload.balanceOutputPair = {BodyPitching, TouchY_Pid.output};
       break;
     case 39:
-      LOG_F(TouchY_Pid.iLimit);
-      LOG_F(TouchY_Pid.integral);
-      LOG_F(TouchY_Pid.outI);
-      LOG_F(TouchY_Pid.output);
-      shouldEnqueue = true;
+      sample.payload.pidIntegralState = {TouchY_Pid.iLimit, TouchY_Pid.integral,
+                                         TouchY_Pid.outI, TouchY_Pid.output};
       break;
     case 40:
       if (Touch.state == 1) {
-        LOG_I(Touch.state);
-        LOG_I(Touch.XPressDat);
-        LOG_I(Touch.YPressDat);
-        shouldEnqueue = true;
+        sample.payload.touchPoint = {Touch.state, Touch.XPressDat, Touch.YPressDat};
       } else if (Touch.state == 0) {
-        LOG_I(Touch.state);
-        LOG_I(Touch.XPressDat);
-        LOG_I(Touch.YPressDat);
-        shouldEnqueue = true;
-      }
+        sample.payload.touchPoint = {Touch.state, Touch.XPressDat, Touch.YPressDat};
+      } else return;
       break;
     case 41:
-      LOG_F(roll_ok);
-      LOG_F(BodyPitching);
-      LOG_F(Speed_Pid.output);
-      shouldEnqueue = true;
+      sample.payload.rollOutput = {roll_ok, BodyPitching, Speed_Pid.output};
       break;
     case 42:
-      LOG_F(roll_ok);
-      LOG_F(BodyPitching);
-      LOG_F(BodyPitchingCorrect(BodyPitching_f));
-      shouldEnqueue = true;
+      sample.payload.rollCorrection = {roll_ok, BodyPitching,
+                                       BodyPitchingCorrect(BodyPitching_f)};
       break;
     case 43:
-      LOG_I(VoltageADC);
-      LOG_F(VoltageADCf);
-      LOG_F(Voltage);
-      shouldEnqueue = true;
+      sample.payload.voltageState = {VoltageADC, VoltageADCf, Voltage};
       break;
     case 44:
-      LOG_I(PidParameterTuning);
-      LOG_F(TargetLegLength);
-      shouldEnqueue = true;
+      sample.payload.tuningState = {PidParameterTuning, TargetLegLength};
       break;
     case 45:
-      LOG_I(RobotTumble);
-      LOG_F(roll_ok);
-      LOG_F(Angle_Pid.error);
-      shouldEnqueue = true;
+      sample.payload.tumbleState = {RobotTumble, roll_ok, Angle_Pid.error};
       break;
-    default: break;
+    default: return;
   }
-  if (shouldEnqueue) SerialLoggerSubmit(selected);
-#undef LOG_F
-#undef LOG_I
+  Logging::submit(sample);
+  }
   switch ((int)Select) {
     case 55: {
       if (controlGateSequence % 7 == 0) {
         const uint32_t traceMs = millis();
-        SerialLogRecord row{};
-        row.kind = SERIAL_LOG_TRACE;
-        row.timestamp = traceMs;
-        row.sequence = activeTraceSequence++;
-        row.values[0] = pid_gains_mode;
-        row.values[1] = posture_or_mark_mode;
-        row.values[2] = (float)7.77 / 813.43 * VoltageADCMin;
-        row.values[3] = Voltage;
-        row.values[4] = roll_ok;
-        row.values[5] = pitch_ok;
-        for (int i = 0; i < 4; i++) {
-          row.values[6 + i] = servoTraceAngle[i];
-          row.values[10 + i] = servoTraceMax[i] - servoTraceMin[i];
-          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
+        Logging::TraceSample sample{};
+        sample.timestampMs = traceMs;
+        sample.sequence = activeTraceSequence++;
+        sample.gainMode = pid_gains_mode;
+        sample.postureOrMarkMode = posture_or_mark_mode;
+        sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
+        sample.batteryV = Voltage;
+        sample.rollOk = roll_ok;
+        sample.pitchOk = pitch_ok;
+        int32_t ranges[4];
+        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
+        for (int i = 0; i < 4; ++i) {
+          sample.servoAngle[i] = servoTraceAngle[i];
+          sample.servoRange[i] = ranges[i];
         }
-        row.values[14] = motor1.target;
-        row.values[15] = motor2.target;
-        SerialLoggerSubmit(row);
+        sample.leftMotorTarget = motor1.target;
+        sample.rightMotorTarget = motor2.target;
+        Logging::submit(sample);
         VoltageADCMin = VoltageADC;
       }
       break;
@@ -1363,29 +1204,26 @@ void print_data(void) {
         const uint32_t traceMs = millis();
         const float rawMinV = (float)7.77 / 813.43 * VoltageADCMin;
         const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
-        int maxServoRange = 0;
-        for (int i = 0; i < 4; i++) {
-          maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
-          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
-        }
-        SerialLogRecord row{};
-        row.kind = SERIAL_LOG_CONTROL;
-        row.timestamp = traceMs;
-        row.sequence = activeTraceSequence++;
-        row.values[0] = pid_gains_mode;
-        row.values[1] = rawMinV;
-        row.values[2] = Voltage;
-        row.values[3] = roll_ok;
-        row.values[4] = attitude.gyro.z;
-        row.values[5] = BodyTurn;
-        row.values[6] = active ? Angle_Pid.error : 0.0f;
-        row.values[7] = active ? Angle_Pid.output : 0.0f;
-        row.values[8] = active ? Yaw_Pid.error : 0.0f;
-        row.values[9] = active ? Yaw_Pid.output : 0.0f;
-        row.values[10] = motor1.target;
-        row.values[11] = motor2.target;
-        row.values[12] = maxServoRange;
-        SerialLoggerSubmit(row);
+        int32_t ranges[4];
+        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
+        const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
+        Logging::ControlSample sample{};
+        sample.timestampMs = traceMs;
+        sample.sequence = activeTraceSequence++;
+        sample.gainMode = pid_gains_mode;
+        sample.minimumBatteryRawV = rawMinV;
+        sample.batteryV = Voltage;
+        sample.rollOk = roll_ok;
+        sample.yawRateRadPerSec = attitude.gyro.z;
+        sample.bodyTurn = BodyTurn;
+        sample.angleError = active ? Angle_Pid.error : 0.0f;
+        sample.angleOutput = active ? Angle_Pid.output : 0.0f;
+        sample.yawError = active ? Yaw_Pid.error : 0.0f;
+        sample.yawOutput = active ? Yaw_Pid.output : 0.0f;
+        sample.leftMotorTarget = motor1.target;
+        sample.rightMotorTarget = motor2.target;
+        sample.maxServoRange = maxServoRange;
+        Logging::submit(sample);
         VoltageADCMin = VoltageADC;
       }
       break;
@@ -1395,27 +1233,24 @@ void print_data(void) {
       if (controlGateSequence % 7 == 0) {
         const uint32_t traceMs = millis();
         const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
-        int maxServoRange = 0;
-        for (int i = 0; i < 4; i++) {
-          maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
-          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
-        }
-        SerialLogRecord row{};
-        row.kind = SERIAL_LOG_BALANCE;
-        row.timestamp = traceMs;
-        row.sequence = activeTraceSequence++;
-        row.values[0] = pid_gains_mode;
-        row.values[1] = (float)7.77 / 813.43 * VoltageADCMin;
-        row.values[2] = roll_ok;
-        row.values[3] = active ? Angle_Pid.error : 0.0f;
-        row.values[4] = active ? Angle_Pid.outP : 0.0f;
-        row.values[5] = active ? Angle_Pid.outI : 0.0f;
-        row.values[6] = active ? Angle_Pid.outD : 0.0f;
-        row.values[7] = active ? BodyX : 0.0f;
-        row.values[8] = motor1.target;
-        row.values[9] = motor2.target;
-        row.values[10] = maxServoRange;
-        SerialLoggerSubmit(row);
+        int32_t ranges[4];
+        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
+        const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
+        Logging::BalanceSample sample{};
+        sample.timestampMs = traceMs;
+        sample.sequence = activeTraceSequence++;
+        sample.gainMode = pid_gains_mode;
+        sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
+        sample.rollOk = roll_ok;
+        sample.angleError = active ? Angle_Pid.error : 0.0f;
+        sample.angleProportional = active ? Angle_Pid.outP : 0.0f;
+        sample.angleIntegral = active ? Angle_Pid.outI : 0.0f;
+        sample.angleDerivative = active ? Angle_Pid.outD : 0.0f;
+        sample.bodyX = active ? BodyX : 0.0f;
+        sample.leftMotorTarget = motor1.target;
+        sample.rightMotorTarget = motor2.target;
+        sample.maxServoRange = maxServoRange;
+        Logging::submit(sample);
         VoltageADCMin = VoltageADC;
       }
       break;
@@ -1425,44 +1260,41 @@ void print_data(void) {
       if (controlGateSequence % 7 == 0) {
         const uint32_t traceMs = millis();
         const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
-        int maxServoRange = 0;
-        for (int i = 0; i < 4; i++) {
-          maxServoRange = max(maxServoRange, servoTraceMax[i] - servoTraceMin[i]);
-          servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
-        }
-        SerialLogRecord row{};
-        row.kind = SERIAL_LOG_DRIVE;
-        row.timestamp = traceMs;
-        row.sequence = activeTraceSequence++;
-        row.values[0] = pid_gains_mode;
-        row.values[1] = (float)7.77 / 813.43 * VoltageADCMin;
-        row.values[2] = Voltage;
-        row.values[3] = MovementSpeed;
-        row.values[4] = active ? driveEffectiveSpeed : 0.0f;
-        row.values[5] = Motor1_Velocity_f;
-        row.values[6] = Motor2_Velocity_f;
-        row.values[7] = time_dt;
-        row.values[8] = active ? Speed_Pid.error : 0.0f;
-        row.values[9] = active ? Speed_Pid.outP : 0.0f;
-        row.values[10] = active ? Speed_Pid.outI : 0.0f;
-        row.values[11] = active ? Speed_Pid.outD : 0.0f;
-        row.values[12] = active ? Speed_Pid.output : 0.0f;
-        row.values[13] = active ? driveSpeedBodyXRaw : 0.0f;
-        row.values[14] = active ? BodyX : 0.0f;
-        row.values[15] = BodyPitching_f;
-        row.values[16] = roll_ok;
-        row.values[17] = active ? Angle_Pid.output : 0.0f;
-        row.values[18] = active ? Angle_Pid.outP : 0.0f;
-        row.values[19] = active ? Angle_Pid.outI : 0.0f;
-        row.values[20] = active ? Angle_Pid.outD : 0.0f;
-        row.values[21] = active ? wheelSpeedFeedbackOutput : 0.0f;
-        row.values[22] = motor1.target;
-        row.values[23] = motor2.target;
-        row.values[24] = top_ball_x;
-        row.values[25] = Touch.XPdatF;
-        row.values[26] = BodyPitching;
-        row.values[27] = maxServoRange;
-        SerialLoggerSubmit(row);
+        int32_t ranges[4];
+        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
+        const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
+        Logging::DriveSample sample{};
+        sample.timestampMs = traceMs;
+        sample.sequence = activeTraceSequence++;
+        sample.gainMode = pid_gains_mode;
+        sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
+        sample.batteryV = Voltage;
+        sample.requestedSpeed = MovementSpeed;
+        sample.effectiveSpeed = active ? driveEffectiveSpeed : 0.0f;
+        sample.leftWheelVelocity = Motor1_Velocity_f;
+        sample.rightWheelVelocity = Motor2_Velocity_f;
+        sample.controlDtSec = time_dt;
+        sample.speedError = active ? Speed_Pid.error : 0.0f;
+        sample.speedProportional = active ? Speed_Pid.outP : 0.0f;
+        sample.speedIntegral = active ? Speed_Pid.outI : 0.0f;
+        sample.speedDerivative = active ? Speed_Pid.outD : 0.0f;
+        sample.speedOutput = active ? Speed_Pid.output : 0.0f;
+        sample.driveBodyXRaw = active ? driveSpeedBodyXRaw : 0.0f;
+        sample.bodyX = active ? BodyX : 0.0f;
+        sample.bodyPitchFiltered = BodyPitching_f;
+        sample.rollOk = roll_ok;
+        sample.angleOutput = active ? Angle_Pid.output : 0.0f;
+        sample.angleProportional = active ? Angle_Pid.outP : 0.0f;
+        sample.angleIntegral = active ? Angle_Pid.outI : 0.0f;
+        sample.angleDerivative = active ? Angle_Pid.outD : 0.0f;
+        sample.wheelSpeedFeedbackOutput = active ? wheelSpeedFeedbackOutput : 0.0f;
+        sample.leftMotorTarget = motor1.target;
+        sample.rightMotorTarget = motor2.target;
+        sample.ballX = top_ball_x;
+        sample.touchXFiltered = Touch.XPdatF;
+        sample.bodyPitch = BodyPitching;
+        sample.maxServoRange = maxServoRange;
+        Logging::submit(sample);
         VoltageADCMin = VoltageADC;
       }
       break;
@@ -1813,8 +1645,7 @@ void RemoteControlFiltering(void)  // Remote control filter
 
     enableDFilter_last = (int)enableDFilter;
     cutoffFreq_last = (int)cutoffFreq;
-    Serial.println(" ");
-    Serial.println(" ok ");
+    Logging::message(Logging::Level::Info, "Filter", "ok");
   }
 }
 
@@ -1880,24 +1711,23 @@ void DiagnosticLoop(void) {
     const long rcAgeMs = diagnosticHasRcFrame ? (long)(nowMs - diagnosticLastRcFrameMs) : -1;
     const int rcFailsafe = diagnosticHasRcFrame ? sBus.Failsafe() : -1;
     const float batteryRawV = (float)7.77 / 813.43 * VoltageADC;
-    SerialLogRecord row{};
-    row.kind = SERIAL_LOG_DIAGNOSTIC;
-    row.timestamp = (uint32_t)timestamp_prev;
-    row.sequence = diagnosticSequence++;
-    row.values[0] = attitude.gyro.x;
-    row.values[1] = attitude.gyro.y;
-    row.values[2] = attitude.gyro.z;
-    row.values[3] = attitude.acc.x;
-    row.values[4] = attitude.acc.y;
-    row.values[5] = attitude.acc.z;
-    row.values[6] = attitude.roll;
-    row.values[7] = attitude.pitch;
-    row.values[8] = attitude.yaw;
-    row.values[9] = batteryRawV;
-    row.values[10] = (float)rcAgeMs;
-    row.values[11] = (float)rcFailsafe;
-    row.values[12] = diagnosticImuReady ? 1.0f : 0.0f;
-    SerialLoggerSubmit(row);
+    Logging::DiagnosticSample sample{};
+    sample.timestampUs = (uint32_t)timestamp_prev;
+    sample.sequence = diagnosticSequence++;
+    sample.gyroX = attitude.gyro.x;
+    sample.gyroY = attitude.gyro.y;
+    sample.gyroZ = attitude.gyro.z;
+    sample.accelX = attitude.acc.x;
+    sample.accelY = attitude.acc.y;
+    sample.accelZ = attitude.acc.z;
+    sample.rollDeg = attitude.roll;
+    sample.pitchDeg = attitude.pitch;
+    sample.yawDeg = attitude.yaw;
+    sample.batteryRawV = batteryRawV;
+    sample.receiverFrameAgeMs = rcAgeMs;
+    sample.receiverFailsafe = rcFailsafe;
+    sample.imuReady = diagnosticImuReady ? 1 : 0;
+    Logging::submit(sample);
   }
   if (nowMs - lastVoltageMs >= 10) {
     lastVoltageMs = nowMs;
@@ -1929,7 +1759,7 @@ void loop() {
   // iterative function setting the outter loop target
 
   if (Communication_object == COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO) {
-    motor1.monitor();  // When using the simpleFOC Studio upper computer, this sentence must be opened. But it will affect the program execution speed
+    if (Logging::profile() == Logging::Profile::Idle) motor1.monitor();
   } else if (Communication_object == COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS) {
     motor2.target = motor1.target;
   }
@@ -1960,7 +1790,6 @@ void loop() {
 
   // user communication
   command.run();
-  SerialLoggerSetSelectedMode((int)Select);
 
   ImuUpdate();  // Update IMU data
   CtrlInput();  // BLE or remote control input
@@ -2000,8 +1829,7 @@ void loop() {
       for (int axis = 0; axis < 6; axis++) {
         biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)LPF_CUTOFF_FREQ, (unsigned int)RATE_HZ);
       }
-      Serial.print(" RATE_HZ:");
-      Serial.print(RATE_HZ);
+      Logging::message(Logging::Level::Info, "RATE_HZ", "%.3f", RATE_HZ);
       RATE_HZ_last = RATE_HZ;
     }
     if (LPF_CUTOFF_FREQ != LPF_CUTOFF_FREQ_last) {
@@ -2009,8 +1837,7 @@ void loop() {
       for (int axis = 0; axis < 6; axis++) {
         biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)LPF_CUTOFF_FREQ, (unsigned int)RATE_HZ);
       }
-      Serial.print(" LPF_CUTOFF_FREQ:");
-      Serial.print(LPF_CUTOFF_FREQ);
+      Logging::message(Logging::Level::Info, "LPF_CUTOFF_FREQ", "%.3f", LPF_CUTOFF_FREQ);
       LPF_CUTOFF_FREQ_last = LPF_CUTOFF_FREQ;
     }
 
@@ -2026,35 +1853,23 @@ void loop() {
       CalibrationSelect = 0;
 
     if (calibrationResult.completion == CalibrationCompletion::Gyroscope) {
-      Serial.print("  gyroBiasX:");
-      Serial.print(gyroBiasX);
-      Serial.print("  gyroBiasY:");
-      Serial.print(gyroBiasY);
-      Serial.print("  gyroBiasZ:");
-      Serial.println(gyroBiasZ);
+      Logging::message(Logging::Level::Info, "Calibration",
+                       "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
+                       gyroBiasX, gyroBiasY, gyroBiasZ);
     } else if (calibrationResult.completion == CalibrationCompletion::Attitude) {
-      Serial.print("  Roll Zero Bias: ");
-      Serial.print(zeroBias.roll);
-      Serial.print("  Pitch Zero Bias: ");
-      Serial.println(zeroBias.pitch);
+      Logging::message(Logging::Level::Info, "Calibration",
+                       "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
+                       zeroBias.roll, zeroBias.pitch);
     }
 
-    if (calibrationResult.changedServos.servo1Changed) {
-      Serial.print("  zeroBias.servo1:");
-      Serial.println(zeroBias.servo1);
-    }
-    if (calibrationResult.changedServos.servo2Changed) {
-      Serial.print("  zeroBias.servo2:");
-      Serial.println(zeroBias.servo2);
-    }
-    if (calibrationResult.changedServos.servo3Changed) {
-      Serial.print("  zeroBias.servo3:");
-      Serial.println(zeroBias.servo3);
-    }
-    if (calibrationResult.changedServos.servo4Changed) {
-      Serial.print("  zeroBias.servo4:");
-      Serial.println(zeroBias.servo4);
-    }
+    if (calibrationResult.changedServos.servo1Changed)
+      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo1: %.2f", zeroBias.servo1);
+    if (calibrationResult.changedServos.servo2Changed)
+      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo2: %.2f", zeroBias.servo2);
+    if (calibrationResult.changedServos.servo3Changed)
+      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo3: %.2f", zeroBias.servo3);
+    if (calibrationResult.changedServos.servo4Changed)
+      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo4: %.2f", zeroBias.servo4);
 
     const float wheelVelocityDt = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? time_dt : 0.01f;
     Motor1_Velocity = (sensor1.getAngle() - Motor1_place_last) / wheelVelocityDt;
@@ -2066,11 +1881,11 @@ void loop() {
     Motor2_place_last = sensor2.getAngle();
 
     if ((SwitchUser == SWITCH_USER_MODE_SAMPLE_TORQUE_M1) && (Slot_calibration_mark == 0)) {
-      Serial.print(" motor1 ");
+      if (Logging::profile() == Logging::Profile::Idle) Serial.print(" motor1 ");
       CalibrationCurrentSp(-sensor1.getAngle(), Motor1_Velocity_f, &motor1);
     }
     if ((SwitchUser == SWITCH_USER_MODE_SAMPLE_TORQUE_M2) && (Slot_calibration_mark == 0)) {
-      Serial.print(" motor2 ");
+      if (Logging::profile() == Logging::Profile::Idle) Serial.print(" motor2 ");
       CalibrationCurrentSp(sensor2.getAngle(), Motor2_Velocity_f, &motor2);
     }
 
@@ -2120,12 +1935,12 @@ void loop() {
     const LegSolveResult rightLeg = LegKinematics::solveRight(
         {BarycenterX - BodyX, bodyH - bodyRoll, BodyPitching_f});
     if (rightLeg.status != LegSolveStatus::Success)
-      Serial.println("RightInverseKinematics no");
+      Logging::message(Logging::Level::Warning, "RightInverseKinematics", "no");
 
     const LegSolveResult leftLeg = LegKinematics::solveLeft(
         {BarycenterX - BodyX, bodyH + bodyRoll, BodyPitching_f});
     if (leftLeg.status != LegSolveStatus::Success)
-      Serial.println("LeftInverseKinematics no");
+      Logging::message(Logging::Level::Warning, "LeftInverseKinematics", "no");
 
     if (posture_or_mark_mode == REMOTE_CONTROL_PM_POSTURE_MODE)  // Posture
     {
@@ -2150,16 +1965,7 @@ void loop() {
       servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1, servoTraceAngle[3], 1);
     }
 
-    if (!servoTraceWindowStarted) {
-      for (int i = 0; i < 4; i++)
-        servoTraceMin[i] = servoTraceMax[i] = servoTraceAngle[i];
-      servoTraceWindowStarted = true;
-    } else {
-      for (int i = 0; i < 4; i++) {
-        if (servoTraceAngle[i] < servoTraceMin[i]) servoTraceMin[i] = servoTraceAngle[i];
-        if (servoTraceAngle[i] > servoTraceMax[i]) servoTraceMax[i] = servoTraceAngle[i];
-      }
-    }
+    RobotLogCapture::observeServoAngles(servoTraceAngle);
 
     now_us1 = now_us;
   }

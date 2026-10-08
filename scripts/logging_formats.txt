@@ -1,0 +1,66 @@
+csv.0	0,0,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.00,0.00,0.00,0.000,0,0,0,0,0\n
+csv.1	TRACE,0,0,0,0.000,0.000,0.00,0.00,0,0,0,0,0,0,0,0,0.000,0.000,0,0,0\n
+csv.2	CTRL,0,0,0.000,0.000,0.00,0.0000,0.0000,0.00,0.00,0.00,0.00,0.00,0.00,0,0,0,0\n
+csv.3	BAL,0,0,0.000,0.00,0.00,0.00,0.00,0.00,0.0000,0.00,0.00,0,0,0,0\n
+csv.4	DRIVE,0,0,0.000,0.000,0.000,0.000,0.000,0.000,0.000000,0.000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.000,0.000,0.000,0,0,0,0\n
+debug.1	dt:0.000000 Roll:0.00 Pitch:0.00 Yaw:0.00\n
+debug.2	dt:0.000000 accx:0.00 accy:0.00 accz:0.00\n
+debug.3	dt:0.000000 gyrox:0.0000 gyroy:0.0000 gyroz:0.0000\n
+debug.4	dt:0.000000 Roll:0.00 Pitch:0.00 Yaw:0.00\n
+debug.5	dt:0.000000 eRoll:0.00 ePitch:0.00 eYaw:0.00\n
+debug.6	 v1:0.00 v2:0.00\n
+debug.7	 v1:0.00 v1f:0.00\n
+debug.8	 ch:0 ch:0 ch:0 ch:0 ch:0 ch:0 ch:0 ch:0 ch:0 ch:0 sbus_dt_ms:0.00 \n
+debug.9	 PP:0.00 PI:0.00 PD:0.00 SP:0.00 SI:0.00 SD:0.00 YP:0.00 YI:0.00 YD:0.00dt:0.000000\n
+debug.10	 twoKp:0.00 twoKi:0.00 Roll:0.00 Pitch:0.00IMUdt:0.000000\n
+debug.11	 x:0.00 y:0.00 z:0.00 gx:0.00 gy:0.00 gz:0.00 IMUdt:0.000000\n
+debug.12	 x:0.00 Roll:0.00\n
+debug.13	dt:0.000000 gyroxf:0.00 gyroyf:0.00 gyrozf:0.00\n
+debug.14	dt:0.000000 accx:0.00 accy:0.00 accz:0.00\n
+debug.15	 accy:0.00 accyf:0.00\n
+debug.16	 gyro:0.00 gyrof:0.00\n
+debug.17	 current_sp:0.000000\n
+debug.18	 t:0.000000 a1:0.000000 a11:0.000000 a2:0.000000 a22:0.000000\n
+debug.19	 servo1:0.00 servo2:0.00 servo3:0.00 servo4:0.00\n
+debug.20	 vra:0.000000 BodyRoll:0.000000 LegLength:0.000000\n
+debug.21	 roll_ok:0.000000 BodyPitching:0.000000\n
+debug.22	 it:0.00000 il:0.00000 oI:0.00000 out:0.00000\n
+debug.23	 it:0.00000 il:0.00000 oI:0.00000 A:0.00000 out:0.00000\n
+debug.24	 EN:0.00 HZ:0.00000\n
+debug.25	 LpfOut:0.000000 BodyPitching:0.000000\n
+debug.26	  tX:0  tY:0\n
+debug.27	  aX:0  aY:0  aXF:0.00  aYF:0.00\n
+debug.28	  P:0.00  R:0.00000  H:0.00000  S:0.00  vra:0.00  vra:0.00\n
+debug.29	 Kp:0.000000 Ki:0.000000 Kd:0.000000 deriv:0.00 out:0.00\n
+debug.30	 deriv:0.00\n
+debug.31	 E:0.000000 it:0.00000 il:0.00000 oI:0.00000 out:0.00000\n
+debug.32	 RP:0.000000 RI:0.000000 RD:0.000000\n
+debug.33	 it:0.00000 il:0.00000 oI:0.00000 A:0.00000 out:0.00000\n
+debug.34	 Kp:0.000000 Ki:0.000000 Kd:0.000000 deriv:0.00 out:0.00\n
+debug.35	 deriv:0.00\n
+debug.36	 state:0 start:0\n
+debug.37	 sbus_vra:0.00 sbus_vraf:0.00 sbus_vrb:0.00 sbus_vrbf:0.00\n
+debug.38	 X OUT:0.00 Y OUT:0.00\n
+debug.39	 it:0.00000 il:0.00000 oI:0.00000 out:0.00000\n
+debug.40	  tX:0  tX:0\n
+debug.41	 roll_ok:0.00000 pa:0.00000 out:0.00000\n
+debug.42	 P:0.00000 P1:0.00000 P3:0.00000\n
+debug.43	 Vdat:0 Vdatf:0.00 V:0.00000\n
+debug.44	 PidParameterTuning:0 TargetLegLength:0.000000\n
+debug.45	 RobotTumble:0 roll_ok:0.000000 Angle_Pid.error:0.000000\n
+debug.60	0.000,0\n
+debug.61	0.000,0\n
+debug.62	0.000,0\n
+debug.63	0.000,0\n
+debug.64	0.000,0\n
+debug.65	0.000,0\n
+debug.66	0.000,0\n
+debug.67	0.000,0\n
+debug.68	0.000,0\n
+debug.69	0.000,0\n
+debug.70	0.000,0\n
+debug.71	0.000,0\n
+debug.72	0.000,0\n
+debug.73	0.000,0\n
+debug.74	0.000,0\n
+debug.75	0.000,0\n
