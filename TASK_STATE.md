@@ -38,8 +38,8 @@ Implement the user-selected `work/kinematics-calibration-implementation-plan.md`
 
 ## Open items
 
-- Push `codex/kinematics-calibration` and open a ready PR against `main` with the requested summary and verification results.
+- None.
 
 ## Next step
 
-After PR creation, record its URL here. Keep the worktree available for review. No hardware behavior was physically verified.
+Review the open [kinematics and calibration extraction PR](https://github.com/nikolasvoss/Navbot-ES02/pull/3). Keep the worktree available. No hardware behavior was physically verified.
