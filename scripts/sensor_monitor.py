@@ -30,7 +30,7 @@ def find_port():
 def monitor(port, seconds):
     # On this board an asserted RTS holds EN low. Deassert it before opening;
     # opening the port can still cause a brief reset, but must not hold reset.
-    connection = serial.Serial(baudrate=115200, timeout=0.2)
+    connection = serial.Serial(baudrate=576000, timeout=0.2)
     connection.port = port
     connection.dtr = False
     connection.rts = False

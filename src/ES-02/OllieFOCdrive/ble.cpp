@@ -6,6 +6,11 @@
 #include "ble.h"
 #include <cppQueue.h>
 #include "robot.h"
+#include "SerialLogger.h"
+
+#define DEBUG_SERIAL_PRINT(...) do { if (!SerialLoggerSelectedMode()) Serial.print(__VA_ARGS__); } while (0)
+#define DEBUG_SERIAL_PRINTLN(...) do { if (!SerialLoggerSelectedMode()) Serial.println(__VA_ARGS__); } while (0)
+#define DEBUG_SERIAL_PRINTF(...) do { if (!SerialLoggerSelectedMode()) Serial.printf(__VA_ARGS__); } while (0)
 #include "string.h"
 
 BLEServer* pServer = NULL;
@@ -56,7 +61,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
     rp.ble_connected = true;
-    Serial.println("ble connected");
+    DEBUG_SERIAL_PRINTLN("ble connected");
   };
 
   void onDisconnect(BLEServer* pServer) {
@@ -65,7 +70,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
     pServer->getAdvertising()->start();
 
     memset(&ble_ctrler, 0, sizeof(CmdManeuverTypDef));
-    Serial.println("ble disconnected");
+    DEBUG_SERIAL_PRINTLN("ble disconnected");
   }
 };
 
@@ -95,7 +100,7 @@ void ble_init() {
   pService->start();
   // Start advertising
   pServer->getAdvertising()->start();
-  Serial.println("Waiting a client connection to notify...");
+  DEBUG_SERIAL_PRINTLN("Waiting a client connection to notify...");
 
   ble_rx_data_clear();
 }
@@ -119,7 +124,7 @@ void ble_rx_processing(void) {
 
     if (ble_frames_validation() == false) {
       ble_rx_data_clear();
-      Serial.println("ble deta err");
+      DEBUG_SERIAL_PRINTLN("ble deta err");
       ble_rx.state = BLE_STATE_IDLE;
       return;
     }
@@ -174,7 +179,7 @@ void ble_tx_processing(void) {
     ble_tx_q.peek(&_ble_tx);
     ble_tx_q.drop();
     free(_ble_tx);
-    Serial.print("BLE not connected, deleing queue; Queue remaining: ");Serial.println(ble_tx_q.getCount());
+    DEBUG_SERIAL_PRINT("BLE not connected, deleing queue; Queue remaining: ");DEBUG_SERIAL_PRINTLN(ble_tx_q.getCount());
     return;
   }
   
@@ -191,10 +196,10 @@ void ble_tx_processing(void) {
   */ 
   if (ble_tx->index >= ble_tx->len) {
     ble_tx->state = BLE_STATE_SEND_FINISH;
-    Serial.printf("finish!!!  ble_tx.index >= ble_tx.len  , ble_tx.index : %d , ble_tx.len : %d \r\n", ble_tx->index, ble_tx->len);
+    DEBUG_SERIAL_PRINTF("finish!!!  ble_tx.index >= ble_tx.len  , ble_tx.index : %d , ble_tx.len : %d \r\n", ble_tx->index, ble_tx->len);
     ble_tx_q.drop();
     free(ble_tx);
-    Serial.print("Queue remaining: ");Serial.println(ble_tx_q.getCount());
+    DEBUG_SERIAL_PRINT("Queue remaining: ");DEBUG_SERIAL_PRINTLN(ble_tx_q.getCount());
     return;
   }
   /*
@@ -208,7 +213,7 @@ void ble_tx_processing(void) {
     time_tick = 100;
   }
 
-  Serial.print("ble send frame -> ");
+  DEBUG_SERIAL_PRINT("ble send frame -> ");
   ble_tx->state = BLE_STATE_SEND_BEING;
 
   ble_tx->frame[0] = 0x55;
@@ -224,10 +229,10 @@ void ble_tx_processing(void) {
 
   uint8_t i;
   for (i = 0; i < 20; i++) {
-    Serial.print(ble_tx->frame[i],HEX);
-    Serial.print(" ");
+    DEBUG_SERIAL_PRINT(ble_tx->frame[i],HEX);
+    DEBUG_SERIAL_PRINT(" ");
   }
-  Serial.println("----");
+  DEBUG_SERIAL_PRINTLN("----");
 
   ble_tx->index += 15;
 }
@@ -313,7 +318,7 @@ void ble_cmd_json_processing(void) {
 void ble_tx_add_data(char* data, int len) {
 
   if(ble_tx_q.isFull() ==true){
-    Serial.println("Queue is full, failed to add data");
+    DEBUG_SERIAL_PRINTLN("Queue is full, failed to add data");
     return ;
   }
 
@@ -325,7 +330,7 @@ void ble_tx_add_data(char* data, int len) {
   ble_tx = (BleDataTypDef*)malloc(sizeof(BleDataTypDef));
   if(ble_tx == NULL)
   {
-    Serial.println("error!!!!malloc false,ble txdata");
+    DEBUG_SERIAL_PRINTLN("error!!!!malloc false,ble txdata");
     return;
   }
   memcpy(ble_tx->data, data, len);
@@ -345,9 +350,9 @@ void ble_tx_add_data(char* data, int len) {
   ble_tx->state = BLE_STATE_SEND_READY;
 
   ble_tx_q.push(&ble_tx);
-  Serial.println("ble_tx_add_data:");
-  Serial.println((char*)ble_tx->data);
-  Serial.print("Queue remaining:");Serial.println(ble_tx_q.getCount());
+  DEBUG_SERIAL_PRINTLN("ble_tx_add_data:");
+  DEBUG_SERIAL_PRINTLN((char*)ble_tx->data);
+  DEBUG_SERIAL_PRINT("Queue remaining:");DEBUG_SERIAL_PRINTLN(ble_tx_q.getCount());
 
 }
 void ble_tx_add_string(String str) {
