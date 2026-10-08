@@ -30,6 +30,7 @@ enum class Result : uint8_t {
   Suppressed,
   Paced,
   Truncated,
+  FormattingFailed,
   NotStarted,
   Incomplete,
   QueueFull,
@@ -41,9 +42,12 @@ struct Status {
   uint32_t queuedRecords;
   uint32_t droppedRecords;
   uint32_t writeFailures;
+  uint32_t formatFailures;
+  uint32_t truncatedMessages;
   uint32_t rejectedRecords;
   uint32_t filteredMessages;
   uint32_t suppressedMessages;
+  uint32_t profileEpoch;
   uint8_t queueDepth;
 };
 
