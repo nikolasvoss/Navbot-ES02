@@ -2,7 +2,6 @@
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <SimpleFOC.h>
-#include "SlotCalibration.h"
 #include "FUTABA_SBUS.h"
 #include "ServoControl.h"
 #include "ICM42688.h"
@@ -42,12 +41,7 @@ Calibration calibration;
 CalibrationStore calibrationStore;
 
 // ----- Editable Constants
-#define SensorSwitch SENSOR_SWITCH_IIC_AS5600                                // 1: SPI  2: IIC AS5600
-#define Communication_object COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE          // 0: two-wheel balance  1: simpleFOC Studio host computer  2: control dual motors  3: sample torque data
-#define TorqueCompensation TORQUE_COMPENSATION_OFF                           // 1: torque compensation  0: no torque compensation (cannot be modified) TODO what is this for? is this used?
-#define SwitchUser SWITCH_USER_MODE_SPEED_MODE                               // 0: view encoder position and direction  1: sample motor 1 torque compensation data  2: sample motor 2 torque compensation data  3: torque  4: speed  5: angle mode TODO what is this for? is this used?
-#define CurrentUser CURRENT_LOOP_OFF                                         // 1: enable current loop TODO why is the current loop off?  remove if hardware does not support it
-#define M2CurrentUser CURRENT_LOOP_OFF                                       // 1: enable current loop for motor 2 TODO remove if hardware does not support it
+#define Communication_object COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE          // 0: two-wheel balance  1: simpleFOC Studio host computer  2: control dual motors
 
 // Safe bring-up: read sensors and receiver without energizing wheels or servos.
 // Set to 0 only after the diagnostic readings and power supply are checked.
@@ -100,8 +94,6 @@ CalibrationStore calibrationStore;
 #define CUSTOM_SERVO_2_PIN 12
 #define CUSTOM_SERVO_3_PIN 21
 #define CUSTOM_SERVO_4_PIN 14
-
-#define CURRENT_SENSOR_MV_PER_AMP 90.0f  // ACS712-05B sensitivity is 185mV/A
 
 #define SBUS_CHANNEL_MAX 1792
 #define SBUS_CHANNEL_MIN 192
@@ -365,34 +357,10 @@ BLDCDriver3PWM driver = BLDCDriver3PWM(15, 7, 6, 16); // what are the numbers? r
 BLDCMotor motor2 = BLDCMotor(7);
 BLDCDriver3PWM driver2 = BLDCDriver3PWM(40, 39, 38, 37);
 
-#if SensorSwitch == SENSOR_SWITCH_SPI
-// MagneticSensorSPI(int cs, float _cpr, int _angle_register)
-// config           - SPI config
-//  cs              - SPI chip select pin
-MagneticSensorSPI sensor1 = MagneticSensorSPI(AS5147_SPI, 19);
-MagneticSensorSPI sensor2 = MagneticSensorSPI(AS5147_SPI, 23);
-// these are valid pins (mosi, miso, sclk) for 2nd SPI bus on storm32 board (stm32f107rc)
-SPIClass *hspi = NULL;
-
-#elif SensorSwitch == SENSOR_SWITCH_IIC_AS5600
 MagneticSensorI2C sensor2 = MagneticSensorI2C(AS5600_I2C);
 MagneticSensorI2C sensor1 = MagneticSensorI2C(AS5600_I2C);
 TwoWire I2Cone = TwoWire(0);
 TwoWire I2Ctwo = TwoWire(1);
-
-#endif
-
-#if CurrentUser == CURRENT_LOOP_ON
-// inline current sensor instance
-// ACS712-05B has the resolution of 0.185mV per Amp
-InlineCurrentSense current_sense1 = InlineCurrentSense(CURRENT_SENSOR_MV_PER_AMP, 18, 17);
-#endif
-
-#if M2CurrentUser == CURRENT_LOOP_ON
-// inline current sensor instance
-// ACS712-05B has the resolution of 0.185mV per Amp
-InlineCurrentSense current_sense2 = InlineCurrentSense(CURRENT_SENSOR_MV_PER_AMP, 35, 36);
-#endif
 
 //TODO bad names
 void doMotion1(char *cmd) { 
@@ -544,18 +512,10 @@ void setup() {
   // comment out if not needed
   SimpleFOCDebug::enable(&Serial); // TODO a more centralized way to enable debug sections would be nice
 
-#if SensorSwitch == SENSOR_SWITCH_SPI
-  hspi = new SPIClass(HSPI);
-  hspi->begin(18, 5, 17);  //(sck, miso, mosi)
-  // initialise magnetic sensor1 hardware
-  sensor1.init(hspi);
-  sensor2.init(hspi);
-#elif SensorSwitch == SENSOR_SWITCH_IIC_AS5600
   I2Cone.begin(4, 5, 400000);
   I2Ctwo.begin(41, 42, 400000);  // SDA1,SCL1
   sensor1.init(&I2Cone);
   sensor2.init(&I2Ctwo);
-#endif
 
   // link the motor to the sensor
   motor1.linkSensor(&sensor1);
@@ -571,27 +531,8 @@ void setup() {
   // link driver
   motor1.linkDriver(&driver);
   motor2.linkDriver(&driver2);
-  // link current sense and the driver
-#if CurrentUser == CURRENT_LOOP_ON
-  current_sense1.linkDriver(&driver);
-#endif
-
-#if M2CurrentUser == CURRENT_LOOP_ON
-  current_sense2.linkDriver(&driver2);
-#endif
-
-  // control loop type and torque mode  velocity angle
-  if (CurrentUser == CURRENT_LOOP_ON)
-    motor1.torque_controller = TorqueControlType::dc_current;  // foc_current   dc_current  voltage
-  else
-    motor1.torque_controller = TorqueControlType::voltage;
-
-  if ((SwitchUser == SWITCH_USER_MODE_SAMPLE_TORQUE_M1) || (SwitchUser == SWITCH_USER_MODE_ANGLE_MODE))
-    motor1.controller = MotionControlType::angle;
-  else if (SwitchUser == SWITCH_USER_MODE_TORQUE_MODE)
-    motor1.controller = MotionControlType::torque;
-  else if (SwitchUser == SWITCH_USER_MODE_SPEED_MODE)
-    motor1.controller = MotionControlType::velocity;
+  motor1.torque_controller = TorqueControlType::voltage;
+  motor1.controller = MotionControlType::velocity;
 
     // TODO where do all these numbers come from? why hardcoded? some values also could be moved to a class or struct if still relevant
   motor1.motion_downsample = 0.0;  //
@@ -604,30 +545,6 @@ void setup() {
   motor1.PID_velocity.limit = 8.4;
   // Low pass filtering time constant
   motor1.LPF_velocity.Tf = 0.001;
-  // angle loop PID
-  motor1.P_angle.P = 15.0;
-  motor1.P_angle.I = 22.0;
-  motor1.P_angle.D = 0.0;
-  motor1.P_angle.output_ramp = 10000;
-  motor1.P_angle.limit = 111.0;
-  // Low pass filtering time constant
-  motor1.LPF_angle.Tf = 0.001;
-  // current q loop PID
-  motor1.PID_current_q.P = 2;
-  motor1.PID_current_q.I = 222;
-  motor1.PID_current_q.D = 0.0;
-  motor1.PID_current_q.output_ramp = 11111;
-  motor1.PID_current_q.limit = 8.4;
-  // Low pass filtering time constant
-  motor1.LPF_current_q.Tf = 0.01;
-  // current d loop PID
-  motor1.PID_current_d.P = motor1.PID_current_q.P;
-  motor1.PID_current_d.I = motor1.PID_current_q.I;
-  motor1.PID_current_d.D = motor1.PID_current_q.D;
-  motor1.PID_current_d.output_ramp = motor1.PID_current_q.output_ramp;
-  motor1.PID_current_d.limit = motor1.PID_current_q.limit;
-  // Low pass filtering time constant
-  motor1.LPF_current_d.Tf = motor1.LPF_current_q.Tf;
   // Limits
   motor1.velocity_limit = 88.0;
   motor1.voltage_limit = 8.4;
@@ -640,19 +557,8 @@ void setup() {
   // Set PWM modulation to center alignment mode
   motor1.modulation_centered = 1.0;
 
-  if (M2CurrentUser == CURRENT_LOOP_ON)
-    // control loop type and torque mode velocity angle
-    motor2.torque_controller = TorqueControlType::foc_current;  // foc_current   dc_current  voltage
-  else
-    // control loop type and torque mode velocity angle
-    motor2.torque_controller = TorqueControlType::voltage;  // foc_current   dc_current  voltage
-
-  if ((SwitchUser == SWITCH_USER_MODE_SAMPLE_TORQUE_M2) || (SwitchUser == SWITCH_USER_MODE_ANGLE_MODE))
-    motor2.controller = MotionControlType::angle;
-  else if (SwitchUser == SWITCH_USER_MODE_TORQUE_MODE)
-    motor2.controller = MotionControlType::torque;
-  else if (SwitchUser == SWITCH_USER_MODE_SPEED_MODE)
-    motor2.controller = MotionControlType::velocity;
+  motor2.torque_controller = TorqueControlType::voltage;
+  motor2.controller = MotionControlType::velocity;
 
   // TODO where do all these numbers come from? why hardcoded? some values also could be moved to a class or struct if still relevant
   motor2.motion_downsample = 0.0;
@@ -665,32 +571,6 @@ void setup() {
   motor2.PID_velocity.limit = 8.4;
   // Low pass filtering time constant
   motor2.LPF_velocity.Tf = 0.001;
-  // angle loop PID
-  motor2.P_angle.P = 22;
-  motor2.P_angle.I = 111;
-  motor2.P_angle.D = 0;
-  motor2.P_angle.output_ramp = 10000;
-  motor2.P_angle.limit = 88;
-  // Low pass filtering time constant
-  motor2.LPF_angle.Tf = 0.001;
-
-  // current q loop PID
-  motor2.PID_current_q.P = 2;
-  motor2.PID_current_q.I = 222;
-  motor2.PID_current_q.D = 0.0;
-  motor2.PID_current_q.output_ramp = 11111;
-  motor2.PID_current_q.limit = 5.0;
-  // Low pass filtering time constant
-  motor2.LPF_current_q.Tf = 0.01;
-  // current d loop PID
-  motor2.PID_current_d.P = motor2.PID_current_q.P;
-  motor2.PID_current_d.I = motor2.PID_current_q.I;
-  motor2.PID_current_d.D = motor2.PID_current_q.D;
-  motor2.PID_current_d.output_ramp = motor2.PID_current_q.output_ramp;
-  motor2.PID_current_d.limit = motor2.PID_current_q.limit;
-  // Low pass filtering time constant
-  motor2.LPF_current_d.Tf = motor2.LPF_current_q.Tf;
-
   // Limits
   motor2.velocity_limit = motor1.velocity_limit;
   motor2.voltage_limit = motor1.voltage_limit;
@@ -702,45 +582,13 @@ void setup() {
   motor2.foc_modulation = FOCModulationType::SpaceVectorPWM;
   motor2.modulation_centered = motor1.modulation_centered;
 
-#if CurrentUser == CURRENT_LOOP_ON
-  // current sense init and linking
-  current_sense1.init();
-  motor1.linkCurrentSense(&current_sense1);
-#endif
-
-#if M2CurrentUser == CURRENT_LOOP_ON
-  // current sense init and linking
-  current_sense2.init();
-  motor2.linkCurrentSense(&current_sense2);
-#endif
-
   // initialise motor
   motor1.init();
   motor2.init();
   // align encoder and start FOC
 
-  //TODO if still relevant, can logger lib be used? this is always compiled?
-  if (SwitchUser == SWITCH_USER_MODE_VIEW_ENCODER) {
-    motor1.initFOC();
-    motor2.initFOC();
-    Serial.print("Sensor1 zero offset is:");
-    Serial.print(motor1.zero_electric_angle, 6);  // Initial electrical angle
-    Serial.print("  Sensor1 natural direction is: ");
-    Serial.println(motor1.sensor_direction == 1 ? "Direction::CW" : "Direction::CCW");  // Motor rotation direction (clockwise, counterclockwise)
-
-    Serial.print("Sensor2 zero offset is:");
-    Serial.print(motor2.zero_electric_angle, 6);  // Initial electrical angle
-    Serial.print("  Sensor2 natural direction is: ");
-    Serial.println(motor2.sensor_direction == 1 ? "Direction::CW" : "Direction::CCW");  // Motor rotation direction (clockwise, counterclockwise)
-
-    while (1)
-      ;
-  } else {
-
-    motor1.initFOC();
-
-    motor2.initFOC();
-  }
+  motor1.initFOC();
+  motor2.initFOC();
 
   // set the inital target value
   motor1.target = 0;
@@ -1780,19 +1628,6 @@ void loop() {
   motor1.move();
   motor2.move();
 
-  // Torque compensation
-  float indexF = sensor1.getMechanicalAngle() / AngleResolutionRatio;
-  int index = round(indexF);
-  if ((TorqueCompensation == TORQUE_COMPENSATION_ON) && (SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M1) && (SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M2)) {
-    motor1.current_sp = motor1.current_sp + Motor1_Current_sp_data[index];
-  }
-
-  indexF = sensor2.getMechanicalAngle() / AngleResolutionRatio;
-  index = round(indexF);
-  if ((TorqueCompensation == TORQUE_COMPENSATION_ON) && (SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M1) && (SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M2)) {
-    motor2.current_sp = motor2.current_sp + Motor2_Current_sp_data[index];
-  }
-
   // iterative setting FOC phase voltage
   motor1.loopFOC();
   motor2.loopFOC();
@@ -1893,22 +1728,12 @@ void loop() {
     Motor2_Velocity_f = Motor2_Velocity_filter(Motor2_Velocity);
     Motor2_place_last = sensor2.getAngle();
 
-    if ((SwitchUser == SWITCH_USER_MODE_SAMPLE_TORQUE_M1) && (Slot_calibration_mark == 0)) {
-      if (Logging::profile() == Logging::Profile::Idle) Serial.print(" motor1 ");
-      CalibrationCurrentSp(-sensor1.getAngle(), Motor1_Velocity_f, &motor1);
-    }
-    if ((SwitchUser == SWITCH_USER_MODE_SAMPLE_TORQUE_M2) && (Slot_calibration_mark == 0)) {
-      if (Logging::profile() == Logging::Profile::Idle) Serial.print(" motor2 ");
-      CalibrationCurrentSp(sensor2.getAngle(), Motor2_Velocity_f, &motor2);
-    }
-
     float bodyH = 0.06f;
     float bodyRoll = BodyRoll_f;
 
     if ((pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (RobotTumble == ROBOT_TUMBLE_YES)) {
       balancePidNeedsPriming = true;
-      if (Communication_object == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE && SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M1 && SwitchUser != SWITCH_USER_MODE_SAMPLE_TORQUE_M2)  //
-      {
+      if (Communication_object == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE) {
         motor1.target = 0;
         motor2.target = 0;
       }

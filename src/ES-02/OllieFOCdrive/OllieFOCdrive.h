@@ -8,29 +8,12 @@
 #define ADJUSTMENT_PARAM_BALANCE_SPEED_YAW_ROLL 0
 #define ADJUSTMENT_PARAM_BALL_PUSHING 1 // For tuning main balance and movement PID loops
 
-#define SWITCH_USER_MODE_VIEW_ENCODER 0     // View encoder position and direction
-#define SWITCH_USER_MODE_SAMPLE_TORQUE_M1 1 // Sample motor 1 torque compensation data
-#define SWITCH_USER_MODE_SAMPLE_TORQUE_M2 2 // Sample motor 2 torque compensation data
-#define SWITCH_USER_MODE_TORQUE_MODE 3      // Direct torque control mode
-#define SWITCH_USER_MODE_SPEED_MODE 4       // Speed control mode
-#define SWITCH_USER_MODE_ANGLE_MODE 5       // Angle control mode
-
-#define TORQUE_COMPENSATION_OFF 0 // Torque compensation is off
-#define TORQUE_COMPENSATION_ON 1  // Torque compensation is on
-
 #define COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE 0 // Two-wheel balance mode
 #define COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO 1          // SimpleFOC Studio host computer
 #define COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS 2       // Control dual motors
-#define COMMUNICATION_OBJECT_SAMPLE_TORQUE_DATA 3        // Sample torque data
 
 #define ROBOT_TUMBLE_NO 0  // Robot is not tumbling
 #define ROBOT_TUMBLE_YES 1 // Robot is tumbling
-
-#define SENSOR_SWITCH_SPI 1
-#define SENSOR_SWITCH_IIC_AS5600 2
-
-#define CURRENT_LOOP_OFF 0 // Current loop is off
-#define CURRENT_LOOP_ON 1  // Current loop is on
 
 #define REMOTE_CONTROL_PID_GAINS_MODE_OFF 0
 #define REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH 1
