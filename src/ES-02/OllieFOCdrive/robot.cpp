@@ -1,10 +1,6 @@
 
 #include "robot.h"
-#include "SerialLogger.h"
-
-#define DEBUG_SERIAL_PRINT(...) do { if (!SerialLoggerSelectedMode()) Serial.print(__VA_ARGS__); } while (0)
-#define DEBUG_SERIAL_PRINTLN(...) do { if (!SerialLoggerSelectedMode()) Serial.println(__VA_ARGS__); } while (0)
-#define DEBUG_SERIAL_PRINTF(...) do { if (!SerialLoggerSelectedMode()) Serial.printf(__VA_ARGS__); } while (0)
+#include "Logging.h"
 #include <ArduinoJson.h>
 #include <vector>
 #include <esp_mac.h>
@@ -46,21 +42,20 @@ void RobotProtocol::build_dev_name(char dev_name[]) {
 
 void RobotProtocol::parseJson(StaticJsonDocument<300> &doc) {
   if (doc["type"].isNull() == true) {
-    DEBUG_SERIAL_PRINTLN("JSON type is null ");
+    Logging::message(Logging::Level::Debug, "robot", "JSON type is null");
   } else {
-    DEBUG_SERIAL_PRINTLN("JSON type is sys");
+    Logging::message(Logging::Level::Debug, "robot", "JSON type is sys");
     isSys(doc);
   }
 }
 
 void RobotProtocol::isSys(StaticJsonDocument<300> &doc) {
   String type = doc["type"];
-  DEBUG_SERIAL_PRINT("type:");
-  DEBUG_SERIAL_PRINTLN(type);
+  Logging::message(Logging::Level::Debug, "robot", "type:%s", type.c_str());
  if (type == MESSAGE_TYPE.GET_DEVICE_INFO) {
     send_device_info();
   } else {
-    DEBUG_SERIAL_PRINTLN("Invalid json keyworeds.\r\n");
+    Logging::message(Logging::Level::Debug, "robot", "Invalid json keyworeds.");
   }
 }
 
@@ -71,9 +66,7 @@ void RobotProtocol::send_device_info() {
   String device_info = get_device_info();
 
   // Send data according to the specified channel
-  DEBUG_SERIAL_PRINT("device info:");
-
-  DEBUG_SERIAL_PRINTLN(device_info);
+  Logging::message(Logging::Level::Debug, "robot", "device info:%.80s", device_info.c_str());
 
   ble_tx_add_string(device_info);
 }
@@ -133,18 +126,16 @@ double RobotProtocol::get_battery_level() {
   return battery_level;
 }
 void RobotProtocol::json_test(char *json_arr) {
-  DEBUG_SERIAL_PRINT("json test: ");
-  DEBUG_SERIAL_PRINTLN(json_arr);
+  Logging::message(Logging::Level::Debug, "robot", "json test: %.72s", json_arr);
   String payload_str = String(json_arr);
   StaticJsonDocument<300> doc;
   DeserializationError error = deserializeJson(doc, payload_str);
   if (error) {
-    DEBUG_SERIAL_PRINTLN("json data error");
+    Logging::message(Logging::Level::Debug, "robot", "json data error");
   } else {
     parseJson(doc);
   }
 }
-
 
 
 
