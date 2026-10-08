@@ -160,7 +160,7 @@ void testFailedOpenWriteAndRead() {
   requireSessionClosed();
 }
 
-}  // namespace
+}
 
 int main() {
   testLoadPopulatedAndMissing();

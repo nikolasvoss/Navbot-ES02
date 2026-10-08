@@ -1,6 +1,5 @@
 #include <math.h>
 
-// Test-only reference copied from OllieFOCdrive.ino at e18c734dbf4c9417678e0768742b4e2c01f39b83.
 namespace baseline {
 
 constexpr float BODY_THIGH_LENGTH_M = 0.035f;

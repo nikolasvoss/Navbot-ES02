@@ -1,6 +1,6 @@
 # Regelung des Navbot-ES02: Entwicklerübersicht
 
-Stand: 28.09.2026 · Grundlage: **lokale, teils uncommittete Firmware** in [OllieFOCdrive.ino](../../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino). Diese Seite erklärt den derzeit kompilierten **Zweirad-/Master-Modus** auf dem ESP32-S3. Sie beschreibt den Code, nicht automatisch den Zustand eines später geflashten Roboters. Live geänderte PID-Werte gehen beim Neustart verloren.
+Stand: 08.10.2026 · Grundlage: Firmware in [OllieFOCdrive.ino](../../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino). Diese Seite erklärt den kompilierten **Zweirad-/Master-Modus** auf dem ESP32-S3. Sie beschreibt den Code, nicht automatisch den Zustand eines später geflashten Roboters. Live geänderte PID-Werte gehen beim Neustart verloren.
 
 ## Die Idee in einem Satz
 
@@ -126,9 +126,11 @@ Der Yaw-I-Startwert ist in beiden CH5-Modi null. Die Grenze ±0,1 ist die Grenze
 | Aktiver Ablauf, Freigabe, Servo-Ausgabe | `OllieFOCdrive.ino`: `loop()` |
 | Zweirad-PID und Motor-Mischung | `OllieFOCdrive.ino`: `PIDcontroller_posture()` |
 | Fernsteuerung und Modi | `OllieFOCdrive.ino`: `RXsbus()`, `CtrlInput()` |
-| IMU-Fusion und Nullpunkte | `OllieFOCdrive.ino`: `ImuUpdate()`; `MahonyFilter.cpp` |
+| IMU-Fusion und Haltungsoffsets | `OllieFOCdrive.ino`: `ImuUpdate()`; `MahonyFilter.cpp` |
 | PID-Rechenvorschrift | `OllieFOCdrive.h`: `MyPIDController::compute()` |
-| Beinkinematik und Servos | `OllieFOCdrive.ino`: `RightInverseKinematics()`, `LeftInverseKinematics()`; `ServoControl.cpp` |
+| Beinkinematik | `LegKinematics.cpp`: `LegKinematics::solveRight()`, `solveLeft()` |
+| Kalibrierung und Speicherung | `Calibration.cpp`, `CalibrationStore.cpp`; Aufruf in `OllieFOCdrive.ino`: `loop()` |
+| Servoausgabe | `ServoControl.cpp`; Trims in `zeroBias.servo1` bis `zeroBias.servo4` |
 | K58-Fahrtrace mit Regleranteilen | [README](../../../../README.md#capture-a-balance-shutdown), `scripts/capture_balance_trace.py` |
 
 ### Noch nicht geklärt

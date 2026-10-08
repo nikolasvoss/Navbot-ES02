@@ -30,7 +30,7 @@ PersistedCalibrationValues readAll() {
        preferences.getFloat(kServo4Key, 0.0f)}};
 }
 
-}  // namespace
+}
 
 PersistedCalibrationValues CalibrationStore::load() {
   preferences.begin(kPreferencesNamespace, false);
