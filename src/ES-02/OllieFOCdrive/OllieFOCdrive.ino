@@ -43,11 +43,11 @@ CalibrationStore calibrationStore;
 
 // ----- Editable Constants
 #define SensorSwitch SENSOR_SWITCH_IIC_AS5600                                // 1: SPI  2: IIC AS5600
-#define Communication_object COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE  // 0: two-wheel balance  1: simpleFOC Studio host computer  2: control dual motors  3: sample torque data
-#define TorqueCompensation TORQUE_COMPENSATION_OFF                           // 1: torque compensation  0: no torque compensation (cannot be modified)
-#define SwitchUser SWITCH_USER_MODE_SPEED_MODE                               // 0: view encoder position and direction  1: sample motor 1 torque compensation data  2: sample motor 2 torque compensation data  3: torque  4: speed  5: angle mode
-#define CurrentUser CURRENT_LOOP_OFF                                         // 1: enable current loop
-#define M2CurrentUser CURRENT_LOOP_OFF                                       // 1: enable current loop for motor 2
+#define Communication_object COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE          // 0: two-wheel balance  1: simpleFOC Studio host computer  2: control dual motors  3: sample torque data
+#define TorqueCompensation TORQUE_COMPENSATION_OFF                           // 1: torque compensation  0: no torque compensation (cannot be modified) TODO what is this for? is this used?
+#define SwitchUser SWITCH_USER_MODE_SPEED_MODE                               // 0: view encoder position and direction  1: sample motor 1 torque compensation data  2: sample motor 2 torque compensation data  3: torque  4: speed  5: angle mode TODO what is this for? is this used?
+#define CurrentUser CURRENT_LOOP_OFF                                         // 1: enable current loop TODO why is the current loop off?  remove if hardware does not support it
+#define M2CurrentUser CURRENT_LOOP_OFF                                       // 1: enable current loop for motor 2 TODO remove if hardware does not support it
 
 // Safe bring-up: read sensors and receiver without energizing wheels or servos.
 // Set to 0 only after the diagnostic readings and power supply are checked.
@@ -56,7 +56,7 @@ CalibrationStore calibrationStore;
 // Tuned two-wheel drive defaults, including corrected wheel-speed timing and
 // CH3 scaling. Apply them at startup and through a CH5 switch transition.
 // Set to 0 to restore the repository's mode-dependent defaults.
-#define DIAGNOSTIC_LIVE_TUNING_DEFAULTS 1
+#define DIAGNOSTIC_LIVE_TUNING_DEFAULTS 1 // TODO in which case is this really needed? it looks like a legacy feature
 
 #define AdjusParameter ADJUST_BALANCE_SPEED_YAW_ROLL        // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
 
@@ -89,14 +89,14 @@ CalibrationStore calibrationStore;
 #define PID_ANGLE_LIMIT_WITH_TOUCH 0.1
 
 #define IMU_SAMPLING_RATE_HZ 1000.0f  // Sampling frequency
-#define IMU_LPF_CUTOFF_FREQ_HZ 50.0f  // Cutoff frequency for low-pass filter
+#define IMU_LPF_CUTOFF_FREQ_HZ 50.0f  // Cutoff frequency for low-pass filter TODO why is this so low?
 #define BOARD_PIN_LED 35        // LED IO
-#define BOARD_PIN_ANALOG_IN 17  // Battery voltage IO
+#define BOARD_PIN_ANALOG_IN 17  // Battery voltage IO TODO rename define
 
 #define IMU_ACCEL_RANGE_G 8.0              // Unit: g
 #define IMU_GYRO_RANGE_DEG_PER_SEC 2000.0  // Unit: °/s
 
-#define CUSTOM_SERVO_1_PIN 11
+#define CUSTOM_SERVO_1_PIN 11 // what are these pins for? TODO
 #define CUSTOM_SERVO_2_PIN 12
 #define CUSTOM_SERVO_3_PIN 21
 #define CUSTOM_SERVO_4_PIN 14
@@ -109,12 +109,12 @@ CalibrationStore calibrationStore;
 #define SERIAL_BAUD_RATE 576000
 #define DIAGNOSTIC_SERIAL_BAUD_RATE 576000
 #define LIVE_TUNING_SERIAL_BAUD_RATE 576000
-#define DIAGNOSTIC_IMU_INTERVAL_US 10000
+#define DIAGNOSTIC_IMU_INTERVAL_US 10000 // TODO needed? why is diagnostic mode even different from normal operation?
 constexpr unsigned int DIAGNOSTIC_IMU_SAMPLE_RATE_HZ = 1000000U / DIAGNOSTIC_IMU_INTERVAL_US;
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
 constexpr float DRIVE_BODY_X_LIMIT_M = 0.010f;
 constexpr float DRIVE_WHEEL_FEEDBACK_LIMIT = 8.0f;
-constexpr float DRIVE_TILT_REDUCTION_START_DEG = 5.0f;
+constexpr float DRIVE_TILT_REDUCTION_START_DEG = 5.0f; // TODO where used?
 constexpr float DRIVE_TILT_REDUCTION_FULL_DEG = 10.0f;
 // -------------------------------------
 
@@ -128,10 +128,10 @@ float MovementSpeed = 0;            // Movement speed
 float BodyTurn = 0;                 // Turning
 float SlideStep = 0;                // Slide step
 float BodyX = 0;                    // X position (controller output)
-int RobotTumble = ROBOT_TUMBLE_NO;  // Robot tumble (fall detection)
+int RobotTumble = ROBOT_TUMBLE_NO;  // Robot tumble (fall detection) TODO ROBOT_TUMBLE_NO is a weird name
 
 
-// 滤波
+// 滤波 TODO this looks duplicated to above, what is this?
 float LegLength_f = 0.06f;     // Leg length
 float BodyPitching_f = 0;      // Pitch
 float BodyRoll_f = 0;          // Roll
@@ -140,7 +140,7 @@ biquadFilter_t FilterLPF[12];  // Second-order low-pass filter
 float TouchY_Pid_outputF = 0;
 float TouchX_Pid_outputF = 0;
 
-float cutoffFreq = 200;
+float cutoffFreq = 200; //TOD cutoff for what?
 float enableDFilter = 1;
 
 void CutoffFreq(char *cmd) {
@@ -151,9 +151,10 @@ void EnableDFilter(char *cmd) {
   command.scalar(&enableDFilter, cmd);
 }
 
-int LED_HL = 1;
-int LED_count = 0;
-int LED_dt = 100;
+int LED_HL = 1; //TODO bad name
+int LED_count = 0; //TODO bad name
+int LED_dt = 100; //TODO bad name
+// Battery Voltage Measurement
 biquadFilter_t VoltageFilterLPF;  // Second-order low-pass filter
 uint16_t VoltageADC = 0;          // Battery voltage ADC data
 uint16_t VoltageADCMin = 0;       // Lowest raw battery reading since the last balance trace row
@@ -166,25 +167,25 @@ MahonyFilter mahonyFilter(0.4f, 0.001f);
 // Accelerometer range (here set to ±8g)
 // Gyroscope range (here assumed to be ±2000°/s)
 attitude_t attitude;
-float roll_ok;   //
-float pitch_ok;  //
+float roll_ok;   //TODO bad name
+float pitch_ok;  //TODO bad name
 
-zeroBias_t zeroBias;  // Zero offset
+zeroBias_t zeroBias;  // Zero offset TODO of what?
 unsigned long timestamp_prev = 0;
 uint32_t controlGateSequence = 0;
 uint32_t activeTraceSequence = 0;
 uint32_t diagnosticSequence = 0;
 float IMUtime_dt = 0;
 
-/* Low-pass filter parameters */
-float RATE_HZ_last = IMU_SAMPLING_RATE_HZ;            // Sampling frequency
+/* Low-pass filter parameters TODO Imu? */
+float RATE_HZ_last = IMU_SAMPLING_RATE_HZ;            // Sampling frequency //TODO bad name
 float LPF_CUTOFF_FREQ_last = IMU_LPF_CUTOFF_FREQ_HZ;  // Cutoff frequency
 
-float RATE_HZ = IMU_SAMPLING_RATE_HZ;            // Sampling frequency
-float LPF_CUTOFF_FREQ = IMU_LPF_CUTOFF_FREQ_HZ;  // Cutoff frequency
+float RATE_HZ = IMU_SAMPLING_RATE_HZ;            // Sampling frequency //TODO bad name
+float LPF_CUTOFF_FREQ = IMU_LPF_CUTOFF_FREQ_HZ;  // Cutoff frequency //TODO bad name
 biquadFilter_t ImuFilterLPF[6];                  // Second-order low-pass filter
 
-void ImuRATE_HZ(char *cmd) {
+void ImuRATE_HZ(char *cmd) { //TODO bad name
   command.scalar(&RATE_HZ, cmd);
 }
 void ImuLPF_CUTOFF_FREQ(char *cmd) {
@@ -195,14 +196,14 @@ void Target_Leg_Length(char *cmd) {
   command.scalar(&TargetLegLength, cmd);
 }
 
-// Complementary filter
+// Complementary filter TODO filter for what?
 float angleGyroX, angleGyroY, angleGyroZ,
   angleAccX, angleAccY;
 float angleX, angleY, angleZ;
 float accCoef = 0.02f;
 float gyroCoef = 0.98f;
 
-// Servo
+// Servo zero position offsets
 void zeroBias_servo1(char *cmd) {
   command.scalar(&zeroBias.servo1, cmd);
 }
@@ -220,13 +221,13 @@ bool pid_gains_mode_is_enabled(int mode) {
   return (mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH || mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH);
 }
 
-//  Create ServoControl object, pass in the custom pin
+//  Create ServoControl object
 ServoControl servoControl(CUSTOM_SERVO_1_PIN, CUSTOM_SERVO_2_PIN, CUSTOM_SERVO_3_PIN, CUSTOM_SERVO_4_PIN);
 int servoTraceAngle[4] = { 0, 0, 0, 0 };  // Last angle arguments sent to the four servos
 
 // Remote control
 FUTABA_SBUS sBus;
-int sbus_dt_ms = 0;
+int sbus_dt_ms = 0; //TODO bad name
 int pid_gains_mode = REMOTE_CONTROL_PID_GAINS_MODE_OFF;
 int posture_or_mark_mode = REMOTE_CONTROL_PM_POSTURE_MODE;
 int roll_mode = REMOTE_CONTROL_ROLL_MODE_MANUAL;
@@ -237,11 +238,12 @@ float sbus_top_ball_x_smoothed = 0;
 float sbus_top_ball_y_smoothed = 0;
 
 //  Create PID controller instance
-float Select = 0;             // Select the data to print
+float Select = 0;             // Select the data to print //TODO where is this used? needed?
 float CalibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Calibrate gyroscope  2: Calibrate Euler angle  3: Calibrate servo
 
 float PidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
 
+// TODO where do these values come from?  why 2 pid controllers?
 PIDController AnglePid(5, 200, 0.11, 0, 0.1);
 PIDController SpeedPid(0.045, 0.005, 0, 0, 50);
 PIDController YawPid(4, 0, 0, 0, 0);
@@ -251,14 +253,14 @@ PIDController TouchYPid(0.2, 0, 0.08, 0, 0);    //
 
 float control_torque_compensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
-float wheelSpeedFeedbackOutput = 0;
-float driveTiltReductionGain = 1.0f;
+float wheelSpeedFeedbackOutput = 0; //TODO bad name
+float driveTiltReductionGain = 1.0f; //TODO what does it do?
 float driveEffectiveSpeed = 0;
 float driveSpeedBodyXRaw = 0;
 
-float PidDt = 0.01;
+float PidDt = 0.01; //TODO bad name
 
-//  Create MyPIDController instance, set initial parameters
+//  Create MyPIDController instance, set initial parameters TODO why 2 pid controllers? the pid controller names are the same for both modes, which is confusing.
 MyPIDController Angle_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);  // p i d iLimit outputLimit dt EnableDFilter cutoffFreq
 MyPIDController Speed_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
 MyPIDController Yaw_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
@@ -266,7 +268,7 @@ MyPIDController Roll_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
 
 MyPIDController TouchX_Pid(0, 0, 0, 0, 10, PidDt, 0, 0);
 MyPIDController TouchY_Pid(0, 0, 0, 0, 8, PidDt, 0, 0);
-bool balancePidNeedsPriming = true;
+bool balancePidNeedsPriming = true; // what does this mean? 
 
 void ControlTorqueCompensation(char *cmd) {
   command.scalar(&control_torque_compensation, cmd);
@@ -307,7 +309,7 @@ void KeyCalibration(char *cmd) {
 }
 
 #if AdjusParameter == ADJUST_BALANCE_SPEED_YAW_ROLL
-void CbAnglePid(char *cmd) {
+void CbAnglePid(char *cmd) { //TODO cb meaning?
   command.pid(&AnglePid, cmd);
 }
 void CbSpeedPid(char *cmd) {
@@ -332,6 +334,8 @@ void CbTouchYPid(char *cmd) {
 }
 #endif
 
+//Wheel Motors and Drivers
+//TODO bad names
 double Motor1_place_last = 0;
 float Motor1_Velocity = 0;
 float Motor1_Velocity_f = 0;
@@ -342,19 +346,21 @@ float Motor2_Velocity = 0;
 float Motor2_Velocity_f = 0;
 LowPassFilter Motor2_Velocity_filter = LowPassFilter(0.01);  // Tf = 10ms
 
-
+//TODO bad names
 float Motor1_Target = 0;
 float Motor2_Target = 0;
 
+//TODO bad names
 double RightMotorAngle = 0;
 double LeftMotorAngle = 0;
 
+//TODO bad names
 float time_dt = 0;
 unsigned long now_us = 0;
 unsigned long now_us1 = 0;
-// BLDC motor & driver instance
+
 BLDCMotor motor1 = BLDCMotor(7);  // Motor pole pairs
-BLDCDriver3PWM driver = BLDCDriver3PWM(15, 7, 6, 16);
+BLDCDriver3PWM driver = BLDCDriver3PWM(15, 7, 6, 16); // what are the numbers? replace with names
 
 BLDCMotor motor2 = BLDCMotor(7);
 BLDCDriver3PWM driver2 = BLDCDriver3PWM(40, 39, 38, 37);
@@ -388,7 +394,8 @@ InlineCurrentSense current_sense1 = InlineCurrentSense(CURRENT_SENSOR_MV_PER_AMP
 InlineCurrentSense current_sense2 = InlineCurrentSense(CURRENT_SENSOR_MV_PER_AMP, 35, 36);
 #endif
 
-void doMotion1(char *cmd) {
+//TODO bad names
+void doMotion1(char *cmd) { 
   command.motion(&motor1, cmd);
 }
 void doMotor1(char *cmd) {
@@ -451,7 +458,7 @@ void setup() {
 #endif
 
   Serial.begin(SENSOR_DIAGNOSTIC_MODE ? DIAGNOSTIC_SERIAL_BAUD_RATE :
-               (DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? LIVE_TUNING_SERIAL_BAUD_RATE : SERIAL_BAUD_RATE));
+               (DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? LIVE_TUNING_SERIAL_BAUD_RATE : SERIAL_BAUD_RATE)); //TODO simplify to one serial baud rate
   Logging::begin();
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
   zeroBias.roll = loadedCalibration.attitude.rollDegrees;
@@ -459,7 +466,7 @@ void setup() {
   gyroBiasX = loadedCalibration.gyro.xRawCounts;
   gyroBiasY = loadedCalibration.gyro.yRawCounts;
   gyroBiasZ = loadedCalibration.gyro.zRawCounts;
-  zeroBias.servo1 = loadedCalibration.servos.servo1Degrees;
+  zeroBias.servo1 = loadedCalibration.servos.servo1Degrees; //TODO redundant with zeroBias_servoX? i dont understand the relationship
   zeroBias.servo2 = loadedCalibration.servos.servo2Degrees;
   zeroBias.servo3 = loadedCalibration.servos.servo3Degrees;
   zeroBias.servo4 = loadedCalibration.servos.servo4Degrees;
@@ -472,8 +479,10 @@ void setup() {
   Logging::message(Logging::Level::Info, "Calibration",
                    "servo1: %.2f, servo2: %.2f, servo3: %.2f, servo4: %.2f",
                    zeroBias.servo1, zeroBias.servo2, zeroBias.servo3, zeroBias.servo4);
+
+  // TODO is this the right location?
   pinMode(BOARD_PIN_LED, OUTPUT);
-  digitalWrite(BOARD_PIN_LED, LOW);  // 亮
+  digitalWrite(BOARD_PIN_LED, LOW);
   Serial.println("system run.");
   delay(500);
 
@@ -491,6 +500,7 @@ void setup() {
   return;
 #endif
 
+// TODO could be turned off?
   ble_init();
   xTaskCreatePinnedToCore(cpu0_task, "cpu0_task", 4096, NULL, 0, NULL, 0);
 
@@ -499,7 +509,7 @@ void setup() {
     biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)LPF_CUTOFF_FREQ, (unsigned int)RATE_HZ);
   }
 
-  biquadFilterInitLPF(&VoltageFilterLPF, 50, 1000);
+  biquadFilterInitLPF(&VoltageFilterLPF, 50, 1000); // TODO replace numbers with names
 
   //  Initialize servo
   servoControl.initialize();
@@ -507,18 +517,19 @@ void setup() {
   servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);
   _delay(555);
 
-  servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);  // Assembly position
+  servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);  // Assembly position TODO why is this repeated?
   // IMU
   if (!initICM42688()) {
-    Serial.println("ICM42688 initialization failed!");
+    Serial.println("IMU initialization failed!");
     while (1)
       ;
   }
-  Serial.println("ICM42688 initialized successfully!");
+  Serial.println("IMU initialized successfully!");
 
   // Remote control
-  sBus.begin();
+  sBus.begin(); //TODO rename sBus to rc or similar
 
+  //TODO is this the most elegant way to initialize the filters?
   for (int i = 0; i < 6; i++)
     biquadFilterInitLPF(&FilterLPF[i], (unsigned int)cutoffFreq, 1000);
 
@@ -531,7 +542,7 @@ void setup() {
   TouchscreenInit(1000);
   // enable more verbose output for debugging
   // comment out if not needed
-  SimpleFOCDebug::enable(&Serial);
+  SimpleFOCDebug::enable(&Serial); // TODO a more centralized way to enable debug sections would be nice
 
 #if SensorSwitch == SENSOR_SWITCH_SPI
   hspi = new SPIClass(HSPI);
@@ -582,6 +593,7 @@ void setup() {
   else if (SwitchUser == SWITCH_USER_MODE_SPEED_MODE)
     motor1.controller = MotionControlType::velocity;
 
+    // TODO where do all these numbers come from? why hardcoded? some values also could be moved to a class or struct if still relevant
   motor1.motion_downsample = 0.0;  //
 
   // velocity loop PID
@@ -642,6 +654,7 @@ void setup() {
   else if (SwitchUser == SWITCH_USER_MODE_SPEED_MODE)
     motor2.controller = MotionControlType::velocity;
 
+  // TODO where do all these numbers come from? why hardcoded? some values also could be moved to a class or struct if still relevant
   motor2.motion_downsample = 0.0;
 
   // velocity loop PID
@@ -706,6 +719,7 @@ void setup() {
   motor2.init();
   // align encoder and start FOC
 
+  //TODO if still relevant, can logger lib be used? this is always compiled?
   if (SwitchUser == SWITCH_USER_MODE_VIEW_ENCODER) {
     motor1.initFOC();
     motor2.initFOC();
@@ -734,7 +748,7 @@ void setup() {
 
   // comment out if not needed
 
-  motor1.useMonitoring(Serial);
+  motor1.useMonitoring(Serial); //TODO logger lib usable here?
   motor1.monitor_downsample = 10;  // disable intially
 
   // subscribe motor to the commander
@@ -774,14 +788,13 @@ void setup() {
   command.add('V', CbWheelSpeedFeedbackGain, "wheel speed feedback gain");
   command.add('W', CbDriveTiltReductionGain, "drive tilt reduction gain");
 
-#if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
-  // Preload the gentle gains before CH5 can pass briefly through mode 1.
-  PidParameter();
-#endif
-  
-
   // Run user commands to configure and the motor (find the full command list in docs.simplefoc.com)
   Serial.println("Motor ready.");
+
+#if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
+  // Preload the gentle gains before CH5 can pass briefly through mode 1. // TODO still needed?
+  PidParameter();
+#endif
 
   _delay(1000);
   timestamp_prev = micros();
