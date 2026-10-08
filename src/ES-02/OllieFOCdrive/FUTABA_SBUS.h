@@ -10,7 +10,7 @@
 #define SBUS_SIGNAL_FAILSAFE    0x03
 #define BAUDRATE 100000
 #define port Serial2
-//#define ALL_CHANNELS
+#define ALL_CHANNELS
 
 
 class FUTABA_SBUS

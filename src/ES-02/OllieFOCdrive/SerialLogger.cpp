@@ -50,7 +50,9 @@ void senderTask(void *) {
 }
 
 void SerialLoggerSetSelectedMode(int mode) {
-  selectedModeActive.store((mode >= 1 && mode <= 45) || (mode >= 55 && mode <= 58), std::memory_order_relaxed);
+  selectedModeActive.store((mode >= 1 && mode <= 45) || (mode >= 55 && mode <= 58) ||
+                               (mode >= 60 && mode <= 75),
+                           std::memory_order_relaxed);
 }
 
 bool SerialLoggerSelectedMode() {

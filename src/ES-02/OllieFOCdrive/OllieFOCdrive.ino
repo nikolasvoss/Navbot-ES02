@@ -883,7 +883,12 @@ void RXsbus() {
     BodyRoll = mapf(sBus.channels[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);
 
     if (Voltage <= 7.4) {
-      if ((int)Select < 55 || (int)Select > 58) {
+      // CSV selections include their own data; avoid interleaving voltage warnings.
+      const int selection = (int)Select;
+      const bool isCsvLoggingSelection =
+          selection == 56 || selection == 57 || selection == 58 ||
+          (selection >= 60 && selection <= 75);
+      if (!isCsvLoggingSelection) {
         Serial.print(" Voltage:");
         Serial.println(Voltage, 5);
       }
@@ -1393,6 +1398,22 @@ void FlashSave(int sw) {
  */
 void print_data(void) {
   static unsigned long lastSbusPrintMs = 0;
+  const int selection = (int)Select;
+  if (selection >= 60 && selection <= 75) {
+    static unsigned long lastChannelTraceMs = 0;
+    const unsigned long nowMs = millis();
+    if (nowMs - lastChannelTraceMs >= 50) {
+      lastChannelTraceMs = nowMs;
+      SerialLogRecord row{};
+      row.kind = SERIAL_LOG_SELECTED_DEBUG;
+      row.selected.selector = selection;
+      row.selected.values[0] = nowMs * 0.001f;
+      row.selected.integers[0] = sBus.channels[selection - 60];
+      SerialLoggerSubmit(row);
+    }
+    return;
+  }
+
   SerialLogRecord selected{};
   selected.kind = SERIAL_LOG_SELECTED_DEBUG;
   selected.selected.selector = static_cast<int32_t>(Select);

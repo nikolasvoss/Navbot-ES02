@@ -47,6 +47,8 @@ static inline bool appendSerialLogFormat(char *buffer, size_t capacity, size_t &
 static inline bool formatSelectedDebug(char *buffer, size_t capacity, size_t &length, const SerialLogSelected &row) {
   const float *v = row.values;
   const int32_t *n = row.integers;
+  if (row.selector >= 60 && row.selector <= 75)
+    return appendSerialLogFormat(buffer, capacity, length, "%.3f,%d\n", v[0], static_cast<int>(n[0]));
   switch (row.selector) {
     case 1: return appendSerialLogFormat(buffer, capacity, length, "dt:%.6f Roll:%.2f Pitch:%.2f Yaw:%.2f\n", v[0], v[1], v[2], v[3]);
     case 2: return appendSerialLogFormat(buffer, capacity, length, "dt:%.6f accx:%.2f accy:%.2f accz:%.2f\n", v[0], v[1], v[2], v[3]);

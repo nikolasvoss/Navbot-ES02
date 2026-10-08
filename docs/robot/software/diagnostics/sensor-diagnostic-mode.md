@@ -24,6 +24,14 @@ Historical hardware capture at 921600 baud on 2026-10-07 did not pass: across 95
 
 The software IMU read rate is nominally 100 Hz. The diagnostic LPF cutoff is 20 Hz at a nominal 100 Hz software sample rate (10,000 µs period), giving a 50 Hz Nyquist limit. Raw gyro and acceleration fields bypass that LPF, so content above 50 Hz can alias; the 20 Hz filter does not protect those raw fields. Actual timing is determined by software scheduling and must be checked from `time_us` intervals. The first serial lines contain boot and setup text before the CSV rows. The `DIAG,boot` line reports the reset reason and IMU status. The voltage field uses direct ADC conversion and does not have the filtered value's startup delay.
 
+## Plot an RC channel while the robot runs
+
+Use the normal firmware with `SENSOR_DIAGNOSTIC_MODE=0`. Connect SerialPlot to the CH340 port at 115200 baud. Set DTR and RTS off, then choose ASCII input, comma delimiters, and two channels.
+
+In SerialPlot's Commands tab, send `K60` for receiver channel 1, `K61` for channel 2, and so on through `K75` for channel 16. End each command with a newline. The firmware sends uptime in seconds and the selected channel's latest raw SBUS value at 20 Hz. Send `K0` to stop. Use SerialPlot's snapshot feature to save the plotted data as CSV.
+
+The logger stays off until you send a `K60`–`K75` command. It does not stop or change normal motor and servo control. Keep the robot in its normal safe operating setup while it runs. The command selection resets when the board restarts.
+
 If the ROM reports `DOWNLOAD(USB/UART0)` and waits for download, the ESP32 entered its flash loader. Keep DTR off, then pulse RTS or press RESET/EN. A normal firmware boot reports `SPI_FAST_FLASH_BOOT`. Do not run `sensor_monitor.py` and SerialPlot at the same time.
 
 ## Build and upload the diagnostic image
