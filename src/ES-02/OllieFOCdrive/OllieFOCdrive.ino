@@ -2,7 +2,6 @@
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <SimpleFOC.h>
-#include <Preferences.h>  // This library is used for key-value data storage and retrieval in ESP32, enabling data persistence
 #include "SlotCalibration.h"
 #include "FUTABA_SBUS.h"
 #include "ServoControl.h"
@@ -15,7 +14,9 @@
 #include "robot.h"
 #include "Logging.h"
 #include "RobotLogCapture.h"
-
+#include "LegKinematics.h"
+#include "Calibration.h"
+#include "CalibrationStore.h"
 
 class LoggingCommandStream : public Stream {
  public:
@@ -37,6 +38,8 @@ class LoggingCommandStream : public Stream {
 
 LoggingCommandStream commandStream;
 Commander command = Commander(commandStream);
+Calibration calibration;
+CalibrationStore calibrationStore;
 
 // ----- Editable Constants
 #define SensorSwitch SENSOR_SWITCH_IIC_AS5600                                // 1: SPI  2: IIC AS5600
@@ -87,11 +90,6 @@ Commander command = Commander(commandStream);
 
 #define IMU_SAMPLING_RATE_HZ 1000.0f  // Sampling frequency
 #define IMU_LPF_CUTOFF_FREQ_HZ 50.0f  // Cutoff frequency for low-pass filter
-#define IMU_CALL_COUNT 100            // Number of times the function is called
-
-#define BODY_THIGH_LENGTH_M 0.035f  // Thigh length (m)
-#define BODY_SHANK_LENGTH_M 0.072f  // Shank length (m)
-
 #define BOARD_PIN_LED 35        // LED IO
 #define BOARD_PIN_ANALOG_IN 17  // Battery voltage IO
 
@@ -203,26 +201,6 @@ float angleGyroX, angleGyroY, angleGyroZ,
 float angleX, angleY, angleZ;
 float accCoef = 0.02f;
 float gyroCoef = 0.98f;
-
-//  Declare a Preferences object for subsequent read/write operations to flash memory
-Preferences preferences;
-//  Define a floating-point array to store Euler angle data
-float zeroBiasFlash[9];
-//  Define a character string pointer array to store the keys corresponding to the roll and pitch angles, which can be directly modified by the user
-//  The key name is used to uniquely identify data in flash memory
-const char *zeroBiasKeys[9] = {
-  "roll",
-  "pitch",
-  "gyroX",
-  "gyroY",
-  "gyroZ",
-  "servoAngle1",
-  "servoAngle2",
-  "servoAngle3",
-  "servoAngle4"
-};
-
-int IMUCallCounter = 0;  //  Call counter
 
 // Servo
 void zeroBias_servo1(char *cmd) {
@@ -418,12 +396,8 @@ void doMotor1(char *cmd) {
 }
 
 void RXsbus();
-int RightInverseKinematics(float x, float y, float p, float *ax);
-int LeftInverseKinematics(float x, float y, float p, float *ax);
 void print_data(void);
 void ImuUpdate(void);
-void FlashSave(int sw);
-void FlashInit(void);
 void PIDcontroller_posture(float dt);
 void RemoteControlFiltering(void);
 void ReadVoltage(void);
@@ -479,7 +453,25 @@ void setup() {
   Serial.begin(SENSOR_DIAGNOSTIC_MODE ? DIAGNOSTIC_SERIAL_BAUD_RATE :
                (DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? LIVE_TUNING_SERIAL_BAUD_RATE : SERIAL_BAUD_RATE));
   Logging::begin();
-  FlashInit();  // Read flash data
+  const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
+  zeroBias.roll = loadedCalibration.attitude.rollDegrees;
+  zeroBias.pitch = loadedCalibration.attitude.pitchDegrees;
+  gyroBiasX = loadedCalibration.gyro.xRawCounts;
+  gyroBiasY = loadedCalibration.gyro.yRawCounts;
+  gyroBiasZ = loadedCalibration.gyro.zRawCounts;
+  zeroBias.servo1 = loadedCalibration.servos.servo1Degrees;
+  zeroBias.servo2 = loadedCalibration.servos.servo2Degrees;
+  zeroBias.servo3 = loadedCalibration.servos.servo3Degrees;
+  zeroBias.servo4 = loadedCalibration.servos.servo4Degrees;
+  Logging::message(Logging::Level::Info, "Calibration",
+                   "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
+                   zeroBias.roll, zeroBias.pitch);
+  Logging::message(Logging::Level::Info, "Calibration",
+                   "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
+                   gyroBiasX, gyroBiasY, gyroBiasZ);
+  Logging::message(Logging::Level::Info, "Calibration",
+                   "servo1: %.2f, servo2: %.2f, servo3: %.2f, servo4: %.2f",
+                   zeroBias.servo1, zeroBias.servo2, zeroBias.servo3, zeroBias.servo4);
   pinMode(BOARD_PIN_LED, OUTPUT);
   digitalWrite(BOARD_PIN_LED, LOW);  // 亮
   Serial.println("system run.");
@@ -911,189 +903,6 @@ void RXsbus() {
  * @param arc The angle in radians.
  * @return The angle in degrees.
  */
-float ArcToAngle(float arc)  // Convert radians to degrees
-{
-  float angle = arc * (180 / PI);
-  return angle;
-}
-
-/**
- * @brief Converts an angle from degrees to radians.
- * @param angle The angle in degrees.
- * @return The angle in radians.
- */
-float AngleToArc(float angle)  // Convert degrees to radians
-{
-  float art = angle * (PI / 180);
-  return art;
-}
-
-/**
- * @brief Calculates the required servo angles for the right leg using inverse kinematics.
- *
- * This function solves the geometry of the five-bar linkage for the right leg
- * to determine the two servo angles needed to place the foot at a desired
- * (x, y) coordinate relative to the body, considering the body's pitch angle.
- *
- * @param x The target horizontal position of the foot (m).
- * @param y The target vertical position (height) of the foot (m).
- * @param p The pitch angle of the robot's body (degrees).
- * @param ax A pointer to a float array where the two calculated servo angles (in degrees) will be stored.
- * @return An error code (0 for success, 1 or 2 if the target is out of reach).
- */
-int RightInverseKinematics(float x, float y, float p, float *ax) {
-  x = constrain(x, -0.05, 0.05);
-  y = constrain(y, 0.05, 0.1);
-
-  int error = 0;                   // Coordinate setting exception
-  float AB = BODY_THIGH_LENGTH_M;  // Thigh length (m) AB=ED
-  float BC = BODY_SHANK_LENGTH_M;  // Shank length (m) BC=DC
-
-  float OA = 0.017f;  //
-  float aOCF = 0;
-  float aOCF2 = 0;
-  float aAOC = 0;
-  float OC = 0;
-  float OF = 0;
-  float FC = 0;
-  float AC = 0;
-  float aOAC = 0;
-  float aOCA = 0;
-  float aBAC = 0;
-  float aBAG = 0;
-  float OE = OA;  //
-  float aEOC = 0;
-  float EC = 0;
-  float aOCE = 0;
-  float aOEC = 0;
-  float aDEC = 0;
-  float aDEH = 0;
-
-  float pitch, x1, y1;
-
-  pitch = AngleToArc(p);  // Pitch angle
-
-  x1 = x * cosf(pitch) - y * sinf(pitch);
-  y1 = x * sinf(pitch) + y * cosf(pitch);
-
-  OF = x1;
-  FC = y1;
-
-  // Joint 1
-  OC = sqrtf(pow(OF, 2) + pow(FC, 2));
-  aOCF = asinf(OF / OC);
-  aAOC = AngleToArc(90) + aOCF;
-
-  AC = sqrtf(pow(OA, 2) + pow(OC, 2) - 2 * OA * OC * cos(aAOC));
-  aOCA = acosf((pow(OC, 2) + pow(AC, 2) - pow(OA, 2)) / (2 * OC * AC));
-  aOAC = PI - aOCA - aAOC;
-  aBAC = acos((pow(AB, 2) + pow(AC, 2) - pow(BC, 2)) / (2 * AB * AC));
-  aBAG = PI - aBAC - aOAC;
-  ax[0] = ArcToAngle(aBAG);  // Joint 1 angle
-
-  // Joint 2
-  aOCF2 = -aOCF;
-  aEOC = AngleToArc(90) + aOCF2;
-
-  EC = sqrtf(pow(OE, 2) + pow(OC, 2) - 2 * OE * OC * cos(aEOC));
-  aOCE = acosf((pow(OC, 2) + pow(EC, 2) - pow(OE, 2)) / (2 * OC * EC));
-  aOEC = PI - aOCE - aEOC;
-  aDEC = acos((pow(AB, 2) + pow(EC, 2) - pow(BC, 2)) / (2 * AB * EC));
-  aDEH = PI - aDEC - aOEC;
-  ax[1] = ArcToAngle(aDEH);  // Joint 1 angle
-
-  if (AC >= (AB + BC))  // Exceeds the maximum range of the structure
-    return error = 1;
-  else if (EC >= (AB + BC))  // Exceeds the maximum range of the structure
-    return error = 2;
-
-  return error;
-}
-
-/**
- * @brief Calculates the required servo angles for the left leg using inverse kinematics.
- *
- * This function solves the geometry of the five-bar linkage for the left leg.
- * It mirrors the calculation of the right leg to find the servo angles needed
- * to place the foot at a desired (x, y) coordinate.
- *
- * @param x The target horizontal position of the foot (m).
- * @param y The target vertical position (height) of the foot (m).
- * @param p The pitch angle of the robot's body (degrees).
- * @param ax A pointer to a float array where the two calculated servo angles (in degrees) will be stored.
- * @return An error code (0 for success, 1 or 2 if the target is out of reach).
- */
-int LeftInverseKinematics(float x, float y, float p, float *ax) {
-  x = constrain(x, -0.05, 0.05);
-  y = constrain(y, 0.05, 0.1);
-
-  x = -x;
-  p = -p;
-  int error = 0;                   // Coordinate setting exception
-  float AB = BODY_THIGH_LENGTH_M;  // Thigh length (m) AB=ED
-  float BC = BODY_SHANK_LENGTH_M;  // Shank length (m) BC=DC
-
-  float OA = 0.017f;  //
-  float aOCF = 0;
-  float aOCF2 = 0;
-  float aAOC = 0;
-  float OC = 0;
-  float OF = 0;
-  float FC = 0;
-  float AC = 0;
-  float aOAC = 0;
-  float aOCA = 0;
-  float aBAC = 0;
-  float aBAG = 0;
-  float OE = OA;  //
-  float aEOC = 0;
-  float EC = 0;
-  float aOCE = 0;
-  float aOEC = 0;
-  float aDEC = 0;
-  float aDEH = 0;
-
-  float pitch, x1, y1;
-
-  pitch = AngleToArc(p);  // Pitch angle
-
-  x1 = x * cosf(pitch) - y * sinf(pitch);
-  y1 = x * sinf(pitch) + y * cosf(pitch);
-
-  OF = -x1;
-  FC = y1;
-
-  // Joint 1
-  OC = sqrtf(pow(OF, 2) + pow(FC, 2));
-  aOCF = asinf(OF / OC);
-  aAOC = AngleToArc(90) + aOCF;
-
-  AC = sqrtf(pow(OA, 2) + pow(OC, 2) - 2 * OA * OC * cos(aAOC));
-  aOCA = acosf((pow(OC, 2) + pow(AC, 2) - pow(OA, 2)) / (2 * OC * AC));
-  aOAC = PI - aOCA - aAOC;
-  aBAC = acos((pow(AB, 2) + pow(AC, 2) - pow(BC, 2)) / (2 * AB * AC));
-  aBAG = PI - aBAC - aOAC;
-  ax[0] = ArcToAngle(aBAG);  // Joint 1 angle
-
-  // Joint 2
-  aOCF2 = -aOCF;
-  aEOC = AngleToArc(90) + aOCF2;
-
-  EC = sqrtf(pow(OE, 2) + pow(OC, 2) - 2 * OE * OC * cos(aEOC));
-  aOCE = acosf((pow(OC, 2) + pow(EC, 2) - pow(OE, 2)) / (2 * OC * EC));
-  aOEC = PI - aOCE - aEOC;
-  aDEC = acos((pow(AB, 2) + pow(EC, 2) - pow(BC, 2)) / (2 * AB * EC));
-  aDEH = PI - aDEC - aOEC;
-  ax[1] = ArcToAngle(aDEH);  // Joint 1 angle
-
-  if (AC >= (AB + BC))  // Exceeds the maximum range of the structure
-    return error = 1;
-  else if (EC >= (AB + BC))  // Exceeds the maximum range of the structure
-    return error = 2;
-
-  return error;
-}
-
 /**
  * @brief Reads data from the IMU, filters it, and updates the robot's attitude.
  *
@@ -1170,243 +979,6 @@ void ImuUpdate(void) {
   timestamp_prev = timestamp_now;
 }
 
-/**
- * @brief Initializes and reads calibration data from the ESP32's non-volatile flash memory.
- *
- * This function uses the Preferences library to load saved values for:
- * - Roll and pitch angle zero-bias offsets.
- * - Gyroscope X, Y, and Z axis bias offsets.
- * - Servo trim/offset values for all four leg servos.
- * If a value is not found in flash, it defaults to 0.0. The loaded values are printed to the serial monitor.
- */
-void FlashInit(void) {
-  preferences.begin("preferences", false);
-
-  // Read data   If the read fails (that is, the data does not exist in the flash), the default value is 0.0
-  zeroBias.roll = preferences.getFloat(zeroBiasKeys[0], 0.0);
-  zeroBias.pitch = preferences.getFloat(zeroBiasKeys[1], 0.0);
-
-  // Read data   If the read fails (that is, the data does not exist in the flash), the default value is 0.0
-  gyroBiasX = preferences.getFloat(zeroBiasKeys[2], 0.0);
-  gyroBiasY = preferences.getFloat(zeroBiasKeys[3], 0.0);
-  gyroBiasZ = preferences.getFloat(zeroBiasKeys[4], 0.0);
-
-  // Servo angle
-  zeroBias.servo1 = preferences.getFloat(zeroBiasKeys[5], 0.0);
-  zeroBias.servo2 = preferences.getFloat(zeroBiasKeys[6], 0.0);
-  zeroBias.servo3 = preferences.getFloat(zeroBiasKeys[7], 0.0);
-  zeroBias.servo4 = preferences.getFloat(zeroBiasKeys[8], 0.0);
-
-  // Close flash access, release related resources
-  preferences.end();
-
-  Serial.println(" ");
-  // Output zero bias
-  Serial.print("  Roll Zero Bias: ");
-  Serial.print(zeroBias.roll);
-  Serial.print("  Pitch Zero Bias: ");
-  Serial.println(zeroBias.pitch);
-
-  // Output zero bias
-  Serial.print("  gyroBiasX:");
-  Serial.print(gyroBiasX);
-  Serial.print("  gyroBiasY:");
-  Serial.print(gyroBiasY);
-  Serial.print("  gyroBiasZ:");
-  Serial.println(gyroBiasZ);
-
-  // Output zero bias
-  Serial.print("  servo1:");
-  Serial.print(zeroBias.servo1);
-  Serial.print("  servo2:");
-  Serial.print(zeroBias.servo2);
-  Serial.print("  servo3:");
-  Serial.print(zeroBias.servo3);
-  Serial.print("  servo4:");
-  Serial.println(zeroBias.servo4);
-}
-
-/**
- * @brief Calculates and saves the zero-bias offset for the IMU's roll and pitch angles.
- *
- * This function should be called when the robot is stationary and level.
- * It accumulates a number of IMU readings (defined by `CALL_COUNT`),
- * calculates the average roll and pitch, and saves these averages to flash
- * memory as the zero-bias offset. This ensures the robot knows what "level" is.
- */
-void calculateZeroBias() {
-  // Initialize the accumulator
-  static float rollSum = 0;
-  static float pitchSum = 0;
-
-  // Accumulate the Euler angle
-  rollSum += attitude.roll;
-  pitchSum += attitude.pitch;
-
-  // Increase the call counter
-  IMUCallCounter++;
-
-  if (IMUCallCounter >= IMU_CALL_COUNT) {
-    // Calculate the average value to get the zero bias
-    zeroBias.roll = rollSum / IMU_CALL_COUNT;
-    zeroBias.pitch = pitchSum / IMU_CALL_COUNT;
-
-    // Initialize flash access, open the "preferences" namespace
-    // The second parameter is false, indicating that the namespace is opened in write mode
-    preferences.begin("preferences", false);
-
-    // Write data
-    zeroBiasFlash[0] = zeroBias.roll;
-    preferences.putFloat(zeroBiasKeys[0], zeroBiasFlash[0]);
-    zeroBiasFlash[1] = zeroBias.pitch;
-    preferences.putFloat(zeroBiasKeys[1], zeroBiasFlash[1]);
-    // Read data   If the read fails (that is, the data does not exist in the flash), the default value is 0.0
-    zeroBias.roll = preferences.getFloat(zeroBiasKeys[0], 0.0);
-    zeroBias.pitch = preferences.getFloat(zeroBiasKeys[1], 0.0);
-
-    // Close flash access, release related resources
-    preferences.end();
-
-    // Output zero bias
-    if (Logging::profile() == Logging::Profile::Idle) {
-      Serial.print("  Roll Zero Bias: ");
-      Serial.print(zeroBias.roll);
-      Serial.print("  Pitch Zero Bias: ");
-      Serial.println(zeroBias.pitch);
-    }
-    rollSum = 0;
-    pitchSum = 0;
-    IMUCallCounter = 0;     // Clear the next time
-    CalibrationSelect = 0;  // Calibration complete exit calibration
-  }
-}
-
-/**
- * @brief Manages the saving of different calibration profiles to flash memory.
- *
- * This function is controlled by the `CalibrationSelect` variable, which is set
- * via the serial commander.
- *
- * @param sw The calibration mode to execute:
- *           - 1: Calibrates the gyroscope and saves its bias values.
- *           - 2: Calls `calculateZeroBias()` to calibrate the roll/pitch angle offsets.
- *           - 3: Saves any adjustments made to the servo trim values.
- */
-void FlashSave(int sw) {
-
-  static float servo1_last = zeroBias.servo1;  // Last deviation
-  static float servo2_last = zeroBias.servo2;
-  static float servo3_last = zeroBias.servo3;
-  static float servo4_last = zeroBias.servo4;
-
-  switch (sw) {
-    case 1:
-      // Gyroscope calibration
-      calibrateGyro();
-      preferences.begin("preferences", false);
-
-      // Write data
-      preferences.putFloat(zeroBiasKeys[2], gyroBiasX);
-      preferences.putFloat(zeroBiasKeys[3], gyroBiasY);
-      preferences.putFloat(zeroBiasKeys[4], gyroBiasZ);
-
-      // Read data   If the read fails (that is, the data does not exist in the flash), the default value is 0.0
-      gyroBiasX = preferences.getFloat(zeroBiasKeys[2], 0.0);
-      gyroBiasY = preferences.getFloat(zeroBiasKeys[3], 0.0);
-      gyroBiasZ = preferences.getFloat(zeroBiasKeys[4], 0.0);
-
-      // Close flash access, release related resources
-      preferences.end();
-
-      // Output zero bias
-      if (Logging::profile() == Logging::Profile::Idle) {
-        Serial.print("  gyroBiasX:");
-        Serial.print(gyroBiasX);
-        Serial.print("  gyroBiasY:");
-        Serial.print(gyroBiasY);
-        Serial.print("  gyroBiasZ:");
-        Serial.println(gyroBiasZ);
-      }
-
-      CalibrationSelect = 0;  // Calibration complete
-      break;
-
-    case 2:
-      // Function to calculate the Euler angle zero bias
-      calculateZeroBias();
-
-      break;
-
-    case 3:
-
-      preferences.begin("preferences", false);
-
-      if (zeroBias.servo1 != servo1_last)  // Parameter adjusted, save
-      {
-        servo1_last = zeroBias.servo1;  //
-        // Write data
-        preferences.putFloat(zeroBiasKeys[5], zeroBias.servo1);
-        // Read servo angle
-        zeroBias.servo1 = preferences.getFloat(zeroBiasKeys[5], 0.0);
-        // Print data
-        if (Logging::profile() == Logging::Profile::Idle) {
-          Serial.print("  zeroBias.servo1:");
-          Serial.println(zeroBias.servo1);
-        }
-      }
-
-      if (zeroBias.servo2 != servo2_last)  // Parameter adjusted, save
-      {
-        servo2_last = zeroBias.servo2;  //
-        // Write data
-        preferences.putFloat(zeroBiasKeys[6], zeroBias.servo2);
-        // Read servo angle
-        zeroBias.servo2 = preferences.getFloat(zeroBiasKeys[6], 0.0);
-        // Print data
-        if (Logging::profile() == Logging::Profile::Idle) {
-          Serial.print("  zeroBias.servo2:");
-          Serial.println(zeroBias.servo2);
-        }
-      }
-
-      if (zeroBias.servo3 != servo3_last)  // Parameter adjusted, save
-      {
-        servo3_last = zeroBias.servo3;  //
-        // Write data
-        preferences.putFloat(zeroBiasKeys[7], zeroBias.servo3);
-        // Read servo angle
-        zeroBias.servo3 = preferences.getFloat(zeroBiasKeys[7], 0.0);
-        // Print data
-        if (Logging::profile() == Logging::Profile::Idle) {
-          Serial.print("  zeroBias.servo3:");
-          Serial.println(zeroBias.servo3);
-        }
-      }
-
-      if (zeroBias.servo4 != servo4_last)  // Parameter adjusted, save
-      {
-        servo4_last = zeroBias.servo4;  //
-        // Write data
-        preferences.putFloat(zeroBiasKeys[8], zeroBias.servo4);
-        // Read servo angle
-        zeroBias.servo4 = preferences.getFloat(zeroBiasKeys[8], 0.0);
-        // Print data
-        if (Logging::profile() == Logging::Profile::Idle) {
-          Serial.print("  zeroBias.servo4:");
-          Serial.println(zeroBias.servo4);
-        }
-      }
-
-      // Close flash access, release related resources
-      preferences.end();
-
-      break;
-
-    default:
-
-      break;
-  }
-}
 
 /**
  * @brief Prints debugging data to the serial port based on a selection variable.
@@ -1431,7 +1003,8 @@ void print_data(void) {
   }
 
   const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(selection);
-  if (selection < 1 || selection > 45 || !RobotLogCapture::selectedDebugDue(selector, nowMs)) return;
+  if (selection >= 1 && selection <= 45 &&
+      RobotLogCapture::selectedDebugDue(selector, nowMs)) {
   Logging::DebugSample sample{};
   sample.selector = selector;
   switch (selection) {
@@ -1598,6 +1171,7 @@ void print_data(void) {
     default: return;
   }
   Logging::submit(sample);
+  }
   switch ((int)Select) {
     case 55: {
       if (controlGateSequence % 7 == 0) {
@@ -2267,7 +1841,35 @@ void loop() {
       LPF_CUTOFF_FREQ_last = LPF_CUTOFF_FREQ;
     }
 
-    FlashSave((int)CalibrationSelect);  // Save calibration data
+    const CalibrationResult calibrationResult = calibration.update(
+        static_cast<int>(CalibrationSelect),
+        {attitude.roll, attitude.pitch},
+        calibrationStore,
+        {zeroBias.roll, zeroBias.pitch},
+        {gyroBiasX, gyroBiasY, gyroBiasZ},
+        {zeroBias.servo1, zeroBias.servo2, zeroBias.servo3, zeroBias.servo4},
+        calibrateGyro);
+    if (calibrationResult.clearRequest)
+      CalibrationSelect = 0;
+
+    if (calibrationResult.completion == CalibrationCompletion::Gyroscope) {
+      Logging::message(Logging::Level::Info, "Calibration",
+                       "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
+                       gyroBiasX, gyroBiasY, gyroBiasZ);
+    } else if (calibrationResult.completion == CalibrationCompletion::Attitude) {
+      Logging::message(Logging::Level::Info, "Calibration",
+                       "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
+                       zeroBias.roll, zeroBias.pitch);
+    }
+
+    if (calibrationResult.changedServos.servo1Changed)
+      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo1: %.2f", zeroBias.servo1);
+    if (calibrationResult.changedServos.servo2Changed)
+      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo2: %.2f", zeroBias.servo2);
+    if (calibrationResult.changedServos.servo3Changed)
+      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo3: %.2f", zeroBias.servo3);
+    if (calibrationResult.changedServos.servo4Changed)
+      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo4: %.2f", zeroBias.servo4);
 
     const float wheelVelocityDt = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? time_dt : 0.01f;
     Motor1_Velocity = (sensor1.getAngle() - Motor1_place_last) / wheelVelocityDt;
@@ -2287,8 +1889,6 @@ void loop() {
       CalibrationCurrentSp(sensor2.getAngle(), Motor2_Velocity_f, &motor2);
     }
 
-    float Rax[2];
-    float Lax[2];
     float bodyH = 0.06f;
     float bodyRoll = BodyRoll_f;
 
@@ -2332,20 +1932,24 @@ void loop() {
       BodyPitching_f = 0;
     }
 
-    if (RightInverseKinematics(BarycenterX - BodyX, bodyH - bodyRoll, BodyPitching_f, Rax))
+    const LegSolveResult rightLeg = LegKinematics::solveRight(
+        {BarycenterX - BodyX, bodyH - bodyRoll, BodyPitching_f});
+    if (rightLeg.status != LegSolveStatus::Success)
       Logging::message(Logging::Level::Warning, "RightInverseKinematics", "no");
 
-    if (LeftInverseKinematics(BarycenterX - BodyX, bodyH + bodyRoll, BodyPitching_f, Lax))
+    const LegSolveResult leftLeg = LegKinematics::solveLeft(
+        {BarycenterX - BodyX, bodyH + bodyRoll, BodyPitching_f});
+    if (leftLeg.status != LegSolveStatus::Success)
       Logging::message(Logging::Level::Warning, "LeftInverseKinematics", "no");
 
     if (posture_or_mark_mode == REMOTE_CONTROL_PM_POSTURE_MODE)  // Posture
     {
 
       // Set the angle of the four servos
-      servoTraceAngle[0] = Lax[0] - zeroBias.servo1;
-      servoTraceAngle[1] = Lax[1] - zeroBias.servo2;
-      servoTraceAngle[2] = Rax[0] - zeroBias.servo3;
-      servoTraceAngle[3] = Rax[1] - zeroBias.servo4;
+      servoTraceAngle[0] = leftLeg.angles.joint1Degrees - zeroBias.servo1;
+      servoTraceAngle[1] = leftLeg.angles.joint2Degrees - zeroBias.servo2;
+      servoTraceAngle[2] = rightLeg.angles.joint1Degrees - zeroBias.servo3;
+      servoTraceAngle[3] = rightLeg.angles.joint2Degrees - zeroBias.servo4;
       servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1, servoTraceAngle[3], 1);
     } else  // Assembly position and calibration
     {

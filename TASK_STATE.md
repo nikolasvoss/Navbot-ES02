@@ -1,65 +1,36 @@
-# Task state: project-local logging module
+# Task state: PR4 integration review
 
-Goal: implement the accepted project-local typed logging architecture from `work/logging-module-implementation-plan.md`.
-Baseline: `e18c734dbf4c9417678e0768742b4e2c01f39b83`; integration branch `codex/logging-module-implementation`; checkout was clean before task changes.
-Scope: `/home/niko/Dokumente/Bastelei/roboter/Navbot-ES02/work/logging-module-implementation.scope.md`.
-Frozen plan: `/home/niko/Dokumente/Bastelei/roboter/Navbot-ES02/work/logging-module-implementation-plan.md`.
-Architecture sketch: `/tmp/logging-architect/synthesis.md` (Candidate 3 with recorded in-scope grafts).
+Goal: review PR4 against `main`, fix confirmed blockers, and merge only a verified head. The active contract is `work/pr4-review.scope.md`; compatibility and migration requirements are none.
 
-Decisions:
-- Use one private tagged record queue and one sender. Capture builders are separate in `RobotLogCapture`.
-- Publish profile plus 32-bit epoch in a brief critical section. Drop queued stale records at dequeue. An already-started UART write may finish as pre-boundary bytes; do not flush or wait in a control path.
-- Preserve current output layouts, selectors, producer boundaries and rates, queue depth 32 and 5,376-byte queue budget if the named record fits. Any budget increase needs measured size and a scope review.
-- Keep serial input and command processing. Route or suppress actual app/library output at its source during structured capture.
-- No compatibility layer, Wi-Fi/perimeter integration, flash, drive, merge or push.
+## Decisions
 
-Progress:
-- Product review: HOLD_SCOPE; scope stays as requested.
-- Independent pre-edit scope check: `STATUS: OK`.
-- Source/how exploration complete. Three Luna high architecture candidates and independent Luna cross-judge complete; Gemini returned `ok:false` after 90 seconds and is unavailable.
-- Public sample/API types and private queue record declarations are frozen in
-  `Logging.h`, `LogSamples.h`, and `LoggingInternal.h`.
-- Host C++11 compile probe measured `LoggingInternal::Record` at 128 bytes,
-  `Payload` at 120 bytes, and the largest debug payload at 44 bytes. The
-  existing 168-byte slot guard passes, preserving the 5,376-byte queue budget.
-- Commander/SimpleFOC library headers are not installed in the available
-  Arduino cache; the installed SimpleFOC source confirms `Commander` accepts a
-  `Stream&`. A local forwarding Stream retains serial input and drops Commander
-  output outside Idle, and SimpleFOC monitoring is gated to Idle.
-- Implemented the typed queue/sender and formatter. Host C++11 checks report a
-  128-byte record, 32 slots, and 4,096 bytes of queue storage.
-- Migrated selected debug, diagnostic, trace, control, balance, and drive
-  sketch producers to named samples. Kept K8, K60–K75, and every-seventh-gate
-  pacing at their existing call boundaries.
-- Routed active diagnostic text through `Logging::message`; functional
-  calibration output remains direct only in Idle. Runtime gyro calibration
-  output is gated without changing its sample or storage path.
-- Replaced the old logger host test with C++11 tests for all format fixtures,
-  bounded FIFO/overflow, message filtering and profile boundary behavior,
-  sender startup failure, short writes, and selected-debug pacing. Added
-  independent capture-policy and drive-trace parser checks.
-- Removed `SerialLogger.*`, `SerialLogFormat.h`, and the unreferenced
-  `Telemetry.*` after repository-wide reference checks. Updated current USB
-  serial and diagnostic guides.
-- Current normal firmware build passed with 737,332 bytes of program storage
-  (56%) and 39,656 bytes of globals (12%). The diagnostic build passed from an
-  isolated temporary sketch copy with 407,074 bytes of program storage (31%)
-  and 32,112 bytes of globals (9%).
-- Current host checks passed: logger formatter/queue, capture policy, and drive
-  trace parser. `git diff --check` passed.
-- Fresh independent correctness review found no actionable findings. The final
-  independent scope guard returned `STATUS: OK`; it verified the touchscreen
-  serial blocks cited by an earlier report are commented out and unchanged from
-  baseline.
-- No-comments review found 12 redundant namespace-closing labels; all 12 were
-  removed. No other added comments were flagged.
-- Gemini review was attempted once with the correct request and timed out after
-  90 seconds, so it is unavailable for this workflow.
+- Integrate the current `main` kinematics and calibration extraction with PR4's typed logging migration. Keep `LegKinematics`, `Calibration`, and `CalibrationStore` as owners of their extracted behavior.
+- Keep the `LoggingCommandStream` input path for Commander. Send calibration and solver text through `Logging::message` so measurement profiles suppress it.
+- Preserve producer selectors and cadence. Debug selectors 1–45 and 60–75 use their existing gates; trace selectors 55–58 use the existing every-seventh-control-gate cadence.
+- No hardware operation or flashing. The lead owns final verification and merge; this worktree step makes no commit or push.
 
-Open items:
-- None.
+## Progress
 
-Delivery boundary: no hardware flash or motor test, merge, push, or PR, as
-excluded by the scope contract.
+- PR head: `094c4528bf1c45beefd303cfb4b090183abe683c`. The integration fetch brought in `main` at `c1950d2`.
+- PR4's typed logger, formatter, capture policy, and migrated producers were implemented and previously reviewed. The earlier firmware and host-check results are recorded in the branch review materials.
+- `main` contributes the `LegKinematics`, `Calibration`, and `CalibrationStore` modules. Their focused host checks and normal and sensor-diagnostic firmware builds passed on the extraction branch; no hardware was flashed.
+- Reconciled the sketch to load persisted calibration through `CalibrationStore`, update it through `Calibration`, and use `LegKinematics` results for servo angles. Removed the duplicate inline calibration and old inverse-kinematics paths from the conflict resolution.
+- Routed startup calibration values, calibration completion values, and solver warnings through `Logging::message`.
+- Fixed the `print_data` selector fall-through. Selectors 55–58 now reach the existing trace switch after the 1–45 debug block is skipped.
+- Added `scripts/test_print_data_dispatch.py`. It extracts the real selector guard and trace switch from `print_data`, compiles them with a focused host harness, and checks all four trace selectors and their 7-gate cadence. The harness failed before the fix and passes after it.
 
-Next step: report the branch, checks, review results, and hardware limitation.
+## Verification
+
+- Integrated logger, capture, dispatch, analyzer, kinematics, calibration, and calibration-store host checks passed.
+- The normal firmware build passed after repairing the comment opener at `print_data`.
+- Independent correctness review returned PASS+NOTES. Gemini CLI timed out and supplied no usable review.
+- No hardware was flashed or operated.
+
+## Open items
+
+- Complete the final scope check and confirm the guarded merge.
+- Merge and confirm landing only if the lead's verification is clean.
+
+## Next step
+
+Finish the final scope check, publish the verified integration commit, and merge PR4 with the verified head condition.
