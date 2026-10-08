@@ -4,17 +4,17 @@
 
 Add a safe, browser-based way to inspect and change HMMD radar settings while the sensor node is running. Extend the committed sensor channel (`4a8e854`) and keep its browser interface. Do not implement firmware changes, other sensor drivers, or a second transport.
 
-Start by reading the repository `AGENTS.md`, `docs/cm5/software/hmmd-ros2.md` (especially **Sensor-channel interface baseline**), `agent_notes/cm5/sensors/hmmd/README.md`, `agent_notes/cm5/sensors/hmmd/protocol.md`, and `agent_notes/cm5/sensors/hmmd/observations.md`. Before changing serial behavior, also read `agent_notes/robot/usb-serial.md` and `docs/robot/software/development/usb-serial-flashing.md`. Follow the development workflow and create a fresh Scope Contract for this configuration task before implementation. Preserve unrelated worktree files.
+Start by reading the repository `AGENTS.md`, `docs/ros2_pc/software/hmmd-ros2.md` (especially **Sensor-channel interface baseline**), `agent_notes/ros2_pc/sensors/hmmd/README.md`, `agent_notes/ros2_pc/sensors/hmmd/protocol.md`, and `agent_notes/ros2_pc/sensors/hmmd/observations.md`. Before changing serial behavior, also read `agent_notes/robot/usb-serial.md` and `docs/robot/software/development/usb-serial-flashing.md`. Follow the development workflow and create a fresh Scope Contract for this configuration task before implementation. Preserve unrelated worktree files.
 
 ## Evidence that defines the starting point
 
-- The HMMD node currently declares `port`, `baud_rate`, `poll_period_sec`, `stale_timeout_sec`, and `diagnostics_period_sec` as read-only ROS parameters. See `src/cm5/ros2/src/hmmd_radar/hmmd_radar/sensor_node.py`.
+- The HMMD node currently declares `port`, `baud_rate`, `poll_period_sec`, `stale_timeout_sec`, and `diagnostics_period_sec` as read-only ROS parameters. See `src/ros2_pc/ros2/src/hmmd_radar/hmmd_radar/sensor_node.py`.
 - `SerialSession` owns the UART and sends a debug-mode initialization byte sequence when opening the port. It currently parses map frames only; it has no request/response command path. See `serial_session.py` and `protocol.py`.
-- The production browser manifest exposes map/status receive topics and read-only `/hmmd_sensor/get_parameters`. The generic channel now supports declared ROS services, so hardware configuration should be owned by the HMMD driver and exposed as an explicit service. See `src/cm5/ros2/src/hmmd_radar/web/endpoint-manifest.json` and the interface baseline in the guide.
+- The production browser manifest exposes map/status receive topics and read-only `/hmmd_sensor/get_parameters`. The generic channel now supports declared ROS services, so hardware configuration should be owned by the HMMD driver and exposed as an explicit service. See `src/ros2_pc/ros2/src/hmmd_radar/web/endpoint-manifest.json` and the interface baseline in the guide.
 - The locally saved Waveshare guide says **Maximum Distance Gate** is 0–15, with one gate described as 70 cm, and **Target Disappearance Delay Time** is 0–65535 seconds. These are manufacturer statements, not confirmed measurements on the installed module. The same guide documents a read-configuration command `0x0008`; the local protocol note explicitly says the complete initialization sequence and ACK behavior are unconfirmed. The available guide text does not establish a write command, parameter IDs for these settings, persistence behavior, or read-back semantics.
 - In the published map, `range_gates` is a dimension of 16 and a `range_gate` index is 0–15. Do not assume that the UI's array index, the manufacturer's “Maximum Distance Gate” value, and a physical distance are interchangeable. Their mapping, inclusive/exclusive behavior, and effect on the matrix need evidence.
 
-Sources: `agent_notes/cm5/sensors/hmmd/vendor/HMMD-waveshare-wiki.txt`, `agent_notes/cm5/sensors/hmmd/protocol.md`, and the current driver files. Keep manufacturer claims, code behavior, user reports, and physical measurements distinct.
+Sources: `agent_notes/ros2_pc/sensors/hmmd/vendor/HMMD-waveshare-wiki.txt`, `agent_notes/ros2_pc/sensors/hmmd/protocol.md`, and the current driver files. Keep manufacturer claims, code behavior, user reports, and physical measurements distinct.
 
 ## Evidence gate: establish writable device behavior
 
@@ -28,7 +28,7 @@ Before adding a serial write path, determine from authoritative protocol materia
 
 Do not infer a write opcode from `0x0008` (documented as read), reverse engineer a command by sending guesses, or report a setting as applied based only on rosbridge submission. If the write protocol cannot be verified, stop short of an enabled hardware write UI: finish the read-only discovery if useful, record the exact missing evidence, and return a small next-step request. A manufacturer GUI screenshot alone does not prove command bytes or ACK semantics.
 
-For any direct serial observation, check `list_ports` through the serial MCP first, establish which process owns the UART, and do not start a second `hmmd_sensor` on the same device. Keep such observations read-only unless the user has approved the specific hardware write and its test value. Record new findings in `agent_notes/cm5/sensors/hmmd/observations.md` with date, evidence, source type, and practical consequence; update `protocol.md` only with supported protocol facts. Do not flash firmware.
+For any direct serial observation, check `list_ports` through the serial MCP first, establish which process owns the UART, and do not start a second `hmmd_sensor` on the same device. Keep such observations read-only unless the user has approved the specific hardware write and its test value. Record new findings in `agent_notes/ros2_pc/sensors/hmmd/observations.md` with date, evidence, source type, and practical consequence; update `protocol.md` only with supported protocol facts. Do not flash firmware.
 
 ## Implementation boundaries
 
@@ -58,10 +58,10 @@ Do not expose any other setting unless its name, units, bounds, command encoding
 - Test ROS service outcomes with mocked device responses. An error or missing device ACK must not update the reported applied value or parameter state.
 - Extend the synthetic rosbridge fixture and browser check to cover loading current settings, submitting a valid setting, pending state, confirmed result, and every failure state. Fixture commands must remain synthetic and absent from production permissions until implemented.
 - Preserve tests for the committed generic channel, HMMD map/status validation, startup allowlists, and no replay of writes after reconnect.
-- Update `docs/cm5/software/hmmd-ros2.md` with the actual ROS service contract, fields, ranges, units, ACK/read-back meaning, and limitations. Record hardware evidence separately in `agent_notes/`; do not present vendor values as observed device behavior.
+- Update `docs/ros2_pc/software/hmmd-ros2.md` with the actual ROS service contract, fields, ranges, units, ACK/read-back meaning, and limitations. Record hardware evidence separately in `agent_notes/`; do not present vendor values as observed device behavior.
 
 ## Completion criteria
 
 The task is complete only when a browser user can read and set each enabled setting through the existing page, the driver reports outcomes based on actual protocol responses, invalid or unsupported values are rejected, failures leave the last confirmed value intact, and tests cover the command and request lifecycles. If the evidence gate fails, deliver the verified investigation and identify the missing protocol evidence instead of shipping an unverified write path.
 
-Before completion, run the repository's applicable tests, inspect the full diff, and obtain a fresh independent scope review. Do not deploy to the CM5 or issue a physical configuration write unless the user has authorized that concrete action.
+Before completion, run the repository's applicable tests, inspect the full diff, and obtain a fresh independent scope review. Do not deploy to the ros2_pc or issue a physical configuration write unless the user has authorized that concrete action.

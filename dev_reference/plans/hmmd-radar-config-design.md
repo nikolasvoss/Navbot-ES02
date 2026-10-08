@@ -26,7 +26,7 @@ The UI and ROS boundary reject invalid integers and ranges. Only one setting is 
 - `HmmdSensorNode` validates service inputs, maps session outcomes into typed responses, and publishes any map frames collected by the session. Keep the current single-threaded executor; do not add a lock or second reader.
 - The production endpoint manifest declares only the two new services. `RosbridgeClient.callService` remains the browser transport.
 - `web/radar_settings.mjs` hides ROS selector/outcome details behind `read()` and `set(setting, value)`. `app.mjs`, `index.html`, and `style.css` render two controls near the radar image with draft, confirmed, pending, stale, and error states.
-- Extend the existing protocol/session/ROS and browser fixture tests for observable contracts. Update `docs/cm5/software/hmmd-ros2.md` and `agent_notes/cm5/sensors/hmmd/protocol.md` with the service behavior and actual hardware evidence.
+- Extend the existing protocol/session/ROS and browser fixture tests for observable contracts. Update `docs/ros2_pc/software/hmmd-ros2.md` and `agent_notes/ros2_pc/sensors/hmmd/protocol.md` with the service behavior and actual hardware evidence.
 
 ## Service contract
 

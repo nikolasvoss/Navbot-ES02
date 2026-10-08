@@ -11,4 +11,4 @@ Heruntergeladen am 04.10.2026. Originalquellen, Dateigrößen und SHA-256-Prüfs
 | [HMMD_mmWave_Sensor.zip](HMMD_mmWave_Sensor.zip) | Original-Beispiele für Raspberry Pi, ESP32, RP2040, Jetson und Windows. ZIP-Integrität geprüft. |
 | [Raspberry_demo.py.txt](Raspberry_demo.py.txt) | Unverändertes Raspberry-Pi-Beispiel als lesbarer Text, nicht ausgeführt. |
 
-Das Raspberry-Pi-Beispiel verwendet `/dev/ttyAMA0` mit 115200 Baud und schaltet den Normalmodus ein. Es liest UTF-8-Textzeilen. Es ist kein binärer RDMAP-Parser. Portname und Verhalten des vorhandenen CM5 sind damit nicht belegt.
+Das Raspberry-Pi-Beispiel verwendet `/dev/ttyAMA0` mit 115200 Baud und schaltet den Normalmodus ein. Es liest UTF-8-Textzeilen. Es ist kein binärer RDMAP-Parser. Portname und Verhalten des vorhandenen ros2_pc sind damit nicht belegt.

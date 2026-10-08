@@ -55,7 +55,7 @@ The current firmware supports the two-wheel balancing robot only. Legacy four-wh
 The canonical hardware and software documentation follows the two target trees:
 
 - [Robot and ESP32 hardware](docs/robot/hardware/system-overview.md), [robot software/control](docs/robot/software/control/control-flow.md), and the [BLE communication protocol](docs/robot/software/interfaces/NavBot-ES02-BLE-communication-protocol-V1.2.pdf).
-- [CM5 hardware and attached peripherals](docs/cm5/hardware/README.md) and [CM5 software/roadmap](docs/cm5/software/README.md). CM5 details remain pending until hardware is selected and verified.
+- [ros2_pc hardware and attached peripherals](docs/ros2_pc/hardware/README.md) and [ros2_pc software/roadmap](docs/ros2_pc/software/README.md). ros2_pc details remain pending until hardware is selected and verified.
 
 ## Getting Started
 

@@ -4,15 +4,15 @@
 
 Status: Software implementiert; Live-Abnahme noch offen.
 
-Der CM5-Sensorknoten, die ROS-Topics, die Browseranzeige und der gemeinsame lokale oder entfernte Start sind implementiert. Die vorhandene Evidenz umfasst echte HMMD-Frames und Browserzugriff auf dem CM5. Die vollständige Abnahme steht noch aus.
+Der ros2_pc-Sensorknoten, die ROS-Topics, die Browseranzeige und der gemeinsame lokale oder entfernte Start sind implementiert. Die vorhandene Evidenz umfasst echte HMMD-Frames und Browserzugriff auf dem ros2_pc. Die vollständige Abnahme steht noch aus.
 
-Vor Abschluss sind der aktuelle ROS-2-Build auf dem CM5, die physische UART- und Spannungsprüfung, Aufzeichnungen eines leeren Messbereichs sowie einer ruhenden und einer bewegten Person und die Wiedergabe ohne Live-Sensor zu bestätigen. Die [HMMD ROS 2 developer guide](hmmd-ros2.md) enthält die aktuellen Befehle und Grenzen.
+Vor Abschluss sind der aktuelle ROS-2-Build auf dem ros2_pc, die physische UART- und Spannungsprüfung, Aufzeichnungen eines leeren Messbereichs sowie einer ruhenden und einer bewegten Person und die Wiedergabe ohne Live-Sensor zu bestätigen. Die [HMMD ROS 2 developer guide](hmmd-ros2.md) enthält die aktuellen Befehle und Grenzen.
 
 ## 2. Roborock-LiDAR in ROS 2 integrieren
 
 Status: geplant. Zweiter ROS-2-Meilenstein.
 
-Ein LiDAR-Sensor aus einem Roborock-Staubsaugerroboter wird an den CM5 angebunden.
+Ein LiDAR-Sensor aus einem Roborock-Staubsaugerroboter wird an den ros2_pc angebunden.
 Das erste sichtbare Ergebnis ist ein Live-Laserscan in RViz. Der erste Test erfolgt
 stationär außerhalb des Navbot. Die Integration schafft eine Grundlage für spätere
 Kartierung und Navigation.
@@ -29,7 +29,7 @@ Ein vorhandener ROS-2-Treiber wird erst nach Abgleich mit diesem Modul ausgewäh
 - Identifikation des Moduls und Dokumentation der belegten Anschlussdaten.
 - Stationärer Betrieb mit geeigneter Versorgung und der erforderlichen Ansteuerung
   des Scanmotors, sofern das Modul diese extern benötigt.
-- Anbindung an den CM5 und Veröffentlichung als `sensor_msgs/msg/LaserScan`
+- Anbindung an den ros2_pc und Veröffentlichung als `sensor_msgs/msg/LaserScan`
   auf dem Topic `/scan`.
 - Dokumentation von Winkelrichtung, Winkelnullpunkt, Entfernungseinheiten,
   Zeitstempeln und ungültigen Messwerten.

@@ -2,7 +2,7 @@
 
 Before changing USB, serial, telemetry, or flashing behavior, read the agent-only [USB/serial notes](agent_notes/robot/usb-serial.md) and the canonical [USB/serial documentation](docs/robot/software/development/usb-serial-flashing.md). Keep new hardware findings in `agent_notes/` with the observation, its evidence, and its practical consequence. Recheck device names and board settings before each flash.
 
-Use `docs/robot/` and `docs/cm5/` for complete hardware and software documentation. `dev_notes/` is for concise developer reminders; `agent_notes/` is agent-only working context and evidence, not a normal developer entry point.
+Use `docs/robot/` and `docs/ros2_pc/` for complete hardware and software documentation. `dev_notes/` is for concise developer reminders; `agent_notes/` is agent-only working context and evidence, not a normal developer entry point.
 
 Build the default firmware from the project root with `python3 scripts/build_firmware.py`. The script writes Arduino CLI output to `build/flash`; pass `--help` for sketch, board, output, and build-property options. To flash a compiled build, use the configured `navbot_flash` MCP tool `flash_firmware` and pass the absolute build directory from the active worktree. Do not infer that the board is disconnected from an empty sandbox `/dev` or Arduino CLI `operation not permitted`; check the serial MCP `list_ports` before reporting it as disconnected. Close the serial MCP connection before flashing. Keep balance disabled and motor outputs safe.
 
@@ -14,4 +14,4 @@ Build the default firmware from the project root with `python3 scripts/build_fir
 4. Open `hardware/pcb/ProPrj_NavBot-ES02.epro` or inspect the physical board when the task depends on layout, connector orientation, actual assembly, or a connection the notes do not resolve. Before applying power or changing wiring, verify the relevant pinout and voltage on the physical board.
 5. When a new hardware finding changes the overview or reference, update the affected canonical page and record the observation, evidence, and practical consequence in `agent_notes/robot/hardware-findings/` so the next agent can find it without reopening the PCB project.
 
-The upcoming CM5 has its own canonical documentation tree under `docs/cm5/`. Treat its hardware and attached peripherals as pending until they are selected and verified; do not infer pinouts, power paths, or software behavior.
+The upcoming ros2_pc has its own canonical documentation tree under `docs/ros2_pc/`. Treat its hardware and attached peripherals as pending until they are selected and verified; do not infer pinouts, power paths, or software behavior.

@@ -1,5 +1,5 @@
 {
-  "host": "CM5",
+  "host": "ros2_pc",
   "browser": "Chromium via Playwright",
   "transport": "real rosbridge_server 2.7.1",
   "phases": [

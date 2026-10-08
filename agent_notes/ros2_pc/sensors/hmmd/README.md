@@ -2,12 +2,12 @@
 
 ## Auftrag und aktueller Stand
 
-Der erste [Roadmap-Meilenstein](../../../../docs/cm5/software/roadmap.md) zeigt die HMMD-Range-Doppler-Map stationär in ROS 2 auf dem CM5. ROS 2 ist laut Nutzer bereits auf dem CM5 installiert. Die genaue Distribution ist noch nicht erfasst. Sensoranschluss und Live-Daten sind noch nicht geprüft.
+Der erste [Roadmap-Meilenstein](../../../../docs/ros2_pc/software/roadmap.md) zeigt die HMMD-Range-Doppler-Map stationär in ROS 2 auf dem ros2_pc. ROS 2 ist laut Nutzer bereits auf dem ros2_pc installiert. Die genaue Distribution ist noch nicht erfasst. Sensoranschluss und Live-Daten sind noch nicht geprüft.
 
 ## Dokumente finden
 
 - [Lokale Herstellerunterlagen](vendor/README.md) enthält Wiki, Radome-Leitfaden, Beispielpaket und Prüfsummen.
-- [HMMD ROS 2 developer guide](../../../../docs/cm5/software/hmmd-ros2.md) ist die zentrale Anleitung zum Bauen und Verwenden der Software.
+- [HMMD ROS 2 developer guide](../../../../docs/ros2_pc/software/hmmd-ros2.md) ist die zentrale Anleitung zum Bauen und Verwenden der Software.
 - [Protokollreferenz](protocol.md) enthält Herstellerangaben und ihre Grenzen.
 - [Beobachtungen und offene Punkte](observations.md) enthält den belegten Stand des Aufbaus.
 - [Hardwareübersicht](../../../../docs/robot/hardware/system-overview.md) beschreibt die bestehende Navbot-Elektronik. Der stationäre Radaraufbau ist davon getrennt.
@@ -17,9 +17,9 @@ Der erste [Roadmap-Meilenstein](../../../../docs/cm5/software/roadmap.md) zeigt 
 
 Lies zuerst diesen Einstieg, danach nur die für den Auftrag benötigte Referenz. Unterscheide Herstellerangaben, Nutzerangaben, Vorschläge und gemessene Beobachtungen. Die Quelle des jeweiligen Eintrags entscheidet über seine Aussagekraft.
 
-Verwende für direkte serielle Zugriffe den konfigurierten Serial-MCP. Ermittle den Port mit `list_ports`. Setze nach `open` RTS und DTR niedrig, sofern der Auftrag nichts anderes erfordert. Sende Befehle nur für einen entsprechenden Auftrag. Auf dem CM5 muss der Sensor über den verwendeten MCP erreichbar sein.
+Verwende für direkte serielle Zugriffe den konfigurierten Serial-MCP. Ermittle den Port mit `list_ports`. Setze nach `open` RTS und DTR niedrig, sofern der Auftrag nichts anderes erfordert. Sende Befehle nur für einen entsprechenden Auftrag. Auf dem ros2_pc muss der Sensor über den verwendeten MCP erreichbar sein.
 
-Prüfe vor Versorgung oder Verkabelung die tatsächliche Modulvariante, Pinbelegung, Spannung und Signalpegel. Übertrage die Pinbelegung eines Raspberry-Pi-Beispiels nicht ungeprüft auf das CM5-Trägerboard.
+Prüfe vor Versorgung oder Verkabelung die tatsächliche Modulvariante, Pinbelegung, Spannung und Signalpegel. Übertrage die Pinbelegung eines Raspberry-Pi-Beispiels nicht ungeprüft auf das ros2_pc-Trägerboard.
 
 Notiere neue Hardwarebefunde in `observations.md` mit Datum, Beobachtung, Evidenz und praktischer Konsequenz. Aktualisiere `protocol.md` nur bei belegten Protokollbefunden. Bewahre Rohmitschnitte und Messwerte als Evidenz auf. Dokumentiere Annahmen ausdrücklich.
 

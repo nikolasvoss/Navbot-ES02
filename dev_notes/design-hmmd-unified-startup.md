@@ -1,5 +1,5 @@
 Usage:
-CM5: python3 scripts/start_hmmd.py
+ros2_pc: python3 scripts/start_hmmd.py
 PC: python3 scripts/start_hmmd.py --ssh niko@192.168.178.28
 Headless: add --no-browser. Alternate target checkout: --workspace /absolute/path.
 

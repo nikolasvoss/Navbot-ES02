@@ -1,27 +1,27 @@
 # HMMD ROS 2 developer guide
 
-Use this guide to build, start, inspect, and record the HMMD ROS 2 software. The implementation lives in `src/cm5/ros2/`. The launcher lives at `scripts/start_hmmd.py`.
+Use this guide to build, start, inspect, and record the HMMD ROS 2 software. The implementation lives in `src/ros2_pc/ros2/`. The launcher lives at `scripts/start_hmmd.py`.
 
-The software has a sensor node on the CM5, a loopback-only rosbridge server, a static browser page, and a launcher that can start the services locally or over SSH. In remote mode, the launcher opens a tunnel to the browser and rosbridge ports. The CM5 services stay up after the tunnel ends.
+The software has a sensor node on the ros2_pc, a loopback-only rosbridge server, a static browser page, and a launcher that can start the services locally or over SSH. In remote mode, the launcher opens a tunnel to the browser and rosbridge ports. The ros2_pc services stay up after the tunnel ends.
 
 ## Check the sensor connection
 
-The documented default uses UART0 on physical CM5IO J8 pins 8 and 10. Those are GPIO14/TX and GPIO15/RX. The module TX connects to J8 pin 10, and module RX connects to J8 pin 8. Connect ground to pin 6 and 3.3 V to pin 1 or 17.
+The documented default uses UART0 on physical ros2_pc carrier J8 pins 8 and 10. Those are GPIO14/TX and GPIO15/RX. The module TX connects to J8 pin 10, and module RX connects to J8 pin 8. Connect ground to pin 6 and 3.3 V to pin 1 or 17.
 
-Use the pin 1 marker to identify the header orientation. The HMMD vendor documents a 3.0–3.6 V supply and 0–3.3 V UART signals. Check the actual module, carrier, wiring, supply, and GPIO reference voltage before applying power. Do not connect the module to 5 V. The project has software evidence for UART0, but the physical board and current wiring have not been verified. See the [CM5IO pin reference](../hardware/compute-module-5-io-board.md) and [HMMD observations](../../../agent_notes/cm5/sensors/hmmd/observations.md).
+Use the pin 1 marker to identify the header orientation. The HMMD vendor documents a 3.0–3.6 V supply and 0–3.3 V UART signals. Check the actual module, carrier, wiring, supply, and GPIO reference voltage before applying power. Do not connect the module to 5 V. The project has software evidence for UART0, but the physical board and current wiring have not been verified. See the [ros2_pc carrier pin reference](../hardware/ros2-pc-carrier-board.md) and [HMMD observations](../../../agent_notes/ros2_pc/sensors/hmmd/observations.md).
 
 Do not infer a UART from a device name alone. The J8 UART device exists whether or not the sensor is connected. For UART0, check `/dev/ttyAMA0`, pin functions, permissions, and console ownership. If you use another UART or a USB adapter, confirm its wiring and device path before starting the node. The sensor node must be the only reader of its UART.
 
 ## Build and check the workspace
 
-Run these commands on the CM5 from the project checkout. The verified setup used ROS 2 Jazzy and Python 3.12.3. Check the installed ROS distribution before building.
+Run these commands on the ros2_pc from the project checkout. The verified setup used ROS 2 Jazzy and Python 3.12.3. Check the installed ROS distribution before building.
 
 ```bash
-cd ~/Navbot-ES02-cm5-hmmd
+cd ~/Navbot-ES02-ros2_pc-hmmd
 source /opt/ros/jazzy/setup.bash
-rosdep install --from-paths src/cm5/ros2/src --ignore-src -r -y --skip-keys=ament_python
-colcon --log-base src/cm5/ros2/log build --base-paths src/cm5/ros2/src --build-base src/cm5/ros2/build --install-base src/cm5/ros2/install
-source src/cm5/ros2/install/setup.bash
+rosdep install --from-paths src/ros2_pc/ros2/src --ignore-src -r -y --skip-keys=ament_python
+colcon --log-base src/ros2_pc/ros2/log build --base-paths src/ros2_pc/ros2/src --build-base src/ros2_pc/ros2/build --install-base src/ros2_pc/ros2/install
+source src/ros2_pc/ros2/install/setup.bash
 ```
 
 Source both setup files in each new terminal. The `ament_python` build type comes from the ROS installation; `rosdep` has no system key for it, so the command skips that key.
@@ -29,16 +29,16 @@ Source both setup files in each new terminal. The `ament_python` build type come
 Run the software checks from the project root with the ROS environment active:
 
 ```bash
-PYTHONPATH="src/cm5/ros2/src/hmmd_radar${PYTHONPATH:+:$PYTHONPATH}" python3 -m unittest discover -s src/cm5/ros2/src/hmmd_radar/test -v
+PYTHONPATH="src/ros2_pc/ros2/src/hmmd_radar${PYTHONPATH:+:$PYTHONPATH}" python3 -m unittest discover -s src/ros2_pc/ros2/src/hmmd_radar/test -v
 python3 scripts/test_start_hmmd.py -v
-node --test src/cm5/ros2/src/hmmd_radar/test/web/client.test.mjs
+node --test src/ros2_pc/ros2/src/hmmd_radar/test/web/client.test.mjs
 ```
 
-The Python unit tests use synthetic frames and a mock serial port. They do not prove live sensor reception. A ROS build and live sensor check still require the CM5 and sensor.
+The Python unit tests use synthetic frames and a mock serial port. They do not prove live sensor reception. A ROS build and live sensor check still require the ros2_pc and sensor.
 
 ## Start the services
 
-On the CM5, run the launcher from the checkout:
+On the ros2_pc, run the launcher from the checkout:
 
 ```bash
 python3 scripts/start_hmmd.py
@@ -47,16 +47,16 @@ python3 scripts/start_hmmd.py
 From a PC, run the same script with an SSH alias or `user@host`:
 
 ```bash
-python3 scripts/start_hmmd.py --ssh cm5
+python3 scripts/start_hmmd.py --ssh ros2_pc
 ```
 
-The remote default workspace is `$HOME/Navbot-ES02-cm5-hmmd`. The local default is the checkout containing the script. Use `--workspace PATH` for another workspace. Use `--device PATH` for a confirmed UART path, `--baud-rate N` for another baud rate, or `--startup-timeout N` to change the service wait. The defaults are `/dev/ttyAMA0`, `115200`, and `30` seconds.
+The remote default workspace is `$HOME/Navbot-ES02-ros2_pc-hmmd`. The local default is the checkout containing the script. Use `--workspace PATH` for another workspace. Use `--device PATH` for a confirmed UART path, `--baud-rate N` for another baud rate, or `--startup-timeout N` to change the service wait. The defaults are `/dev/ttyAMA0`, `115200`, and `30` seconds.
 
 The launcher starts or reuses the sensor node, rosbridge, and static web server. It refuses an unknown UART owner or a service with the wrong identity or configuration. It does not stop existing processes. Do not start a second `hmmd_sensor` manually.
 
-In remote mode, the launcher checks that local ports 8080 and 9090 are available, starts or checks the CM5 services, then forwards both ports to local loopback. Keep the terminal open while you use `http://127.0.0.1:8080/`. Press Ctrl+C to end the tunnel. The CM5 services keep running. Add `--no-browser` to suppress opening a browser window; the tunnel still stays open.
+In remote mode, the launcher checks that local ports 8080 and 9090 are available, starts or checks the ros2_pc services, then forwards both ports to local loopback. Keep the terminal open while you use `http://127.0.0.1:8080/`. Press Ctrl+C to end the tunnel. The ros2_pc services keep running. Add `--no-browser` to suppress opening a browser window; the tunnel still stays open.
 
-Newly started service logs are `/tmp/navbot-hmmd-sensor.log`, `/tmp/navbot-hmmd-rosbridge.log`, and `/tmp/navbot-hmmd-web.log` on the CM5. The launcher uses `ws://127.0.0.1:9090` for rosbridge and binds rosbridge to loopback. Do not expose port 9090 directly to the LAN. The installed rosbridge version still offers operations beyond subscriptions, so the browser's read-only behavior does not make the server read-only.
+Newly started service logs are `/tmp/navbot-hmmd-sensor.log`, `/tmp/navbot-hmmd-rosbridge.log`, and `/tmp/navbot-hmmd-web.log` on the ros2_pc. The launcher uses `ws://127.0.0.1:9090` for rosbridge and binds rosbridge to loopback. Do not expose port 9090 directly to the LAN. The installed rosbridge version still offers operations beyond subscriptions, so the browser's read-only behavior does not make the server read-only.
 
 For manual diagnosis, first check that no process owns the sensor UART. With ROS and the workspace sourced, run:
 
@@ -130,7 +130,7 @@ Synthetic `/demo/*` endpoints exist only in the test fixture and are not part of
 
 The setting selector is closed to maximum distance gate (0–15) and target disappearance delay (0–65535 seconds). The node rejects invalid selectors and values before UART I/O. It serializes settings operations with map polling through the existing `SerialSession`; complete interleaved map frames are retained in a bounded queue and published when the service returns. Replies do not echo the parameter ID, so each value is associated only with the one outstanding request in the serialized transaction. A late command reply is discarded rather than assigned to a later step.
 
-The installed HMMD firmware v1.6.1 was checked without changing either value. Maximum gate 12 and target disappearance delay 30 seconds each received a write ACK, matching readback, and config-mode exit/save ACK. Reads of parameter IDs 1 and 4 returned 12 and 30 respectively. The sequence and captured frames are recorded in the [HMMD protocol notes](../../../agent_notes/cm5/sensors/hmmd/protocol.md). This does not verify persistence after a power cycle.
+The installed HMMD firmware v1.6.1 was checked without changing either value. Maximum gate 12 and target disappearance delay 30 seconds each received a write ACK, matching readback, and config-mode exit/save ACK. Reads of parameter IDs 1 and 4 returned 12 and 30 respectively. The sequence and captured frames are recorded in the [HMMD protocol notes](../../../agent_notes/ros2_pc/sensors/hmmd/protocol.md). This does not verify persistence after a power cycle.
 
 For comparable future changes, record endpoint names, ROS types, service timeout, response stages, and hardware evidence. Demonstrate successful and failed operations in the synthetic fixture, and keep the map/status path covered.
 
@@ -199,29 +199,29 @@ Record the three planned scenes while the sensor node is running: an empty scene
 ros2 bag record -o hmmd-empty /hmmd/rdmap /hmmd/status
 ```
 
-Stop the recorder with Ctrl+C. Use `hmmd-stationary` and `hmmd-moving` for the other two bags. Check each bag with `ros2 bag info` and confirm that it contains map messages. Add the setup, position, duration, rate, and observations to [HMMD observations](../../../agent_notes/cm5/sensors/hmmd/observations.md).
+Stop the recorder with Ctrl+C. Use `hmmd-stationary` and `hmmd-moving` for the other two bags. Check each bag with `ros2 bag info` and confirm that it contains map messages. Add the setup, position, duration, rate, and observations to [HMMD observations](../../../agent_notes/ros2_pc/sensors/hmmd/observations.md).
 
-For replay, stop the live sensor node first. In one sourced terminal on the CM5, start rosbridge with the same loopback address and topic limits as the managed launcher:
+For replay, stop the live sensor node first. In one sourced terminal on the ros2_pc, start rosbridge with the same loopback address and topic limits as the managed launcher:
 
 ```bash
 mapfile -t BRIDGE_FILTER_ARGS < <(python3 scripts/sensor_channel_config.py \
-  src/cm5/ros2/src/hmmd_radar/web/endpoint-manifest.json --format shell)
+  src/ros2_pc/ros2/src/hmmd_radar/web/endpoint-manifest.json --format shell)
 ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
   address:=127.0.0.1 port:=9090 \
   "${BRIDGE_FILTER_ARGS[@]}"
 ```
 
-In another CM5 terminal, start the static server from the project root:
+In another ros2_pc terminal, start the static server from the project root:
 
 ```bash
-cd ~/Navbot-ES02-cm5-hmmd
-python3 -m http.server 8080 --bind 0.0.0.0 --directory src/cm5/ros2/src/hmmd_radar/web
+cd ~/Navbot-ES02-ros2_pc-hmmd
+python3 -m http.server 8080 --bind 0.0.0.0 --directory src/ros2_pc/ros2/src/hmmd_radar/web
 ```
 
-On the PC, forward both CM5 loopback ports and open `http://127.0.0.1:8080/`:
+On the PC, forward both ros2_pc loopback ports and open `http://127.0.0.1:8080/`:
 
 ```bash
-ssh -N -L 127.0.0.1:8080:127.0.0.1:8080 -L 127.0.0.1:9090:127.0.0.1:9090 cm5
+ssh -N -L 127.0.0.1:8080:127.0.0.1:8080 -L 127.0.0.1:9090:127.0.0.1:9090 ros2_pc
 ```
 
 The helper rejects wildcard names and malformed endpoint declarations. It generates the filters used by the managed launcher. The service filter still leaves rosapi operations available, so bind rosbridge to loopback and use the SSH tunnel. Keep rosbridge and the static web server running, then replay a bag in a sourced ROS terminal:
@@ -235,6 +235,6 @@ Open the browser through the SSH tunnel. Pause playback and let it end to check 
 
 ## Current status and remaining checks
 
-The ROS packages, parser, browser, and unified launcher are implemented. The local checks use synthetic serial data. The existing evidence records a real HMMD stream and browser access on the CM5, but the current worktree's ROS build and the planned three-scene bag recording and replay have not been verified here. The physical carrier, wiring, supply voltage, and sensor firmware remain unconfirmed. See the [dated observations and test evidence](../../../agent_notes/cm5/sensors/hmmd/observations.md).
+The ROS packages, parser, browser, and unified launcher are implemented. The local checks use synthetic serial data. The existing evidence records a real HMMD stream and browser access on the ros2_pc, but the current worktree's ROS build and the planned three-scene bag recording and replay have not been verified here. The physical carrier, wiring, supply voltage, and sensor firmware remain unconfirmed. See the [dated observations and test evidence](../../../agent_notes/ros2_pc/sensors/hmmd/observations.md).
 
-Before treating the roadmap milestone as complete, verify the current CM5 checkout and build, confirm the physical UART and voltage, record and compare all three scenes, and replay a bag without the live sensor. Keep the heatmap axes in bin indices until physical scaling and orientation have evidence.
+Before treating the roadmap milestone as complete, verify the current ros2_pc checkout and build, confirm the physical UART and voltage, record and compare all three scenes, and replay a bag without the live sensor. Keep the heatmap axes in bin indices until physical scaling and orientation have evidence.

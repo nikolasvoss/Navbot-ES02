@@ -16,11 +16,11 @@ from pathlib import Path
 
 STARTUP_BASH = r'''#!/usr/bin/env bash
 set -euo pipefail
-HOST_WORKSPACE=${1:-"$HOME/Navbot-ES02-cm5-hmmd"}
+HOST_WORKSPACE=${1:-"$HOME/Navbot-ES02-ros2_pc-hmmd"}
 DEVICE=$2
 BAUD_RATE=$3
 STARTUP_TIMEOUT=$4
-WEB_ROOT="$HOST_WORKSPACE/src/cm5/ros2/src/hmmd_radar/web"
+WEB_ROOT="$HOST_WORKSPACE/src/ros2_pc/ros2/src/hmmd_radar/web"
 SENSOR_LOG=/tmp/navbot-hmmd-sensor.log
 BRIDGE_LOG=/tmp/navbot-hmmd-rosbridge.log
 WEB_LOG=/tmp/navbot-hmmd-web.log
@@ -28,16 +28,16 @@ STATUS_FILE=$(mktemp /tmp/navbot-hmmd-status.XXXXXX)
 trap 'rm -f "$STATUS_FILE"' EXIT
 
 for tool in flock fuser ss python3 curl timeout; do
-  command -v "$tool" >/dev/null || { echo "Fehlt auf dem CM5: $tool" >&2; exit 1; }
+  command -v "$tool" >/dev/null || { echo "Fehlt auf dem ros2_pc: $tool" >&2; exit 1; }
 done
 [[ -r /opt/ros/jazzy/setup.bash ]] || { echo "ROS-Setup fehlt: /opt/ros/jazzy/setup.bash" >&2; exit 1; }
-[[ -r "$HOST_WORKSPACE/src/cm5/ros2/install/setup.bash" ]] || { echo "Workspace-Setup fehlt: $HOST_WORKSPACE/src/cm5/ros2/install/setup.bash" >&2; exit 1; }
+[[ -r "$HOST_WORKSPACE/src/ros2_pc/ros2/install/setup.bash" ]] || { echo "Workspace-Setup fehlt: $HOST_WORKSPACE/src/ros2_pc/ros2/install/setup.bash" >&2; exit 1; }
 [[ -d "$WEB_ROOT" ]] || { echo "HMMD-Webverzeichnis fehlt: $WEB_ROOT" >&2; exit 1; }
 set +u
 source /opt/ros/jazzy/setup.bash
-source "$HOST_WORKSPACE/src/cm5/ros2/install/setup.bash"
+source "$HOST_WORKSPACE/src/ros2_pc/ros2/install/setup.bash"
 set -u
-command -v ros2 >/dev/null || { echo "Fehlt auf dem CM5 nach ROS-Setup: ros2" >&2; exit 1; }
+command -v ros2 >/dev/null || { echo "Fehlt auf dem ros2_pc nach ROS-Setup: ros2" >&2; exit 1; }
 FILTER_OUTPUT=$(python3 "$HOST_WORKSPACE/scripts/sensor_channel_config.py" "$WEB_ROOT/endpoint-manifest.json" --format shell) || { echo "Ungültiges Sensor-Endpoint-Manifest" >&2; exit 1; }
 mapfile -t BRIDGE_FILTER_ARGS <<<"$FILTER_OUTPUT"
 
@@ -219,8 +219,8 @@ SSH_DESTINATION = re.compile(r"(?:[A-Za-z0-9_][A-Za-z0-9_.-]*@)?[A-Za-z0-9_][A-Z
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ssh", metavar="USER@HOST", help="SSH-Ziel; ohne diese Option lokal auf dem CM5 starten")
-    parser.add_argument("--workspace", help="Projektpfad; lokal standardmäßig der Checkout, remote ~/Navbot-ES02-cm5-hmmd")
+    parser.add_argument("--ssh", metavar="USER@HOST", help="SSH-Ziel; ohne diese Option lokal auf dem ros2_pc starten")
+    parser.add_argument("--workspace", help="Projektpfad; lokal standardmäßig der Checkout, remote ~/Navbot-ES02-ros2_pc-hmmd")
     parser.add_argument("--device", default="/dev/ttyAMA0", help="HMMD-UART auf dem Zielsystem")
     parser.add_argument("--baud-rate", type=int, default=115200, help="UART-Baudrate")
     parser.add_argument("--startup-timeout", type=int, default=30, help="Wartezeit pro Dienst in Sekunden")
@@ -273,7 +273,7 @@ def run_startup(args):
         if not shutil.which("ssh"):
             print("OpenSSH (ssh) muss für --ssh installiert sein.", file=sys.stderr)
             return 1
-        print("CM5-Dienste starten oder laufende Instanzen prüfen …", flush=True)
+        print("ros2_pc-Dienste starten oder laufende Instanzen prüfen …", flush=True)
     else:
         print("HMMD-Dienste lokal starten oder laufende Instanzen prüfen …", flush=True)
     try:
@@ -348,7 +348,7 @@ def run_tunnel(args):
             print("SSH-Tunnel konnte nicht gestartet werden oder die Wartezeit ist abgelaufen.", file=sys.stderr)
             return tunnel.poll() or 1
         url = "http://127.0.0.1:8080/"
-        print(f"Browser: {url}\nTerminal offen lassen. Strg+C beendet den Tunnel; CM5-Dienste bleiben aktiv.", flush=True)
+        print(f"Browser: {url}\nTerminal offen lassen. Strg+C beendet den Tunnel; ros2_pc-Dienste bleiben aktiv.", flush=True)
         if not args.no_browser and not webbrowser.open(url):
             print("Bitte die URL manuell im Browser öffnen.", flush=True)
         return tunnel.wait()

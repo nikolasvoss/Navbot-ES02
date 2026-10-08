@@ -12,7 +12,7 @@ import sensor_channel_config
 class StartHmmdTests(unittest.TestCase):
     def test_local_and_ssh_dispatch_share_startup_payload(self):
         local = start_hmmd.parse_args(["--no-browser"])
-        remote = start_hmmd.parse_args(["--ssh", "niko@cm5", "--no-browser"])
+        remote = start_hmmd.parse_args(["--ssh", "niko@ros2_pc", "--no-browser"])
         with mock.patch.object(start_hmmd.subprocess, "run", return_value=mock.Mock(returncode=0)) as run:
             self.assertEqual(start_hmmd.run_startup(local), 0)
             self.assertEqual(start_hmmd.run_startup(remote), 0)
@@ -28,7 +28,7 @@ class StartHmmdTests(unittest.TestCase):
 
     def test_remote_argument_transport_quotes_shell_metacharacters(self):
         args = start_hmmd.parse_args([
-            "--ssh", "cm5", "--workspace", "/tmp/ws ; touch /tmp/pwned",
+            "--ssh", "ros2_pc", "--workspace", "/tmp/ws ; touch /tmp/pwned",
             "--device", "/dev/tty ; echo injected", "--no-browser",
         ])
         command = start_hmmd.startup_command(args)
@@ -40,10 +40,10 @@ class StartHmmdTests(unittest.TestCase):
 
     def test_workspace_defaults_by_execution_target(self):
         local = start_hmmd.parse_args([])
-        remote = start_hmmd.parse_args(["--ssh", "cm5"])
+        remote = start_hmmd.parse_args(["--ssh", "ros2_pc"])
         self.assertEqual(start_hmmd.workspace_for(local), str(Path(start_hmmd.__file__).resolve().parent.parent))
         self.assertEqual(start_hmmd.workspace_for(remote), "")
-        self.assertIn('"$HOME/Navbot-ES02-cm5-hmmd"', start_hmmd.STARTUP_BASH)
+        self.assertIn('"$HOME/Navbot-ES02-ros2_pc-hmmd"', start_hmmd.STARTUP_BASH)
         self.assertEqual(start_hmmd.workspace_for(start_hmmd.parse_args(["--workspace", "/custom"])), "/custom")
 
     def test_rejects_malformed_ssh_destinations_and_numeric_options(self):
@@ -77,7 +77,7 @@ class StartHmmdTests(unittest.TestCase):
         with mock.patch.object(start_hmmd.socket, "socket", side_effect=Probe), \
                 mock.patch.object(start_hmmd, "run_startup", return_value=0) as startup, \
                 mock.patch.object(start_hmmd, "run_tunnel", return_value=0):
-            self.assertEqual(start_hmmd.main(["--ssh", "cm5", "--no-browser"]), 0)
+            self.assertEqual(start_hmmd.main(["--ssh", "ros2_pc", "--no-browser"]), 0)
         self.assertEqual([check for check in checks if isinstance(check, int)], [8080, 9090])
         self.assertEqual(len([check for check in checks if isinstance(check, tuple) and check[0] == "reuseaddr"]), 2)
         startup.assert_called_once_with(mock.ANY)
@@ -103,7 +103,7 @@ class StartHmmdTests(unittest.TestCase):
 
             with mock.patch.object(start_hmmd.socket, "socket", side_effect=Probe), \
                     mock.patch.object(start_hmmd, "run_startup") as startup:
-                self.assertEqual(start_hmmd.main(["--ssh", "cm5", "--no-browser"]), 1)
+                self.assertEqual(start_hmmd.main(["--ssh", "ros2_pc", "--no-browser"]), 1)
             startup.assert_not_called()
             self.assertEqual(calls[-1], refused_port)
 
@@ -117,7 +117,7 @@ class StartHmmdTests(unittest.TestCase):
             self.assertEqual(start_hmmd.run_startup(args), 1)
 
     def test_tunnel_forwards_both_loopback_services(self):
-        args = start_hmmd.parse_args(["--ssh", "niko@cm5", "--no-browser"])
+        args = start_hmmd.parse_args(["--ssh", "niko@ros2_pc", "--no-browser"])
         command = start_hmmd.tunnel_command(args)
         self.assertEqual(command.count("-L"), 2)
         self.assertIn("127.0.0.1:8080:127.0.0.1:8080", command)
@@ -125,7 +125,7 @@ class StartHmmdTests(unittest.TestCase):
         self.assertIn("ExitOnForwardFailure=yes", command)
 
     def test_tunnel_timeout_and_early_exit_cleanup(self):
-        args = start_hmmd.parse_args(["--ssh", "cm5", "--no-browser"])
+        args = start_hmmd.parse_args(["--ssh", "ros2_pc", "--no-browser"])
         tunnel = mock.Mock()
         tunnel.poll.return_value = None
         with mock.patch.object(start_hmmd.subprocess, "Popen", return_value=tunnel), \
@@ -162,7 +162,7 @@ class StartHmmdTests(unittest.TestCase):
             sleep.assert_not_called()
 
     def test_tunnel_interrupt_closes_only_the_tunnel(self):
-        args = start_hmmd.parse_args(["--ssh", "cm5", "--no-browser"])
+        args = start_hmmd.parse_args(["--ssh", "ros2_pc", "--no-browser"])
         tunnel = mock.Mock()
         tunnel.poll.return_value = None
         tunnel.wait.side_effect = [KeyboardInterrupt, 0]
@@ -178,7 +178,7 @@ class StartHmmdTests(unittest.TestCase):
 
     def test_manifest_filters_bound_each_bridge_direction(self):
         root = Path(start_hmmd.__file__).resolve().parent.parent
-        manifest = __import__("json").loads((root / "src/cm5/ros2/src/hmmd_radar/web/endpoint-manifest.json").read_text())
+        manifest = __import__("json").loads((root / "src/ros2_pc/ros2/src/hmmd_radar/web/endpoint-manifest.json").read_text())
         filters = sensor_channel_config.validate_manifest(manifest)
         self.assertEqual(filters["topics_glob"], "[]")
         self.assertEqual(filters["topics_pub_glob"], "[]")

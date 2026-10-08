@@ -34,7 +34,7 @@ Although the implementation checkout is under `/tmp`, its WIP commit lives in th
 
 ## Findings from the existing code
 
-1. `src/cm5/ros2/src/hmmd_radar/hmmd_radar/serial_session.py` owns the HMMD UART and bounded frame parser/reconnect behavior. `sensor_node.py` publishes `/hmmd/rdmap` as `hmmd_interfaces/msg/RangeDopplerMap` and `/hmmd/status` as `diagnostic_msgs/msg/DiagnosticArray`. Keep this device ownership. No sensor-driver or firmware changes are needed for this task.
+1. `src/ros2_pc/ros2/src/hmmd_radar/hmmd_radar/serial_session.py` owns the HMMD UART and bounded frame parser/reconnect behavior. `sensor_node.py` publishes `/hmmd/rdmap` as `hmmd_interfaces/msg/RangeDopplerMap` and `/hmmd/status` as `diagnostic_msgs/msg/DiagnosticArray`. Keep this device ownership. No sensor-driver or firmware changes are needed for this task.
 2. Existing browser `web/rosbridge_client.mjs` owns the WebSocket, retries, subscriptions, and latest-message snapshots. It unnecessarily imports HMMD topic names, its matrix validator, fixed active topics, and map-versus-status freshness logic. This is the main reuse seam. The baseline source is available through read-only `git show` if the file is absent in the WIP checkout.
 3. `web/app.mjs` owns the HMMD heatmap, raw/log color scaling, status badge interpretation, and a generic JSON topic inspector. Preserve these browser interactions. `web/model.mjs` has the HMMD matrix validator and reshaping. Inject that validator into the generic client from the view, or validate at the view boundary while preserving the last valid sample.
 4. Existing `web/topic_registry.mjs` contains only the two HMMD receive endpoints. `scripts/start_hmmd.py` separately hardcodes those endpoint names and rosbridge permissions twice, for launch and reuse validation. A shared ordinary JSON manifest removes this duplication without replacing ROS or the existing static HTTP server.
@@ -89,7 +89,7 @@ Required Gemini CLI review was attempted once using the configured adapter. It r
 
 The existing browser client is now generic over manifest-declared ROS topics and services. The HMMD heatmap, status view, and topic inspector remain. The same endpoint manifest drives the browser controls and the managed launcher's bounded rosbridge filters. Production exposes HMMD map/status receive topics and a read-only GetParameters service; synthetic-only range/publish/echo endpoints are confined to the test fixture. The guide documents a future `radar_msgs/msg/RadarScan` example, LiDAR/camera message options, and the current JSON payload-size limitation.
 
-The completed changes are in `src/cm5/ros2/src/hmmd_radar/web/`, `scripts/start_hmmd.py`, `scripts/sensor_channel_config.py`, the corresponding client/launcher tests and synthetic fixture, and `docs/cm5/software/hmmd-ros2.md`. The HMMD-specific validator is injected by the view. Outgoing values are strict JSON objects; services have bounded timeout/correlation handling; outgoing calls are never replayed after reconnect.
+The completed changes are in `src/ros2_pc/ros2/src/hmmd_radar/web/`, `scripts/start_hmmd.py`, `scripts/sensor_channel_config.py`, the corresponding client/launcher tests and synthetic fixture, and `docs/ros2_pc/software/hmmd-ros2.md`. The HMMD-specific validator is injected by the view. Outgoing values are strict JSON objects; services have bounded timeout/correlation handling; outgoing calls are never replayed after reconnect.
 
 The obsolete `web/topic_registry.mjs` was removed as part of the caller migration. The client uses rosbridge's current `call_service` fields and endpoint QoS for topic advertisements.
 
@@ -97,13 +97,13 @@ The obsolete `web/topic_registry.mjs` was removed as part of the caller migratio
 
 Commands run from the radar worktree:
 
-- `node --test src/cm5/ros2/src/hmmd_radar/test/web/client.test.mjs` — passed.
+- `node --test src/ros2_pc/ros2/src/hmmd_radar/test/web/client.test.mjs` — passed.
 - `python3 scripts/test_start_hmmd.py -v` — 14 tests passed.
-- `PYTHONPATH=src/cm5/ros2/src/hmmd_radar python3 -m unittest discover -s src/cm5/ros2/src/hmmd_radar/test -v` — 11 tests passed; the ROS graph test skipped because ROS 2 is unavailable.
+- `PYTHONPATH=src/ros2_pc/ros2/src/hmmd_radar python3 -m unittest discover -s src/ros2_pc/ros2/src/hmmd_radar/test -v` — 11 tests passed; the ROS graph test skipped because ROS 2 is unavailable.
 - JavaScript/Python compilation, startup bash syntax, and `git diff --check` — passed.
 - Synthetic browser check — HMMD map/status remained visible, a declared topic publish was submitted, and the synthetic service returned a response.
 
-The browser check used synthetic ROS messages, not the physical radar. Full ROS graph integration, CM5 deployment, and hardware behavior remain unverified and outside the frozen task.
+The browser check used synthetic ROS messages, not the physical radar. Full ROS graph integration, ros2_pc deployment, and hardware behavior remain unverified and outside the frozen task.
 
 `ss` in the sandbox reported netlink access denied. Local simulator listening sockets might require automatic approval escalation; do not interpret sandbox device/network restrictions as hardware absence.
 

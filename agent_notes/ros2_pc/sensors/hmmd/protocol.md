@@ -29,7 +29,7 @@ Die vollständige Konfigurationssequenz, erforderliche vorherige Befehle und ACK
 
 ## Versorgung und UART
 
-Das Raspberry-Pi-Beispiel nennt `3V3`, `GND`, Sensor-TX an Host-RX und Sensor-RX an Host-TX. Diese Angabe ersetzt keine Prüfung des konkreten Moduls und des CM5-Trägerboards. Steckerorientierung, Host-Pins und Portname sind nicht dokumentiert.
+Das Raspberry-Pi-Beispiel nennt `3V3`, `GND`, Sensor-TX an Host-RX und Sensor-RX an Host-TX. Diese Angabe ersetzt keine Prüfung des konkreten Moduls und des ros2_pc-Trägerboards. Steckerorientierung, Host-Pins und Portname sind nicht dokumentiert.
 
 ## Grenzen der Aussage
 
