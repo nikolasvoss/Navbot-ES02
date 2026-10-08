@@ -19,4 +19,4 @@ Result submit(const DebugSample &sample);
 
 Status status();
 
-}  // namespace Logging
+}

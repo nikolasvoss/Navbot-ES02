@@ -8,7 +8,7 @@ namespace Logging {
 Profile gProfile = Profile::Idle;
 
 void setProfile(Profile profile) { gProfile = profile; }
-}  // namespace Logging
+}
 
 int main() {
   using Logging::Profile;

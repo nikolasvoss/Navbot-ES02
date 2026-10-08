@@ -77,6 +77,7 @@ struct TraceSample {
   float minimumBatteryRawV;
   float batteryV;
   float rollOk;
+  float pitchOk;
   int32_t servoAngle[4];
   int32_t servoRange[4];
   float leftMotorTarget;
@@ -181,7 +182,7 @@ struct PidDerivative { float derivative; };
 struct TouchState { int32_t state; int32_t start; };
 struct BallPosition { float x; float xFiltered; float y; float yFiltered; };
 struct BalanceOutputPair { float bodyPitch; float controllerOutput; };
-struct RollOutput { float rollOk; float bodyPitch; float correctedBodyPitch; };
+struct RollOutputState { float rollOk; float bodyPitch; float output; };
 struct VoltageState { int32_t adc; float filteredV; float voltageV; };
 struct TuningState { int32_t enabled; float targetLegLength; };
 struct TumbleState { int32_t tumbled; float rollOk; float angleError; };
@@ -206,6 +207,7 @@ struct FilteredGeometry {
 };
 struct PidTuningState { float kp; float ki; float kd; float derivative; float output; };
 struct RollCorrection { float rollOk; float bodyPitch; float correctedBodyPitch; };
+struct BodyPitchState { float filteredDeg; float rawDeg; };
 
 union DebugPayload {
   TimedVector3 timedVector3;
@@ -228,7 +230,7 @@ union DebugPayload {
   TouchState touchState;
   BallPosition ballPosition;
   BalanceOutputPair balanceOutputPair;
-  RollOutput rollOutput;
+  RollOutputState rollOutput;
   VoltageState voltageState;
   TuningState tuningState;
   TumbleState tumbleState;
@@ -240,6 +242,7 @@ union DebugPayload {
   FilteredGeometry filteredGeometry;
   PidTuningState pidTuningState;
   RollCorrection rollCorrection;
+  BodyPitchState bodyPitchState;
 };
 
 struct DebugSample {
@@ -251,4 +254,4 @@ constexpr uint32_t kQueueDepth = 32;
 constexpr uint8_t kMessageTagSize = 16;
 constexpr uint8_t kMessageTextSize = 96;
 
-}  // namespace Logging
+}

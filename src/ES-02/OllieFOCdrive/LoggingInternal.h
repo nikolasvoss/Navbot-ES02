@@ -43,6 +43,7 @@ struct Record {
 
 static_assert(sizeof(Record) <= 168, "logging queue slot exceeds the 168-byte budget");
 
-int formatRecord(const Record &record, char *buffer, size_t capacity);
+int formatRecord(const Record &record, char *buffer, size_t capacity,
+                 uint32_t droppedRecords, uint32_t writeFailures);
 
-}  // namespace LoggingInternal
+}

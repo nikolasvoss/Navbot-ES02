@@ -23,14 +23,43 @@ Progress:
   `Payload` at 120 bytes, and the largest debug payload at 44 bytes. The
   existing 168-byte slot guard passes, preserving the 5,376-byte queue budget.
 - Commander/SimpleFOC library headers are not installed in the available
-  Arduino cache; integration will gate known sketch output sites and retain
-  serial command processing.
-- Gemini implementation review has not run yet; it remains required once the
-  shared implementation diff is available.
+  Arduino cache; the installed SimpleFOC source confirms `Commander` accepts a
+  `Stream&`. A local forwarding Stream retains serial input and drops Commander
+  output outside Idle, and SimpleFOC monitoring is gated to Idle.
+- Implemented the typed queue/sender and formatter. Host C++11 checks report a
+  128-byte record, 32 slots, and 4,096 bytes of queue storage.
+- Migrated selected debug, diagnostic, trace, control, balance, and drive
+  sketch producers to named samples. Kept K8, K60–K75, and every-seventh-gate
+  pacing at their existing call boundaries.
+- Routed active diagnostic text through `Logging::message`; functional
+  calibration output remains direct only in Idle. Runtime gyro calibration
+  output is gated without changing its sample or storage path.
+- Replaced the old logger host test with C++11 tests for all format fixtures,
+  bounded FIFO/overflow, message filtering and profile boundary behavior,
+  sender startup failure, short writes, and selected-debug pacing. Added
+  independent capture-policy and drive-trace parser checks.
+- Removed `SerialLogger.*`, `SerialLogFormat.h`, and the unreferenced
+  `Telemetry.*` after repository-wide reference checks. Updated current USB
+  serial and diagnostic guides.
+- Current normal firmware build passed with 737,332 bytes of program storage
+  (56%) and 39,656 bytes of globals (12%). The diagnostic build passed from an
+  isolated temporary sketch copy with 407,074 bytes of program storage (31%)
+  and 32,112 bytes of globals (9%).
+- Current host checks passed: logger formatter/queue, capture policy, and drive
+  trace parser. `git diff --check` passed.
+- Fresh independent correctness review found no actionable findings. The final
+  independent scope guard returned `STATUS: OK`; it verified the touchscreen
+  serial blocks cited by an earlier report are commented out and unchanged from
+  baseline.
+- No-comments review found 12 redundant namespace-closing labels; all 12 were
+  removed. No other added comments were flagged.
+- Gemini review was attempted once with the correct request and timed out after
+  90 seconds, so it is unavailable for this workflow.
 
 Open items:
-- Commit the interface scaffold and dispatch disjoint engine/formatter and robot-capture workers in separate worktrees.
-- Map every frozen debug selector and sample type to baseline field construction and serializer format fixtures.
-- Build, test, inspect, and obtain independent correctness and final scope reviews.
+- None.
 
-Next step: commit the frozen interface scaffold, then dispatch engine/formatter and robot-capture work to Luna high workers in separate worktrees.
+Delivery boundary: no hardware flash or motor test, merge, push, or PR, as
+excluded by the scope contract.
+
+Next step: report the branch, checks, review results, and hardware limitation.

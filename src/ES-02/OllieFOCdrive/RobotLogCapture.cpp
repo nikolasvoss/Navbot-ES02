@@ -25,7 +25,7 @@ bool gateDue(uint32_t nowMs, uint32_t &lastMs) {
   lastMs = nowMs;
   return true;
 }
-}  // namespace
+}
 
 namespace RobotLogCapture {
 
@@ -80,7 +80,7 @@ void resetControlWindow() {
   servoWindowStarted = false;
 }
 
-void observeServoAngles(const int32_t angles[4]) {
+void observeServoAngles(const int angles[4]) {
   if (angles == nullptr) return;
 
   if (!servoWindowStarted) {
@@ -116,4 +116,4 @@ void copyServoRanges(int32_t ranges[4]) {
   }
 }
 
-}  // namespace RobotLogCapture
+}
