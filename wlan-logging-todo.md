@@ -38,6 +38,7 @@
 
 ## Live follow-up on 30.09.2026
 
+- [ ] Before merging, reconcile this branch's logging integration with the current `SerialLogger` and `SerialLogFormat` changes on `main`.
 - [x] Flash the recording-enabled build to the discovered CH340 port and verify written hashes.
 - [x] Confirm the live recording API, two complete 20-second captures, decoder output, ACK, and session reuse.
 - [x] Confirm that `SIGINT` saves a valid `USER_STOP` capture and returns the device to `COMPLETE` with an empty ring.
