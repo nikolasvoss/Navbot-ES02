@@ -186,6 +186,26 @@ struct VoltageState { int32_t adc; float filteredV; float voltageV; };
 struct TuningState { int32_t enabled; float targetLegLength; };
 struct TumbleState { int32_t tumbled; float rollOk; float angleError; };
 struct ChannelState { float seconds; int32_t channel; };
+struct CurrentSetpoint { float amperes; };
+struct BallBalanceGeometry { float ballX; float bodyRoll; float legLength; };
+struct PidIntegralState { float integralLimit; float integral; float integralOutput; float output; };
+struct PidIntegralOutputState {
+  float integralLimit;
+  float integral;
+  float integralOutput;
+  float auxiliary;
+  float output;
+};
+struct FilteredGeometry {
+  float bodyPitch;
+  float bodyRoll;
+  float legLength;
+  float slideStep;
+  float ballX;
+  float ballY;
+};
+struct PidTuningState { float kp; float ki; float kd; float derivative; float output; };
+struct RollCorrection { float rollOk; float bodyPitch; float correctedBodyPitch; };
 
 union DebugPayload {
   TimedVector3 timedVector3;
@@ -213,6 +233,13 @@ union DebugPayload {
   TuningState tuningState;
   TumbleState tumbleState;
   ChannelState channelState;
+  CurrentSetpoint currentSetpoint;
+  BallBalanceGeometry ballBalanceGeometry;
+  PidIntegralState pidIntegralState;
+  PidIntegralOutputState pidIntegralOutputState;
+  FilteredGeometry filteredGeometry;
+  PidTuningState pidTuningState;
+  RollCorrection rollCorrection;
 };
 
 struct DebugSample {
