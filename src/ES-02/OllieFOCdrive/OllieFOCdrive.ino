@@ -144,9 +144,9 @@ void EnableDFilter(char *cmd) {
   command.scalar(&enableDFilter, cmd);
 }
 
-int LED_HL = 1; //TODO bad name
-int LED_count = 0; //TODO bad name
-int LED_dt = 100; //TODO bad name
+int statusLedOn = 1;
+int statusLedTicks = 0;
+int statusLedPeriodTicks = 100;
 // Battery Voltage Measurement
 biquadFilter_t VoltageFilterLPF;  // Second-order low-pass filter
 uint16_t VoltageADC = 0;          // Battery voltage ADC data
@@ -160,8 +160,8 @@ MahonyFilter mahonyFilter(0.4f, 0.001f);
 // Accelerometer range (here set to ±8g)
 // Gyroscope range (here assumed to be ±2000°/s)
 attitude_t attitude;
-float roll_ok;   //TODO bad name
-float pitch_ok;  //TODO bad name
+float rollBiasCorrected;
+float pitchBiasCorrected;
 
 zeroBias_t zeroBias;  // Zero offset TODO of what?
 unsigned long timestamp_prev = 0;
@@ -171,18 +171,18 @@ uint32_t diagnosticSequence = 0;
 float IMUtime_dt = 0;
 
 /* Low-pass filter parameters TODO Imu? */
-float RATE_HZ_last = IMU_SAMPLING_RATE_HZ;            // Sampling frequency //TODO bad name
-float LPF_CUTOFF_FREQ_last = IMU_LPF_CUTOFF_FREQ_HZ;  // Cutoff frequency
+float prevImuSampleRateHz = IMU_SAMPLING_RATE_HZ;            // Sampling frequency
+float prevImuLowPassCutoffHz = IMU_LPF_CUTOFF_FREQ_HZ;  // Cutoff frequency
 
-float RATE_HZ = IMU_SAMPLING_RATE_HZ;            // Sampling frequency //TODO bad name
-float LPF_CUTOFF_FREQ = IMU_LPF_CUTOFF_FREQ_HZ;  // Cutoff frequency //TODO bad name
+float imuSampleRateHz = IMU_SAMPLING_RATE_HZ;            // Sampling frequency
+float imuLowPassCutoffHz = IMU_LPF_CUTOFF_FREQ_HZ;  // Cutoff frequency
 biquadFilter_t ImuFilterLPF[6];                  // Second-order low-pass filter
 
-void ImuRATE_HZ(char *cmd) { //TODO bad name
-  command.scalar(&RATE_HZ, cmd);
+void setImuSampleRate(char *cmd) {
+  command.scalar(&imuSampleRateHz, cmd);
 }
-void ImuLPF_CUTOFF_FREQ(char *cmd) {
-  command.scalar(&LPF_CUTOFF_FREQ, cmd);
+void setImuLowPassCutoff(char *cmd) {
+  command.scalar(&imuLowPassCutoffHz, cmd);
 }
 
 void Target_Leg_Length(char *cmd) {
@@ -221,7 +221,7 @@ int servoTraceAngle[4] = { 0, 0, 0, 0 };  // Last angle arguments sent to the fo
 
 // Remote control
 FUTABA_SBUS sBus;
-int sbus_dt_ms = 0; //TODO bad name
+int sbusFrameIntervalMs = 0;
 int pid_gains_mode = REMOTE_CONTROL_PID_GAINS_MODE_OFF;
 int posture_or_mark_mode = REMOTE_CONTROL_PM_POSTURE_MODE;
 int roll_mode = REMOTE_CONTROL_ROLL_MODE_MANUAL;
@@ -247,21 +247,21 @@ PIDController TouchYPid(0.2, 0, 0.08, 0, 0);    //
 
 float control_torque_compensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
-float wheelSpeedFeedbackOutput = 0; //TODO bad name
+float wheelVelocityFeedbackCorrection = 0;
 float driveTiltReductionGain = 1.0f; //TODO what does it do?
 float driveEffectiveSpeed = 0;
 float driveSpeedBodyXRaw = 0;
 
-float PidDt = 0.01; //TODO bad name
+float pidTimestepSec = 0.01;
 
 //  Create MyPIDController instance, set initial parameters TODO why 2 pid controllers? the pid controller names are the same for both modes, which is confusing.
-MyPIDController Angle_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);  // p i d iLimit outputLimit dt EnableDFilter cutoffFreq
-MyPIDController Speed_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
-MyPIDController Yaw_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
-MyPIDController Roll_Pid(0, 0, 0, 0, 0, PidDt, 0, 0);
+MyPIDController Angle_Pid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);  // p i d iLimit outputLimit dt EnableDFilter cutoffFreq
+MyPIDController Speed_Pid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
+MyPIDController Yaw_Pid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
+MyPIDController Roll_Pid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 
-MyPIDController TouchX_Pid(0, 0, 0, 0, 10, PidDt, 0, 0);
-MyPIDController TouchY_Pid(0, 0, 0, 0, 8, PidDt, 0, 0);
+MyPIDController TouchX_Pid(0, 0, 0, 0, 10, pidTimestepSec, 0, 0);
+MyPIDController TouchY_Pid(0, 0, 0, 0, 8, pidTimestepSec, 0, 0);
 bool balancePidNeedsPriming = true; // what does this mean? 
 
 void ControlTorqueCompensation(char *cmd) {
@@ -329,29 +329,22 @@ void CbTouchYPid(char *cmd) {
 #endif
 
 //Wheel Motors and Drivers
-//TODO bad names
-double Motor1_place_last = 0;
-float Motor1_Velocity = 0;
-float Motor1_Velocity_f = 0;
-LowPassFilter Motor1_Velocity_filter = LowPassFilter(0.01);  // Tf = 10ms
+double m1PrevEncoderAngleRad = 0;
+float m1VelocityRadPerSec = 0;
+float m1FilteredVelocityRadPerSec = 0;
+LowPassFilter m1VelocityFilter = LowPassFilter(0.01);  // Tf = 10ms
 
-double Motor2_place_last = 0;
-float Motor2_Velocity = 0;
-float Motor2_Velocity_f = 0;
-LowPassFilter Motor2_Velocity_filter = LowPassFilter(0.01);  // Tf = 10ms
+double m2PrevEncoderAngleRad = 0;
+float m2VelocityRadPerSec = 0;
+float m2FilteredVelocityRadPerSec = 0;
+LowPassFilter m2VelocityFilter = LowPassFilter(0.01);  // Tf = 10ms
 
-//TODO bad names
-float Motor1_Target = 0;
-float Motor2_Target = 0;
+double m1AngleRad = 0;
+double m2AngleRad = 0;
 
-//TODO bad names
-double RightMotorAngle = 0;
-double LeftMotorAngle = 0;
-
-//TODO bad names
-float time_dt = 0;
-unsigned long now_us = 0;
-unsigned long now_us1 = 0;
+float controlTimestepSec = 0;
+unsigned long loopTimeUs = 0;
+unsigned long previousControlTimeUs = 0;
 
 BLDCMotor motor1 = BLDCMotor(7);  // Motor pole pairs
 BLDCDriver3PWM driver = BLDCDriver3PWM(15, 7, 6, 16); // what are the numbers? replace with names
@@ -364,11 +357,10 @@ MagneticSensorI2C sensor1 = MagneticSensorI2C(AS5600_I2C);
 TwoWire I2Cone = TwoWire(0);
 TwoWire I2Ctwo = TwoWire(1);
 
-//TODO bad names
-void doMotion1(char *cmd) { 
+void handleM1MotionCommand(char *cmd) {
   command.motion(&motor1, cmd);
 }
-void doMotor1(char *cmd) {
+void handleM1Command(char *cmd) {
   command.motor(&motor1, cmd);
 }
 
@@ -459,8 +451,8 @@ void setup() {
 #if SENSOR_DIAGNOSTIC_MODE
   biquadFilterInitLPF(&VoltageFilterLPF, 20, DIAGNOSTIC_LOG_SAMPLE_RATE_HZ);
   for (int axis = 0; axis < 6; axis++) {
-    biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)LPF_CUTOFF_FREQ,
-                        (unsigned int)RATE_HZ);
+    biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)imuLowPassCutoffHz,
+                        (unsigned int)imuSampleRateHz);
   }
   diagnosticImuReady = initICM42688();
   sBus.begin();
@@ -477,7 +469,7 @@ void setup() {
 
   // Initialize second-order low-pass filter
   for (int axis = 0; axis < 6; axis++) {
-    biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)LPF_CUTOFF_FREQ, (unsigned int)RATE_HZ);
+    biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)imuLowPassCutoffHz, (unsigned int)imuSampleRateHz);
   }
 
   biquadFilterInitLPF(&VoltageFilterLPF, 50, 1000); // TODO replace numbers with names
@@ -603,16 +595,16 @@ void setup() {
   motor1.monitor_downsample = 10;  // disable intially
 
   // subscribe motor to the commander
-  command.add('T', doMotion1, "motion1 control");  // Set motor target value
-  command.add('M', doMotor1, "motor1");
+  command.add('T', handleM1MotionCommand, "motion1 control");  // Set motor target value
+  command.add('M', handleM1Command, "motor1");
 
   command.add('A', zeroBias_servo1, "my zeroBias_servo1");  // Set servo 1 bias
   command.add('B', zeroBias_servo2, "my zeroBias_servo2");  //
   command.add('C', zeroBias_servo3, "my zeroBias_servo3");  //
   command.add('D', zeroBias_servo4, "my zeroBias_servo4");  //
 
-  command.add('H', ImuRATE_HZ, "my ImuRATE_HZ");
-  command.add('Z', ImuLPF_CUTOFF_FREQ, "my ImuLPF_CUTOFF_FREQ");
+  command.add('H', setImuSampleRate, "my ImuRATE_HZ");
+  command.add('Z', setImuLowPassCutoff, "my ImuLPF_CUTOFF_FREQ");
 
   command.add('Q', TwoKp, "my TwoKp");  // MahonyFilter
   command.add('I', TwoKi, "my TwoKi");  // MahonyFilter
@@ -718,7 +710,7 @@ void RXsbus() {
 
   sBus.FeedLine();
   if (sBus.toChannels == 1) {
-    sbus_dt_ms = millis() - now_ms;
+    sbusFrameIntervalMs = millis() - now_ms;
     now_ms = millis();
     sBus.toChannels = 0;
     sBus.UpdateChannels();
@@ -821,8 +813,8 @@ void ImuUpdate(void) {
   // Convert quaternion to Euler angles
   quaternionToEuler(q0_out, q1_out, q2_out, q3_out, &attitude.roll, &attitude.pitch, &attitude.yaw);
 
-  roll_ok = attitude.roll - zeroBias.roll;
-  pitch_ok = attitude.pitch - zeroBias.pitch;
+  rollBiasCorrected = attitude.roll - zeroBias.roll;
+  pitchBiasCorrected = attitude.pitch - zeroBias.pitch;
 
   //////Complementary filter//////
   angleAccX = atan2(attitude.acc.y, attitude.acc.z + abs(attitude.acc.x)) * 360 / 2.0 / PI;
@@ -873,36 +865,36 @@ void print_data(void) {
   sample.selector = selector;
   switch (selection) {
     case 1:
-      sample.payload.timedVector3 = {time_dt, attitude.roll, attitude.pitch, attitude.yaw};
+      sample.payload.timedVector3 = {controlTimestepSec, attitude.roll, attitude.pitch, attitude.yaw};
       break;
     case 2:
-      sample.payload.timedVector3 = {time_dt, attitude.acc.x, attitude.acc.y, attitude.acc.z};
+      sample.payload.timedVector3 = {controlTimestepSec, attitude.acc.x, attitude.acc.y, attitude.acc.z};
       break;
     case 3:
-      sample.payload.timedVector3 = {time_dt, attitude.gyro.x, attitude.gyro.y, attitude.gyro.z};
+      sample.payload.timedVector3 = {controlTimestepSec, attitude.gyro.x, attitude.gyro.y, attitude.gyro.z};
       break;
     case 4:
-      sample.payload.timedVector3 = {time_dt, attitude.roll - zeroBias.roll,
+      sample.payload.timedVector3 = {controlTimestepSec, attitude.roll - zeroBias.roll,
                                      attitude.pitch - zeroBias.pitch,
                                      attitude.yaw - zeroBias.yaw};
       break;
     case 5:
-      sample.payload.timedVector3 = {time_dt, zeroBias.roll, zeroBias.pitch, zeroBias.yaw};
+      sample.payload.timedVector3 = {controlTimestepSec, zeroBias.roll, zeroBias.pitch, zeroBias.yaw};
       break;
     case 6:
-      sample.payload.motorVelocities = {Motor1_Velocity, Motor2_Velocity};
+      sample.payload.motorVelocities = {m1VelocityRadPerSec, m2VelocityRadPerSec};
       break;
     case 7:
-      sample.payload.pair = {Motor1_Velocity, Motor1_Velocity_f};
+      sample.payload.pair = {m1VelocityRadPerSec, m1FilteredVelocityRadPerSec};
       break;
     case 8:
       for (int i = 0; i < 10; ++i) sample.payload.receiverChannels.channels[i] = sBus.channels[i];
-      sample.payload.receiverChannels.frameDtMs = sbus_dt_ms;
+      sample.payload.receiverChannels.frameDtMs = sbusFrameIntervalMs;
       break;
     case 9:
       sample.payload.controllerGains = {{Angle_Pid.Kp, Angle_Pid.Ki, Angle_Pid.Kd},
                                         {Speed_Pid.Kp, Speed_Pid.Ki, Speed_Pid.Kd},
-                                        {Yaw_Pid.Kp, Yaw_Pid.Ki, Yaw_Pid.Kd}, time_dt};
+                                        {Yaw_Pid.Kp, Yaw_Pid.Ki, Yaw_Pid.Kd}, controlTimestepSec};
       break;
     case 10:
       sample.payload.mahony = {mahonyFilter.twoKp, mahonyFilter.twoKi, attitude.roll,
@@ -915,10 +907,10 @@ void print_data(void) {
       sample.payload.pair = {angleX, attitude.roll};
       break;
     case 13:
-      sample.payload.timedVector3 = {time_dt, attitude.gyrof.x, attitude.gyrof.y, attitude.gyrof.z};
+      sample.payload.timedVector3 = {controlTimestepSec, attitude.gyrof.x, attitude.gyrof.y, attitude.gyrof.z};
       break;
     case 14:
-      sample.payload.timedVector3 = {time_dt, attitude.accf.x, attitude.accf.y, attitude.accf.z};
+      sample.payload.timedVector3 = {controlTimestepSec, attitude.accf.x, attitude.accf.y, attitude.accf.z};
       break;
     case 15:
       sample.payload.pair = {attitude.acc.y, attitude.accf.y};
@@ -940,7 +932,7 @@ void print_data(void) {
       sample.payload.ballBalanceGeometry = {top_ball_x, BodyRoll, LegLength};
       break;
     case 21:
-      sample.payload.balanceState = {roll_ok, BodyPitching};
+      sample.payload.balanceState = {rollBiasCorrected, BodyPitching};
       break;
     case 22:
       sample.payload.pidIntegralState = {Angle_Pid.iLimit, Angle_Pid.integral,
@@ -1017,10 +1009,10 @@ void print_data(void) {
       } else return;
       break;
     case 41:
-      sample.payload.rollOutput = {roll_ok, BodyPitching, Speed_Pid.output};
+      sample.payload.rollOutput = {rollBiasCorrected, BodyPitching, Speed_Pid.output};
       break;
     case 42:
-      sample.payload.rollCorrection = {roll_ok, BodyPitching,
+      sample.payload.rollCorrection = {rollBiasCorrected, BodyPitching,
                                        BodyPitchingCorrect(BodyPitching_f)};
       break;
     case 43:
@@ -1030,7 +1022,7 @@ void print_data(void) {
       sample.payload.tuningState = {PidParameterTuning, TargetLegLength};
       break;
     case 45:
-      sample.payload.tumbleState = {RobotTumble, roll_ok, Angle_Pid.error};
+      sample.payload.tumbleState = {RobotTumble, rollBiasCorrected, Angle_Pid.error};
       break;
     default: return;
   }
@@ -1047,8 +1039,8 @@ void print_data(void) {
         sample.postureOrMarkMode = posture_or_mark_mode;
         sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
         sample.batteryV = Voltage;
-        sample.rollOk = roll_ok;
-        sample.pitchOk = pitch_ok;
+        sample.rollOk = rollBiasCorrected;
+        sample.pitchOk = pitchBiasCorrected;
         int32_t ranges[4];
         RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
         for (int i = 0; i < 4; ++i) {
@@ -1077,7 +1069,7 @@ void print_data(void) {
         sample.gainMode = pid_gains_mode;
         sample.minimumBatteryRawV = rawMinV;
         sample.batteryV = Voltage;
-        sample.rollOk = roll_ok;
+        sample.rollOk = rollBiasCorrected;
         sample.yawRateRadPerSec = attitude.gyro.z;
         sample.bodyTurn = BodyTurn;
         sample.angleError = active ? Angle_Pid.error : 0.0f;
@@ -1105,7 +1097,7 @@ void print_data(void) {
         sample.sequence = activeTraceSequence++;
         sample.gainMode = pid_gains_mode;
         sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
-        sample.rollOk = roll_ok;
+        sample.rollOk = rollBiasCorrected;
         sample.angleError = active ? Angle_Pid.error : 0.0f;
         sample.angleProportional = active ? Angle_Pid.outP : 0.0f;
         sample.angleIntegral = active ? Angle_Pid.outI : 0.0f;
@@ -1135,9 +1127,9 @@ void print_data(void) {
         sample.batteryV = Voltage;
         sample.requestedSpeed = MovementSpeed;
         sample.effectiveSpeed = active ? driveEffectiveSpeed : 0.0f;
-        sample.leftWheelVelocity = Motor1_Velocity_f;
-        sample.rightWheelVelocity = Motor2_Velocity_f;
-        sample.controlDtSec = time_dt;
+        sample.leftWheelVelocity = m1FilteredVelocityRadPerSec;
+        sample.rightWheelVelocity = m2FilteredVelocityRadPerSec;
+        sample.controlDtSec = controlTimestepSec;
         sample.speedError = active ? Speed_Pid.error : 0.0f;
         sample.speedProportional = active ? Speed_Pid.outP : 0.0f;
         sample.speedIntegral = active ? Speed_Pid.outI : 0.0f;
@@ -1146,12 +1138,12 @@ void print_data(void) {
         sample.driveBodyXRaw = active ? driveSpeedBodyXRaw : 0.0f;
         sample.bodyX = active ? BodyX : 0.0f;
         sample.bodyPitchFiltered = BodyPitching_f;
-        sample.rollOk = roll_ok;
+        sample.rollOk = rollBiasCorrected;
         sample.angleOutput = active ? Angle_Pid.output : 0.0f;
         sample.angleProportional = active ? Angle_Pid.outP : 0.0f;
         sample.angleIntegral = active ? Angle_Pid.outI : 0.0f;
         sample.angleDerivative = active ? Angle_Pid.outD : 0.0f;
-        sample.wheelSpeedFeedbackOutput = active ? wheelSpeedFeedbackOutput : 0.0f;
+        sample.wheelSpeedFeedbackOutput = active ? wheelVelocityFeedbackCorrection : 0.0f;
         sample.leftMotorTarget = motor1.target;
         sample.rightMotorTarget = motor2.target;
         sample.ballX = top_ball_x;
@@ -1379,7 +1371,7 @@ void PIDcontroller_posture(float dt) {
   float TargetBodyRoll = BodyRoll_f * 777;                            // Roll
   if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball禁止手动横滚
     TargetBodyRoll = 0;
-  float RollError = (-pitch_ok) - (-TargetBodyRoll) - (-TouchY_Pid_outputF);
+  float RollError = (-pitchBiasCorrected) - (-TargetBodyRoll) - (-TouchY_Pid_outputF);
   if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)  // Roll leveling
   {
     Roll_Pid.compute(RollError, dt);
@@ -1394,11 +1386,11 @@ void PIDcontroller_posture(float dt) {
   Speed_Pid.Kd = SpeedPid.D / 100;
   Speed_Pid.iLimit = SpeedPid.limit;  // Integral limit
 
-  const float avgVelocity = 0.5f * (Motor1_Velocity_f + Motor2_Velocity_f);
+  const float avgVelocity = 0.5f * (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec);
   driveEffectiveSpeed = MovementSpeed;
   // Reduce only further acceleration when tilt consumes balance headroom.
   if (MovementSpeed * avgVelocity >= 0.0f && fabsf(MovementSpeed) > fabsf(avgVelocity)) {
-    const float tiltFraction = constrain((fabsf(roll_ok) - DRIVE_TILT_REDUCTION_START_DEG) /
+    const float tiltFraction = constrain((fabsf(rollBiasCorrected) - DRIVE_TILT_REDUCTION_START_DEG) /
                                          (DRIVE_TILT_REDUCTION_FULL_DEG - DRIVE_TILT_REDUCTION_START_DEG),
                                          0.0f, 1.0f);
     const float reduction = tiltFraction * constrain(driveTiltReductionGain, 0.0f, 1.0f);
@@ -1425,7 +1417,7 @@ void PIDcontroller_posture(float dt) {
   Angle_Pid.Kd = AnglePid.D;
   Angle_Pid.iLimit = AnglePid.limit;  // Integral limit
 
-  float angleError = roll_ok - (-BodyPitching_f);  // Measured value minus target value
+  float angleError = rollBiasCorrected - (-BodyPitching_f);  // Measured value minus target value
   if (balancePidNeedsPriming) {
     // Avoid a derivative kick when CH5 first enables the balance loop.
     Angle_Pid.previousError = angleError;
@@ -1452,10 +1444,10 @@ void PIDcontroller_posture(float dt) {
   const float boundedWheelGain = constrain(wheelSpeedFeedbackGain, 0.0f, 0.4f);
   const bool braking = avgVelocity * (avgVelocity - MovementSpeed) > 0.0f;
   const float wheelCorrection = braking ? boundedWheelGain * (avgVelocity - MovementSpeed) : 0.0f;
-  wheelSpeedFeedbackOutput = constrain(wheelCorrection, -DRIVE_WHEEL_FEEDBACK_LIMIT,
+  wheelVelocityFeedbackCorrection = constrain(wheelCorrection, -DRIVE_WHEEL_FEEDBACK_LIMIT,
                                       DRIVE_WHEEL_FEEDBACK_LIMIT);
-  float target1 = angleOutput - yawOutput + wheelSpeedFeedbackOutput;
-  float target2 = angleOutput + yawOutput + wheelSpeedFeedbackOutput;
+  float target1 = angleOutput - yawOutput + wheelVelocityFeedbackCorrection;
+  float target2 = angleOutput + yawOutput + wheelVelocityFeedbackCorrection;
 
   if (control_torque_compensation != 0) {
     if (target1 > 0)
@@ -1537,14 +1529,14 @@ void ReadVoltage(void) {
  */
 void Robot_Tumble(void) {
   static int x = 0;
-  if (abs(roll_ok) >= 35) {
+  if (abs(rollBiasCorrected) >= 35) {
     x++;
     if (x >= 20) {
       x = 20;
       RobotTumble = ROBOT_TUMBLE_YES;  // Machine fall
     }
   } else {
-    if ((RobotTumble == ROBOT_TUMBLE_YES) && (abs(roll_ok) <= 5))  // Machine fall after fall
+    if ((RobotTumble == ROBOT_TUMBLE_YES) && (abs(rollBiasCorrected) <= 5))  // Machine fall after fall
     {
       x--;
       if (x <= 0) {
@@ -1620,7 +1612,7 @@ void loop() {
   DiagnosticLoop();
   return;
 #endif
-  now_us = micros();
+  loopTimeUs = micros();
 
   // iterative function setting the outter loop target
 
@@ -1638,8 +1630,8 @@ void loop() {
   motor2.loopFOC();
 
 
-  RightMotorAngle = -sensor1.getPreciseAngle();
-  LeftMotorAngle = sensor2.getPreciseAngle();
+  m1AngleRad = -sensor1.getPreciseAngle();
+  m2AngleRad = sensor2.getPreciseAngle();
 
   // user communication
   command.run();
@@ -1650,8 +1642,8 @@ void loop() {
 
   ReadTouchDat();
 
-  time_dt = (now_us - now_us1) / 1000000.0f;
-  if (time_dt >= 0.001f) {   //1kHz
+  controlTimestepSec = (loopTimeUs - previousControlTimeUs) / 1000000.0f;
+  if (controlTimestepSec >= 0.001f) {   //1kHz
     controlGateSequence++;
     TouchBiquadFilter();  // Touch screen filter
 
@@ -1660,38 +1652,38 @@ void loop() {
     print_data();              // Serial port data printing
 
     Robot_Tumble();  // Machine fall detection
-    LED_count++;
-    if (LED_count >= LED_dt) {
-      LED_count = 0;
-      if (LED_HL == 1) {
+    statusLedTicks++;
+    if (statusLedTicks >= statusLedPeriodTicks) {
+      statusLedTicks = 0;
+      if (statusLedOn == 1) {
         digitalWrite(BOARD_PIN_LED, LOW);  // On
-        LED_HL = 0;
+        statusLedOn = 0;
       } else {
         digitalWrite(BOARD_PIN_LED, HIGH);  // Off
-        LED_HL = 1;
+        statusLedOn = 1;
       }
     }
 
     if (Voltage <= 7.4)
-      LED_dt = 20;
+      statusLedPeriodTicks = 20;
     else
-      LED_dt = 100;
+      statusLedPeriodTicks = 100;
 
-    if (RATE_HZ != RATE_HZ_last) {
+    if (imuSampleRateHz != prevImuSampleRateHz) {
       // Initialize second-order low-pass filter
       for (int axis = 0; axis < 6; axis++) {
-        biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)LPF_CUTOFF_FREQ, (unsigned int)RATE_HZ);
+        biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)imuLowPassCutoffHz, (unsigned int)imuSampleRateHz);
       }
-      Logging::message(Logging::Level::Info, "RATE_HZ", "%.3f", RATE_HZ);
-      RATE_HZ_last = RATE_HZ;
+      Logging::message(Logging::Level::Info, "RATE_HZ", "%.3f", imuSampleRateHz);
+      prevImuSampleRateHz = imuSampleRateHz;
     }
-    if (LPF_CUTOFF_FREQ != LPF_CUTOFF_FREQ_last) {
+    if (imuLowPassCutoffHz != prevImuLowPassCutoffHz) {
       // Initialize second-order low-pass filter
       for (int axis = 0; axis < 6; axis++) {
-        biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)LPF_CUTOFF_FREQ, (unsigned int)RATE_HZ);
+        biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)imuLowPassCutoffHz, (unsigned int)imuSampleRateHz);
       }
-      Logging::message(Logging::Level::Info, "LPF_CUTOFF_FREQ", "%.3f", LPF_CUTOFF_FREQ);
-      LPF_CUTOFF_FREQ_last = LPF_CUTOFF_FREQ;
+      Logging::message(Logging::Level::Info, "LPF_CUTOFF_FREQ", "%.3f", imuLowPassCutoffHz);
+      prevImuLowPassCutoffHz = imuLowPassCutoffHz;
     }
 
     const CalibrationResult calibrationResult = calibration.update(
@@ -1724,14 +1716,14 @@ void loop() {
     if (calibrationResult.changedServos.servo4Changed)
       Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo4: %.2f", zeroBias.servo4);
 
-    const float wheelVelocityDt = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? time_dt : 0.01f;
-    Motor1_Velocity = (sensor1.getAngle() - Motor1_place_last) / wheelVelocityDt;
-    Motor1_Velocity_f = Motor1_Velocity_filter(Motor1_Velocity);
-    Motor1_place_last = sensor1.getAngle();
+    const float wheelVelocityDt = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? controlTimestepSec : 0.01f;
+    m1VelocityRadPerSec = (sensor1.getAngle() - m1PrevEncoderAngleRad) / wheelVelocityDt;
+    m1FilteredVelocityRadPerSec = m1VelocityFilter(m1VelocityRadPerSec);
+    m1PrevEncoderAngleRad = sensor1.getAngle();
 
-    Motor2_Velocity = -(sensor2.getAngle() - Motor2_place_last) / wheelVelocityDt;
-    Motor2_Velocity_f = Motor2_Velocity_filter(Motor2_Velocity);
-    Motor2_place_last = sensor2.getAngle();
+    m2VelocityRadPerSec = -(sensor2.getAngle() - m2PrevEncoderAngleRad) / wheelVelocityDt;
+    m2FilteredVelocityRadPerSec = m2VelocityFilter(m2VelocityRadPerSec);
+    m2PrevEncoderAngleRad = sensor2.getAngle();
 
     float bodyH = 0.06f;
     float bodyRoll = BodyRoll_f;
@@ -1751,12 +1743,12 @@ void loop() {
       Angle_Pid.integral = 0;
       Speed_Pid.integral = 0;
       Yaw_Pid.integral = 0;
-      wheelSpeedFeedbackOutput = 0;
+      wheelVelocityFeedbackCorrection = 0;
       driveEffectiveSpeed = 0;
       driveSpeedBodyXRaw = 0;
 
     } else if ((pid_gains_mode_is_enabled(pid_gains_mode)) && (RobotTumble == ROBOT_TUMBLE_NO)) {
-      PIDcontroller_posture(time_dt);  // PID controller
+      PIDcontroller_posture(controlTimestepSec);  // PID controller
 
       if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)
         bodyRoll = Roll_Pid.output;
@@ -1810,6 +1802,6 @@ void loop() {
 
     RobotLogCapture::observeServoAngles(servoTraceAngle);
 
-    now_us1 = now_us;
+    previousControlTimeUs = loopTimeUs;
   }
 }

@@ -14,7 +14,7 @@ Ein **Sollwert** ist das gewünschte Verhalten, ein **Istwert** die Messung. Ein
 flowchart LR
     RC[SBUS-Fernsteuerung<br/>CH3 Fahrt · CH4 Drehen<br/>CH5 Freigabe · CH7/8 Haltung] --> CMD[Sollwerte und Betriebsart]
     BLE[BLE-Befehle] --> CMD
-    IMU[ICM-42688P<br/>Beschleunigung + Drehrate] --> MAH[Filter + Mahony<br/>Neigung roll_ok / pitch_ok]
+    IMU[ICM-42688P<br/>Beschleunigung + Drehrate] --> MAH[Filter + Mahony<br/>Neigung rollBiasCorrected / pitchBiasCorrected]
     ENC[2 × AS5600<br/>Radwinkel] --> VEL[Raddrehzahl-Schätzung]
     CMD --> CTRL[Zweiradregelung]
     MAH --> CTRL
@@ -37,21 +37,21 @@ Die IMU sitzt laut PCB-Entwurf auf dem MAIN-Board. Jeder Radmotor hat einen AS56
 
 | Zweig | Fehler aus Soll- und Istwert | Ergebnis im aktiven Zweiradpfad |
 | --- | --- | --- |
-| **Neigung / Balance** | `angleError = roll_ok + BodyPitching_f` | `Angle_Pid` liefert den gemeinsamen Anteil beider Rad-Sollgeschwindigkeiten. `roll_ok` heißt im Code „roll“, ist hier der für Vor-/Zurückkippen verwendete Lagewinkel in Grad. |
+| **Neigung / Balance** | `angleError = rollBiasCorrected + BodyPitching_f` | `Angle_Pid` liefert den gemeinsamen Anteil beider Rad-Sollgeschwindigkeiten. `rollBiasCorrected` heißt im Code „roll“, ist hier der für Vor-/Zurückkippen verwendete Lagewinkel in Grad. |
 | **Gieren / Lenken** | `yawError = attitude.gyro.z - BodyTurn` | `Yaw_Pid` liefert einen differentiellen Anteil: Rad 1 bekommt `−yawOutput`, Rad 2 `+yawOutput`. Der Gyro-Z-Wert und der Drehbefehl sind in rad/s. |
-| **Fahren / Raddrehzahl** | `speedError = (Motor1_Velocity_f + Motor2_Velocity_f)/2 - MovementSpeed` | `Speed_Pid` erzeugt `BodyX`; damit verschiebt die Beinkinematik die Servo-Sollpositionen. **Dieser Ausgang wird im aktiven Pfad nicht vom Neigungssollwert der Radmotoren abgezogen.** |
-| **Seitliche Haltung** | `RollError` aus `pitch_ok`, Roll-Sollwert und Touch-Y | Bei CH7/AUTO erzeugt `Roll_Pid` eine Höhenkorrektur zwischen den Beinen. Bei MANUAL ist sein Ausgang null. |
+| **Fahren / Raddrehzahl** | `speedError = (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec)/2 - MovementSpeed` | `Speed_Pid` erzeugt `BodyX`; damit verschiebt die Beinkinematik die Servo-Sollpositionen. **Dieser Ausgang wird im aktiven Pfad nicht vom Neigungssollwert der Radmotoren abgezogen.** |
+| **Seitliche Haltung** | `RollError` aus `pitchBiasCorrected`, Roll-Sollwert und Touch-Y | Bei CH7/AUTO erzeugt `Roll_Pid` eine Höhenkorrektur zwischen den Beinen. Bei MANUAL ist sein Ausgang null. |
 | **Touch-/Ball-Pose** | Touch-X/Y und CH9/10 | Verändert `BodyPitching`, einen seitlichen Touch-Anteil und damit mittelbar Rad- bzw. Servo-Vorgaben; siehe unten. |
 
 Radmotoren im Kern: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`; danach werden beide auf ±88 begrenzt. Die Vorzeichen sind Softwarekonventionen und ersetzen keinen Test der mechanischen Wirkrichtung. `PIDcontroller_posture()` ist der aktive Zweiradpfad. Die ungenutzte ältere Funktion `PIDcontroller_angle()` wurde am 01.10.2026 beim Aufräumen entfernt. Sie enthielt die klassische Kaskade „Geschwindigkeit → Neigung → Radmotor“, wurde von `loop()` aber nicht aufgerufen. Der Kommentar über `PIDcontroller_posture()` nennt ebenfalls eine Kaskade und ist an dieser Stelle irreführend.
 
-**Zahlenbeispiel ohne I-/D-Anteil:** Bei `roll_ok=+1°`, `BodyPitching_f=0` und Balance-P=6 trägt der P-Anteil `+6` zur gemeinsamen Rad-Sollgeschwindigkeit bei. Liegt gleichzeitig `yawError=+0,2 rad/s` und Yaw-P=5 vor, ist der Gieranteil `+1`: Rad 1 erhält `6−1=5`, Rad 2 `6+1=7 rad/s`. Das Beispiel zeigt die Mischrechnung; die tatsächliche Reaktion hängt von Vorzeichen, Dynamik, I-/D-Anteilen und Begrenzung ab.
+**Zahlenbeispiel ohne I-/D-Anteil:** Bei `rollBiasCorrected=+1°`, `BodyPitching_f=0` und Balance-P=6 trägt der P-Anteil `+6` zur gemeinsamen Rad-Sollgeschwindigkeit bei. Liegt gleichzeitig `yawError=+0,2 rad/s` und Yaw-P=5 vor, ist der Gieranteil `+1`: Rad 1 erhält `6−1=5`, Rad 2 `6+1=7 rad/s`. Das Beispiel zeigt die Mischrechnung; die tatsächliche Reaktion hängt von Vorzeichen, Dynamik, I-/D-Anteilen und Begrenzung ab.
 
 ### Was passiert bei einem Fahrbefehl?
 
 1. CH3 wird auf `MovementSpeed` abgebildet. Die Radwinkeländerung wird zur gefilterten Raddrehzahl; der Mittelwert beider Räder bildet den Istwert des Geschwindigkeitsreglers.
 2. `Speed_Pid` berechnet `BodyX` aus Ist minus Soll. `BodyX` geht in die X-Koordinate der inversen Beinkinematik. Die Servos verlagern so die Geometrie und damit die Last relativ zu den Rädern.
-3. Die IMU liefert über Mahony den Neigungswinkel `roll_ok`. `Angle_Pid` ändert die **beiden** Rad-Sollgeschwindigkeiten gemeinsam, damit die Neigung geregelt wird.
+3. Die IMU liefert über Mahony den Neigungswinkel `rollBiasCorrected`. `Angle_Pid` ändert die **beiden** Rad-Sollgeschwindigkeiten gemeinsam, damit die Neigung geregelt wird.
 4. CH4 gibt `BodyTurn` vor. Der Gierregler vergleicht ihn mit `gyro.z` und erhöht die eine Rad-Sollgeschwindigkeit, während er die andere verringert.
 5. SimpleFOC vergleicht die jeweilige Rad-Sollgeschwindigkeit mit dem Encoder und berechnet über FOC/PWM die Motoransteuerung. In dieser Konfiguration ist der SimpleFOC-Motormodus `velocity`, die innere Drehmomentregelung `voltage`; die optionalen Strommesskreise sind auskompiliert. `current_limit=5` ist daher **kein Nachweis** einer gemessenen oder hart begrenzten Akku-Stromstärke.
 
@@ -77,18 +77,18 @@ BLE hat eine eigene Abbildung der Steuerkanäle. `loop()` ruft nach `CtrlInput()
 
 ## Takt, Einheiten und Filter
 
-- In jedem `loop()`-Durchlauf laufen `motor.move()` und `motor.loopFOC()`. Der äußere Regelblock wird ab `time_dt >= 0.001 s` ausgeführt; das ist eine **Mindestschwelle**, keine garantierte 1-kHz-Rate. Ein gespeicherter Stillstands-Trace maß etwa 1,66 ms Median-Tick; unter anderer Last kann es abweichen.
+- In jedem `loop()`-Durchlauf laufen `motor.move()` und `motor.loopFOC()`. Der äußere Regelblock wird ab `controlTimestepSec >= 0.001 s` ausgeführt; das ist eine **Mindestschwelle**, keine garantierte 1-kHz-Rate. Ein gespeicherter Stillstands-Trace maß etwa 1,66 ms Median-Tick; unter anderer Last kann es abweichen.
 - Die IMU wird im Hauptdurchlauf per SPI gelesen. Beschleunigung und Gyro werden tiefpassgefiltert und mit Mahony zum Lagewinkel fusioniert. Für den Gierregler wird `attitude.gyro.z` verwendet; das ist der skalierte rohe Gyro-Wert, nicht `gyrof.z`.
-- Im aktuellen Diagnose-Quellstand wird die Raddrehzahl aus Encoder-Winkeldifferenz / **gemessenem `time_dt`** berechnet, dann mit einem SimpleFOC-Tiefpass (`Tf=0.01 s`) geglättet. Wird `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` abgeschaltet, teilt der Code stattdessen durch feste `0.01 s`; das skaliert die Messung bei einem etwa 1,8-ms-Tick rechnerisch um Faktor 5,6 zu klein. Gain-Werte beider Stände sind deshalb nicht direkt vergleichbar.
-- `roll_ok`/`pitch_ok` sind Winkel in Grad nach Abzug gespeicherter Nullpunkte. Der Gyro liefert rad/s. `BodyX` ist eine Kinematikverschiebung in Metern. Die Radziele sind SimpleFOC-Sollgeschwindigkeiten in rad/s. Die benannten PID-Gains tragen dadurch unterschiedliche implizite Einheiten; Zahlen aus verschiedenen Reglern lassen sich nicht direkt vergleichen.
+- Im aktuellen Diagnose-Quellstand wird die Raddrehzahl aus Encoder-Winkeldifferenz / **gemessenem `controlTimestepSec`** berechnet, dann mit einem SimpleFOC-Tiefpass (`Tf=0.01 s`) geglättet. Wird `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` abgeschaltet, teilt der Code stattdessen durch feste `0.01 s`; das skaliert die Messung bei einem etwa 1,8-ms-Tick rechnerisch um Faktor 5,6 zu klein. Gain-Werte beider Stände sind deshalb nicht direkt vergleichbar.
+- `rollBiasCorrected`/`pitchBiasCorrected` sind Winkel in Grad nach Abzug gespeicherter Nullpunkte. Der Gyro liefert rad/s. `BodyX` ist eine Kinematikverschiebung in Metern. Die Radziele sind SimpleFOC-Sollgeschwindigkeiten in rad/s. Die benannten PID-Gains tragen dadurch unterschiedliche implizite Einheiten; Zahlen aus verschiedenen Reglern lassen sich nicht direkt vergleichen.
 
 ### Biquad-Filter und Abtastraten
 
 `biquadFilterInitLPF(filter, cutoffHz, samplingRateHz)` erwartet Grenzfrequenz und Abtastrate in Hz. Die Funktion berechnet `omega = 2π · cutoffHz / samplingRateHz`. Die frühere Rechnung behandelte die Abtastrate fälschlich als Periodendauer in Mikrosekunden. Im Diagnosemodus ruft `DiagnosticLoop()` `ImuUpdate()` nominal alle 10 ms auf. Die IMU-Filter sind dort auf 20 Hz Grenzfrequenz und 100 Hz Abtastrate ausgelegt.
 
-Im normalen Modus ruft `loop()` `ImuUpdate()` bei jedem Durchlauf auf. `RATE_HZ` startet bei 1000 und bestimmt nur die IMU-Filterkoeffizienten. Der Wert taktet keine Messung. `MahonyFilter::update()` erhält die gefilterten Gyro- und Beschleunigungswerte sowie das gemessene `IMUtime_dt`. Bei `RATE_HZ` = 1000 Hz liefert die korrigierte Rechnung dieselben Koeffizienten wie zuvor. Andere `RATE_HZ`-Werte haben nun die beabsichtigte Bedeutung in Hz. Der Quellcode belegt keine feste IMU-Abtastrate und keinen genauen Frequenzgang unter Last. Die Firmware berechnet die Koeffizienten bei Parameteränderungen neu, nicht bei jedem Sample.
+Im normalen Modus ruft `loop()` `ImuUpdate()` bei jedem Durchlauf auf. `imuSampleRateHz` startet bei 1000 und bestimmt nur die IMU-Filterkoeffizienten. Der Wert taktet keine Messung. `MahonyFilter::update()` erhält die gefilterten Gyro- und Beschleunigungswerte sowie das gemessene `IMUtime_dt`. Bei `imuSampleRateHz` = 1000 Hz liefert die korrigierte Rechnung dieselben Koeffizienten wie zuvor. Andere `imuSampleRateHz`-Werte haben nun die beabsichtigte Bedeutung in Hz. Der Quellcode belegt keine feste IMU-Abtastrate und keinen genauen Frequenzgang unter Last. Die Firmware berechnet die Koeffizienten bei Parameteränderungen neu, nicht bei jedem Sample.
 
-Akku-, Fernsteuerungs-, Touch- und PID-Ausgangsfilter laufen im normalen Modus im äußeren Regelblock, sobald `time_dt` mindestens 1 ms beträgt. Ihre Abtastrate von 1000 Hz ist ein nominaler Auslegungswert. Die Sperre garantiert keine feste Rate von 1 kHz. Ein vorhandener Stillstands-Trace maß einen Median von etwa 1,66 ms pro Tick. Andere Last kann diesen Wert ändern.
+Akku-, Fernsteuerungs-, Touch- und PID-Ausgangsfilter laufen im normalen Modus im äußeren Regelblock, sobald `controlTimestepSec` mindestens 1 ms beträgt. Ihre Abtastrate von 1000 Hz ist ein nominaler Auslegungswert. Die Sperre garantiert keine feste Rate von 1 kHz. Ein vorhandener Stillstands-Trace maß einen Median von etwa 1,66 ms pro Tick. Andere Last kann diesen Wert ändern.
 
 Der Akku-Filter im normalen Modus verwendet jetzt eine Grenzfrequenz von 50 Hz und eine nominale Abtastrate von 1000 Hz. Im Diagnosemodus verwendet er 20 Hz und 100 Hz; die Messung läuft dort alle 10 ms. Die korrigierten Koeffizienten lassen den Akku-Filter in beiden Modi schneller auf Spannungsänderungen reagieren als zuvor. Die Diagnose-Mahony-Fusion erhält die vorgesehenen 20-Hz-IMU-Filter statt eines effektiven Grenzwerts um 0,2 Hz. Die Koeffizienten des normalen IMU-Filters bleiben bei den Startwerten 50 Hz und 1000 Hz gleich. Die tatsächliche IMU-Abtastrate ist jedoch nicht gemessen.
 
@@ -113,7 +113,7 @@ Der Yaw-I-Startwert ist in beiden CH5-Modi null. Die Grenze ±0,1 ist die Grenze
 ## Freigabe und Schutz im Code
 
 - CH5=0 oder erkannter Fall: Rad-Sollwerte null, `BodyX` und die PID-Integratoren zurückgesetzt. SimpleFOC läuft weiter; „Sollwert null“ bedeutet hier nicht abgeschaltete Endstufe.
-- `Robot_Tumble()` setzt nach 20 aufeinanderfolgenden Regelaufrufen mit `|roll_ok| >= 35°` das Fall-Flag. Zur Freigabe muss der Winkel wieder `<= 5°` sein und der interne Zähler zurücklaufen. Die Zeit hängt vom realen Regeltakt ab.
+- `Robot_Tumble()` setzt nach 20 aufeinanderfolgenden Regelaufrufen mit `|rollBiasCorrected| >= 35°` das Fall-Flag. Zur Freigabe muss der Winkel wieder `<= 5°` sein und der interne Zähler zurücklaufen. Die Zeit hängt vom realen Regeltakt ab.
 - Die Akkuspannung kommt über GPIO17 von der **2S-Akkuleitung**, nicht von der 3,3-V-Schiene. Unter 7,4 V blinken/warnt die Firmware; in `RXsbus()` ist die Abschaltung auskommentiert. Ein Spannungseinbruch kann weitere Hardwareeffekte haben, wird von dieser Schwelle aber nicht aktiv unterbunden.
 - `sBus.Failsafe()` wird im Sensor-Diagnosemodus ausgegeben, ist im normalen Zweirad-Regelpfad jedoch nicht als Freigabebedingung zu sehen. Die Reaktion auf einen verlorenen Empfänger hängt daher auch davon ab, welche Kanalwerte die SBUS-Bibliothek danach liefert.
 
@@ -135,4 +135,4 @@ Der Yaw-I-Startwert ist in beiden CH5-Modi null. Die Grenze ±0,1 ist die Grenze
 
 ### Noch nicht geklärt
 
-Die bestehenden Fahrtraces zeigen Nachlaufen und gelegentliches Gegenrollen nach CH3=0; Nutzerbeobachtungen nennen zudem Neigungszittern nach Fahrmanövern. Der Balance-I-Anteil erreichte in einem Trace ±22,2, was ein plausibler Beitrag, aber keine bewiesene alleinige Ursache ist. Verschiedene Versuche hatten andere Startneigungen und Befehlsimpulse. Auch Versorgungsabfälle wurden beobachtet, ohne dass Motorstrom und Servo-Strom getrennt gemessen wurden. Für eine kausale Aussage müssen geflashter Stand, Live-Gains, Schalterstellungen, `time_dt`, Radmessung, IMU-Winkel, PID-Anteile, Motorziele und Spannung im selben Versuch zusammenpassen.
+Die bestehenden Fahrtraces zeigen Nachlaufen und gelegentliches Gegenrollen nach CH3=0; Nutzerbeobachtungen nennen zudem Neigungszittern nach Fahrmanövern. Der Balance-I-Anteil erreichte in einem Trace ±22,2, was ein plausibler Beitrag, aber keine bewiesene alleinige Ursache ist. Verschiedene Versuche hatten andere Startneigungen und Befehlsimpulse. Auch Versorgungsabfälle wurden beobachtet, ohne dass Motorstrom und Servo-Strom getrennt gemessen wurden. Für eine kausale Aussage müssen geflashter Stand, Live-Gains, Schalterstellungen, `controlTimestepSec`, Radmessung, IMU-Winkel, PID-Anteile, Motorziele und Spannung im selben Versuch zusammenpassen.
