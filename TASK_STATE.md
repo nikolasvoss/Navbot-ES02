@@ -1,19 +1,36 @@
-# Task state: sensor roadmap review fixes
+# Task state: project-local logging module
 
-Goal: fix the two confirmed findings from the full review of codex/sensor-data-roadmap.
-Baseline: 49fbc524d96f80a29ebc36e95aeb677c0e165ef8; target worktree was clean.
-Scope and frozen plan: work/review-fixes.scope.md.
+Goal: implement the accepted project-local typed logging architecture from `work/logging-module-implementation-plan.md`.
+Baseline: `e18c734dbf4c9417678e0768742b4e2c01f39b83`; integration branch `codex/logging-module-implementation`; checkout was clean before task changes.
+Scope: `/home/niko/Dokumente/Bastelei/roboter/Navbot-ES02/work/logging-module-implementation.scope.md`.
+Frozen plan: `/home/niko/Dokumente/Bastelei/roboter/Navbot-ES02/work/logging-module-implementation-plan.md`.
+Architecture sketch: `/tmp/logging-architect/synthesis.md` (Candidate 3 with recorded in-scope grafts).
 
 Decisions:
-- Pace selected debug records to at most 50 Hz within SerialLoggerSubmit. The first record is immediate; intentional pacing does not increment failure counters. Trace/diagnostic rates and sticky real-failure behavior remain unchanged.
-- Correct README to state that the default is normal motor-control firmware and diagnostics require setting SENSOR_DIAGNOSTIC_MODE to 1.
+- Use one private tagged record queue and one sender. Capture builders are separate in `RobotLogCapture`.
+- Publish profile plus 32-bit epoch in a brief critical section. Drop queued stale records at dequeue. An already-started UART write may finish as pre-boundary bytes; do not flush or wait in a control path.
+- Preserve current output layouts, selectors, producer boundaries and rates, queue depth 32 and 5,376-byte queue budget if the named record fits. Any budget increase needs measured size and a scope review.
+- Keep serial input and command processing. Route or suppress actual app/library output at its source during structured capture.
+- No compatibility layer, Wi-Fi/perimeter integration, flash, drive, merge or push.
 
-Completed:
-- Baud-limited 1 kHz K9 regression failed before the fix with `1 kHz selected debug submissions overflowed the UART queue`.
-- The same regression passes after the fix with `selected_debug_accepted=50 trace_after_1khz=verified`.
-- Existing queue, formatter, and filter host tests pass.
-- Normal and diagnostic firmware builds pass. The diagnostic build uses a separate temporary sketch copy; the verified snapshot defaults to normal mode. A separate local edit now sets SENSOR_DIAGNOSTIC_MODE to 1; it remains unstaged and excluded from this commit.
-- Independent Luna correctness review returned PASS. Gemini CLI was unavailable after a 90-second timeout.
+Progress:
+- Product review: HOLD_SCOPE; scope stays as requested.
+- Independent pre-edit scope check: `STATUS: OK`.
+- Source/how exploration complete. Three Luna high architecture candidates and independent Luna cross-judge complete; Gemini returned `ok:false` after 90 seconds and is unavailable.
+- Public sample/API types and private queue record declarations are frozen in
+  `Logging.h`, `LogSamples.h`, and `LoggingInternal.h`.
+- Host C++11 compile probe measured `LoggingInternal::Record` at 128 bytes,
+  `Payload` at 120 bytes, and the largest debug payload at 44 bytes. The
+  existing 168-byte slot guard passes, preserving the 5,376-byte queue budget.
+- Commander/SimpleFOC library headers are not installed in the available
+  Arduino cache; integration will gate known sketch output sites and retain
+  serial command processing.
+- Gemini implementation review has not run yet; it remains required once the
+  shared implementation diff is available.
 
-Delivery: the tested fixes were applied after an independent scope verdict of OK. The user then requested a logging-command cleanup note and a local commit. The roadmap records that follow-up; cleanup itself is not implemented.
-Next step: commit the verified fixes and roadmap note after the final scope check, preserving the separate local diagnostic-mode edit. No firmware upload or hardware action was performed.
+Open items:
+- Commit the interface scaffold and dispatch disjoint engine/formatter and robot-capture workers in separate worktrees.
+- Map every frozen debug selector and sample type to baseline field construction and serializer format fixtures.
+- Build, test, inspect, and obtain independent correctness and final scope reviews.
+
+Next step: commit the frozen interface scaffold, then dispatch engine/formatter and robot-capture work to Luna high workers in separate worktrees.
