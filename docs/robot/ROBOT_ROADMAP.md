@@ -19,7 +19,7 @@ Die Filterung läuft digital auf dem ESP32 und teilweise im ICM42688. Gyro- und 
 
 ## Regler-Startwerte und Diagnose-Schalter bereinigen
 
-- `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` bündelt Verhalten für die normale Fahrt: Gain-Auswahl und Live-Tuning, CH3-Skalierung sowie die Zeitbasis der Raddrehzahl. Bei der späteren Bereinigung diese Zuständigkeiten explizit machen und prüfen, ob der Gain-Preload beim Start noch nötig ist, um den kurzen CH5-Wechsel über Modus 1 abzufangen. Bestehendes Fahrverhalten beibehalten, bis Vergleichsmessungen Änderungen stützen. Dieser Schalter ist unabhängig von `SENSOR_DIAGNOSTIC_MODE`.
+- `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` bündelt Verhalten für die normale Fahrt: Gain-Auswahl und Live-Tuning, CH3-Skalierung sowie die Zeitbasis der Raddrehzahl. Bei der späteren Bereinigung diese Zuständigkeiten explizit machen. Bestehendes Fahrverhalten beibehalten, bis Vergleichsmessungen Änderungen stützen. Dieser Schalter ist unabhängig von `SENSOR_DIAGNOSTIC_MODE`.
 
 ## IMU-Diagnosemessungen
 

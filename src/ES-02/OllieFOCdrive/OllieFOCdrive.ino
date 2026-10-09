@@ -81,6 +81,18 @@ CalibrationStore calibrationStore;
 #define PID_ANGLE_I_WITH_TOUCH 200
 #define PID_ANGLE_D_WITH_TOUCH 0.11
 #define PID_ANGLE_LIMIT_WITH_TOUCH 0.1
+#define PID_YAW_P_DEFAULT 4
+#define PID_YAW_I_DEFAULT 0
+#define PID_YAW_D_DEFAULT 0
+#define PID_YAW_LIMIT_DEFAULT 0
+#define TOUCH_X_PID_P_DEFAULT 0.2
+#define TOUCH_X_PID_I_DEFAULT 0
+#define TOUCH_X_PID_D_DEFAULT 0.04
+#define TOUCH_X_PID_LIMIT_DEFAULT 0
+#define TOUCH_Y_PID_P_DEFAULT 0.2
+#define TOUCH_Y_PID_I_DEFAULT 0
+#define TOUCH_Y_PID_D_DEFAULT 0.08
+#define TOUCH_Y_PID_LIMIT_DEFAULT 0
 
 #define IMU_SAMPLING_RATE_HZ 1000.0f  // Sampling frequency
 #define IMU_LPF_CUTOFF_FREQ_HZ 50.0f  // See docs/robot/ROBOT_ROADMAP.md
@@ -244,13 +256,21 @@ float CalibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Ca
 
 float PidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
 
-// TODO where do these values come from?  why 2 pid controllers?
-PIDController AnglePid(5, 200, 0.11, 0, 0.1);
-PIDController SpeedPid(0.045, 0.005, 0, 0, 50);
-PIDController YawPid(4, 0, 0, 0, 0);
-PIDController RollPid(0.06, 1.5, 0.003, 0, 2);  //
-PIDController TouchXPid(0.2, 0, 0.04, 0, 0);    //
-PIDController TouchYPid(0.2, 0, 0.08, 0, 0);    //
+PIDController anglePidSettings(PID_ANGLE_P_WITH_TOUCH, PID_ANGLE_I_WITH_TOUCH,
+                               PID_ANGLE_D_WITH_TOUCH, 0, PID_ANGLE_LIMIT_WITH_TOUCH);
+PIDController speedPidSettings(PID_SPEED_P_WITH_TOUCH, PID_SPEED_I_WITH_TOUCH,
+                               PID_SPEED_D_WITH_TOUCH, 0, PID_SPEED_LIMIT_WITH_TOUCH);
+PIDController yawPidSettings(PID_YAW_P_DEFAULT, PID_YAW_I_DEFAULT, PID_YAW_D_DEFAULT,
+                             0, PID_YAW_LIMIT_DEFAULT);
+PIDController rollPidSettings(
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_P_WITH_TOUCH : 0.06,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_I_WITH_TOUCH : 1.5,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_D_WITH_TOUCH : 0.003, 0,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_LIMIT_WITH_TOUCH : 2);
+PIDController touchXPidSettings(TOUCH_X_PID_P_DEFAULT, TOUCH_X_PID_I_DEFAULT,
+                               TOUCH_X_PID_D_DEFAULT, 0, TOUCH_X_PID_LIMIT_DEFAULT);
+PIDController touchYPidSettings(TOUCH_Y_PID_P_DEFAULT, TOUCH_Y_PID_I_DEFAULT,
+                               TOUCH_Y_PID_D_DEFAULT, 0, TOUCH_Y_PID_LIMIT_DEFAULT);
 
 float control_torque_compensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
@@ -261,7 +281,6 @@ float driveSpeedBodyXRaw = 0;
 
 float pidTimestepSec = 0.01;
 
-//  Create MyPIDController instance, set initial parameters TODO why 2 pid controllers? the pid controller names are the same for both modes, which is confusing.
 MyPIDController Angle_Pid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);  // p i d iLimit outputLimit dt EnableDFilter cutoffFreq
 MyPIDController Speed_Pid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 MyPIDController Yaw_Pid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
@@ -311,27 +330,27 @@ void KeyCalibration(char *cmd) {
 
 #if AdjusParameter == ADJUST_BALANCE_SPEED_YAW_ROLL
 void CbAnglePid(char *cmd) { //TODO cb meaning?
-  command.pid(&AnglePid, cmd);
+  command.pid(&anglePidSettings, cmd);
 }
 void CbSpeedPid(char *cmd) {
-  command.pid(&SpeedPid, cmd);
+  command.pid(&speedPidSettings, cmd);
 }
 void CbYawPid(char *cmd) {
-  command.pid(&YawPid, cmd);
+  command.pid(&yawPidSettings, cmd);
 }
 
 void CbRollPid(char *cmd) {
-  command.pid(&RollPid, cmd);
+  command.pid(&rollPidSettings, cmd);
 }
 
 #elif AdjusParameter == ADJUST_BALL_PUSHING
 
 void CbTouchXPid(char *cmd) {
-  command.pid(&TouchXPid, cmd);
+  command.pid(&touchXPidSettings, cmd);
 }
 
 void CbTouchYPid(char *cmd) {
-  command.pid(&TouchYPid, cmd);
+  command.pid(&touchYPidSettings, cmd);
 }
 #endif
 
@@ -623,14 +642,14 @@ void setup() {
   command.add('J', SetBodyCommandFilteringEnabled, "my EnableDFilter");
 
 #if AdjusParameter == ADJUST_BALANCE_SPEED_YAW_ROLL
-  command.add('P', CbAnglePid, "my AnglePid");
-  command.add('S', CbSpeedPid, "my SpeedPid");
-  command.add('Y', CbYawPid, "my YawPid");
-  command.add('R', CbRollPid, "my RollPid");
+  command.add('P', CbAnglePid, "anglePidSettings");
+  command.add('S', CbSpeedPid, "speedPidSettings");
+  command.add('Y', CbYawPid, "yawPidSettings");
+  command.add('R', CbRollPid, "rollPidSettings");
   command.add('O', Target_Body_Height, "my Target_Body_Height");
 #elif AdjusParameter == ADJUST_BALL_PUSHING
-  command.add('L', CbTouchXPid, "my CbTouchXPid");
-  command.add('N', CbTouchYPid, "my CbTouchYPid");
+  command.add('L', CbTouchXPid, "touchXPidSettings");
+  command.add('N', CbTouchYPid, "touchYPidSettings");
   command.add('G', ControlTorqueCompensation, "my ControlTorqueCompensation");
 #endif
 
@@ -640,11 +659,6 @@ void setup() {
 
   // Run user commands to configure and the motor (find the full command list in docs.simplefoc.com)
   Serial.println("Motor ready.");
-
-#if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
-  // Preload gains before CH5 can pass briefly through mode 1. TODO: Recheck during cleanup; see ../../../docs/robot/ROBOT_ROADMAP.md#regler-startwerte-und-diagnose-schalter-bereinigen.
-  PidParameter();
-#endif
 
   _delay(1000);
   timestamp_prev = micros();
@@ -1208,74 +1222,58 @@ void PidParameter(void) {
   if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH)  // No touch screen
   {
     // Roll
-    RollPid.P = PID_ROLL_P_NO_TOUCH;
-    RollPid.I = PID_ROLL_I_NO_TOUCH;
-    RollPid.D = PID_ROLL_D_NO_TOUCH;
-    RollPid.limit = PID_ROLL_LIMIT_NO_TOUCH;  // Integral limit
+    rollPidSettings.P = PID_ROLL_P_NO_TOUCH;
+    rollPidSettings.I = PID_ROLL_I_NO_TOUCH;
+    rollPidSettings.D = PID_ROLL_D_NO_TOUCH;
+    rollPidSettings.limit = PID_ROLL_LIMIT_NO_TOUCH;  // Integral limit
 
     // Speed loop
-    SpeedPid.P = PID_SPEED_P_NO_TOUCH;
-    SpeedPid.I = PID_SPEED_I_NO_TOUCH;
-    SpeedPid.D = PID_SPEED_D_NO_TOUCH;
-    SpeedPid.limit = PID_SPEED_LIMIT_NO_TOUCH;  // Integral limit
+    speedPidSettings.P = PID_SPEED_P_NO_TOUCH;
+    speedPidSettings.I = PID_SPEED_I_NO_TOUCH;
+    speedPidSettings.D = PID_SPEED_D_NO_TOUCH;
+    speedPidSettings.limit = PID_SPEED_LIMIT_NO_TOUCH;  // Integral limit
 
     // Balance loop
-    AnglePid.P = PID_ANGLE_P_NO_TOUCH;
-    AnglePid.I = PID_ANGLE_I_NO_TOUCH;
-    AnglePid.D = PID_ANGLE_D_NO_TOUCH;
-    AnglePid.limit = PID_ANGLE_LIMIT_NO_TOUCH;                                    // Integral limit
+    anglePidSettings.P = PID_ANGLE_P_NO_TOUCH;
+    anglePidSettings.I = PID_ANGLE_I_NO_TOUCH;
+    anglePidSettings.D = PID_ANGLE_D_NO_TOUCH;
+    anglePidSettings.limit = PID_ANGLE_LIMIT_NO_TOUCH;  // Integral limit
   } else if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH)  // With touch screen
   {
     // Roll
-    RollPid.P = PID_ROLL_P_WITH_TOUCH;
-    RollPid.I = PID_ROLL_I_WITH_TOUCH;
-    RollPid.D = PID_ROLL_D_WITH_TOUCH;
-    RollPid.limit = PID_ROLL_LIMIT_WITH_TOUCH;  // Integral limit
+    rollPidSettings.P = PID_ROLL_P_WITH_TOUCH;
+    rollPidSettings.I = PID_ROLL_I_WITH_TOUCH;
+    rollPidSettings.D = PID_ROLL_D_WITH_TOUCH;
+    rollPidSettings.limit = PID_ROLL_LIMIT_WITH_TOUCH;  // Integral limit
 
     // Speed loop
-    SpeedPid.P = PID_SPEED_P_WITH_TOUCH;
-    SpeedPid.I = PID_SPEED_I_WITH_TOUCH;
-    SpeedPid.D = PID_SPEED_D_WITH_TOUCH;
-    SpeedPid.limit = PID_SPEED_LIMIT_WITH_TOUCH;  // Integral limit
+    speedPidSettings.P = PID_SPEED_P_WITH_TOUCH;
+    speedPidSettings.I = PID_SPEED_I_WITH_TOUCH;
+    speedPidSettings.D = PID_SPEED_D_WITH_TOUCH;
+    speedPidSettings.limit = PID_SPEED_LIMIT_WITH_TOUCH;  // Integral limit
 
     // Balance loop
-    AnglePid.P = PID_ANGLE_P_WITH_TOUCH;
-    AnglePid.I = PID_ANGLE_I_WITH_TOUCH;
-    AnglePid.D = PID_ANGLE_D_WITH_TOUCH;
-    AnglePid.limit = PID_ANGLE_LIMIT_WITH_TOUCH;  // Integral limit
+    anglePidSettings.P = PID_ANGLE_P_WITH_TOUCH;
+    anglePidSettings.I = PID_ANGLE_I_WITH_TOUCH;
+    anglePidSettings.D = PID_ANGLE_D_WITH_TOUCH;
+    anglePidSettings.limit = PID_ANGLE_LIMIT_WITH_TOUCH;  // Integral limit
   }
 
-  YawPid.P = 4;
-  YawPid.I = 0;
-  YawPid.D = 0;
-  YawPid.limit = 0;
-
-#if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
-  AnglePid.P = 5;
-  AnglePid.I = 200;
-  AnglePid.D = 0.11;
-  AnglePid.limit = 0.1;
-  // Keep the verified live-tuning gains as the startup defaults.
-  SpeedPid.P = 0.045;
-  SpeedPid.I = 0.005;
-  SpeedPid.D = 0;
-  SpeedPid.limit = 50;
-  YawPid.P = 4;
-  YawPid.I = 0;
-  YawPid.D = 0;
-  YawPid.limit = 0;
-#endif
+  yawPidSettings.P = PID_YAW_P_DEFAULT;
+  yawPidSettings.I = PID_YAW_I_DEFAULT;
+  yawPidSettings.D = PID_YAW_D_DEFAULT;
+  yawPidSettings.limit = PID_YAW_LIMIT_DEFAULT;
 
   // Touch screen
-  TouchXPid.P = 0.2;
-  TouchXPid.I = 0;
-  TouchXPid.D = 0.04;
-  TouchXPid.limit = 0;  // Integral limit
+  touchXPidSettings.P = TOUCH_X_PID_P_DEFAULT;
+  touchXPidSettings.I = TOUCH_X_PID_I_DEFAULT;
+  touchXPidSettings.D = TOUCH_X_PID_D_DEFAULT;
+  touchXPidSettings.limit = TOUCH_X_PID_LIMIT_DEFAULT;  // Integral limit
 
-  TouchYPid.P = 0.2;
-  TouchYPid.I = 0;
-  TouchYPid.D = 0.08;
-  TouchYPid.limit = 0;  // Integral limit
+  touchYPidSettings.P = TOUCH_Y_PID_P_DEFAULT;
+  touchYPidSettings.I = TOUCH_Y_PID_I_DEFAULT;
+  touchYPidSettings.D = TOUCH_Y_PID_D_DEFAULT;
+  touchYPidSettings.limit = TOUCH_Y_PID_LIMIT_DEFAULT;  // Integral limit
 }
 
 /**
@@ -1296,15 +1294,15 @@ void PIDcontroller_posture(float dt) {
     PidParameter();
 
   // Touch screen
-  TouchX_Pid.Kp = TouchXPid.P / 100;
-  TouchX_Pid.Ki = TouchXPid.I / 100;
-  TouchX_Pid.Kd = TouchXPid.D / 100;
-  TouchX_Pid.iLimit = TouchXPid.limit;  // Integral limit
+  TouchX_Pid.Kp = touchXPidSettings.P / 100;
+  TouchX_Pid.Ki = touchXPidSettings.I / 100;
+  TouchX_Pid.Kd = touchXPidSettings.D / 100;
+  TouchX_Pid.iLimit = touchXPidSettings.limit;  // Integral limit
 
-  TouchY_Pid.Kp = TouchYPid.P / 100;
-  TouchY_Pid.Ki = TouchYPid.I / 100;
-  TouchY_Pid.Kd = TouchYPid.D / 100;
-  TouchY_Pid.iLimit = TouchYPid.limit;  // Integral limit
+  TouchY_Pid.Kp = touchYPidSettings.P / 100;
+  TouchY_Pid.Ki = touchYPidSettings.I / 100;
+  TouchY_Pid.Kd = touchYPidSettings.D / 100;
+  TouchY_Pid.iLimit = touchYPidSettings.limit;  // Integral limit
 
   float touchXError = Touch.XPdatF;
   float touchYError = Touch.YPdatF;
@@ -1376,10 +1374,10 @@ void PIDcontroller_posture(float dt) {
   }
 
   // Roll
-  Roll_Pid.Kp = RollPid.P / 100;
-  Roll_Pid.Ki = RollPid.I / 100;
-  Roll_Pid.Kd = RollPid.D / 100;
-  Roll_Pid.iLimit = RollPid.limit;  // Integral limit
+  Roll_Pid.Kp = rollPidSettings.P / 100;
+  Roll_Pid.Ki = rollPidSettings.I / 100;
+  Roll_Pid.Kd = rollPidSettings.D / 100;
+  Roll_Pid.iLimit = rollPidSettings.limit;  // Integral limit
 
   float TargetBodyRoll = BodyRollFiltered * 777;                            // Roll
   if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball禁止手动横滚
@@ -1394,10 +1392,10 @@ void PIDcontroller_posture(float dt) {
   }
 
   // Speed loop
-  Speed_Pid.Kp = SpeedPid.P / 100;
-  Speed_Pid.Ki = SpeedPid.I / 100;
-  Speed_Pid.Kd = SpeedPid.D / 100;
-  Speed_Pid.iLimit = SpeedPid.limit;  // Integral limit
+  Speed_Pid.Kp = speedPidSettings.P / 100;
+  Speed_Pid.Ki = speedPidSettings.I / 100;
+  Speed_Pid.Kd = speedPidSettings.D / 100;
+  Speed_Pid.iLimit = speedPidSettings.limit;  // Integral limit
 
   const float avgVelocity = 0.5f * (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec);
   driveEffectiveSpeed = MovementSpeed;
@@ -1425,10 +1423,10 @@ void PIDcontroller_posture(float dt) {
   BodyX = speedBodyX + BodyPitchingCorrect(BodyPitchingFiltered);
 
   // Balance loop
-  Angle_Pid.Kp = AnglePid.P;
-  Angle_Pid.Ki = AnglePid.I;
-  Angle_Pid.Kd = AnglePid.D;
-  Angle_Pid.iLimit = AnglePid.limit;  // Integral limit
+  Angle_Pid.Kp = anglePidSettings.P;
+  Angle_Pid.Ki = anglePidSettings.I;
+  Angle_Pid.Kd = anglePidSettings.D;
+  Angle_Pid.iLimit = anglePidSettings.limit;  // Integral limit
 
   float angleError = rollBiasCorrected - (-BodyPitchingFiltered);  // Measured value minus target value
   if (balancePidNeedsPriming) {
@@ -1440,10 +1438,10 @@ void PIDcontroller_posture(float dt) {
   float angleOutput = Angle_Pid.compute(angleError, dt);
 
   // Yaw loop
-  Yaw_Pid.Kp = YawPid.P;
-  Yaw_Pid.Ki = YawPid.I;
-  Yaw_Pid.Kd = YawPid.D;
-  Yaw_Pid.iLimit = YawPid.limit;
+  Yaw_Pid.Kp = yawPidSettings.P;
+  Yaw_Pid.Ki = yawPidSettings.I;
+  Yaw_Pid.Kd = yawPidSettings.D;
+  Yaw_Pid.iLimit = yawPidSettings.limit;
   if (roll_mode != REMOTE_CONTROL_ROLL_MODE_AUTO)  // Lock heading angle
   {
     Yaw_Pid.Ki = 0;
