@@ -26,3 +26,11 @@ Die Filterung läuft digital auf dem ESP32 und teilweise im ICM42688. Gyro- und 
 - Nach der Entkopplung der IMU-Verarbeitung von der 100-Hz-CSV-Ausgabe messen: `IMUtime_dt`-Verteilung im normalen und sensor-diagnostischen Modus; Zeitstempelabstände, Sequenzlücken und Logger-Drop-/Schreibfehler im Diagnose-CSV; sowie Filterantwort bei stationären und kontrollierten bekannten Frequenzen. Für Frequenzmessungen eine zur Zielbandbreite passende Erfassungsrate und Anti-Alias-Filterung verwenden. Die aktuelle Diagnose bleibt motorfrei und belegt kein Verhalten unter Motorlast.
 
 Diese Messungen sind wichtig, weil unterschiedliche Aktualisierungsraten und Filtereinstellungen Glättung, Verzögerung und Fusionswerte verändern können. Die 100-Hz-CSV-Ausgabe kann rohe Signale über 50 Hz aliasen, sodass schnelle Vibrationen falsch erscheinen oder unsichtbar bleiben. Ohne den Vergleich belegen Diagnoseaufzeichnungen weder die normale IMU-Verarbeitung noch das Verhalten unter Motorlast.
+
+### Software-IMU-Grenzfrequenz (50 Hz)
+
+Die tatsächliche IMU-Aktualisierungsrate im normalen Regelbetrieb messen und die aktuelle Software-Grenzfrequenz von 50 Hz mit passenden Alternativen vergleichen. Roh- und gefilterte Gyro- und Beschleunigungsdaten bei kontrollierten Frequenzen aufzeichnen und Dämpfung sowie Verzögerung der Lagefusion bewerten. Die Grenzfrequenz anhand des gemessenen Bewegungs- und Störspektrums festlegen, nicht allein anhand der nominalen Sensor-Abtastrate.
+
+## Fahrstabilität bei hoher Geschwindigkeit
+
+Beim schnellen Fahren kippt der Roboter weiterhin um. Das Fehlerbild in einem sicheren, reproduzierbaren Fahrtest mit Rollwinkel, Soll- und Ist-Raddrehzahl, effektivem Geschwindigkeitssollwert und Balance-Reglerausgang erfassen. Prüfen, ob die vorhandene Neigungs-Reduktion im beobachteten Fall greift und früh genug einsetzt. Schwellenwerte und Reglerabstimmung erst nach dieser Auswertung ändern.

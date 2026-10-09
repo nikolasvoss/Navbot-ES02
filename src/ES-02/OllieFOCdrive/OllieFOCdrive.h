@@ -12,8 +12,8 @@
 #define COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO 1          // SimpleFOC Studio host computer
 #define COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS 2       // Control dual motors
 
-#define ROBOT_TUMBLE_NO 0  // Robot is not tumbling
-#define ROBOT_TUMBLE_YES 1 // Robot is tumbling
+#define ROBOT_NOT_TUMBLING 0  // Robot is not tumbling
+#define ROBOT_TUMBLING 1 // Robot is tumbling
 
 #define REMOTE_CONTROL_PID_GAINS_MODE_OFF 0
 #define REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH 1

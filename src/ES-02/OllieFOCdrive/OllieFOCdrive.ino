@@ -83,7 +83,7 @@ CalibrationStore calibrationStore;
 #define PID_ANGLE_LIMIT_WITH_TOUCH 0.1
 
 #define IMU_SAMPLING_RATE_HZ 1000.0f  // Sampling frequency
-#define IMU_LPF_CUTOFF_FREQ_HZ 50.0f  // Cutoff frequency for low-pass filter TODO why is this so low?
+#define IMU_LPF_CUTOFF_FREQ_HZ 50.0f  // See docs/robot/ROBOT_ROADMAP.md
 #define BOARD_PIN_LED 35        // LED IO
 #define BOARD_PIN_BATTERY_VOLTAGE_ADC 17  // Battery voltage IO
 
@@ -128,7 +128,7 @@ float MovementSpeed = 0;            // Movement speed
 float BodyTurn = 0;                 // Turning
 float SlideStep = 0;                // Slide step
 float BodyX = 0;                    // X position (controller output)
-int RobotTumble = ROBOT_TUMBLE_NO;  // Robot tumble (fall detection) TODO ROBOT_TUMBLE_NO is a weird name
+int RobotTumble = ROBOT_NOT_TUMBLING;  // Fall-detection state, see docs/robot/ROBOT_ROADMAP.md
 
 
 // 滤波 TODO this looks duplicated to above, what is this?
@@ -140,7 +140,7 @@ biquadFilter_t FilterLPF[12];  // Second-order low-pass filter
 float TouchY_Pid_outputF = 0;
 float TouchX_Pid_outputF = 0;
 
-float cutoffFreq = 200; //TOD cutoff for what?
+float cutoffFreq = 200; //TODO cutoff for what?
 float enableDFilter = 1;
 
 void CutoffFreq(char *cmd) {
@@ -1072,7 +1072,7 @@ void print_data(void) {
       if (controlGateSequence % 7 == 0) {
         const uint32_t traceMs = millis();
         const float rawMinV = (float)7.77 / 813.43 * VoltageADCMin;
-        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
+        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
         int32_t ranges[4];
         RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
         const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
@@ -1101,7 +1101,7 @@ void print_data(void) {
     case 57: {
       if (controlGateSequence % 7 == 0) {
         const uint32_t traceMs = millis();
-        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
+        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
         int32_t ranges[4];
         RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
         const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
@@ -1128,7 +1128,7 @@ void print_data(void) {
     case 58: {
       if (controlGateSequence % 7 == 0) {
         const uint32_t traceMs = millis();
-        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_TUMBLE_NO;
+        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
         int32_t ranges[4];
         RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
         const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
@@ -1547,15 +1547,15 @@ void Robot_Tumble(void) {
     x++;
     if (x >= 20) {
       x = 20;
-      RobotTumble = ROBOT_TUMBLE_YES;  // Machine fall
+      RobotTumble = ROBOT_TUMBLING;  // Machine fall
     }
   } else {
-    if ((RobotTumble == ROBOT_TUMBLE_YES) && (abs(rollBiasCorrected) <= 5))  // Machine fall after fall
+    if ((RobotTumble == ROBOT_TUMBLING) && (abs(rollBiasCorrected) <= 5))  // Machine fall after fall
     {
       x--;
       if (x <= 0) {
         x = 0;
-        RobotTumble = ROBOT_TUMBLE_NO;
+        RobotTumble = ROBOT_NOT_TUMBLING;
       }
     }
   }
@@ -1742,7 +1742,7 @@ void loop() {
     float bodyH = BODY_HEIGHT_DEFAULT_M;
     float bodyRoll = BodyRoll_f;
 
-    if ((pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (RobotTumble == ROBOT_TUMBLE_YES)) {
+    if ((pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (RobotTumble == ROBOT_TUMBLING)) {
       balancePidNeedsPriming = true;
       if (Communication_object == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE) {
         motor1.target = 0;
@@ -1761,7 +1761,7 @@ void loop() {
       driveEffectiveSpeed = 0;
       driveSpeedBodyXRaw = 0;
 
-    } else if ((pid_gains_mode_is_enabled(pid_gains_mode)) && (RobotTumble == ROBOT_TUMBLE_NO)) {
+    } else if ((pid_gains_mode_is_enabled(pid_gains_mode)) && (RobotTumble == ROBOT_NOT_TUMBLING)) {
       PIDcontroller_posture(controlTimestepSec);  // PID controller
 
       if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)
@@ -1773,7 +1773,7 @@ void loop() {
         bodyH = TargetBodyHeightOverrideM;
     }
 
-    if (RobotTumble == ROBOT_TUMBLE_YES)  // Machine fall
+    if (RobotTumble == ROBOT_TUMBLING)  // Machine fall
     {
       bodyH = BODY_HEIGHT_DEFAULT_M;
       BodyX = 0;

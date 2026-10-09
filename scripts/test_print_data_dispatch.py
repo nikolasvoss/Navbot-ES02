@@ -64,7 +64,7 @@ float driveEffectiveSpeed = 0, driveSpeedBodyXRaw = 0, BodyX = 0, BodyPitching_f
 float wheelVelocityFeedbackCorrection = 0, top_ball_x = 0, BodyPitching = 0, controlTimestepSec = 0;
 int pid_gains_mode = 0, posture_or_mark_mode = 0, RobotTumble = 0;
 struct Attitude { struct { float z = 0; } gyro; } attitude;
-constexpr int ROBOT_TUMBLE_NO = 0;
+constexpr int ROBOT_NOT_TUMBLING = 0;
 float motor1Target = 0, motor2Target = 0;
 struct Motor { float target = 0; } motor1, motor2;
 int servoTraceAngle[4] = {};
