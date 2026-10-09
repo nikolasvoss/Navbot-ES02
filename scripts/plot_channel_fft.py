@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot two channel spectra and their time signals from a comma-separated file.
+"""Plot channel FFT, cross-correlation, PSD, and time signals from a CSV file.
 
 Usage: python3 scripts/plot_channel_fft.py capture.txt --channels 3 6
 Install dependencies with: python3 -m pip install numpy matplotlib
@@ -7,6 +7,7 @@ Channel 1 supplies timestamps in microseconds. Other channels are generic signal
 """
 
 import argparse
+from dataclasses import dataclass
 import sys
 
 
@@ -42,7 +43,18 @@ def load_channels(path, selected):
     return timestamps, channels
 
 
-def amplitude_spectrum(timestamps, values, sample_interval_seconds):
+@dataclass(frozen=True)
+class UniformChannelPair:
+    first_number: int
+    second_number: int
+    first: "numpy.ndarray"
+    second: "numpy.ndarray"
+    sample_interval_seconds: float
+
+
+def resample_pair(
+    timestamps, channels, first_number, second_number, sample_interval_seconds
+):
     import numpy as np
 
     interval_us = sample_interval_seconds * 1e6
@@ -50,8 +62,18 @@ def amplitude_spectrum(timestamps, values, sample_interval_seconds):
     if count < 3:
         raise ValueError("at least three uniform samples are needed for a Hann window")
     uniform_time = timestamps[0] + np.arange(count) * interval_us
-    signal = np.interp(uniform_time, timestamps, values)
-    signal = signal - np.mean(signal)
+    first = np.interp(uniform_time, timestamps, channels[first_number])
+    second = np.interp(uniform_time, timestamps, channels[second_number])
+    return UniformChannelPair(
+        first_number, second_number, first, second, sample_interval_seconds
+    )
+
+
+def amplitude_spectrum(values, sample_interval_seconds):
+    import numpy as np
+
+    count = len(values)
+    signal = values - np.mean(values)
     window = np.hanning(count)
     spectrum = np.abs(np.fft.rfft(signal * window)) / window.sum()
     if count % 2 == 0:
@@ -61,9 +83,52 @@ def amplitude_spectrum(timestamps, values, sample_interval_seconds):
     return np.fft.rfftfreq(count, d=sample_interval_seconds), spectrum
 
 
+def normalized_cross_correlation(pair):
+    import numpy as np
+
+    first = pair.first - np.mean(pair.first)
+    second = pair.second - np.mean(pair.second)
+    denominator = np.sqrt(np.sum(first**2) * np.sum(second**2))
+    if denominator == 0:
+        raise ValueError("cross-correlation is undefined for a constant selected channel")
+
+    count = len(first)
+    fft_length = 1 << (2 * count - 2).bit_length()
+    correlation = np.fft.irfft(
+        np.fft.rfft(second, fft_length) * np.conj(np.fft.rfft(first, fft_length)),
+        fft_length,
+    )
+    correlation = np.concatenate((correlation[-(count - 1):], correlation[:count]))
+    lags = np.arange(-(count - 1), count) * pair.sample_interval_seconds * 1e3
+    return lags, correlation / denominator
+
+
+def welch_psd(values, sample_interval_seconds):
+    import numpy as np
+
+    count = len(values)
+    segment_length = min(256, count)
+    hop = max(1, segment_length // 2)
+    window = np.hanning(segment_length)
+    scale = 1 / (1 / sample_interval_seconds * np.sum(window**2))
+    periodograms = []
+    for start in range(0, count - segment_length + 1, hop):
+        segment = values[start:start + segment_length]
+        segment = (segment - np.mean(segment)) * window
+        power = np.abs(np.fft.rfft(segment))**2 * scale
+        if segment_length % 2 == 0:
+            power[1:-1] *= 2
+        else:
+            power[1:] *= 2
+        periodograms.append(power)
+
+    frequencies = np.fft.rfftfreq(segment_length, d=sample_interval_seconds)
+    return frequencies, np.mean(periodograms, axis=0)
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Plot two one-sided channel FFT spectra and their time signals."
+        description="Plot channel FFT spectra, cross-correlation, Welch PSD, and time signals."
     )
     parser.add_argument("file", help="comma-separated data file with a Channel N header")
     parser.add_argument(
@@ -93,20 +158,26 @@ def main():
     if sample_interval <= 0:
         parser.error("Channel 1 timestamps do not define a positive sample interval")
 
-    fig = plt.figure(figsize=(12, 8), constrained_layout=True)
-    grid = fig.add_gridspec(2, 2)
-    axes = [fig.add_subplot(grid[0, column]) for column in range(2)]
-    for axis, number in zip(axes, args.channels):
-        frequency, amplitude = amplitude_spectrum(
-            timestamps, channels[number], sample_interval
+    try:
+        pair = resample_pair(
+            timestamps, channels, args.channels[0], args.channels[1], sample_interval
         )
+        lags, correlation = normalized_cross_correlation(pair)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    fig = plt.figure(figsize=(16, 8), constrained_layout=True)
+    grid = fig.add_gridspec(2, 3, width_ratios=(1, 1, 1))
+    axes = [fig.add_subplot(grid[0, column]) for column in range(2)]
+    for axis, number, values in zip(axes, args.channels, (pair.first, pair.second)):
+        frequency, amplitude = amplitude_spectrum(values, pair.sample_interval_seconds)
         axis.plot(frequency, amplitude, linewidth=0.8)
         axis.set_title(f"Channel {number}")
         axis.set_xlabel("Frequency (Hz)")
         axis.set_ylabel("Amplitude")
         axis.grid(True, alpha=0.3)
 
-    time_axis = fig.add_subplot(grid[1, :])
+    time_axis = fig.add_subplot(grid[1, :2])
     elapsed_seconds = (timestamps - timestamps[0]) * 1e-6
     for number in args.channels:
         time_axis.plot(
@@ -118,7 +189,29 @@ def main():
     time_axis.set_ylabel("Amplitude")
     time_axis.legend()
     time_axis.grid(True, alpha=0.3)
-    fig.suptitle("Selected channel spectra and time signals")
+
+    correlation_axis = fig.add_subplot(grid[0, 2])
+    correlation_axis.plot(lags, correlation, linewidth=0.8)
+    correlation_axis.set_title("Cross-correlation")
+    correlation_axis.set_xlabel(
+        f"Lag (ms; positive means Channel {pair.second_number} lags "
+        f"Channel {pair.first_number})"
+    )
+    correlation_axis.set_ylabel("Normalized correlation")
+    correlation_axis.grid(True, alpha=0.3)
+
+    psd_axis = fig.add_subplot(grid[1, 2])
+    for number, values in zip(args.channels, (pair.first, pair.second)):
+        psd_frequency, power_density = welch_psd(values, pair.sample_interval_seconds)
+        psd_axis.semilogy(
+            psd_frequency, power_density, linewidth=0.8, label=f"Channel {number}"
+        )
+    psd_axis.set_title("Welch PSD")
+    psd_axis.set_xlabel("Frequency (Hz)")
+    psd_axis.set_ylabel("Power density (channel units²/Hz)")
+    psd_axis.legend()
+    psd_axis.grid(True, alpha=0.3)
+    fig.suptitle("Selected channel spectra, correlation, PSD, and time signals")
     plt.show()
     return 0
 
