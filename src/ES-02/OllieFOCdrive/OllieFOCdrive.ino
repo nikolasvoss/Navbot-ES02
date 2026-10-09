@@ -4,8 +4,11 @@
 #include <SimpleFOC.h>
 #include "FUTABA_SBUS.h"
 #include "ServoControl.h"
-#include "ICM42688.h"
-#include "MahonyFilter.h"
+#include "imu.h"
+#include <cctype>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include "OllieFOCdrive.h"
 #include "filter.h"
 #include "touchscreen.h"
@@ -94,13 +97,9 @@ CalibrationStore calibrationStore;
 #define TOUCH_Y_PID_D_DEFAULT 0.08
 #define TOUCH_Y_PID_LIMIT_DEFAULT 0
 
-#define IMU_SAMPLING_RATE_HZ 1000.0f  // Sampling frequency
-#define IMU_LPF_CUTOFF_FREQ_HZ 50.0f  // See docs/robot/ROBOT_ROADMAP.md
 #define BOARD_PIN_LED 35        // LED IO
 #define BOARD_PIN_BATTERY_VOLTAGE_ADC 17  // Battery voltage IO
 
-#define IMU_ACCEL_RANGE_G 8.0              // Unit: g
-#define IMU_GYRO_RANGE_DEG_PER_SEC 2000.0  // Unit: °/s
 
 // GPIOs for the four leg-servo signals, in ServoControl order.
 #define LEG_SERVO_1_SIGNAL_PIN 11
@@ -173,60 +172,59 @@ uint16_t VoltageADCMin = 0;       // Lowest raw battery reading since the last b
 float VoltageADCf = 0;            // Battery voltage ADC data
 float Voltage = 0;                // Battery voltage
 
-// IMU
-//  Create MahonyFilter object, set proportional gain and integral gain
-MahonyFilter mahonyFilter(0.4f, 0.001f);
-// Accelerometer range (here set to ±8g)
-// Gyroscope range (here assumed to be ±2000°/s)
-attitude_t attitude;
-float rollBiasCorrected;
-float pitchBiasCorrected;
-
-zeroBias_t imuAndServoOffsets;
-unsigned long timestamp_prev = 0;
 uint32_t controlGateSequence = 0;
 uint32_t activeTraceSequence = 0;
 uint32_t diagnosticSequence = 0;
-float IMUtime_dt = 0;
+ServoTrimsDegrees servoTrims{};
 
-/* Low-pass filter parameters Imu */
-float prevImuSampleRateHz = IMU_SAMPLING_RATE_HZ;            // Sampling frequency
-float prevImuLowPassCutoffHz = IMU_LPF_CUTOFF_FREQ_HZ;  // Cutoff frequency
-
-float imuSampleRateHz = IMU_SAMPLING_RATE_HZ;            // Sampling frequency
-float imuLowPassCutoffHz = IMU_LPF_CUTOFF_FREQ_HZ;  // Cutoff frequency
-biquadFilter_t ImuFilterLPF[6];                  // Second-order low-pass filter
-
-void setImuSampleRate(char *cmd) {
-  command.scalar(&imuSampleRateHz, cmd);
+bool parseCommandFloat(const char *text, float& value) {
+  char *end = nullptr;
+  value = strtof(text, &end);
+  if (end == text) return false;
+  while (end && isspace(static_cast<unsigned char>(*end))) ++end;
+  return end && *end == '\0' && isfinite(value);
 }
+
+bool parseCommandCutoff(const char *text, uint16_t& value) {
+  char *end = nullptr;
+  const long parsed = strtol(text, &end, 10);
+  while (end && isspace(static_cast<unsigned char>(*end))) ++end;
+  if (end == text || !end || *end != '\0' || parsed < 1 || parsed > UINT16_MAX) return false;
+  value = static_cast<uint16_t>(parsed);
+  return true;
+}
+
 void setImuLowPassCutoff(char *cmd) {
-  command.scalar(&imuLowPassCutoffHz, cmd);
+  uint16_t cutoff = 0;
+  imu::Settings candidate = imu::settings();
+  if (!parseCommandCutoff(cmd, cutoff)) {
+    Logging::message(Logging::Level::Warning, "IMU", "invalid cutoff");
+    return;
+  }
+  candidate.gyroCutoffHz = cutoff;
+  if (!imu::setSettings(candidate)) {
+    Logging::message(Logging::Level::Warning, "IMU", "cutoff outside valid range");
+    return;
+  }
+  Logging::message(Logging::Level::Info, "LPF_CUTOFF_FREQ", "%u", cutoff);
 }
 
 void Target_Body_Height(char *cmd) {
   command.scalar(&TargetBodyHeightOverrideM, cmd);
 }
 
-// Complementary filter TODO filter for what? not clear where this belongs to and what this is, explain.
-float angleGyroX, angleGyroY, angleGyroZ,
-  angleAccX, angleAccY;
-float angleX, angleY, angleZ;
-float accCoef = 0.02f; // TODO where do the numbers come from?
-float gyroCoef = 0.98f;
-
 // Servo zero position offsets
 void zeroBias_servo1(char *cmd) {
-  command.scalar(&imuAndServoOffsets.servo1, cmd);
+  command.scalar(&servoTrims.servo1Degrees, cmd);
 }
 void zeroBias_servo2(char *cmd) {
-  command.scalar(&imuAndServoOffsets.servo2, cmd);
+  command.scalar(&servoTrims.servo2Degrees, cmd);
 }
 void zeroBias_servo3(char *cmd) {
-  command.scalar(&imuAndServoOffsets.servo3, cmd);
+  command.scalar(&servoTrims.servo3Degrees, cmd);
 }
 void zeroBias_servo4(char *cmd) {
-  command.scalar(&imuAndServoOffsets.servo4, cmd);
+  command.scalar(&servoTrims.servo4Degrees, cmd);
 }
 
 bool pid_gains_mode_is_enabled(int mode) {
@@ -314,10 +312,20 @@ void User_command(char *cmd) {
 }
 
 void TwoKp(char *cmd) {
-  command.scalar(&mahonyFilter.twoKp, cmd);
+  float value = 0.0f;
+  imu::Settings candidate = imu::settings();
+  if (!parseCommandFloat(cmd, value)) return;
+  candidate.mahonyTwoKp = value;
+  if (imu::setSettings(candidate)) Logging::message(Logging::Level::Info, "MAHONY_KP", "%.6f", value);
+  else Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Kp");
 }
 void TwoKi(char *cmd) {
-  command.scalar(&mahonyFilter.twoKi, cmd);
+  float value = 0.0f;
+  imu::Settings candidate = imu::settings();
+  if (!parseCommandFloat(cmd, value)) return;
+  candidate.mahonyTwoKi = value;
+  if (imu::setSettings(candidate)) Logging::message(Logging::Level::Info, "MAHONY_KI", "%.6f", value);
+  else Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Ki");
 }
 
 void KeyScalar(char *cmd) {
@@ -392,7 +400,6 @@ void handleM1Command(char *cmd) {
 
 void RXsbus();
 void print_data(void);
-void ImuUpdate(void);
 void PIDcontroller_posture(float dt);
 void RemoteControlFiltering(void);
 void ReadVoltage(void);
@@ -449,24 +456,17 @@ void setup() {
                (DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? LIVE_TUNING_SERIAL_BAUD_RATE : SERIAL_BAUD_RATE)); //TODO simplify to one serial baud rate
   Logging::begin();
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
-  imuAndServoOffsets.roll = loadedCalibration.attitude.rollDegrees;
-  imuAndServoOffsets.pitch = loadedCalibration.attitude.pitchDegrees;
-  gyroBiasX = loadedCalibration.gyro.xRawCounts;
-  gyroBiasY = loadedCalibration.gyro.yRawCounts;
-  gyroBiasZ = loadedCalibration.gyro.zRawCounts;
-  imuAndServoOffsets.servo1 = loadedCalibration.servos.servo1Degrees; //TODO redundant with zeroBias_servoX? i dont understand the relationship
-  imuAndServoOffsets.servo2 = loadedCalibration.servos.servo2Degrees;
-  imuAndServoOffsets.servo3 = loadedCalibration.servos.servo3Degrees;
-  imuAndServoOffsets.servo4 = loadedCalibration.servos.servo4Degrees;
+  servoTrims = loadedCalibration.servos;
+  const imu::CalibrationValues imuCalibration{loadedCalibration.gyro, loadedCalibration.attitude};
   Logging::message(Logging::Level::Info, "Calibration",
                    "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
-                   imuAndServoOffsets.roll, imuAndServoOffsets.pitch);
+                   loadedCalibration.attitude.rollDegrees, loadedCalibration.attitude.pitchDegrees);
   Logging::message(Logging::Level::Info, "Calibration",
                    "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
-                   gyroBiasX, gyroBiasY, gyroBiasZ);
+                   loadedCalibration.gyro.xRawCounts, loadedCalibration.gyro.yRawCounts, loadedCalibration.gyro.zRawCounts);
   Logging::message(Logging::Level::Info, "Calibration",
                    "servo1: %.2f, servo2: %.2f, servo3: %.2f, servo4: %.2f",
-                   imuAndServoOffsets.servo1, imuAndServoOffsets.servo2, imuAndServoOffsets.servo3, imuAndServoOffsets.servo4);
+                   servoTrims.servo1Degrees, servoTrims.servo2Degrees, servoTrims.servo3Degrees, servoTrims.servo4Degrees);
 
   // TODO is this the right location?
   pinMode(BOARD_PIN_LED, OUTPUT);
@@ -476,13 +476,8 @@ void setup() {
 
 #if SENSOR_DIAGNOSTIC_MODE
   biquadFilterInitLPF(&VoltageFilterLPF, 20, DIAGNOSTIC_LOG_SAMPLE_RATE_HZ);
-  for (int axis = 0; axis < 6; axis++) {
-    biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)imuLowPassCutoffHz,
-                        (unsigned int)imuSampleRateHz);
-  }
-  diagnosticImuReady = initICM42688();
+  diagnosticImuReady = imu::begin(imu::Settings{}, imuCalibration);
   sBus.begin();
-  timestamp_prev = micros();
   Serial.printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n",
                 (int)esp_reset_reason(), diagnosticImuReady ? 1 : 0);
   Logging::setProfile(Logging::Profile::Diagnostic);
@@ -492,11 +487,6 @@ void setup() {
 // TODO could be turned off?
   ble_init();
   xTaskCreatePinnedToCore(cpu0_task, "cpu0_task", 4096, NULL, 0, NULL, 0);
-
-  // Initialize second-order low-pass filter
-  for (int axis = 0; axis < 6; axis++) {
-    biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)imuLowPassCutoffHz, (unsigned int)imuSampleRateHz);
-  }
 
   biquadFilterInitLPF(&VoltageFilterLPF, 50, 1000); // TODO replace numbers with names
 
@@ -508,7 +498,7 @@ void setup() {
 
   servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);  // Assembly position TODO why is this repeated?
   // IMU
-  if (!initICM42688()) {
+  if (!imu::begin(imu::Settings{}, imuCalibration)) {
     Serial.println("IMU initialization failed!");
     while (1)
       ;
@@ -629,7 +619,6 @@ void setup() {
   command.add('C', zeroBias_servo3, "my zeroBias_servo3");  //
   command.add('D', zeroBias_servo4, "my zeroBias_servo4");  //
 
-  command.add('H', setImuSampleRate, "my ImuRATE_HZ");
   command.add('Z', setImuLowPassCutoff, "my ImuLPF_CUTOFF_FREQ");
 
   command.add('Q', TwoKp, "my TwoKp");  // MahonyFilter
@@ -661,7 +650,6 @@ void setup() {
   Serial.println("Motor ready.");
 
   _delay(1000);
-  timestamp_prev = micros();
 }
 
 /**
@@ -787,83 +775,6 @@ void RXsbus() {
  * @return The angle in degrees.
  */
 /**
- * @brief Reads data from the IMU, filters it, and updates the robot's attitude.
- *
- * This function is called periodically. It performs the following steps:
- * 1. Reads raw accelerometer and gyroscope data from the ICM42688 sensor.
- * 2. Applies pre-calibrated gyro bias offsets.
- * 3. Converts raw sensor values to standard units (g and rad/s).
- * 4. Applies a digital biquad low-pass filter to smooth the sensor data.
- * 5. Feeds the filtered data into the Mahony filter to get a stable orientation quaternion.
- * 6. Converts the quaternion to Euler angles (roll, pitch, yaw).
- * 7. Applies the roll and pitch zero-bias offsets to get the final, corrected attitude.
- * It also runs a complementary filter in parallel, likely for comparison or debugging.
- */
-void ImuUpdate(void) {
-  unsigned long timestamp_now = micros();
-  IMUtime_dt = (timestamp_now - timestamp_prev) * 1e-6f;
-
-  int16_t accelX, accelY, accelZ, gyroX, gyroY, gyroZ, temp;
-  readIMUData(accelX, accelY, accelZ, gyroX, gyroY, gyroZ, temp);
-
-  // Subtract the gyroscope zero bias value
-  gyroX -= (int16_t)gyroBiasX;
-  gyroY -= (int16_t)gyroBiasY;
-  gyroZ -= (int16_t)gyroBiasZ;
-
-  // Convert the accelerometer data to g units
-  attitude.acc.x = (float)accelX * IMU_ACCEL_RANGE_G / 32768.0;
-  attitude.acc.y = (float)accelY * IMU_ACCEL_RANGE_G / 32768.0;
-  attitude.acc.z = (float)accelZ * IMU_ACCEL_RANGE_G / 32768.0;
-
-  // Convert the gyroscope data to rad/s
-  attitude.gyro.x = (float)gyroX * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0 * (3.1415926f / 180.0f);
-  attitude.gyro.y = (float)gyroY * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0 * (3.1415926f / 180.0f);
-  attitude.gyro.z = (float)gyroZ * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0 * (3.1415926f / 180.0f);
-
-  // Software second-order low-pass filter
-  attitude.gyrof.x = biquadFilterApply(&ImuFilterLPF[0], attitude.gyro.x);
-  attitude.gyrof.y = biquadFilterApply(&ImuFilterLPF[1], attitude.gyro.y);
-  attitude.gyrof.z = biquadFilterApply(&ImuFilterLPF[2], attitude.gyro.z);
-
-  attitude.accf.x = biquadFilterApply(&ImuFilterLPF[3], attitude.acc.x);
-  attitude.accf.y = biquadFilterApply(&ImuFilterLPF[4], attitude.acc.y);
-  attitude.accf.z = biquadFilterApply(&ImuFilterLPF[5], attitude.acc.z);
-
-  // Convert temperature data
-  attitude.temp = (float)temp / 132.48 + 25;
-  mahonyFilter.update(attitude.gyrof.x, attitude.gyrof.y, attitude.gyrof.z, attitude.accf.x, attitude.accf.y, attitude.accf.z, IMUtime_dt);
-
-  // Get the filtered quaternion
-  float q0_out, q1_out, q2_out, q3_out;
-  mahonyFilter.getQuaternion(q0_out, q1_out, q2_out, q3_out);
-  // Convert quaternion to Euler angles
-  quaternionToEuler(q0_out, q1_out, q2_out, q3_out, &attitude.roll, &attitude.pitch, &attitude.yaw);
-
-  rollBiasCorrected = attitude.roll - imuAndServoOffsets.roll;
-  pitchBiasCorrected = attitude.pitch - imuAndServoOffsets.pitch;
-
-  //////Complementary filter//////
-  angleAccX = atan2(attitude.acc.y, attitude.acc.z + abs(attitude.acc.x)) * 360 / 2.0 / PI;
-  angleAccY = atan2(attitude.acc.x, attitude.acc.z + abs(attitude.acc.y)) * 360 / -2.0 / PI;
-
-  const float gyroRateX = (float)gyroX * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0;
-  const float gyroRateY = (float)gyroY * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0;
-  const float gyroRateZ = (float)gyroZ * IMU_GYRO_RANGE_DEG_PER_SEC / 32768.0;
-
-  angleGyroX += gyroRateX * IMUtime_dt;
-  angleGyroY += gyroRateY * IMUtime_dt;
-  angleGyroZ += gyroRateZ * IMUtime_dt;
-
-  angleX = (gyroCoef * (angleX + gyroRateX * IMUtime_dt)) + (accCoef * angleAccX);
-  angleY = (gyroCoef * (angleY + gyroRateY * IMUtime_dt)) + (accCoef * angleAccY);
-  angleZ = angleGyroZ;
-
-  timestamp_prev = timestamp_now;
-}
-
-
-/**
  * @brief Prints debugging data to the serial port based on a selection variable.
  *
  * This function uses a large switch statement controlled by the global `debugLogSelector`
@@ -875,6 +786,9 @@ void ImuUpdate(void) {
 void print_data(void) {
   const int selection = (int)debugLogSelector;
   const uint32_t nowMs = millis();
+  const imu::Snapshot& sampleImu = imu::latest();
+  const imu::Settings imuSettings = imu::settings();
+  const imu::CalibrationValues imuCalibration = imu::calibration();
   if (selection >= 60 && selection <= 75) {
     const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(selection);
     if (!RobotLogCapture::selectedDebugDue(selector, nowMs)) return;
@@ -892,21 +806,21 @@ void print_data(void) {
   sample.selector = selector;
   switch (selection) {
     case 1:
-      sample.payload.timedVector3 = {controlTimestepSec, attitude.roll, attitude.pitch, attitude.yaw};
+      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.attitudeDegrees.roll, sampleImu.attitudeDegrees.pitch, sampleImu.attitudeDegrees.yaw};
       break;
     case 2:
-      sample.payload.timedVector3 = {controlTimestepSec, attitude.acc.x, attitude.acc.y, attitude.acc.z};
+      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.accelerationG.x, sampleImu.accelerationG.y, sampleImu.accelerationG.z};
       break;
     case 3:
-      sample.payload.timedVector3 = {controlTimestepSec, attitude.gyro.x, attitude.gyro.y, attitude.gyro.z};
+      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.angularVelocityRadPerSec.x, sampleImu.angularVelocityRadPerSec.y, sampleImu.angularVelocityRadPerSec.z};
       break;
     case 4:
-      sample.payload.timedVector3 = {controlTimestepSec, attitude.roll - imuAndServoOffsets.roll,
-                                     attitude.pitch - imuAndServoOffsets.pitch,
-                                     attitude.yaw - imuAndServoOffsets.yaw};
+      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.attitudeDegrees.roll - imuCalibration.attitude.rollDegrees,
+                                     sampleImu.attitudeDegrees.pitch - imuCalibration.attitude.pitchDegrees,
+                                     sampleImu.attitudeDegrees.yaw - 0.0f};
       break;
     case 5:
-      sample.payload.timedVector3 = {controlTimestepSec, imuAndServoOffsets.roll, imuAndServoOffsets.pitch, imuAndServoOffsets.yaw};
+      sample.payload.timedVector3 = {controlTimestepSec, imuCalibration.attitude.rollDegrees, imuCalibration.attitude.pitchDegrees, 0.0f};
       break;
     case 6:
       sample.payload.motorVelocities = {m1VelocityRadPerSec, m2VelocityRadPerSec};
@@ -924,26 +838,26 @@ void print_data(void) {
                                         {Yaw_Pid.Kp, Yaw_Pid.Ki, Yaw_Pid.Kd}, controlTimestepSec};
       break;
     case 10:
-      sample.payload.mahony = {mahonyFilter.twoKp, mahonyFilter.twoKi, attitude.roll,
-                               attitude.pitch, IMUtime_dt};
+      sample.payload.mahony = {imuSettings.mahonyTwoKp, imuSettings.mahonyTwoKi, sampleImu.attitudeDegrees.roll,
+                               sampleImu.attitudeDegrees.pitch, sampleImu.dtSec};
       break;
     case 11:
-      sample.payload.imuAxes = {angleX, angleY, angleZ, angleGyroX, angleGyroY, angleGyroZ, IMUtime_dt};
+      sample.payload.imuAxes = {sampleImu.complementaryAnglesDegrees.x, sampleImu.complementaryAnglesDegrees.y, sampleImu.complementaryAnglesDegrees.z, sampleImu.integratedGyroAnglesDegrees.x, sampleImu.integratedGyroAnglesDegrees.y, sampleImu.integratedGyroAnglesDegrees.z, sampleImu.dtSec};
       break;
     case 12:
-      sample.payload.pair = {angleX, attitude.roll};
+      sample.payload.pair = {sampleImu.complementaryAnglesDegrees.x, sampleImu.attitudeDegrees.roll};
       break;
     case 13:
-      sample.payload.timedVector3 = {controlTimestepSec, attitude.gyrof.x, attitude.gyrof.y, attitude.gyrof.z};
+      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.filteredAngularVelocityRadPerSec.x, sampleImu.filteredAngularVelocityRadPerSec.y, sampleImu.filteredAngularVelocityRadPerSec.z};
       break;
     case 14:
-      sample.payload.timedVector3 = {controlTimestepSec, attitude.accf.x, attitude.accf.y, attitude.accf.z};
+      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.filteredAccelerationG.x, sampleImu.filteredAccelerationG.y, sampleImu.filteredAccelerationG.z};
       break;
     case 15:
-      sample.payload.pair = {attitude.acc.y, attitude.accf.y};
+      sample.payload.pair = {sampleImu.accelerationG.y, sampleImu.filteredAccelerationG.y};
       break;
     case 16:
-      sample.payload.pair = {attitude.gyro.y, attitude.gyrof.y};
+      sample.payload.pair = {sampleImu.angularVelocityRadPerSec.y, sampleImu.filteredAngularVelocityRadPerSec.y};
       break;
     case 17:
       sample.payload.currentSetpoint = {motor2.current_sp};
@@ -953,13 +867,13 @@ void print_data(void) {
                                      sensor2.getAngle(), sensor2.getMechanicalAngle()};
       break;
     case 19:
-      sample.payload.servoOffsets = {{imuAndServoOffsets.servo1, imuAndServoOffsets.servo2, imuAndServoOffsets.servo3, imuAndServoOffsets.servo4}};
+      sample.payload.servoOffsets = {{servoTrims.servo1Degrees, servoTrims.servo2Degrees, servoTrims.servo3Degrees, servoTrims.servo4Degrees}};
       break;
     case 20:
       sample.payload.ballBalanceGeometry = {top_ball_x, BodyRoll, BodyHeightCommandM};
       break;
     case 21:
-      sample.payload.balanceState = {rollBiasCorrected, BodyPitching};
+      sample.payload.balanceState = {sampleImu.correctedRollDegrees, BodyPitching};
       break;
     case 22:
       sample.payload.pidIntegralState = {Angle_Pid.iLimit, Angle_Pid.integral,
@@ -1036,10 +950,10 @@ void print_data(void) {
       } else return;
       break;
     case 41:
-      sample.payload.rollOutput = {rollBiasCorrected, BodyPitching, Speed_Pid.output};
+      sample.payload.rollOutput = {sampleImu.correctedRollDegrees, BodyPitching, Speed_Pid.output};
       break;
     case 42:
-      sample.payload.rollCorrection = {rollBiasCorrected, BodyPitching,
+      sample.payload.rollCorrection = {sampleImu.correctedRollDegrees, BodyPitching,
                                        BodyPitchingCorrect(BodyPitchingFiltered)};
       break;
     case 43:
@@ -1049,12 +963,12 @@ void print_data(void) {
       sample.payload.tuningState = {PidParameterTuning, TargetBodyHeightOverrideM};
       break;
     case 45:
-      sample.payload.tumbleState = {RobotTumble, rollBiasCorrected, Angle_Pid.error};
+      sample.payload.tumbleState = {RobotTumble, sampleImu.correctedRollDegrees, Angle_Pid.error};
       break;
     case 46:
       sample.payload.gyroFft = {
-          static_cast<uint32_t>(timestamp_prev), attitude.gyro.x, attitude.gyro.y,
-          attitude.gyro.z, attitude.gyrof.x, attitude.gyrof.y, attitude.gyrof.z};
+          static_cast<uint32_t>(sampleImu.readTimeUs), sampleImu.accelerationG.x, sampleImu.accelerationG.y,
+          sampleImu.accelerationG.z, sampleImu.filteredAccelerationG.x, sampleImu.filteredAccelerationG.y, sampleImu.filteredAccelerationG.z};
       break;
     default: return;
   }
@@ -1071,8 +985,8 @@ void print_data(void) {
         sample.postureOrMarkMode = posture_or_mark_mode;
         sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
         sample.batteryV = Voltage;
-        sample.rollOk = rollBiasCorrected;
-        sample.pitchOk = pitchBiasCorrected;
+        sample.rollOk = sampleImu.correctedRollDegrees;
+        sample.pitchOk = sampleImu.correctedPitchDegrees;
         int32_t ranges[4];
         RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
         for (int i = 0; i < 4; ++i) {
@@ -1101,8 +1015,8 @@ void print_data(void) {
         sample.gainMode = pid_gains_mode;
         sample.minimumBatteryRawV = rawMinV;
         sample.batteryV = Voltage;
-        sample.rollOk = rollBiasCorrected;
-        sample.yawRateRadPerSec = attitude.gyro.z;
+        sample.rollOk = sampleImu.correctedRollDegrees;
+        sample.yawRateRadPerSec = sampleImu.angularVelocityRadPerSec.z;
         sample.bodyTurn = BodyTurn;
         sample.angleError = active ? Angle_Pid.error : 0.0f;
         sample.angleOutput = active ? Angle_Pid.output : 0.0f;
@@ -1129,7 +1043,7 @@ void print_data(void) {
         sample.sequence = activeTraceSequence++;
         sample.gainMode = pid_gains_mode;
         sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
-        sample.rollOk = rollBiasCorrected;
+        sample.rollOk = sampleImu.correctedRollDegrees;
         sample.angleError = active ? Angle_Pid.error : 0.0f;
         sample.angleProportional = active ? Angle_Pid.outP : 0.0f;
         sample.angleIntegral = active ? Angle_Pid.outI : 0.0f;
@@ -1170,7 +1084,7 @@ void print_data(void) {
         sample.driveBodyXRaw = active ? driveSpeedBodyXRaw : 0.0f;
         sample.bodyX = active ? BodyX : 0.0f;
         sample.bodyPitchFiltered = BodyPitchingFiltered;
-        sample.rollOk = rollBiasCorrected;
+        sample.rollOk = sampleImu.correctedRollDegrees;
         sample.angleOutput = active ? Angle_Pid.output : 0.0f;
         sample.angleProportional = active ? Angle_Pid.outP : 0.0f;
         sample.angleIntegral = active ? Angle_Pid.outI : 0.0f;
@@ -1387,7 +1301,7 @@ void PIDcontroller_posture(float dt) {
   float TargetBodyRoll = BodyRollFiltered * 777;                            // Roll
   if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball禁止手动横滚
     TargetBodyRoll = 0;
-  float RollError = (-pitchBiasCorrected) - (-TargetBodyRoll) - (-TouchYPidOutputFiltered);
+  float RollError = (-imu::latest().correctedPitchDegrees) - (-TargetBodyRoll) - (-TouchYPidOutputFiltered);
   if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)  // Roll leveling
   {
     Roll_Pid.compute(RollError, dt);
@@ -1406,7 +1320,7 @@ void PIDcontroller_posture(float dt) {
   driveEffectiveSpeed = MovementSpeed;
   // Reduce only further acceleration when tilt consumes balance headroom.
   if (MovementSpeed * avgVelocity >= 0.0f && fabsf(MovementSpeed) > fabsf(avgVelocity)) {
-    const float tiltFraction = constrain((fabsf(rollBiasCorrected) - DRIVE_TILT_REDUCTION_START_DEG) /
+    const float tiltFraction = constrain((fabsf(imu::latest().correctedRollDegrees) - DRIVE_TILT_REDUCTION_START_DEG) /
                                          (DRIVE_TILT_REDUCTION_FULL_DEG - DRIVE_TILT_REDUCTION_START_DEG),
                                          0.0f, 1.0f);
     const float reduction = tiltFraction * constrain(driveTiltReductionGain, 0.0f, 1.0f);
@@ -1433,7 +1347,7 @@ void PIDcontroller_posture(float dt) {
   Angle_Pid.Kd = anglePidSettings.D;
   Angle_Pid.iLimit = anglePidSettings.limit;  // Integral limit
 
-  float angleError = rollBiasCorrected - (-BodyPitchingFiltered);  // Measured value minus target value
+  float angleError = imu::latest().correctedRollDegrees - (-BodyPitchingFiltered);  // Measured value minus target value
   if (balancePidNeedsPriming) {
     // Avoid a derivative kick when CH5 first enables the balance loop.
     Angle_Pid.previousError = angleError;
@@ -1453,7 +1367,7 @@ void PIDcontroller_posture(float dt) {
     Yaw_Pid.integral = 0;
   }
 
-  float yawError = attitude.gyro.z - BodyTurn;  // Measured value minus target value
+  float yawError = imu::latest().angularVelocityRadPerSec.z - BodyTurn;  // Measured value minus target value
   float yawOutput = Yaw_Pid.compute(yawError, dt);
 
   // Use the existing wheel path only to oppose measured overspeed.
@@ -1547,14 +1461,14 @@ void ReadVoltage(void) {
  */
 void Robot_Tumble(void) {
   static int x = 0;
-  if (abs(rollBiasCorrected) >= 35) {
+  if (abs(imu::latest().correctedRollDegrees) >= 35) {
     x++;
     if (x >= 20) {
       x = 20;
       RobotTumble = ROBOT_TUMBLING;  // Machine fall
     }
   } else {
-    if ((RobotTumble == ROBOT_TUMBLING) && (abs(rollBiasCorrected) <= 5))  // Machine fall after fall
+    if ((RobotTumble == ROBOT_TUMBLING) && (abs(imu::latest().correctedRollDegrees) <= 5))  // Machine fall after fall
     {
       x--;
       if (x <= 0) {
@@ -1567,6 +1481,9 @@ void Robot_Tumble(void) {
 
 void DiagnosticLoop(void) {
   static uint32_t lastLogScheduleUs = 0;
+  static uint32_t lastTimingReportUs = 0;
+  static uint32_t lastTimingAcceptedSamples = 0;
+  static bool timingReportStarted = false;
   static unsigned long lastVoltageMs = 0;
   const unsigned long nowMs = millis();
 
@@ -1578,9 +1495,9 @@ void DiagnosticLoop(void) {
     diagnosticHasRcFrame = true;
   }
 
-  if (diagnosticImuReady) {
-    ImuUpdate();
-    const uint32_t imuSampleUs = (uint32_t)timestamp_prev;
+  if (diagnosticImuReady && imu::service()) {
+    const imu::Snapshot& diagnosticImu = imu::latest();
+    const uint32_t imuSampleUs = diagnosticImu.readTimeUs;
     if ((uint32_t)(imuSampleUs - lastLogScheduleUs) >= DIAGNOSTIC_LOG_INTERVAL_US) {
       lastLogScheduleUs = imuSampleUs;
       const long rcAgeMs = diagnosticHasRcFrame ? (long)(nowMs - diagnosticLastRcFrameMs) : -1;
@@ -1589,15 +1506,15 @@ void DiagnosticLoop(void) {
       Logging::DiagnosticSample sample{};
       sample.timestampUs = imuSampleUs;
       sample.sequence = diagnosticSequence++;
-      sample.gyroX = attitude.gyro.x;
-      sample.gyroY = attitude.gyro.y;
-      sample.gyroZ = attitude.gyro.z;
-      sample.accelX = attitude.acc.x;
-      sample.accelY = attitude.acc.y;
-      sample.accelZ = attitude.acc.z;
-      sample.rollDeg = attitude.roll;
-      sample.pitchDeg = attitude.pitch;
-      sample.yawDeg = attitude.yaw;
+      sample.gyroX = diagnosticImu.angularVelocityRadPerSec.x;
+      sample.gyroY = diagnosticImu.angularVelocityRadPerSec.y;
+      sample.gyroZ = diagnosticImu.angularVelocityRadPerSec.z;
+      sample.accelX = diagnosticImu.filteredAngularVelocityRadPerSec.x;
+      sample.accelY = diagnosticImu.filteredAngularVelocityRadPerSec.y;
+      sample.accelZ = diagnosticImu.filteredAngularVelocityRadPerSec.z;
+      sample.rollDeg = diagnosticImu.attitudeDegrees.roll;
+      sample.pitchDeg = diagnosticImu.attitudeDegrees.pitch;
+      sample.yawDeg = diagnosticImu.attitudeDegrees.yaw;
       sample.batteryRawV = batteryRawV;
       sample.receiverFrameAgeMs = rcAgeMs;
       sample.receiverFailsafe = rcFailsafe;
@@ -1605,11 +1522,33 @@ void DiagnosticLoop(void) {
       Logging::submit(sample);
     }
   }
+
+  const uint32_t timingNowUs = micros();
+  const imu::TimingStatistics timing = imu::timingStatistics();
+  if (!timingReportStarted) {
+    lastTimingReportUs = timingNowUs;
+    lastTimingAcceptedSamples = timing.acceptedSamples;
+    timingReportStarted = true;
+  } else {
+    const uint32_t elapsedUs = timingNowUs - lastTimingReportUs;
+    if (elapsedUs >= 1000000U) {
+      const uint32_t acceptedSamples = timing.acceptedSamples - lastTimingAcceptedSamples;
+      const float acceptedRateHz = static_cast<float>(acceptedSamples) * 1000000.0f /
+                                   static_cast<float>(elapsedUs);
+      Serial.printf("IMU_TIMING,elapsed_us=%lu,accepted=%lu,rate_hz=%.1f,long_gap_total=%lu,max_interval_us=%lu\n",
+                    static_cast<unsigned long>(elapsedUs),
+                    static_cast<unsigned long>(acceptedSamples), acceptedRateHz,
+                    static_cast<unsigned long>(timing.longGapCount),
+                    static_cast<unsigned long>(timing.maxIntervalUs));
+      lastTimingReportUs = timingNowUs;
+      lastTimingAcceptedSamples = timing.acceptedSamples;
+    }
+  }
+
   if (nowMs - lastVoltageMs >= 10) {
     lastVoltageMs = nowMs;
     ReadVoltage();
   }
-  delay(1);
 }
 /**
  * @brief The main execution loop of the program.
@@ -1654,7 +1593,7 @@ void loop() {
   // user communication
   command.run();
 
-  ImuUpdate();  // Update IMU data
+  const bool imuUpdated = imu::service();  // Poll once per loop without gating motor control
   CtrlInput();  // BLE or remote control input
   RXsbus();
 
@@ -1687,52 +1626,45 @@ void loop() {
     else
       statusLedPeriodTicks = 100;
 
-    if (imuSampleRateHz != prevImuSampleRateHz) {
-      // Initialize second-order low-pass filter
-      for (int axis = 0; axis < 6; axis++) {
-        biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)imuLowPassCutoffHz, (unsigned int)imuSampleRateHz);
-      }
-      Logging::message(Logging::Level::Info, "RATE_HZ", "%.3f", imuSampleRateHz);
-      prevImuSampleRateHz = imuSampleRateHz;
-    }
-    if (imuLowPassCutoffHz != prevImuLowPassCutoffHz) {
-      // Initialize second-order low-pass filter
-      for (int axis = 0; axis < 6; axis++) {
-        biquadFilterInitLPF(&ImuFilterLPF[axis], (unsigned int)imuLowPassCutoffHz, (unsigned int)imuSampleRateHz);
-      }
-      Logging::message(Logging::Level::Info, "LPF_CUTOFF_FREQ", "%.3f", imuLowPassCutoffHz);
-      prevImuLowPassCutoffHz = imuLowPassCutoffHz;
-    }
-
-    const CalibrationResult calibrationResult = calibration.update(
+    imu::CalibrationValues activeCalibration = imu::calibration();
+    const imu::Snapshot& acceptedImu = imu::latest();
+    CalibrationResult calibrationResult{CalibrationCompletion::None, false, {false, false, false, false}};
+    if (imuUpdated) calibrationResult = calibration.update(
         static_cast<int>(CalibrationSelect),
-        {attitude.roll, attitude.pitch},
+        {acceptedImu.attitudeDegrees.roll, acceptedImu.attitudeDegrees.pitch},
         calibrationStore,
-        {imuAndServoOffsets.roll, imuAndServoOffsets.pitch},
-        {gyroBiasX, gyroBiasY, gyroBiasZ},
-        {imuAndServoOffsets.servo1, imuAndServoOffsets.servo2, imuAndServoOffsets.servo3, imuAndServoOffsets.servo4},
-        calibrateGyro);
+        {activeCalibration.attitude.rollDegrees, activeCalibration.attitude.pitchDegrees},
+        {activeCalibration.gyro.xRawCounts, activeCalibration.gyro.yRawCounts, activeCalibration.gyro.zRawCounts},
+        {servoTrims.servo1Degrees, servoTrims.servo2Degrees, servoTrims.servo3Degrees, servoTrims.servo4Degrees},
+        [](GyroBiasRawCountRefs stagedBias) {
+          imu::calibrateGyroBiasBlocking();
+          const GyroBiasRawCounts measured = imu::calibration().gyro;
+          stagedBias.xRawCounts = measured.xRawCounts;
+          stagedBias.yRawCounts = measured.yRawCounts;
+          stagedBias.zRawCounts = measured.zRawCounts;
+        });
+    if (imuUpdated) imu::setCalibration(activeCalibration);
     if (calibrationResult.clearRequest)
       CalibrationSelect = 0;
 
     if (calibrationResult.completion == CalibrationCompletion::Gyroscope) {
       Logging::message(Logging::Level::Info, "Calibration",
                        "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
-                       gyroBiasX, gyroBiasY, gyroBiasZ);
+                       activeCalibration.gyro.xRawCounts, activeCalibration.gyro.yRawCounts, activeCalibration.gyro.zRawCounts);
     } else if (calibrationResult.completion == CalibrationCompletion::Attitude) {
       Logging::message(Logging::Level::Info, "Calibration",
                        "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
-                       imuAndServoOffsets.roll, imuAndServoOffsets.pitch);
+                       activeCalibration.attitude.rollDegrees, activeCalibration.attitude.pitchDegrees);
     }
 
     if (calibrationResult.changedServos.servo1Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo1: %.2f", imuAndServoOffsets.servo1);
+      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo1: %.2f", servoTrims.servo1Degrees);
     if (calibrationResult.changedServos.servo2Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo2: %.2f", imuAndServoOffsets.servo2);
+      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo2: %.2f", servoTrims.servo2Degrees);
     if (calibrationResult.changedServos.servo3Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo3: %.2f", imuAndServoOffsets.servo3);
+      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo3: %.2f", servoTrims.servo3Degrees);
     if (calibrationResult.changedServos.servo4Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo4: %.2f", imuAndServoOffsets.servo4);
+      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo4: %.2f", servoTrims.servo4Degrees);
 
     const float wheelVelocityDt = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? controlTimestepSec : 0.01f;
     m1VelocityRadPerSec = (sensor1.getAngle() - m1PrevEncoderAngleRad) / wheelVelocityDt;
@@ -1799,19 +1731,19 @@ void loop() {
     {
 
       // Set the angle of the four servos
-      servoTraceAngle[0] = leftLeg.angles.joint1Degrees - imuAndServoOffsets.servo1;
-      servoTraceAngle[1] = leftLeg.angles.joint2Degrees - imuAndServoOffsets.servo2;
-      servoTraceAngle[2] = rightLeg.angles.joint1Degrees - imuAndServoOffsets.servo3;
-      servoTraceAngle[3] = rightLeg.angles.joint2Degrees - imuAndServoOffsets.servo4;
+      servoTraceAngle[0] = leftLeg.angles.joint1Degrees - servoTrims.servo1Degrees;
+      servoTraceAngle[1] = leftLeg.angles.joint2Degrees - servoTrims.servo2Degrees;
+      servoTraceAngle[2] = rightLeg.angles.joint1Degrees - servoTrims.servo3Degrees;
+      servoTraceAngle[3] = rightLeg.angles.joint2Degrees - servoTrims.servo4Degrees;
       servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1, servoTraceAngle[3], 1);
     } else  // Assembly position and calibration
     {
       if ((int)CalibrationSelect == 3)  // Servo calibration
       {
-        servoTraceAngle[0] = -imuAndServoOffsets.servo1;
-        servoTraceAngle[1] = -imuAndServoOffsets.servo2;
-        servoTraceAngle[2] = -imuAndServoOffsets.servo3;
-        servoTraceAngle[3] = -imuAndServoOffsets.servo4;
+        servoTraceAngle[0] = -servoTrims.servo1Degrees;
+        servoTraceAngle[1] = -servoTrims.servo2Degrees;
+        servoTraceAngle[2] = -servoTrims.servo3Degrees;
+        servoTraceAngle[3] = -servoTrims.servo4Degrees;
       } else {
         servoTraceAngle[0] = servoTraceAngle[1] = servoTraceAngle[2] = servoTraceAngle[3] = 0;
       }

@@ -77,7 +77,7 @@ public:
       AttitudeBiasRefs attitudeBias,
       GyroBiasRawCountRefs gyroBias,
       ServoTrimDegreesRefs servoTrims,
-      void (*calibrateGyro)());
+      void (*calibrateGyro)(GyroBiasRawCountRefs));
 
 private:
   float rollSum_ = 0.0f;

@@ -29,47 +29,6 @@
 #define REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST 1 // Pitching adjustment mode
 #define REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE 2      // Ball poise mode
 
-typedef union 
-{
-  struct 
-  {
-    float x;
-    float y;
-    float z;
-  };
-  float axis[3];
-} Axis3f;
-
-//Attitude data structure
-typedef struct  
-{
-  Axis3f accf;       //Filtered acceleration (G)
-  Axis3f gyrof;      //Filtered gyroscope (deg/s)  
-  Axis3f acc;       //Acceleration (G)
-  Axis3f gyro;      //Gyroscope (deg/s)  
-  float roll;
-  float pitch;
-  float yaw;
-  float temp;
-} attitude_t;
-
-
-typedef struct  
-{
-  Axis3f acc;       //Acceleration (G)
-  Axis3f gyro;      //Gyroscope (deg/s) 
-  float roll;
-  float pitch;
-  float yaw;
-
-  float servo1;
-  float servo2;
-  float servo3;
-  float servo4;
-
-  
-} zeroBias_t;
-
 class MyPIDController {
   private:
 

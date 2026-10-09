@@ -38,7 +38,7 @@ CalibrationResult Calibration::update(
     AttitudeBiasRefs attitudeBias,
     GyroBiasRawCountRefs gyroBias,
     ServoTrimDegreesRefs servoTrims,
-    void (*calibrateGyro)()) {
+    void (*calibrateGyro)(GyroBiasRawCountRefs)) {
   CalibrationResult result{CalibrationCompletion::None, false,
                            {false, false, false, false}};
 
@@ -50,7 +50,7 @@ CalibrationResult Calibration::update(
 
   switch (request) {
     case 1: {
-      calibrateGyro();
+      calibrateGyro(gyroBias);
       const GyroBiasRawCounts readback = store.saveGyro(
           {gyroBias.xRawCounts, gyroBias.yRawCounts, gyroBias.zRawCounts});
       gyroBias.xRawCounts = readback.xRawCounts;

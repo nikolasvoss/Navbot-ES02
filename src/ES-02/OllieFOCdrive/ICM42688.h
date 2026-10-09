@@ -2,6 +2,7 @@
 #define ICM42688_H
 
 #include <SPI.h>
+#include <cstdint>
 
 // Define HSPI pins
 #define SCK_PIN   3
@@ -272,19 +273,22 @@ enum AccelFS{
 // Declare hspi as external variable
 extern SPIClass * hspi;
 
-// Gyroscope bias values
-extern float gyroBiasX;
-extern float gyroBiasY;
-extern float gyroBiasZ;
+struct ICM42688RawSample {
+    int16_t accelerationX;
+    int16_t accelerationY;
+    int16_t accelerationZ;
+    int16_t gyroscopeX;
+    int16_t gyroscopeY;
+    int16_t gyroscopeZ;
+    int16_t temperature;
+};
 
 // Function declarations
 void readBytes(uint8_t reg, uint8_t *data, uint8_t length);
 void writeBytes(uint8_t reg, uint8_t *data, uint8_t length);
 int16_t read16BitData(uint8_t reg_high, uint8_t reg_low);
 void selectUserBank(uint8_t bank);
-bool initICM42688();
-void readIMUData(int16_t &accelX, int16_t &accelY, int16_t &accelZ, int16_t &gyroX, int16_t &gyroY, int16_t &gyroZ, int16_t &temp);
-// Gyroscope calibration function
-void calibrateGyro();
+bool initICM42688(uint16_t sampleRateHz);
+bool readIMUDataIfReady(ICM42688RawSample& sample);
 
 #endif

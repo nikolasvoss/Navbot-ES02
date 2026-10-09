@@ -1,22 +1,29 @@
 #include "ICM42688.h"
-#include "Logging.h"
 #include <SPI.h>
 #include <Arduino.h>
+#include <cstdint>
 
 // Define hspi variable for controlling HSPI interface for SPI communication
 SPIClass * hspi = new SPIClass(HSPI);
 
-// Gyroscope bias values
-float gyroBiasX = 0.0;
-float gyroBiasY = 0.0;
-float gyroBiasZ = 0.0;
+namespace {
+constexpr uint8_t kDataReadyBit = 1U << 3;
 
-// Gyroscope calibration threshold, can be adjusted based on actual conditions
-const int gyroCalibrationThreshold = 50; 
+bool outputRateRegisterValue(uint16_t sampleRateHz, uint8_t& registerValue) {
+    switch (sampleRateHz) {
+        case 1000:
+            registerValue = ODR_1KHZ;
+            return true;
+        default:
+            return false;
+    }
+}
 
-
-
-
+int16_t signedWord(const uint8_t* bytes) {
+    const uint16_t value = static_cast<uint16_t>(bytes[0]) << 8 | bytes[1];
+    return static_cast<int16_t>(value);
+}
+}
 /**
  * @brief Read multiple bytes of data starting from the specified register address of the ICM42688 sensor
  * 
@@ -92,7 +99,12 @@ void selectUserBank(uint8_t bank) {
  * 
  * @return bool Returns true if initialization successful, false if failed
  */
-bool initICM42688() {
+bool initICM42688(uint16_t sampleRateHz) {
+    uint8_t outputRate = 0;
+    if (!outputRateRegisterValue(sampleRateHz, outputRate)) {
+        return false;
+    }
+
     pinMode(CS_PIN, OUTPUT);
     digitalWrite(CS_PIN, HIGH);
     // Initialize HSPI interface, set SPI pins and working mode
@@ -130,7 +142,7 @@ bool initICM42688() {
     // Configure accelerometer
     // Set accelerometer range to ±8g, sampling rate to 1KHZ
     sAccelConfig0_t accelConfig0;
-    accelConfig0.accelODR = ODR_1KHZ;
+    accelConfig0.accelODR = outputRate;
     accelConfig0.accelFsSel = gpm8;
     accelConfig0.reserved = 0;
     // Convert structure data to byte data
@@ -141,7 +153,7 @@ bool initICM42688() {
     // Configure gyroscope
     // Set gyroscope range to ±2000dps, sampling rate to 1KHZ
     sGyroConfig0_t gyroConfig0;
-    gyroConfig0.gyroODR = ODR_1KHZ;
+    gyroConfig0.gyroODR = outputRate;
     gyroConfig0.gyroFsSel = dps2000;
     gyroConfig0.reserved = 0;
     // Convert structure data to byte data
@@ -184,89 +196,23 @@ bool initICM42688() {
     return true;
 }
 
-/**
- * @brief Read six-axis data (accelerometer three-axis and gyroscope three-axis) and temperature data from ICM42688 sensor at once
- * 
- * @param accelX Reference for storing accelerometer X-axis data
- * @param accelY Reference for storing accelerometer Y-axis data
- * @param accelZ Reference for storing accelerometer Z-axis data
- * @param gyroX Reference for storing gyroscope X-axis data
- * @param gyroY Reference for storing gyroscope Y-axis data
- * @param gyroZ Reference for storing gyroscope Z-axis data
- * @param temp Reference for storing temperature data
- */
-void readIMUData(int16_t &accelX, int16_t &accelY, int16_t &accelZ, int16_t &gyroX, int16_t &gyroY, int16_t &gyroZ, int16_t &temp) {
-    // Select user bank 0
+bool readIMUDataIfReady(ICM42688RawSample& sample) {
+    // INT_STATUS is read-clear: this indicates a pending data-ready event, not a
+    // conversion counter. A new event can race the following burst read.
     selectUserBank(0);
-    uint8_t data[14];
-    // Read 14 bytes of data starting from temperature data register
-    readBytes(UB0_REG_TEMP_DATA1, data, 14);
-
-    // Parse temperature data
-    temp = (data[0] << 8) | data[1];
-    // Parse accelerometer X-axis data
-    accelX = (data[2] << 8) | data[3];
-    // Parse accelerometer Y-axis data
-    accelY = (data[4] << 8) | data[5];
-    // Parse accelerometer Z-axis data
-    accelZ = (data[6] << 8) | data[7];
-    // Parse gyroscope X-axis data
-    gyroX = (data[8] << 8) | data[9];
-    // Parse gyroscope Y-axis data
-    gyroY = (data[10] << 8) | data[11];
-    // Parse gyroscope Z-axis data
-    gyroZ = (data[12] << 8) | data[13];
-}
-
-
-
-
-
-// Gyroscope calibration function
-void calibrateGyro() {
-    if (Logging::profile() == Logging::Profile::Idle)
-        Serial.println("Calibrating gyroscope. Keep the device still...");
-    const int calibrationSamples = 1000;  // Number of samples to collect
-    int16_t gyroX_sum = 0, gyroY_sum = 0, gyroZ_sum = 0;
-    int validSamples = 0;
-
-    while (validSamples < calibrationSamples) {
-        int16_t accelX, accelY, accelZ, gyroX, gyroY, gyroZ, temp;
-        readIMUData(accelX, accelY, accelZ, gyroX, gyroY, gyroZ, temp);
-
-        // Check for large changes to determine if device is moving
-        if (abs(gyroX) < gyroCalibrationThreshold && 
-            abs(gyroY) < gyroCalibrationThreshold && 
-            abs(gyroZ) < gyroCalibrationThreshold) {
-            gyroX_sum += gyroX;
-            gyroY_sum += gyroY;
-            gyroZ_sum += gyroZ;
-            validSamples++;
-        } else {
-            // Device moved, restart counting
-            if (Logging::profile() == Logging::Profile::Idle) {
-                Serial.print(" | x: ");
-                Serial.print(gyroX);
-                Serial.print(" y: ");
-                Serial.print(gyroY);
-                Serial.print(" Z: ");
-                Serial.print(gyroZ);
-                Serial.println("Device moved during calibration. Restarting...");
-            }
-            gyroX_sum = 0;
-            gyroY_sum = 0;
-            gyroZ_sum = 0;
-            validSamples = 0;
-        }
-
-        delay(3);  // Wait for a while before collecting next sample
+    uint8_t status = 0;
+    readBytes(UB0_REG_INT_STATUS, &status, 1);
+    if ((status & kDataReadyBit) == 0) {
+        return false;
     }
 
-    // Calculate bias values
-    gyroBiasX = (float)gyroX_sum / calibrationSamples;
-    gyroBiasY = (float)gyroY_sum / calibrationSamples;
-    gyroBiasZ = (float)gyroZ_sum / calibrationSamples;
+    uint8_t data[14];
+    readBytes(UB0_REG_TEMP_DATA1, data, 14);
 
-    if (Logging::profile() == Logging::Profile::Idle)
-        Serial.println("Gyroscope calibration completed.");
+    const ICM42688RawSample next{
+        signedWord(&data[2]), signedWord(&data[4]), signedWord(&data[6]),
+        signedWord(&data[8]), signedWord(&data[10]), signedWord(&data[12]),
+        signedWord(&data[0])};
+    sample = next;
+    return true;
 }

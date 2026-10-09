@@ -17,6 +17,7 @@ struct FixtureState {
 
 FixtureState fixture;
 int gyroCalls = 0;
+GyroBiasRawCounts calibratedGyroBias{};
 
 void require(bool condition, const char* message) {
   if (!condition) {
@@ -29,7 +30,12 @@ bool near(float actual, float expected) {
   return std::fabs(actual - expected) < 0.0001f;
 }
 
-void calibrateGyro() { ++gyroCalls; }
+void calibrateGyro(GyroBiasRawCountRefs gyroBias) {
+  ++gyroCalls;
+  gyroBias.xRawCounts = calibratedGyroBias.xRawCounts;
+  gyroBias.yRawCounts = calibratedGyroBias.yRawCounts;
+  gyroBias.zRawCounts = calibratedGyroBias.zRawCounts;
+}
 
 CalibrationResult update(Calibration& calibration, int request,
                          float roll, float pitch, CalibrationStore& store,
@@ -48,6 +54,7 @@ void gyroDispatchSavesReadbackAndClears() {
   fixture = {};
   float roll = 0.0f, pitch = 0.0f;
   float gyroX = 11.0f, gyroY = -12.0f, gyroZ = 13.0f;
+  calibratedGyroBias = {21.0f, -22.0f, 23.0f};
   float servo1 = 1.0f, servo2 = 2.0f, servo3 = 3.0f, servo4 = 4.0f;
   gyroCalls = 0;
 
@@ -55,11 +62,11 @@ void gyroDispatchSavesReadbackAndClears() {
       roll, pitch, gyroX, gyroY, gyroZ, servo1, servo2, servo3, servo4);
 
   require(gyroCalls == 1, "gyro request did not invoke the driver callback once");
-  require(fixture.gyroSaves == 1 && near(fixture.gyroWritten.xRawCounts, 11.0f) &&
-          near(fixture.gyroWritten.yRawCounts, -12.0f) &&
-          near(fixture.gyroWritten.zRawCounts, 13.0f),
-          "gyro request did not save all three raw bias values");
-  require(near(gyroX, 12.0f) && near(gyroY, -10.0f) && near(gyroZ, 16.0f),
+  require(fixture.gyroSaves == 1 && near(fixture.gyroWritten.xRawCounts, 21.0f) &&
+          near(fixture.gyroWritten.yRawCounts, -22.0f) &&
+          near(fixture.gyroWritten.zRawCounts, 23.0f),
+          "gyro request did not persist the callback's staged raw bias values");
+  require(near(gyroX, 22.0f) && near(gyroY, -20.0f) && near(gyroZ, 26.0f),
           "gyro readback was not applied to the active values");
   require(result.completion == CalibrationCompletion::Gyroscope && result.clearRequest,
           "gyro request did not report completion and request clearing");
