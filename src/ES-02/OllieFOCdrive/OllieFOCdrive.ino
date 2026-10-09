@@ -170,7 +170,7 @@ attitude_t attitude;
 float rollBiasCorrected;
 float pitchBiasCorrected;
 
-zeroBias_t zeroBias;  // Zero offset TODO of what?
+zeroBias_t imuAndServoOffsets;
 unsigned long timestamp_prev = 0;
 uint32_t controlGateSequence = 0;
 uint32_t activeTraceSequence = 0;
@@ -205,16 +205,16 @@ float gyroCoef = 0.98f;
 
 // Servo zero position offsets
 void zeroBias_servo1(char *cmd) {
-  command.scalar(&zeroBias.servo1, cmd);
+  command.scalar(&imuAndServoOffsets.servo1, cmd);
 }
 void zeroBias_servo2(char *cmd) {
-  command.scalar(&zeroBias.servo2, cmd);
+  command.scalar(&imuAndServoOffsets.servo2, cmd);
 }
 void zeroBias_servo3(char *cmd) {
-  command.scalar(&zeroBias.servo3, cmd);
+  command.scalar(&imuAndServoOffsets.servo3, cmd);
 }
 void zeroBias_servo4(char *cmd) {
-  command.scalar(&zeroBias.servo4, cmd);
+  command.scalar(&imuAndServoOffsets.servo4, cmd);
 }
 
 bool pid_gains_mode_is_enabled(int mode) {
@@ -430,24 +430,24 @@ void setup() {
                (DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? LIVE_TUNING_SERIAL_BAUD_RATE : SERIAL_BAUD_RATE)); //TODO simplify to one serial baud rate
   Logging::begin();
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
-  zeroBias.roll = loadedCalibration.attitude.rollDegrees;
-  zeroBias.pitch = loadedCalibration.attitude.pitchDegrees;
+  imuAndServoOffsets.roll = loadedCalibration.attitude.rollDegrees;
+  imuAndServoOffsets.pitch = loadedCalibration.attitude.pitchDegrees;
   gyroBiasX = loadedCalibration.gyro.xRawCounts;
   gyroBiasY = loadedCalibration.gyro.yRawCounts;
   gyroBiasZ = loadedCalibration.gyro.zRawCounts;
-  zeroBias.servo1 = loadedCalibration.servos.servo1Degrees; //TODO redundant with zeroBias_servoX? i dont understand the relationship
-  zeroBias.servo2 = loadedCalibration.servos.servo2Degrees;
-  zeroBias.servo3 = loadedCalibration.servos.servo3Degrees;
-  zeroBias.servo4 = loadedCalibration.servos.servo4Degrees;
+  imuAndServoOffsets.servo1 = loadedCalibration.servos.servo1Degrees; //TODO redundant with zeroBias_servoX? i dont understand the relationship
+  imuAndServoOffsets.servo2 = loadedCalibration.servos.servo2Degrees;
+  imuAndServoOffsets.servo3 = loadedCalibration.servos.servo3Degrees;
+  imuAndServoOffsets.servo4 = loadedCalibration.servos.servo4Degrees;
   Logging::message(Logging::Level::Info, "Calibration",
                    "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
-                   zeroBias.roll, zeroBias.pitch);
+                   imuAndServoOffsets.roll, imuAndServoOffsets.pitch);
   Logging::message(Logging::Level::Info, "Calibration",
                    "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
                    gyroBiasX, gyroBiasY, gyroBiasZ);
   Logging::message(Logging::Level::Info, "Calibration",
                    "servo1: %.2f, servo2: %.2f, servo3: %.2f, servo4: %.2f",
-                   zeroBias.servo1, zeroBias.servo2, zeroBias.servo3, zeroBias.servo4);
+                   imuAndServoOffsets.servo1, imuAndServoOffsets.servo2, imuAndServoOffsets.servo3, imuAndServoOffsets.servo4);
 
   // TODO is this the right location?
   pinMode(BOARD_PIN_LED, OUTPUT);
@@ -826,8 +826,8 @@ void ImuUpdate(void) {
   // Convert quaternion to Euler angles
   quaternionToEuler(q0_out, q1_out, q2_out, q3_out, &attitude.roll, &attitude.pitch, &attitude.yaw);
 
-  rollBiasCorrected = attitude.roll - zeroBias.roll;
-  pitchBiasCorrected = attitude.pitch - zeroBias.pitch;
+  rollBiasCorrected = attitude.roll - imuAndServoOffsets.roll;
+  pitchBiasCorrected = attitude.pitch - imuAndServoOffsets.pitch;
 
   //////Complementary filter//////
   angleAccX = atan2(attitude.acc.y, attitude.acc.z + abs(attitude.acc.x)) * 360 / 2.0 / PI;
@@ -887,12 +887,12 @@ void print_data(void) {
       sample.payload.timedVector3 = {controlTimestepSec, attitude.gyro.x, attitude.gyro.y, attitude.gyro.z};
       break;
     case 4:
-      sample.payload.timedVector3 = {controlTimestepSec, attitude.roll - zeroBias.roll,
-                                     attitude.pitch - zeroBias.pitch,
-                                     attitude.yaw - zeroBias.yaw};
+      sample.payload.timedVector3 = {controlTimestepSec, attitude.roll - imuAndServoOffsets.roll,
+                                     attitude.pitch - imuAndServoOffsets.pitch,
+                                     attitude.yaw - imuAndServoOffsets.yaw};
       break;
     case 5:
-      sample.payload.timedVector3 = {controlTimestepSec, zeroBias.roll, zeroBias.pitch, zeroBias.yaw};
+      sample.payload.timedVector3 = {controlTimestepSec, imuAndServoOffsets.roll, imuAndServoOffsets.pitch, imuAndServoOffsets.yaw};
       break;
     case 6:
       sample.payload.motorVelocities = {m1VelocityRadPerSec, m2VelocityRadPerSec};
@@ -939,7 +939,7 @@ void print_data(void) {
                                      sensor2.getAngle(), sensor2.getMechanicalAngle()};
       break;
     case 19:
-      sample.payload.servoOffsets = {{zeroBias.servo1, zeroBias.servo2, zeroBias.servo3, zeroBias.servo4}};
+      sample.payload.servoOffsets = {{imuAndServoOffsets.servo1, imuAndServoOffsets.servo2, imuAndServoOffsets.servo3, imuAndServoOffsets.servo4}};
       break;
     case 20:
       sample.payload.ballBalanceGeometry = {top_ball_x, BodyRoll, BodyHeightCommandM};
@@ -1705,9 +1705,9 @@ void loop() {
         static_cast<int>(CalibrationSelect),
         {attitude.roll, attitude.pitch},
         calibrationStore,
-        {zeroBias.roll, zeroBias.pitch},
+        {imuAndServoOffsets.roll, imuAndServoOffsets.pitch},
         {gyroBiasX, gyroBiasY, gyroBiasZ},
-        {zeroBias.servo1, zeroBias.servo2, zeroBias.servo3, zeroBias.servo4},
+        {imuAndServoOffsets.servo1, imuAndServoOffsets.servo2, imuAndServoOffsets.servo3, imuAndServoOffsets.servo4},
         calibrateGyro);
     if (calibrationResult.clearRequest)
       CalibrationSelect = 0;
@@ -1719,17 +1719,17 @@ void loop() {
     } else if (calibrationResult.completion == CalibrationCompletion::Attitude) {
       Logging::message(Logging::Level::Info, "Calibration",
                        "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
-                       zeroBias.roll, zeroBias.pitch);
+                       imuAndServoOffsets.roll, imuAndServoOffsets.pitch);
     }
 
     if (calibrationResult.changedServos.servo1Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo1: %.2f", zeroBias.servo1);
+      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo1: %.2f", imuAndServoOffsets.servo1);
     if (calibrationResult.changedServos.servo2Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo2: %.2f", zeroBias.servo2);
+      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo2: %.2f", imuAndServoOffsets.servo2);
     if (calibrationResult.changedServos.servo3Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo3: %.2f", zeroBias.servo3);
+      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo3: %.2f", imuAndServoOffsets.servo3);
     if (calibrationResult.changedServos.servo4Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "zeroBias.servo4: %.2f", zeroBias.servo4);
+      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo4: %.2f", imuAndServoOffsets.servo4);
 
     const float wheelVelocityDt = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? controlTimestepSec : 0.01f;
     m1VelocityRadPerSec = (sensor1.getAngle() - m1PrevEncoderAngleRad) / wheelVelocityDt;
@@ -1796,19 +1796,19 @@ void loop() {
     {
 
       // Set the angle of the four servos
-      servoTraceAngle[0] = leftLeg.angles.joint1Degrees - zeroBias.servo1;
-      servoTraceAngle[1] = leftLeg.angles.joint2Degrees - zeroBias.servo2;
-      servoTraceAngle[2] = rightLeg.angles.joint1Degrees - zeroBias.servo3;
-      servoTraceAngle[3] = rightLeg.angles.joint2Degrees - zeroBias.servo4;
+      servoTraceAngle[0] = leftLeg.angles.joint1Degrees - imuAndServoOffsets.servo1;
+      servoTraceAngle[1] = leftLeg.angles.joint2Degrees - imuAndServoOffsets.servo2;
+      servoTraceAngle[2] = rightLeg.angles.joint1Degrees - imuAndServoOffsets.servo3;
+      servoTraceAngle[3] = rightLeg.angles.joint2Degrees - imuAndServoOffsets.servo4;
       servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1, servoTraceAngle[3], 1);
     } else  // Assembly position and calibration
     {
       if ((int)CalibrationSelect == 3)  // Servo calibration
       {
-        servoTraceAngle[0] = -zeroBias.servo1;
-        servoTraceAngle[1] = -zeroBias.servo2;
-        servoTraceAngle[2] = -zeroBias.servo3;
-        servoTraceAngle[3] = -zeroBias.servo4;
+        servoTraceAngle[0] = -imuAndServoOffsets.servo1;
+        servoTraceAngle[1] = -imuAndServoOffsets.servo2;
+        servoTraceAngle[2] = -imuAndServoOffsets.servo3;
+        servoTraceAngle[3] = -imuAndServoOffsets.servo4;
       } else {
         servoTraceAngle[0] = servoTraceAngle[1] = servoTraceAngle[2] = servoTraceAngle[3] = 0;
       }
