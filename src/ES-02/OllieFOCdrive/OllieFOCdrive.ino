@@ -107,7 +107,7 @@ constexpr unsigned int DIAGNOSTIC_LOG_SAMPLE_RATE_HZ = 1000000U / DIAGNOSTIC_LOG
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
 constexpr float DRIVE_BODY_X_LIMIT_M = 0.010f;
 constexpr float DRIVE_WHEEL_FEEDBACK_LIMIT = 8.0f;
-constexpr float DRIVE_TILT_REDUCTION_START_DEG = 5.0f; // TODO where used?
+constexpr float DRIVE_TILT_REDUCTION_START_DEG = 5.0f;
 constexpr float DRIVE_TILT_REDUCTION_FULL_DEG = 10.0f;
 // -------------------------------------
 
@@ -177,7 +177,7 @@ uint32_t activeTraceSequence = 0;
 uint32_t diagnosticSequence = 0;
 float IMUtime_dt = 0;
 
-/* Low-pass filter parameters TODO Imu? */
+/* Low-pass filter parameters Imu */
 float prevImuSampleRateHz = IMU_SAMPLING_RATE_HZ;            // Sampling frequency
 float prevImuLowPassCutoffHz = IMU_LPF_CUTOFF_FREQ_HZ;  // Cutoff frequency
 
@@ -196,11 +196,11 @@ void Target_Body_Height(char *cmd) {
   command.scalar(&TargetBodyHeightOverrideM, cmd);
 }
 
-// Complementary filter TODO filter for what?
+// Complementary filter TODO filter for what? not clear where this belongs to and what this is, explain.
 float angleGyroX, angleGyroY, angleGyroZ,
   angleAccX, angleAccY;
 float angleX, angleY, angleZ;
-float accCoef = 0.02f;
+float accCoef = 0.02f; // TODO where do the numbers come from?
 float gyroCoef = 0.98f;
 
 // Servo zero position offsets
