@@ -172,7 +172,7 @@ struct ImuAxes { float angleX; float angleY; float angleZ; float gyroX; float gy
 struct ScalarPair { float first; float second; };
 struct SensorAngles { float target; float leftAbsolute; float leftMechanical; float rightAbsolute; float rightMechanical; };
 struct ServoOffsets { float servo[4]; };
-struct BalanceGeometry { float bodyX; float bodyRoll; float legLength; };
+struct BalanceGeometry { float bodyX; float bodyRoll; float bodyHeightM; };
 struct BalanceState { float rollOk; float bodyPitch; };
 struct PidState { float error; float integralLimit; float integral; float integralOutput; float output; };
 struct PidCoefficients { float kp; float ki; float kd; };
@@ -184,11 +184,11 @@ struct BallPosition { float x; float xFiltered; float y; float yFiltered; };
 struct BalanceOutputPair { float bodyPitch; float controllerOutput; };
 struct RollOutputState { float rollOk; float bodyPitch; float output; };
 struct VoltageState { int32_t adc; float filteredV; float voltageV; };
-struct TuningState { int32_t enabled; float targetLegLength; };
+struct TuningState { int32_t enabled; float targetBodyHeightM; };
 struct TumbleState { int32_t tumbled; float rollOk; float angleError; };
 struct ChannelState { float seconds; int32_t channel; };
 struct CurrentSetpoint { float amperes; };
-struct BallBalanceGeometry { float ballX; float bodyRoll; float legLength; };
+struct BallBalanceGeometry { float ballX; float bodyRoll; float bodyHeightM; };
 struct PidIntegralState { float integralLimit; float integral; float integralOutput; float output; };
 struct PidIntegralOutputState {
   float integralLimit;
@@ -200,7 +200,7 @@ struct PidIntegralOutputState {
 struct FilteredGeometry {
   float bodyPitch;
   float bodyRoll;
-  float legLength;
+  float bodyHeightM;
   float slideStep;
   float ballX;
   float ballY;

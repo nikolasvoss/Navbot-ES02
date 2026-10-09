@@ -79,8 +79,8 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
       return appendf(buffer, capacity, length, " servo1:%.2f servo2:%.2f servo3:%.2f servo4:%.2f\n",
                      p.servoOffsets.servo[0], p.servoOffsets.servo[1], p.servoOffsets.servo[2], p.servoOffsets.servo[3]) ? static_cast<int>(length) : -1;
     case Logging::DebugSelector::K20:
-      return appendf(buffer, capacity, length, " vra:%.6f BodyRoll:%.6f LegLength:%.6f\n",
-                     p.ballBalanceGeometry.ballX, p.ballBalanceGeometry.bodyRoll, p.ballBalanceGeometry.legLength) ? static_cast<int>(length) : -1;
+      return appendf(buffer, capacity, length, " vra:%.6f BodyRoll:%.6f BodyHeightM:%.6f\n",
+                     p.ballBalanceGeometry.ballX, p.ballBalanceGeometry.bodyRoll, p.ballBalanceGeometry.bodyHeightM) ? static_cast<int>(length) : -1;
     case Logging::DebugSelector::K21:
       return appendf(buffer, capacity, length, " roll_ok:%.6f BodyPitching:%.6f\n",
                      p.balanceState.rollOk, p.balanceState.bodyPitch) ? static_cast<int>(length) : -1;
@@ -110,7 +110,7 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
                      p.touchFilteredPoint.xFiltered, p.touchFilteredPoint.yFiltered) ? static_cast<int>(length) : -1;
     case Logging::DebugSelector::K28:
       return appendf(buffer, capacity, length, "  P:%.2f  R:%.5f  H:%.5f  S:%.2f  vra:%.2f  vra:%.2f\n",
-                     p.filteredGeometry.bodyPitch, p.filteredGeometry.bodyRoll, p.filteredGeometry.legLength,
+                     p.filteredGeometry.bodyPitch, p.filteredGeometry.bodyRoll, p.filteredGeometry.bodyHeightM,
                      p.filteredGeometry.slideStep, p.filteredGeometry.ballX, p.filteredGeometry.ballY) ? static_cast<int>(length) : -1;
     case Logging::DebugSelector::K29:
       return appendf(buffer, capacity, length, " Kp:%.6f Ki:%.6f Kd:%.6f deriv:%.2f out:%.2f\n",
@@ -164,8 +164,8 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
       return appendf(buffer, capacity, length, " Vdat:%d Vdatf:%.2f V:%.5f\n",
                      static_cast<int>(p.voltageState.adc), p.voltageState.filteredV, p.voltageState.voltageV) ? static_cast<int>(length) : -1;
     case Logging::DebugSelector::K44:
-      return appendf(buffer, capacity, length, " PidParameterTuning:%d TargetLegLength:%.6f\n",
-                     static_cast<int>(p.tuningState.enabled), p.tuningState.targetLegLength) ? static_cast<int>(length) : -1;
+      return appendf(buffer, capacity, length, " PidParameterTuning:%d TargetBodyHeightM:%.6f\n",
+                     static_cast<int>(p.tuningState.enabled), p.tuningState.targetBodyHeightM) ? static_cast<int>(length) : -1;
     case Logging::DebugSelector::K45:
       return appendf(buffer, capacity, length, " RobotTumble:%d roll_ok:%.6f Angle_Pid.error:%.6f\n",
                      static_cast<int>(p.tumbleState.tumbled), p.tumbleState.rollOk, p.tumbleState.angleError) ? static_cast<int>(length) : -1;

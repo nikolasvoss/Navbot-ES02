@@ -111,9 +111,16 @@ constexpr float DRIVE_TILT_REDUCTION_START_DEG = 5.0f; // TODO where used?
 constexpr float DRIVE_TILT_REDUCTION_FULL_DEG = 10.0f;
 // -------------------------------------
 
+constexpr float BODY_HEIGHT_OVERRIDE_DISABLED_M = 0.0f;
+constexpr float BODY_HEIGHT_MIN_M = 0.05f;
+constexpr float BODY_HEIGHT_DEFAULT_M = 0.06f;
+constexpr float BALL_POISE_MAX_BODY_HEIGHT_M = 0.07f;
+constexpr float BODY_HEIGHT_MAX_M = 0.09f;
+constexpr int BODY_HEIGHT_COMMAND_FILTER_INDEX = 2;
+
 // Body
-float TargetLegLength = 0;          // Target leg length
-float LegLength = 0.06f;            // Leg length
+float TargetBodyHeightOverrideM = BODY_HEIGHT_OVERRIDE_DISABLED_M;  // Zero disables the Commander height override.
+float BodyHeightCommandM = BODY_HEIGHT_DEFAULT_M;  // Remote-controlled body height
 float BarycenterX = 0;              // Center of mass X
 float BodyPitching = 0;             // Pitch
 float BodyRoll = 0;                 // Roll
@@ -125,7 +132,7 @@ int RobotTumble = ROBOT_TUMBLE_NO;  // Robot tumble (fall detection) TODO ROBOT_
 
 
 // 滤波 TODO this looks duplicated to above, what is this?
-float LegLength_f = 0.06f;     // Leg length
+float BodyHeightCommandFilteredM = BODY_HEIGHT_DEFAULT_M;
 float BodyPitching_f = 0;      // Pitch
 float BodyRoll_f = 0;          // Roll
 float SlideStep_f = 0;         // Slide step
@@ -185,8 +192,8 @@ void setImuLowPassCutoff(char *cmd) {
   command.scalar(&imuLowPassCutoffHz, cmd);
 }
 
-void Target_Leg_Length(char *cmd) {
-  command.scalar(&TargetLegLength, cmd);
+void Target_Body_Height(char *cmd) {
+  command.scalar(&TargetBodyHeightOverrideM, cmd);
 }
 
 // Complementary filter TODO filter for what?
@@ -620,7 +627,7 @@ void setup() {
   command.add('S', CbSpeedPid, "my SpeedPid");
   command.add('Y', CbYawPid, "my YawPid");
   command.add('R', CbRollPid, "my RollPid");
-  command.add('O', Target_Leg_Length, "my Target_Leg_Length");
+  command.add('O', Target_Body_Height, "my Target_Body_Height");
 #elif AdjusParameter == ADJUST_BALL_PUSHING
   command.add('L', CbTouchXPid, "my CbTouchXPid");
   command.add('N', CbTouchYPid, "my CbTouchYPid");
@@ -688,13 +695,15 @@ void bleCtrl(){
 
     if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT)  // Attitude control 1
     {
-      LegLength = mapf(ble_ctrler.ch[1], BLE_CH1_MIN, BLE_CH1_MAX, 0.06, 0.09);       // Leg height
+      BodyHeightCommandM = mapf(ble_ctrler.ch[1], BLE_CH1_MIN, BLE_CH1_MAX,
+                                BODY_HEIGHT_DEFAULT_M, BODY_HEIGHT_MAX_M);  // Body height
     } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST)  // Attitude control 2
     {
       BodyPitching = mapf(ble_ctrler.ch[1], BLE_CH1_MIN, BLE_CH1_MAX, -12, 12);  // Pitching       + sbus_vrb
     } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)              // Attitude control 3
     {
-      LegLength = mapf(ble_ctrler.ch[1], BLE_CH1_MIN, BLE_CH1_MAX, 0.06, 0.07);
+      BodyHeightCommandM = mapf(ble_ctrler.ch[1], BLE_CH1_MIN, BLE_CH1_MAX,
+                                BODY_HEIGHT_DEFAULT_M, BALL_POISE_MAX_BODY_HEIGHT_M);
     }
     BodyRoll = mapf(ble_ctrler.ch[0], BLE_CH0_MIN, BLE_CH0_MAX, -0.011, 0.011);
 } 
@@ -702,7 +711,7 @@ void bleCtrl(){
  * @brief Reads and processes data from the FUTABA S.BUS remote controller.
  *
  * This function decodes the S.BUS signal, maps the raw channel values to
- * meaningful control variables like `MovementSpeed`, `BodyTurn`, `LegLength`,
+ * meaningful control variables like `MovementSpeed`, `BodyTurn`, `BodyHeightCommandM`,
  * and `BodyPitching`, and updates global state based on the RC switch positions.
  */
 void RXsbus() {
@@ -731,18 +740,22 @@ void RXsbus() {
     if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT)  // Attitude control 1
     {
       if (sBus.channels[1] <= 992)
-        LegLength = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, 992, 0.05, 0.06);  // Leg height
+        BodyHeightCommandM = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, 992,
+                                  BODY_HEIGHT_MIN_M, BODY_HEIGHT_DEFAULT_M);  // Body height
       else
-        LegLength = mapf(sBus.channels[1], 993, SBUS_CHANNEL_MAX, 0.06, 0.09);       // Leg height
+        BodyHeightCommandM = mapf(sBus.channels[1], 993, SBUS_CHANNEL_MAX,
+                                  BODY_HEIGHT_DEFAULT_M, BODY_HEIGHT_MAX_M);  // Body height
     } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST)  // Attitude control 2
     {
       BodyPitching = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -12, 12);  // Pitching       + sbus_vrb
     } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)              // Attitude control 3
     {
       if (sBus.channels[1] <= 992)
-        LegLength = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, 992, 0.05, 0.06);
+        BodyHeightCommandM = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, 992,
+                                  BODY_HEIGHT_MIN_M, BODY_HEIGHT_DEFAULT_M);
       else
-        LegLength = mapf(sBus.channels[1], 993, SBUS_CHANNEL_MAX, 0.06, 0.07);
+        BodyHeightCommandM = mapf(sBus.channels[1], 993, SBUS_CHANNEL_MAX,
+                                  BODY_HEIGHT_DEFAULT_M, BALL_POISE_MAX_BODY_HEIGHT_M);
 
     }
 
@@ -929,7 +942,7 @@ void print_data(void) {
       sample.payload.servoOffsets = {{zeroBias.servo1, zeroBias.servo2, zeroBias.servo3, zeroBias.servo4}};
       break;
     case 20:
-      sample.payload.ballBalanceGeometry = {top_ball_x, BodyRoll, LegLength};
+      sample.payload.ballBalanceGeometry = {top_ball_x, BodyRoll, BodyHeightCommandM};
       break;
     case 21:
       sample.payload.balanceState = {rollBiasCorrected, BodyPitching};
@@ -959,7 +972,7 @@ void print_data(void) {
       sample.payload.touchFilteredPoint = {Touch.XPdat, Touch.YPdat, Touch.XPdatF, Touch.YPdatF};
       break;
     case 28:
-      sample.payload.filteredGeometry = {BodyPitching_f, BodyRoll_f, LegLength_f, SlideStep_f,
+      sample.payload.filteredGeometry = {BodyPitching_f, BodyRoll_f, BodyHeightCommandFilteredM, SlideStep_f,
                                          top_ball_x, top_ball_y};
       break;
     case 29:
@@ -1019,7 +1032,7 @@ void print_data(void) {
       sample.payload.voltageState = {VoltageADC, VoltageADCf, Voltage};
       break;
     case 44:
-      sample.payload.tuningState = {PidParameterTuning, TargetLegLength};
+      sample.payload.tuningState = {PidParameterTuning, TargetBodyHeightOverrideM};
       break;
     case 45:
       sample.payload.tumbleState = {RobotTumble, rollBiasCorrected, Angle_Pid.error};
@@ -1470,7 +1483,7 @@ void PIDcontroller_posture(float dt) {
  * @brief Applies a low-pass filter to the remote control input values.
  *
  * This function smooths the raw values received from the S.BUS controller
- * (`BodyPitching`, `BodyRoll`, `LegLength`, etc.) using biquad low-pass filters.
+ * (`BodyPitching`, `BodyRoll`, `BodyHeightCommandM`, etc.) using biquad low-pass filters.
  * This prevents jerky movements and improves the stability of the robot's response
  * to user commands. The filter cutoff frequency can be adjusted live.
  */
@@ -1485,12 +1498,13 @@ void RemoteControlFiltering(void)  // Remote control filter
   if ((int)enableDFilter == 1) {
     BodyPitching_f = biquadFilterApply(&FilterLPF[0], BodyPitching);
     BodyRoll_f = biquadFilterApply(&FilterLPF[1], BodyRoll);
-    LegLength_f = biquadFilterApply(&FilterLPF[2], LegLength);
+    BodyHeightCommandFilteredM = biquadFilterApply(
+        &FilterLPF[BODY_HEIGHT_COMMAND_FILTER_INDEX], BodyHeightCommandM);
     SlideStep_f = biquadFilterApply(&FilterLPF[3], SlideStep);
   } else {
     BodyPitching_f = BodyPitching;
     BodyRoll_f = BodyRoll;
-    LegLength_f = LegLength;
+    BodyHeightCommandFilteredM = BodyHeightCommandM;
     SlideStep_f = SlideStep;
   }
 
@@ -1725,7 +1739,7 @@ void loop() {
     m2FilteredVelocityRadPerSec = m2VelocityFilter(m2VelocityRadPerSec);
     m2PrevEncoderAngleRad = sensor2.getAngle();
 
-    float bodyH = 0.06f;
+    float bodyH = BODY_HEIGHT_DEFAULT_M;
     float bodyRoll = BodyRoll_f;
 
     if ((pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (RobotTumble == ROBOT_TUMBLE_YES)) {
@@ -1735,7 +1749,7 @@ void loop() {
         motor2.target = 0;
       }
 
-      bodyH = 0.06;
+      bodyH = BODY_HEIGHT_DEFAULT_M;
       BodyX = 0;
       bodyRoll = 0;
       BodyPitching_f = 0;
@@ -1753,15 +1767,15 @@ void loop() {
       if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)
         bodyRoll = Roll_Pid.output;
 
-      if (TargetLegLength == 0)
-        bodyH = LegLength_f;
+      if (TargetBodyHeightOverrideM == BODY_HEIGHT_OVERRIDE_DISABLED_M)
+        bodyH = BodyHeightCommandFilteredM;
       else
-        bodyH = TargetLegLength;
+        bodyH = TargetBodyHeightOverrideM;
     }
 
     if (RobotTumble == ROBOT_TUMBLE_YES)  // Machine fall
     {
-      bodyH = 0.06;
+      bodyH = BODY_HEIGHT_DEFAULT_M;
       BodyX = 0;
       bodyRoll = 0;
       BodyPitching_f = 0;

@@ -41,14 +41,14 @@ def right_rotation(angle):
 	return 0
 
 #
-def leg_length(length):
-	print(f"leg_length {length} ")
-	length = length * 90
-	if 	length >  666 :
-		length = 666
-	if 	length < -666 :
-		length = -666
-	sbus_out.channels[1] 	= 1000 + length
+def body_height(height_cm):
+	print(f"body_height {height_cm} ")
+	height_channel_offset = height_cm * 90
+	if 	height_channel_offset >  666 :
+		height_channel_offset = 666
+	if 	height_channel_offset < -666 :
+		height_channel_offset = -666
+	sbus_out.channels[1] 	= 1000 + height_channel_offset
 	print(f"ch[2] = {sbus_out.channels[1]} ")
 	return 0
 
@@ -94,7 +94,7 @@ def test():
 	retreat(11)
 	left_rotation(12)
 	right_rotation(13)
-	leg_length(14)
+	body_height(14)
 
 if __name__ == '__main__':
 	test()

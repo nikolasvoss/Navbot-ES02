@@ -248,8 +248,8 @@ def handle_function_call(event_json, ws):
                     value = os.getenv("LEFT_ROTATION_DEFAULT_VALUE")
                 elif action == "right_rotation":
                     value = os.getenv("RIGHT_ROTATION_DEFAULT_VALUE")
-                elif action == "leg_length":
-                    value = os.getenv("LEG_LENGTH_DEFAULT_VALUE")
+                elif action == "body_height":
+                    value = os.getenv("BODY_HEIGHT_DEFAULT_VALUE")
 
             print("receive value:", value)
 
@@ -306,8 +306,8 @@ def move_robot(action, number):
         ES02_def_function.left_rotation(number)
     elif action == "right_rotation":
         ES02_def_function.right_rotation(number)
-    elif action == "leg_length":
-        ES02_def_function.leg_length(number)
+    elif action == "body_height":
+        ES02_def_function.body_height(number)
 
     return
 
@@ -360,7 +360,7 @@ def send_fc_session_update(ws):
                 {
                     "type": "function",
                     "name": "move_robot",
-                    "description": "Control the robot's movement, including moving forward, moving backward, turning, and adjusting the leg length. All distance parameters are in meters, angle parameters are in degrees, and leg length parameters are in centimeters.",
+                    "description": "Control the robot's movement, including moving forward, moving backward, turning, and adjusting body height. All distance parameters are in meters, angle parameters are in degrees, and body height is in centimeters.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -371,9 +371,9 @@ def send_fc_session_update(ws):
                                     "retreat",
                                     "left_rotation",
                                     "right_rotation",
-                                    "leg_length"
+                                    "body_height"
                                 ],
-                                "description": "Action type: advance (move forward)/retreat (move backward)/left_rotation (turn left)/right_rotation (turn right)/leg_length (adjust leg length)"
+                                "description": "Action type: advance (move forward)/retreat (move backward)/left_rotation (turn left)/right_rotation (turn right)/body_height (adjust body height)"
                             },
                             "value": {
                                 "type": "number",
@@ -381,8 +381,8 @@ def send_fc_session_update(ws):
                                     "ADVANCE_DEFAULT_VALUE") + " meters." +
                                                "Or the turning angle (degrees), with a default value of " + os.getenv(
                                     "LEFT_ROTATION_DEFAULT_VALUE") + " degrees." +
-                                               "Or the leg length (centimeters), with a default value of " + os.getenv(
-                                    "LEG_LENGTH_DEFAULT_VALUE") + " centimeters."
+                                               "Or the body height (centimeters), with a default value of " + os.getenv(
+                                    "BODY_HEIGHT_DEFAULT_VALUE") + " centimeters."
                             }
                         },
                         "required": ["action"]

@@ -22,7 +22,7 @@ debug.16	 gyro:0.00 gyrof:0.00\n
 debug.17	 current_sp:0.000000\n
 debug.18	 t:0.000000 a1:0.000000 a11:0.000000 a2:0.000000 a22:0.000000\n
 debug.19	 servo1:0.00 servo2:0.00 servo3:0.00 servo4:0.00\n
-debug.20	 vra:0.000000 BodyRoll:0.000000 LegLength:0.000000\n
+debug.20	 vra:0.000000 BodyRoll:0.000000 BodyHeightM:0.000000\n
 debug.21	 roll_ok:0.000000 BodyPitching:0.000000\n
 debug.22	 it:0.00000 il:0.00000 oI:0.00000 out:0.00000\n
 debug.23	 it:0.00000 il:0.00000 oI:0.00000 A:0.00000 out:0.00000\n
@@ -46,7 +46,7 @@ debug.40	  tX:0  tX:0\n
 debug.41	 roll_ok:0.00000 pa:0.00000 out:0.00000\n
 debug.42	 P:0.00000 P1:0.00000 P3:0.00000\n
 debug.43	 Vdat:0 Vdatf:0.00 V:0.00000\n
-debug.44	 PidParameterTuning:0 TargetLegLength:0.000000\n
+debug.44	 PidParameterTuning:0 TargetBodyHeightM:0.000000\n
 debug.45	 RobotTumble:0 roll_ok:0.000000 Angle_Pid.error:0.000000\n
 debug.60	0.000,0\n
 debug.61	0.000,0\n
