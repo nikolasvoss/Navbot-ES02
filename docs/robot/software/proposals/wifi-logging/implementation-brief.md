@@ -80,7 +80,7 @@ Header (24 bytes):
 Then 26 float32 values, in this exact order (104 bytes):
 
 1. `roll_ok`
-2. `BodyPitching_f` (stored variable, not silently sign-inverted into the angle setpoint)
+2. `BodyPitchingFiltered` (stored variable, not silently sign-inverted into the angle setpoint)
 3–5. `attitude.gyrof.x`, `.y`, `.z`
 6–7. `MovementSpeed`, `BodyTurn`
 8–9. `Motor1_Velocity_f`, `Motor2_Velocity_f`
@@ -97,7 +97,7 @@ Flags: bits 0–1 = current `pid_gains_mode` (0/1/2); bit 2 = tumble; bit 3 = re
 
 When no regulator calculation ran, encode runtime PID fields 10–20 as canonical quiet NaN and clear bit 3, instead of presenting stale values as current. Other fields reflect the actual snapshot. Nonfinite expected-valid values set bit 6, remain visible, and make the quality report flag sensor/controller invalidity; do not silently drop those records or confuse them with transport failure.
 
-Record units and sign conventions in metadata, traced to current calculations. Gyro is filtered rad/s, voltage is the existing battery estimate, motor targets are commands rather than measured currents. Do not assume wheel units or the sign of `BodyPitching_f`; document actual code semantics. No extra unmeasured “voltage minimum” field invented to satisfy old analysis code.
+Record units and sign conventions in metadata, traced to current calculations. Gyro is filtered rad/s, voltage is the existing battery estimate, motor targets are commands rather than measured currents. Do not assume wheel units or the sign of `BodyPitchingFiltered`; document actual code semantics. No extra unmeasured “voltage minimum” field invented to satisfy old analysis code.
 
 Use `esp_timer_get_time()` or an equivalent monotonic 64-bit device clock for timestamps; avoid rollover-prone 32-bit absolute `micros()`. Arrival time at the PC is not measurement time. Records may have irregular spacing; report actual rate/jitter. Neither µs timestamps nor 1-kHz IMU ODR imply µs accuracy or independent 1-kHz samples.
 

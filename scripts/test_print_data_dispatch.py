@@ -60,7 +60,7 @@ void copyServoRangesAndBeginNextWindow(int32_t ranges[4]) {
 }
 float VoltageADCMin = 0, VoltageADC = 0, Voltage = 0, rollBiasCorrected = 0, pitchBiasCorrected = 0;
 float BodyTurn = 0, MovementSpeed = 0, m1FilteredVelocityRadPerSec = 0, m2FilteredVelocityRadPerSec = 0;
-float driveEffectiveSpeed = 0, driveSpeedBodyXRaw = 0, BodyX = 0, BodyPitching_f = 0;
+float driveEffectiveSpeed = 0, driveSpeedBodyXRaw = 0, BodyX = 0, BodyPitchingFiltered = 0;
 float wheelVelocityFeedbackCorrection = 0, top_ball_x = 0, BodyPitching = 0, controlTimestepSec = 0;
 int pid_gains_mode = 0, posture_or_mark_mode = 0, RobotTumble = 0;
 struct Attitude { struct { float z = 0; } gyro; } attitude;

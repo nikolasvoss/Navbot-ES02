@@ -37,7 +37,7 @@ Die IMU sitzt laut PCB-Entwurf auf dem MAIN-Board. Jeder Radmotor hat einen AS56
 
 | Zweig | Fehler aus Soll- und Istwert | Ergebnis im aktiven Zweiradpfad |
 | --- | --- | --- |
-| **Neigung / Balance** | `angleError = rollBiasCorrected + BodyPitching_f` | `Angle_Pid` liefert den gemeinsamen Anteil beider Rad-Sollgeschwindigkeiten. `rollBiasCorrected` heißt im Code „roll“, ist hier der für Vor-/Zurückkippen verwendete Lagewinkel in Grad. |
+| **Neigung / Balance** | `angleError = rollBiasCorrected + BodyPitchingFiltered` | `Angle_Pid` liefert den gemeinsamen Anteil beider Rad-Sollgeschwindigkeiten. `rollBiasCorrected` heißt im Code „roll“, ist hier der für Vor-/Zurückkippen verwendete Lagewinkel in Grad. |
 | **Gieren / Lenken** | `yawError = attitude.gyro.z - BodyTurn` | `Yaw_Pid` liefert einen differentiellen Anteil: Rad 1 bekommt `−yawOutput`, Rad 2 `+yawOutput`. Der Gyro-Z-Wert und der Drehbefehl sind in rad/s. |
 | **Fahren / Raddrehzahl** | `speedError = (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec)/2 - MovementSpeed` | `Speed_Pid` erzeugt `BodyX`; damit verschiebt die Beinkinematik die Servo-Sollpositionen. **Dieser Ausgang wird im aktiven Pfad nicht vom Neigungssollwert der Radmotoren abgezogen.** |
 | **Seitliche Haltung** | `RollError` aus `pitchBiasCorrected`, Roll-Sollwert und Touch-Y | Bei CH7/AUTO erzeugt `Roll_Pid` eine Höhenkorrektur zwischen den Beinen. Bei MANUAL ist sein Ausgang null. |
@@ -45,7 +45,7 @@ Die IMU sitzt laut PCB-Entwurf auf dem MAIN-Board. Jeder Radmotor hat einen AS56
 
 Radmotoren im Kern: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`; danach werden beide auf ±88 begrenzt. Die Vorzeichen sind Softwarekonventionen und ersetzen keinen Test der mechanischen Wirkrichtung. `PIDcontroller_posture()` ist der aktive Zweiradpfad. Die ungenutzte ältere Funktion `PIDcontroller_angle()` wurde am 01.10.2026 beim Aufräumen entfernt. Sie enthielt die klassische Kaskade „Geschwindigkeit → Neigung → Radmotor“, wurde von `loop()` aber nicht aufgerufen. Der Kommentar über `PIDcontroller_posture()` nennt ebenfalls eine Kaskade und ist an dieser Stelle irreführend.
 
-**Zahlenbeispiel ohne I-/D-Anteil:** Bei `rollBiasCorrected=+1°`, `BodyPitching_f=0` und Balance-P=6 trägt der P-Anteil `+6` zur gemeinsamen Rad-Sollgeschwindigkeit bei. Liegt gleichzeitig `yawError=+0,2 rad/s` und Yaw-P=5 vor, ist der Gieranteil `+1`: Rad 1 erhält `6−1=5`, Rad 2 `6+1=7 rad/s`. Das Beispiel zeigt die Mischrechnung; die tatsächliche Reaktion hängt von Vorzeichen, Dynamik, I-/D-Anteilen und Begrenzung ab.
+**Zahlenbeispiel ohne I-/D-Anteil:** Bei `rollBiasCorrected=+1°`, `BodyPitchingFiltered=0` und Balance-P=6 trägt der P-Anteil `+6` zur gemeinsamen Rad-Sollgeschwindigkeit bei. Liegt gleichzeitig `yawError=+0,2 rad/s` und Yaw-P=5 vor, ist der Gieranteil `+1`: Rad 1 erhält `6−1=5`, Rad 2 `6+1=7 rad/s`. Das Beispiel zeigt die Mischrechnung; die tatsächliche Reaktion hängt von Vorzeichen, Dynamik, I-/D-Anteilen und Begrenzung ab.
 
 ### Was passiert bei einem Fahrbefehl?
 
@@ -71,7 +71,7 @@ Das Verhalten ist durch die Mechanik gekoppelt: Eine Servo-Bewegung ändert die 
 | **CH8** | Standard, Pitching Adjust, Ball Pose. Ball Pose aktiviert ebenfalls `BodyPitching` aus Touch-X und CH9. |
 | **CH9/CH10** | Ball-Sollwerte `top_ball_x/y` von ungefähr ±5. CH9 kann die Neigungsvorgabe beeinflussen, auch wenn kein Touchscreen angeschlossen ist. |
 
-**Wichtig für Vergleiche:** `BodyPitching` wird in Standardhaltung nicht überall explizit auf null gesetzt. Nach einem Moduswechsel kann ein vorheriger Wert im RAM weiterwirken, bis er überschrieben oder im CH5-aus-Pfad für `BodyPitching_f` zurückgesetzt wird. `Touch.XPdatF` ist ohne angeschlossenen Touchscreen nicht als gemessene Null belegt. Für einen Versuch CH7/CH8/CH9 und den Touch-Wert gemeinsam protokollieren.
+**Wichtig für Vergleiche:** `BodyPitching` wird in Standardhaltung nicht überall explizit auf null gesetzt. Nach einem Moduswechsel kann ein vorheriger Wert im RAM weiterwirken, bis er überschrieben oder im CH5-aus-Pfad für `BodyPitchingFiltered` zurückgesetzt wird. `Touch.XPdatF` ist ohne angeschlossenen Touchscreen nicht als gemessene Null belegt. Für einen Versuch CH7/CH8/CH9 und den Touch-Wert gemeinsam protokollieren.
 
 BLE hat eine eigene Abbildung der Steuerkanäle. `loop()` ruft nach `CtrlInput()` zusätzlich `RXsbus()` auf. Kommt während einer BLE-Verbindung ein SBUS-Frame an, kann es damit die eben gesetzten BLE-Sollwerte überschreiben. Für Aussagen über die wirksame Befehlsquelle den tatsächlichen Eingangsverlauf messen.
 

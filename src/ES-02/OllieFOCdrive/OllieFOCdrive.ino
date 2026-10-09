@@ -131,24 +131,24 @@ float BodyX = 0;                    // X position (controller output)
 int RobotTumble = ROBOT_NOT_TUMBLING;  // Fall-detection state, see docs/robot/ROBOT_ROADMAP.md
 
 
-// 滤波 TODO this looks duplicated to above, what is this?
+// 滤波
 float BodyHeightCommandFilteredM = BODY_HEIGHT_DEFAULT_M;
-float BodyPitching_f = 0;      // Pitch
-float BodyRoll_f = 0;          // Roll
-float SlideStep_f = 0;         // Slide step
-biquadFilter_t FilterLPF[12];  // Second-order low-pass filter
-float TouchY_Pid_outputF = 0;
-float TouchX_Pid_outputF = 0;
+float BodyPitchingFiltered = 0;      // Pitch
+float BodyRollFiltered = 0;          // Roll
+float SlideStepFiltered = 0;         // Slide step
+biquadFilter_t BodyCommandFilterLPF[12];  // Second-order low-pass filter
+float TouchYPidOutputFiltered = 0;
+float TouchXPidOutputFiltered = 0;
 
-float cutoffFreq = 200; //TODO cutoff for what?
-float enableDFilter = 1;
+float bodyCommandFilterCutoffHz = 200; // Low-pass cutoff frequency (Hz) for remote-control body command filtering.
+float bodyCommandFilteringEnabled = 1;
 
-void CutoffFreq(char *cmd) {
-  command.scalar(&cutoffFreq, cmd);
+void SetBodyCommandFilterCutoffHz(char *cmd) {
+  command.scalar(&bodyCommandFilterCutoffHz, cmd);
 }
 
-void EnableDFilter(char *cmd) {
-  command.scalar(&enableDFilter, cmd);
+void SetBodyCommandFilteringEnabled(char *cmd) {
+  command.scalar(&bodyCommandFilteringEnabled, cmd);
 }
 
 int statusLedOn = 1;
@@ -501,12 +501,12 @@ void setup() {
 
   //TODO is this the most elegant way to initialize the filters?
   for (int i = 0; i < 6; i++)
-    biquadFilterInitLPF(&FilterLPF[i], (unsigned int)cutoffFreq, 1000);
+    biquadFilterInitLPF(&BodyCommandFilterLPF[i], (unsigned int)bodyCommandFilterCutoffHz, 1000);
 
-  biquadFilterInitLPF(&FilterLPF[8], 50, 1000);
-  biquadFilterInitLPF(&FilterLPF[9], 50, 1000);
-  biquadFilterInitLPF(&FilterLPF[10], 200, 1000);
-  biquadFilterInitLPF(&FilterLPF[11], 200, 1000);
+  biquadFilterInitLPF(&BodyCommandFilterLPF[8], 50, 1000);
+  biquadFilterInitLPF(&BodyCommandFilterLPF[9], 50, 1000);
+  biquadFilterInitLPF(&BodyCommandFilterLPF[10], 200, 1000);
+  biquadFilterInitLPF(&BodyCommandFilterLPF[11], 200, 1000);
 
   // use monitoring with serial
   TouchscreenInit(1000);
@@ -619,8 +619,8 @@ void setup() {
   command.add('K', KeyScalar, "my Select");
   command.add('E', KeyCalibration, "my CalibrationSelect");
 
-  command.add('F', CutoffFreq, "my CutoffFreq");
-  command.add('J', EnableDFilter, "my EnableDFilter");
+  command.add('F', SetBodyCommandFilterCutoffHz, "my CutoffFreq");
+  command.add('J', SetBodyCommandFilteringEnabled, "my EnableDFilter");
 
 #if AdjusParameter == ADJUST_BALANCE_SPEED_YAW_ROLL
   command.add('P', CbAnglePid, "my AnglePid");
@@ -953,13 +953,13 @@ void print_data(void) {
       break;
     case 23:
       sample.payload.pidIntegralOutputState = {Speed_Pid.iLimit, Speed_Pid.integral,
-                                               Speed_Pid.outI, BodyPitching_f, Speed_Pid.output};
+                                               Speed_Pid.outI, BodyPitchingFiltered, Speed_Pid.output};
       break;
     case 24:
-      sample.payload.pair = {enableDFilter, cutoffFreq};
+      sample.payload.pair = {bodyCommandFilteringEnabled, bodyCommandFilterCutoffHz};
       break;
     case 25:
-      sample.payload.bodyPitchState = {BodyPitching_f, BodyPitching};
+      sample.payload.bodyPitchState = {BodyPitchingFiltered, BodyPitching};
       break;
     case 26:
       if (Touch.state == 1) {
@@ -972,7 +972,7 @@ void print_data(void) {
       sample.payload.touchFilteredPoint = {Touch.XPdat, Touch.YPdat, Touch.XPdatF, Touch.YPdatF};
       break;
     case 28:
-      sample.payload.filteredGeometry = {BodyPitching_f, BodyRoll_f, BodyHeightCommandFilteredM, SlideStep_f,
+      sample.payload.filteredGeometry = {BodyPitchingFiltered, BodyRollFiltered, BodyHeightCommandFilteredM, SlideStepFiltered,
                                          top_ball_x, top_ball_y};
       break;
     case 29:
@@ -991,7 +991,7 @@ void print_data(void) {
       break;
     case 33:
       sample.payload.pidIntegralOutputState = {Yaw_Pid.iLimit, Yaw_Pid.integral,
-                                               Yaw_Pid.outI, BodyPitching_f, Yaw_Pid.output};
+                                               Yaw_Pid.outI, BodyPitchingFiltered, Yaw_Pid.output};
       break;
     case 34:
       sample.payload.pidTuningState = {TouchX_Pid.Kp, TouchX_Pid.Ki, TouchX_Pid.Kd,
@@ -1026,7 +1026,7 @@ void print_data(void) {
       break;
     case 42:
       sample.payload.rollCorrection = {rollBiasCorrected, BodyPitching,
-                                       BodyPitchingCorrect(BodyPitching_f)};
+                                       BodyPitchingCorrect(BodyPitchingFiltered)};
       break;
     case 43:
       sample.payload.voltageState = {VoltageADC, VoltageADCf, Voltage};
@@ -1150,7 +1150,7 @@ void print_data(void) {
         sample.speedOutput = active ? Speed_Pid.output : 0.0f;
         sample.driveBodyXRaw = active ? driveSpeedBodyXRaw : 0.0f;
         sample.bodyX = active ? BodyX : 0.0f;
-        sample.bodyPitchFiltered = BodyPitching_f;
+        sample.bodyPitchFiltered = BodyPitchingFiltered;
         sample.rollOk = rollBiasCorrected;
         sample.angleOutput = active ? Angle_Pid.output : 0.0f;
         sample.angleProportional = active ? Angle_Pid.outP : 0.0f;
@@ -1326,12 +1326,12 @@ void PIDcontroller_posture(float dt) {
   TouchY_Pid.deriv = constrain(TouchY_Pid.deriv, -11000, 11000);
   TouchY_Pid.outD = TouchY_kd * TouchY_Pid.deriv;
   TouchY_Pid.output = TouchY_Pid.outP + TouchY_Pid.outI + TouchY_Pid.outD + sbus_top_ball_y_smoothed;
-  if ((int)enableDFilter == 1) {
-    TouchY_Pid_outputF = biquadFilterApply(&FilterLPF[10], TouchY_Pid.output);
-    TouchX_Pid_outputF = biquadFilterApply(&FilterLPF[11], TouchX_Pid.output);
+  if ((int)bodyCommandFilteringEnabled == 1) {
+    TouchYPidOutputFiltered = biquadFilterApply(&BodyCommandFilterLPF[10], TouchY_Pid.output);
+    TouchXPidOutputFiltered = biquadFilterApply(&BodyCommandFilterLPF[11], TouchX_Pid.output);
   } else {
-    TouchY_Pid_outputF = TouchY_Pid.output;
-    TouchX_Pid_outputF = TouchX_Pid.output;
+    TouchYPidOutputFiltered = TouchY_Pid.output;
+    TouchXPidOutputFiltered = TouchX_Pid.output;
   }
 
   if ((Touch.state == 1) && (Touch.P_count < 4)) {
@@ -1370,7 +1370,7 @@ void PIDcontroller_posture(float dt) {
     TouchX_Pid.output = 0;
     TouchY_Pid.integral = 0;
     TouchY_Pid.output = 0;
-    TouchY_Pid_outputF = 0;
+    TouchYPidOutputFiltered = 0;
     TouchX_kd = 0;
     TouchY_kd = 0;
   }
@@ -1381,10 +1381,10 @@ void PIDcontroller_posture(float dt) {
   Roll_Pid.Kd = RollPid.D / 100;
   Roll_Pid.iLimit = RollPid.limit;  // Integral limit
 
-  float TargetBodyRoll = BodyRoll_f * 777;                            // Roll
+  float TargetBodyRoll = BodyRollFiltered * 777;                            // Roll
   if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball禁止手动横滚
     TargetBodyRoll = 0;
-  float RollError = (-pitchBiasCorrected) - (-TargetBodyRoll) - (-TouchY_Pid_outputF);
+  float RollError = (-pitchBiasCorrected) - (-TargetBodyRoll) - (-TouchYPidOutputFiltered);
   if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)  // Roll leveling
   {
     Roll_Pid.compute(RollError, dt);
@@ -1422,7 +1422,7 @@ void PIDcontroller_posture(float dt) {
   }
   const float speedBodyX = constrain(driveSpeedBodyXRaw, -DRIVE_BODY_X_LIMIT_M, DRIVE_BODY_X_LIMIT_M);
 
-  BodyX = speedBodyX + BodyPitchingCorrect(BodyPitching_f);
+  BodyX = speedBodyX + BodyPitchingCorrect(BodyPitchingFiltered);
 
   // Balance loop
   Angle_Pid.Kp = AnglePid.P;
@@ -1430,7 +1430,7 @@ void PIDcontroller_posture(float dt) {
   Angle_Pid.Kd = AnglePid.D;
   Angle_Pid.iLimit = AnglePid.limit;  // Integral limit
 
-  float angleError = rollBiasCorrected - (-BodyPitching_f);  // Measured value minus target value
+  float angleError = rollBiasCorrected - (-BodyPitchingFiltered);  // Measured value minus target value
   if (balancePidNeedsPriming) {
     // Avoid a derivative kick when CH5 first enables the balance loop.
     Angle_Pid.previousError = angleError;
@@ -1489,32 +1489,33 @@ void PIDcontroller_posture(float dt) {
  */
 void RemoteControlFiltering(void)  // Remote control filter
 {
-  static int enableDFilter_last = (int)enableDFilter;
-  static int cutoffFreq_last = (int)cutoffFreq;
+  static int bodyCommandFilteringEnabled_last = (int)bodyCommandFilteringEnabled;
+  static int bodyCommandFilterCutoffHz_last = (int)bodyCommandFilterCutoffHz;
 
-  sbus_top_ball_x_smoothed = biquadFilterApply(&FilterLPF[8], top_ball_x);
-  sbus_top_ball_y_smoothed = biquadFilterApply(&FilterLPF[9], top_ball_y);
+  sbus_top_ball_x_smoothed = biquadFilterApply(&BodyCommandFilterLPF[8], top_ball_x);
+  sbus_top_ball_y_smoothed = biquadFilterApply(&BodyCommandFilterLPF[9], top_ball_y);
 
-  if ((int)enableDFilter == 1) {
-    BodyPitching_f = biquadFilterApply(&FilterLPF[0], BodyPitching);
-    BodyRoll_f = biquadFilterApply(&FilterLPF[1], BodyRoll);
+  if ((int)bodyCommandFilteringEnabled == 1) {
+    BodyPitchingFiltered = biquadFilterApply(&BodyCommandFilterLPF[0], BodyPitching);
+    BodyRollFiltered = biquadFilterApply(&BodyCommandFilterLPF[1], BodyRoll);
     BodyHeightCommandFilteredM = biquadFilterApply(
-        &FilterLPF[BODY_HEIGHT_COMMAND_FILTER_INDEX], BodyHeightCommandM);
-    SlideStep_f = biquadFilterApply(&FilterLPF[3], SlideStep);
+        &BodyCommandFilterLPF[BODY_HEIGHT_COMMAND_FILTER_INDEX], BodyHeightCommandM);
+    SlideStepFiltered = biquadFilterApply(&BodyCommandFilterLPF[3], SlideStep);
   } else {
-    BodyPitching_f = BodyPitching;
-    BodyRoll_f = BodyRoll;
+    BodyPitchingFiltered = BodyPitching;
+    BodyRollFiltered = BodyRoll;
     BodyHeightCommandFilteredM = BodyHeightCommandM;
-    SlideStep_f = SlideStep;
+    SlideStepFiltered = SlideStep;
   }
 
-  if (((int)enableDFilter != enableDFilter_last) || ((int)cutoffFreq != cutoffFreq_last)) {
+  if (((int)bodyCommandFilteringEnabled != bodyCommandFilteringEnabled_last) ||
+      ((int)bodyCommandFilterCutoffHz != bodyCommandFilterCutoffHz_last)) {
     for (int i = 0; i < 6; i++) {
-      biquadFilterInitLPF(&FilterLPF[i], (unsigned int)cutoffFreq, 1000);
+      biquadFilterInitLPF(&BodyCommandFilterLPF[i], (unsigned int)bodyCommandFilterCutoffHz, 1000);
     }
 
-    enableDFilter_last = (int)enableDFilter;
-    cutoffFreq_last = (int)cutoffFreq;
+    bodyCommandFilteringEnabled_last = (int)bodyCommandFilteringEnabled;
+    bodyCommandFilterCutoffHz_last = (int)bodyCommandFilterCutoffHz;
     Logging::message(Logging::Level::Info, "Filter", "ok");
   }
 }
@@ -1740,7 +1741,7 @@ void loop() {
     m2PrevEncoderAngleRad = sensor2.getAngle();
 
     float bodyH = BODY_HEIGHT_DEFAULT_M;
-    float bodyRoll = BodyRoll_f;
+    float bodyRoll = BodyRollFiltered;
 
     if ((pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (RobotTumble == ROBOT_TUMBLING)) {
       balancePidNeedsPriming = true;
@@ -1752,7 +1753,7 @@ void loop() {
       bodyH = BODY_HEIGHT_DEFAULT_M;
       BodyX = 0;
       bodyRoll = 0;
-      BodyPitching_f = 0;
+      BodyPitchingFiltered = 0;
 
       Angle_Pid.integral = 0;
       Speed_Pid.integral = 0;
@@ -1778,16 +1779,16 @@ void loop() {
       bodyH = BODY_HEIGHT_DEFAULT_M;
       BodyX = 0;
       bodyRoll = 0;
-      BodyPitching_f = 0;
+      BodyPitchingFiltered = 0;
     }
 
     const LegSolveResult rightLeg = LegKinematics::solveRight(
-        {BarycenterX - BodyX, bodyH - bodyRoll, BodyPitching_f});
+        {BarycenterX - BodyX, bodyH - bodyRoll, BodyPitchingFiltered});
     if (rightLeg.status != LegSolveStatus::Success)
       Logging::message(Logging::Level::Warning, "RightInverseKinematics", "no");
 
     const LegSolveResult leftLeg = LegKinematics::solveLeft(
-        {BarycenterX - BodyX, bodyH + bodyRoll, BodyPitching_f});
+        {BarycenterX - BodyX, bodyH + bodyRoll, BodyPitchingFiltered});
     if (leftLeg.status != LegSolveStatus::Success)
       Logging::message(Logging::Level::Warning, "LeftInverseKinematics", "no");
 
