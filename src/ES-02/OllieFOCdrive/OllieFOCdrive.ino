@@ -239,7 +239,7 @@ float sbus_top_ball_x_smoothed = 0;
 float sbus_top_ball_y_smoothed = 0;
 
 //  Create PID controller instance
-float Select = 0;             // Select the data to print //TODO where is this used? needed?
+float debugLogSelector = 0;  // Selects debug data and the log profile.
 float CalibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Calibrate gyroscope  2: Calibrate Euler angle  3: Calibrate servo
 
 float PidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
@@ -302,8 +302,8 @@ void TwoKi(char *cmd) {
 }
 
 void KeyScalar(char *cmd) {
-  command.scalar(&Select, cmd);
-  RobotLogCapture::setProfileForSelector(static_cast<int>(Select));
+  command.scalar(&debugLogSelector, cmd);
+  RobotLogCapture::setProfileForSelector(static_cast<int>(debugLogSelector));
 }
 void KeyCalibration(char *cmd) {
   command.scalar(&CalibrationSelect, cmd);
@@ -852,14 +852,14 @@ void ImuUpdate(void) {
 /**
  * @brief Prints debugging data to the serial port based on a selection variable.
  *
- * This function uses a large switch statement controlled by the global `Select`
+ * This function uses a large switch statement controlled by the global `debugLogSelector`
  * variable (which can be set via the serial commander). Each case prints a
  * different set of variables, such as IMU data, PID controller states, motor
  * velocities, S.BUS channels, etc. This is a flexible way to debug different
  * parts of the system without recompiling.
  */
 void print_data(void) {
-  const int selection = (int)Select;
+  const int selection = (int)debugLogSelector;
   const uint32_t nowMs = millis();
   if (selection >= 60 && selection <= 75) {
     const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(selection);
@@ -1041,7 +1041,7 @@ void print_data(void) {
   }
   Logging::submit(sample);
   }
-  switch ((int)Select) {
+  switch ((int)debugLogSelector) {
     case 55: {
       if (controlGateSequence % 7 == 0) {
         const uint32_t traceMs = millis();
