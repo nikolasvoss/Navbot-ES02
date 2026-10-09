@@ -169,6 +169,13 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
     case Logging::DebugSelector::K45:
       return appendf(buffer, capacity, length, " RobotTumble:%d roll_ok:%.6f Angle_Pid.error:%.6f\n",
                      static_cast<int>(p.tumbleState.tumbled), p.tumbleState.rollOk, p.tumbleState.angleError) ? static_cast<int>(length) : -1;
+    case Logging::DebugSelector::K46:
+      return appendf(buffer, capacity, length,
+                     "%lu,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f\n",
+                     static_cast<unsigned long>(p.gyroFft.timestampUs),
+                     p.gyroFft.gyroX, p.gyroFft.gyroY, p.gyroFft.gyroZ,
+                     p.gyroFft.gyroXFiltered, p.gyroFft.gyroYFiltered,
+                     p.gyroFft.gyroZFiltered) ? static_cast<int>(length) : -1;
     default:
       if (static_cast<uint8_t>(sample.selector) >= 60 && static_cast<uint8_t>(sample.selector) <= 75)
         return appendf(buffer, capacity, length, "%.3f,%d\n", p.channelState.seconds,

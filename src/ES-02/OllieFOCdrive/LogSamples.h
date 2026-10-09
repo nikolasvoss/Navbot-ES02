@@ -157,6 +157,7 @@ enum class DebugSelector : uint8_t {
   K21, K22, K23, K24, K25, K26, K27, K28, K29, K30,
   K31, K32, K33, K34, K35, K36, K37, K38, K39, K40,
   K41, K42, K43, K44, K45,
+  K46 = 46,
   K60 = 60, K61, K62, K63, K64, K65, K66, K67,
   K68, K69, K70, K71, K72, K73, K74, K75
 };
@@ -208,6 +209,15 @@ struct FilteredGeometry {
 struct PidTuningState { float kp; float ki; float kd; float derivative; float output; };
 struct RollCorrection { float rollOk; float bodyPitch; float correctedBodyPitch; };
 struct BodyPitchState { float filteredDeg; float rawDeg; };
+struct GyroFftSample {
+  uint32_t timestampUs;
+  float gyroX;
+  float gyroY;
+  float gyroZ;
+  float gyroXFiltered;
+  float gyroYFiltered;
+  float gyroZFiltered;
+};
 
 union DebugPayload {
   TimedVector3 timedVector3;
@@ -243,6 +253,7 @@ union DebugPayload {
   PidTuningState pidTuningState;
   RollCorrection rollCorrection;
   BodyPitchState bodyPitchState;
+  GyroFftSample gyroFft;
 };
 
 struct DebugSample {

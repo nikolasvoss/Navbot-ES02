@@ -63,7 +63,7 @@ void latchIncomplete(Logging::IncompleteReason reason) {
 
 bool isValidDebugSelector(Logging::DebugSelector selector) {
   const uint8_t value = static_cast<uint8_t>(selector);
-  return (value >= 1 && value <= 45) || (value >= 60 && value <= 75);
+  return (value >= 1 && value <= 46) || (value >= 60 && value <= 75);
 }
 
 Logging::Result enqueue(LoggingInternal::Record &record) {

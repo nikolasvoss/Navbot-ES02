@@ -886,7 +886,7 @@ void print_data(void) {
   }
 
   const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(selection);
-  if (selection >= 1 && selection <= 45 &&
+  if (selection >= 1 && selection <= 46 &&
       RobotLogCapture::selectedDebugDue(selector, nowMs)) {
   Logging::DebugSample sample{};
   sample.selector = selector;
@@ -1050,6 +1050,11 @@ void print_data(void) {
       break;
     case 45:
       sample.payload.tumbleState = {RobotTumble, rollBiasCorrected, Angle_Pid.error};
+      break;
+    case 46:
+      sample.payload.gyroFft = {
+          static_cast<uint32_t>(timestamp_prev), attitude.gyro.x, attitude.gyro.y,
+          attitude.gyro.z, attitude.gyrof.x, attitude.gyrof.y, attitude.gyrof.z};
       break;
     default: return;
   }

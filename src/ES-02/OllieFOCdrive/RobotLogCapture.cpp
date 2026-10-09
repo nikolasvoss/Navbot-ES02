@@ -30,7 +30,7 @@ bool gateDue(uint32_t nowMs, uint32_t &lastMs) {
 namespace RobotLogCapture {
 
 Logging::Profile profileForSelector(int selector) {
-  if ((selector >= 1 && selector <= 45) || isChannelSelector(selector))
+  if ((selector >= 1 && selector <= 46) || isChannelSelector(selector))
     return Logging::Profile::SelectedDebug;
 
   switch (selector) {
@@ -63,7 +63,7 @@ void setProfileForSelector(int selector) {
 
 bool selectedDebugDue(Logging::DebugSelector selector, uint32_t nowMs) {
   const int value = static_cast<int>(selector);
-  if (value < 1 || (value > 45 && !isChannelSelector(value))) return false;
+  if (value < 1 || (value > 46 && !isChannelSelector(value))) return false;
 
   if (value == 8) return gateDue(nowMs, lastSbusPrintMs);
   if (isChannelSelector(value))

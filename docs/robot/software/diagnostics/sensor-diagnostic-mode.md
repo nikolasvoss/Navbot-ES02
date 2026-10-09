@@ -24,6 +24,26 @@ Historical hardware capture at 921600 baud on 2026-10-07 did not pass: across 95
 
 The software IMU read rate is nominally 100 Hz. The diagnostic LPF cutoff is 20 Hz at a nominal 100 Hz software sample rate (10,000 µs period), giving a 50 Hz Nyquist limit. Raw gyro and acceleration fields bypass that LPF, so content above 50 Hz can alias; the 20 Hz filter does not protect those raw fields. Actual timing is determined by software scheduling and must be checked from `time_us` intervals. The first serial lines contain boot and setup text before the CSV rows. The `DIAG,boot` line reports the reset reason and IMU status. The voltage field uses direct ADC conversion and does not have the filtered value's startup delay.
 
+## Capture raw and filtered gyro data in normal mode
+
+Use normal firmware with `SENSOR_DIAGNOSTIC_MODE=0`. Connect SerialPlot to the CH340 port at the normal firmware's 576000 baud. Set DTR and RTS off, select ASCII input with comma delimiters, and configure seven channels.
+
+In SerialPlot's Commands tab, send `K46` followed by a newline. Each numeric CSV row contains:
+
+```text
+timestamp_us,gyro_x,gyro_y,gyro_z,gyro_x_filtered,gyro_y_filtered,gyro_z_filtered
+```
+
+The timestamp is the completed IMU sample time in microseconds. The six gyro values are in rad/s. K46 uses the selected-debug logger's current 10 ms pacing limit, for up to 100 samples/s and a 50 Hz Nyquist limit. Save a SerialPlot snapshot as CSV, then compare raw and filtered gyro X with:
+
+```bash
+python3 scripts/plot_channel_fft.py gyro.csv --channels 2 5
+```
+
+Channel 1 is the timestamp, channels 2–4 are raw gyro X/Y/Z, and channels 5–7 are filtered gyro X/Y/Z. The 32-bit microsecond timestamp wraps after about 71.6 minutes, so keep a capture shorter than that.
+
+Send `K0` to stop the stream. The selector resets when the board restarts.
+
 ## Plot an RC channel while the robot runs
 
 Use the normal firmware with `SENSOR_DIAGNOSTIC_MODE=0`. Connect SerialPlot to the CH340 port at 115200 baud. Set DTR and RTS off, then choose ASCII input, comma delimiters, and two channels.
