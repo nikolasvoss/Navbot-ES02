@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fqbn": "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=default",
+  "platform": {
+    "id": "esp32:esp32",
+    "version": "3.3.12"
+  },
+  "libraries": [
+    {
+      "name": "ArduinoJson",
+      "version": "7.4.3",
+      "url": "https://arduinojson.org/?utm_source=meta&utm_medium=library.properties"
+    },
+    {
+      "name": "Queue",
+      "version": "2.1",
+      "url": "https://github.com/SMFSW/Queue"
+    },
+    {
+      "name": "Simple FOC",
+      "version": "2.4.0",
+      "url": "https://docs.simplefoc.com"
+    }
+  ]
+}

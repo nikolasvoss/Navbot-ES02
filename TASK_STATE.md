@@ -1,26 +1,25 @@
-# Task state: diagnostic defaults explanation and servo pin naming
+# Task state: commit firmware build versions
 
-Goal: explain the reasons for the diagnostic tuning defaults and IMU sampling cadence, then rename the four servo signal pin macros.
-
-Active contract: `work/servo-diagnostic-followup.scope.md`.
+Goal: keep the versions used by a successful firmware build in a file that can be committed with the source after the user confirms that the robot balances.
 
 ## Decisions
 
-- Keep `DIAGNOSTIC_LIVE_TUNING_DEFAULTS=1`. The flag supplies the documented startup profile, live tuning, CH3 scaling, and measured wheel timing. Its name understates its normal-control effects.
-- Keep the 10 ms diagnostic IMU interval. The sensor-only logger reads at nominal 100 Hz while the IMU continues producing samples at 1 kHz. The 100 Hz cadence aligns its 20 Hz filters and keeps the serial log at 100 rows/s; docs do not establish why 100 Hz is uniquely best.
-- Rename the servo constants to `LEG_SERVO_n_SIGNAL_PIN` to express that they select four leg-servo signal GPIOs in constructor order.
-- Make no control or timing changes.
+- Generate `firmware-build-environment.json` in the repository root after a successful build.
+- Record the FQBN, resolved ESP32 core version, and libraries selected by the compiler.
+- Keep the file observational. Do not install, download, or enforce dependency versions.
+- Do not stage or commit the file from the build script. Git history associates it with source changes when the user commits both after a balance check.
+- Preserve the existing motor 2 estimated-current change in the sketch.
 
 ## Progress
 
-- Read the project workflow, refactoring playbook, source, hardware reference, control/tuning docs, and sensor diagnostic guide.
-- Recorded the task baseline and pre-existing worktree edits in `work/servo-diagnostic-followup.scope.md`.
-- Read-only how review confirmed that disabling the tuning flag also restores fixed wheel-speed timing, and confirmed why diagnostic filter coefficients follow the 100 Hz software cadence.
-- Renamed all four servo pin constants and the constructor references without changing GPIO values or order.
-- Source search found no old macro names. `git diff --check` passed. The default firmware build passed at 741,908 bytes program storage and 39,648 bytes global RAM.
-- Gemini CLI review timed out after 90 seconds and returned `ok: false`; no findings were used.
-- Final independent scope check returned `STATUS: OK` with no scope gaps.
+- The user confirmed balancing worked with ESP32 core 3.3.12, Simple FOC 2.4.0, ArduinoJson 7.4.3, and Queue 2.1.
+- `scripts/build_firmware.py` now writes the tracked root JSON after a successful compile and omits timestamp and source revision fields.
+- README and firmware build design docs describe the generated file and when to commit it.
+- `python3 scripts/build_firmware.py` succeeded. The JSON contains the expected versions and FQBN.
+- `python3 -m py_compile scripts/build_firmware.py` and `git diff --check` passed.
+- No packages were downloaded or installed. No hardware flash was run.
+- The final independent scope check returned STATUS OK.
 
 ## Next step
 
-Task complete. No control or timing behavior was changed.
+Commit `firmware-build-environment.json` with the firmware source after confirming that the robot balances.

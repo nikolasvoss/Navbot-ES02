@@ -69,6 +69,7 @@ The canonical hardware and software documentation follows the two target trees:
   - Queue (`cppQueue.h`)
 
 The repository does not pin the ESP32 core or Arduino library versions. The build uses the versions installed in your Arduino CLI environment.
+Used library versions are recorded per build in firmware-build-environment.json.
     
 ### 2. Build and flash the firmware
 

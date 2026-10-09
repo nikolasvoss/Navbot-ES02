@@ -43,4 +43,19 @@ The implementation must keep the `BuildRequest` data shape and default command a
 
 ## Open questions and risks
 
-The documented ESP32 core version differs from the version installed in the inspected environment. The build command must report compile results without claiming a pinned core or library version.
+The build command does not check the locally installed core or library versions. Use the observed working versions below as a reference when comparing build environments.
+
+After a successful compile, the Python build command updates [`firmware-build-environment.json`](../../../../firmware-build-environment.json) in the repository root. It records the FQBN, resolved platform version, and libraries found in Arduino CLI's compilation database. Git history associates the record with source changes when you commit both files. Commit it after you confirm that the firmware balances. The build command does not stage or commit files.
+
+## Observed working versions
+
+On 2026-10-09, the user confirmed that balancing worked with a firmware build using these installed versions:
+
+| Component | Version |
+| --- | --- |
+| ESP32 core (`esp32:esp32`) | 3.3.12 |
+| Simple FOC | 2.4.0 |
+| ArduinoJson | 7.4.3 |
+| Queue (`cppQueue`) | 2.1 |
+
+The source was based on commit `b198590` with a working-tree change that sets motor 2 to estimated-current torque control. These are observed build environment versions, not build constraints. `scripts/build_firmware.py` uses whichever core and libraries are installed in the local Arduino CLI environment.

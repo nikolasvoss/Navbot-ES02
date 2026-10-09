@@ -552,7 +552,7 @@ void setup() {
   // Set PWM modulation to center alignment mode
   motor1.modulation_centered = 1.0;
 
-  motor2.torque_controller = TorqueControlType::voltage;
+  motor2.torque_controller = TorqueControlType::estimated_current;
   motor2.controller = MotionControlType::velocity;
 
   // TODO where do all these numbers come from? why hardcoded? some values also could be moved to a class or struct if still relevant
