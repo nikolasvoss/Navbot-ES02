@@ -533,7 +533,7 @@ void setup() {
   // link driver
   motor1.linkDriver(&driver);
   motor2.linkDriver(&driver2);
-  motor1.torque_controller = TorqueControlType::voltage;
+  motor1.torque_controller = TorqueControlType::estimated_current;
   motor1.controller = MotionControlType::velocity;
 
     // TODO where do all these numbers come from? why hardcoded? some values also could be moved to a class or struct if still relevant
