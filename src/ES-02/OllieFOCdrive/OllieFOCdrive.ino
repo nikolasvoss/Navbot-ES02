@@ -89,6 +89,11 @@ constexpr PidPreset kTouchYPid{0.2, 170, 0.08, 0};
 #define SBUS_CHANNEL_MIN 192
 constexpr uint32_t kRcFrameTimeoutMs = 100;
 
+struct RcRange {
+  long min;
+  long max;
+};
+
 constexpr unsigned long kSerialBaudRate = 576000;
 #define DIAGNOSTIC_LOG_INTERVAL_US 5000 // Diagnostic CSV rows are emitted at 200 Hz.
 constexpr unsigned int DIAGNOSTIC_LOG_SAMPLE_RATE_HZ = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
@@ -637,45 +642,78 @@ float mapf(long x, long in_min, long in_max, float out_min, float out_max) {
   return (x - in_min) * (out_max - out_min) / divisor + out_min;
 }
 
+constexpr RcRange kBleRcRanges[10] = {
+    {BLE_CH0_MIN, BLE_CH0_MAX}, {BLE_CH1_MIN, BLE_CH1_MAX}, {BLE_CH2_MIN, BLE_CH2_MAX},
+    {BLE_CH3_MIN, BLE_CH3_MAX}, {BLE_CH4_MIN, BLE_CH4_MAX}, {BLE_CH5_MIN, BLE_CH5_MAX},
+    {BLE_CH6_MIN, BLE_CH6_MAX}, {BLE_CH7_MIN, BLE_CH7_MAX}, {BLE_CH8_MIN, BLE_CH8_MAX},
+    {BLE_CH9_MIN, BLE_CH9_MAX}};
+
+constexpr RcRange kSbusRcRanges[10] = {
+    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}};
+
+constexpr long kSbusBodyHeightCenter = 992;
+
+float bleBodyHeightM(long raw, const RcRange& range, float maxHeightM) {
+  return mapf(raw, range.min, range.max, BODY_HEIGHT_DEFAULT_M, maxHeightM);
+}
+
+// Below the stick centre the height falls to the minimum, above it rises to maxHeightM.
+float sbusBodyHeightM(long raw, const RcRange& range, float maxHeightM) {
+  if (raw <= kSbusBodyHeightCenter)
+    return mapf(raw, range.min, kSbusBodyHeightCenter, BODY_HEIGHT_MIN_M, BODY_HEIGHT_DEFAULT_M);
+  return mapf(raw, kSbusBodyHeightCenter + 1, range.max, BODY_HEIGHT_DEFAULT_M, maxHeightM);
+}
+
+/**
+ * @brief Maps ten raw remote channels to the body commands and mode switches.
+ *
+ * Channel 1 drives the body height or the pitching, depending on `attitude_mode`.
+ * The two receivers differ only in their raw ranges and in the body height curve.
+ */
+template <typename Raw>
+void applyRcChannels(const Raw *ch, const RcRange *range,
+                     float (*bodyHeightM)(long, const RcRange&, float)) {
+  MovementSpeed = mapf(ch[2], range[2].min, range[2].max, -15, 15);
+  BodyTurn = -mapf(ch[3], range[3].min, range[3].max, -11, 11);
+  pid_gains_mode = map(ch[4], range[4].min, range[4].max, 0, 2);
+  posture_or_mark_mode = map(ch[5], range[5].min, range[5].max, 0, 1);
+  roll_mode = map(ch[6], range[6].min, range[6].max, 0, 1);
+  attitude_mode = map(ch[7], range[7].min, range[7].max, 0, 2);
+  // Top ball
+  top_ball_x = mapf(ch[8], range[8].min, range[8].max, -5, 5);
+  top_ball_y = mapf(ch[9], range[9].min, range[9].max, -5, 5);
+
+  if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT) {
+    BodyHeightCommandM = bodyHeightM(ch[1], range[1], BODY_HEIGHT_MAX_M);
+  } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST) {
+    BodyPitching = mapf(ch[1], range[1].min, range[1].max, -12, 12);
+  } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) {
+    BodyHeightCommandM = bodyHeightM(ch[1], range[1], BALL_POISE_MAX_BODY_HEIGHT_M);
+  }
+  BodyRoll = mapf(ch[0], range[0].min, range[0].max, -0.011, 0.011);
+}
+
 /**
  * @brief Choose BLE or remote control input
  *
  * Use the remote control as the input when BLE connection is lost.
  */
-
-void CtrlInput(){
-  if(rp.ble_connected){
+void CtrlInput() {
+  if (rp.ble_connected) {
     bleCtrl();
-  }else{
+  } else {
     RXsbus();
   }
 }
-void bleCtrl(){
 
-    MovementSpeed         = mapf(ble_ctrler.ch[2], BLE_CH2_MIN, BLE_CH2_MAX, -15, 15);
-    BodyTurn              = -mapf(ble_ctrler.ch[3], BLE_CH3_MIN, BLE_CH3_MAX, -11, 11);
-    pid_gains_mode        = map(ble_ctrler.ch[4], BLE_CH4_MIN, BLE_CH4_MAX, 0, 2);
-    posture_or_mark_mode  = map(ble_ctrler.ch[5], BLE_CH5_MIN, BLE_CH5_MAX, 0, 1);
-    roll_mode             = map(ble_ctrler.ch[6], BLE_CH6_MIN, BLE_CH6_MAX, 0, 1);
-    attitude_mode         = map(ble_ctrler.ch[7], BLE_CH7_MIN, BLE_CH7_MAX, 0, 2);
-    // Top ball
-    top_ball_x = mapf(ble_ctrler.ch[8], BLE_CH8_MIN, BLE_CH8_MAX, -5, 5);
-    top_ball_y = mapf(ble_ctrler.ch[9], BLE_CH9_MIN, BLE_CH9_MAX, -5, 5);
+void bleCtrl() {
+  applyRcChannels(ble_ctrler.ch, kBleRcRanges, bleBodyHeightM);
+}
 
-    if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT)  // Attitude control 1
-    {
-      BodyHeightCommandM = mapf(ble_ctrler.ch[1], BLE_CH1_MIN, BLE_CH1_MAX,
-                                BODY_HEIGHT_DEFAULT_M, BODY_HEIGHT_MAX_M);  // Body height
-    } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST)  // Attitude control 2
-    {
-      BodyPitching = mapf(ble_ctrler.ch[1], BLE_CH1_MIN, BLE_CH1_MAX, -12, 12);  // Pitching       + sbus_vrb
-    } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)              // Attitude control 3
-    {
-      BodyHeightCommandM = mapf(ble_ctrler.ch[1], BLE_CH1_MIN, BLE_CH1_MAX,
-                                BODY_HEIGHT_DEFAULT_M, BALL_POISE_MAX_BODY_HEIGHT_M);
-    }
-    BodyRoll = mapf(ble_ctrler.ch[0], BLE_CH0_MIN, BLE_CH0_MAX, -0.011, 0.011);
-} 
 /**
  * @brief Reads and processes data from the FUTABA S.BUS remote controller.
  *
@@ -698,41 +736,9 @@ void RXsbus() {
     sBus.UpdateChannels();
     sBus.toChannels = 0;
 
-    MovementSpeed = mapf(sBus.channels[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -15, 15);
+    applyRcChannels(sBus.channels, kSbusRcRanges, sbusBodyHeightM);
     if (DIAGNOSTIC_LIVE_TUNING_DEFAULTS)
       MovementSpeed *= 2.0f;  // Keep drive-command authority near the previous 0.03 x 3.3 setting.
-    BodyTurn = -mapf(sBus.channels[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -11, 11);
-    pid_gains_mode = map(sBus.channels[4], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
-    posture_or_mark_mode = map(sBus.channels[5], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
-    roll_mode = map(sBus.channels[6], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
-    attitude_mode = map(sBus.channels[7], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
-    // Top ball
-    top_ball_x = mapf(sBus.channels[8], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -5, 5);  // Modify top ball target position
-    top_ball_y = mapf(sBus.channels[9], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -5, 5);
-
-    if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT)  // Attitude control 1
-    {
-      if (sBus.channels[1] <= 992)
-        BodyHeightCommandM = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, 992,
-                                  BODY_HEIGHT_MIN_M, BODY_HEIGHT_DEFAULT_M);  // Body height
-      else
-        BodyHeightCommandM = mapf(sBus.channels[1], 993, SBUS_CHANNEL_MAX,
-                                  BODY_HEIGHT_DEFAULT_M, BODY_HEIGHT_MAX_M);  // Body height
-    } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST)  // Attitude control 2
-    {
-      BodyPitching = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -12, 12);  // Pitching       + sbus_vrb
-    } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)              // Attitude control 3
-    {
-      if (sBus.channels[1] <= 992)
-        BodyHeightCommandM = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, 992,
-                                  BODY_HEIGHT_MIN_M, BODY_HEIGHT_DEFAULT_M);
-      else
-        BodyHeightCommandM = mapf(sBus.channels[1], 993, SBUS_CHANNEL_MAX,
-                                  BODY_HEIGHT_DEFAULT_M, BALL_POISE_MAX_BODY_HEIGHT_M);
-
-    }
-
-    BodyRoll = mapf(sBus.channels[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);
   }
 
   const bool lost = static_cast<uint32_t>(millis() - lastFrameMs) > kRcFrameTimeoutMs ||
