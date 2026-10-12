@@ -465,6 +465,88 @@ void configureWheelMotor(BLDCMotor& motor, const WheelPidParams& pid) {
   motor.modulation_centered = 1.0;
 }
 
+void initIMU(const imu::CalibrationValues& imuCalibration) {
+  if (!imu::begin(imu::Settings{}, imuCalibration)) {
+    Serial.println("IMU initialization failed!");
+    while (1)
+      ;
+  }
+  Serial.println("IMU initialized successfully!");
+}
+
+void initRemoteControl() {
+  sBus.begin();  // TODO rename sBus to rc or similar
+}
+
+void initTouchAndFilters() {
+  for (int i = 0; i < 6; i++)
+    biquadFilterInitLPF(&BodyCommandFilterLPF[i], (unsigned int)bodyCommandFilterCutoffHz, 1000);
+
+  biquadFilterInitLPF(&BodyCommandFilterLPF[8], 50, 1000);
+  biquadFilterInitLPF(&BodyCommandFilterLPF[9], 50, 1000);
+  biquadFilterInitLPF(&BodyCommandFilterLPF[10], 200, 1000);
+
+  TouchscreenInit(1000);
+}
+
+void initPositionSensors() {
+  I2Cone.begin(board::kI2cOneSdaPin, board::kI2cOneSclPin, 400000);
+  I2Ctwo.begin(board::kI2cTwoSdaPin, board::kI2cTwoSclPin, 400000);
+  sensor1.init(&I2Cone);
+  sensor2.init(&I2Ctwo);
+
+  motor1.linkSensor(&sensor1);
+  motor2.linkSensor(&sensor2);
+}
+
+void initDrivers() {
+  driver.voltage_power_supply = kWheelSupplyVoltageV;
+  driver.init();
+
+  driver2.voltage_power_supply = kWheelSupplyVoltageV;
+  driver2.init();
+
+  motor1.linkDriver(&driver);
+  motor2.linkDriver(&driver2);
+}
+
+void registerCommands() {
+  command.add('T', handleM1MotionCommand, "motion1 control");  // Set motor target value
+  command.add('M', handleM1Command, "motor1");
+
+  command.add('A', zeroBias_servo1, "my zeroBias_servo1");  // Set servo 1 bias
+  command.add('B', zeroBias_servo2, "my zeroBias_servo2");
+  command.add('C', zeroBias_servo3, "my zeroBias_servo3");
+  command.add('D', zeroBias_servo4, "my zeroBias_servo4");
+
+  command.add('Z', setImuLowPassCutoff, "my ImuLPF_CUTOFF_FREQ");
+
+  command.add('Q', TwoKp, "my TwoKp");  // MahonyFilter
+  command.add('I', TwoKi, "my TwoKi");  // MahonyFilter
+
+  command.add('K', KeyScalar, "my Select");
+  command.add('E', KeyCalibration, "my CalibrationSelect");
+
+  command.add('F', SetBodyCommandFilterCutoffHz, "my CutoffFreq");
+  command.add('J', SetBodyCommandFilteringEnabled, "my EnableDFilter");
+
+#if AdjusParameter == ADJUST_BALANCE_SPEED_YAW_ROLL
+  command.add('P', CbAnglePid, "anglePidSettings");
+  command.add('S', CbSpeedPid, "speedPidSettings");
+  command.add('Y', CbYawPid, "yawPidSettings");
+  command.add('R', CbRollPid, "rollPidSettings");
+  command.add('O', Target_Body_Height, "my Target_Body_Height");
+#elif AdjusParameter == ADJUST_BALL_PUSHING
+  command.add('L', CbTouchXPid, "touchXPidSettings");
+  command.add('N', CbTouchYPid, "touchYPidSettings");
+  command.add('G', ControlTorqueCompensation, "my ControlTorqueCompensation");
+#endif
+
+  command.add('U', User_command, "my User_command");
+  command.add('V', CbWheelSpeedFeedbackGain, "wheel speed feedback gain");
+  command.add('W', CbDriveTiltReductionGain, "drive tilt reduction gain");
+}
+
 void setAssemblyPosition() {
   servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);
 }
@@ -524,105 +606,30 @@ void setup() {
   _delay(555);
 
   setAssemblyPosition();  // TODO why is this repeated?
-  // IMU
-  if (!imu::begin(imu::Settings{}, imuCalibration)) {
-    Serial.println("IMU initialization failed!");
-    while (1)
-      ;
-  }
-  Serial.println("IMU initialized successfully!");
 
-  // Remote control
-  sBus.begin(); //TODO rename sBus to rc or similar
-
-  //TODO is this the most elegant way to initialize the filters?
-  for (int i = 0; i < 6; i++)
-    biquadFilterInitLPF(&BodyCommandFilterLPF[i], (unsigned int)bodyCommandFilterCutoffHz, 1000);
-
-  biquadFilterInitLPF(&BodyCommandFilterLPF[8], 50, 1000);
-  biquadFilterInitLPF(&BodyCommandFilterLPF[9], 50, 1000);
-  biquadFilterInitLPF(&BodyCommandFilterLPF[10], 200, 1000);
-
-  // use monitoring with serial
-  TouchscreenInit(1000);
-  // enable more verbose output for debugging
-  // comment out if not needed
-  SimpleFOCDebug::enable(&Serial); // TODO a more centralized way to enable debug sections would be nice
-
-  I2Cone.begin(board::kI2cOneSdaPin, board::kI2cOneSclPin, 400000);
-  I2Ctwo.begin(board::kI2cTwoSdaPin, board::kI2cTwoSclPin, 400000);
-  sensor1.init(&I2Cone);
-  sensor2.init(&I2Ctwo);
-
-  // link the motor to the sensor
-  motor1.linkSensor(&sensor1);
-  motor2.linkSensor(&sensor2);
-
-  // driver config
-  // power supply voltage [V]
-  driver.voltage_power_supply = kWheelSupplyVoltageV;
-  driver.init();
-
-  driver2.voltage_power_supply = kWheelSupplyVoltageV;
-  driver2.init();
-  // link driver
-  motor1.linkDriver(&driver);
-  motor2.linkDriver(&driver2);
+  initIMU(imuCalibration);
+  initRemoteControl();
+  initTouchAndFilters();
+  SimpleFOCDebug::enable(&Serial);  // TODO a more centralized way to enable debug sections would be nice
+  initPositionSensors();
+  initDrivers();
   configureWheelMotor(motor1, kWheelVelocityPid);
   configureWheelMotor(motor2, kWheelVelocityPid);
 
-  // initialise motor
   motor1.init();
   motor2.init();
-  // align encoder and start FOC
 
+  // align encoder and start FOC
   motor1.initFOC();
   motor2.initFOC();
 
-  // set the inital target value
   motor1.target = 0;
   motor2.target = 0;
 
-  // comment out if not needed
-
-  motor1.useMonitoring(Serial); //TODO logger lib usable here?
+  motor1.useMonitoring(Serial);  // TODO logger lib usable here?
   motor1.monitor_downsample = 10;
 
-  // subscribe motor to the commander
-  command.add('T', handleM1MotionCommand, "motion1 control");  // Set motor target value
-  command.add('M', handleM1Command, "motor1");
-
-  command.add('A', zeroBias_servo1, "my zeroBias_servo1");  // Set servo 1 bias
-  command.add('B', zeroBias_servo2, "my zeroBias_servo2");
-  command.add('C', zeroBias_servo3, "my zeroBias_servo3");
-  command.add('D', zeroBias_servo4, "my zeroBias_servo4");
-
-  command.add('Z', setImuLowPassCutoff, "my ImuLPF_CUTOFF_FREQ");
-
-  command.add('Q', TwoKp, "my TwoKp");  // MahonyFilter
-  command.add('I', TwoKi, "my TwoKi");  // MahonyFilter
-
-  command.add('K', KeyScalar, "my Select");
-  command.add('E', KeyCalibration, "my CalibrationSelect");
-
-  command.add('F', SetBodyCommandFilterCutoffHz, "my CutoffFreq");
-  command.add('J', SetBodyCommandFilteringEnabled, "my EnableDFilter");
-
-#if AdjusParameter == ADJUST_BALANCE_SPEED_YAW_ROLL
-  command.add('P', CbAnglePid, "anglePidSettings");
-  command.add('S', CbSpeedPid, "speedPidSettings");
-  command.add('Y', CbYawPid, "yawPidSettings");
-  command.add('R', CbRollPid, "rollPidSettings");
-  command.add('O', Target_Body_Height, "my Target_Body_Height");
-#elif AdjusParameter == ADJUST_BALL_PUSHING
-  command.add('L', CbTouchXPid, "touchXPidSettings");
-  command.add('N', CbTouchYPid, "touchYPidSettings");
-  command.add('G', ControlTorqueCompensation, "my ControlTorqueCompensation");
-#endif
-
-  command.add('U', User_command, "my User_command");
-  command.add('V', CbWheelSpeedFeedbackGain, "wheel speed feedback gain");
-  command.add('W', CbDriveTiltReductionGain, "drive tilt reduction gain");
+  registerCommands();
 
   Serial.println("Motor ready.");
 
