@@ -1,7 +1,6 @@
 #ifndef ICM42688_H
 #define ICM42688_H
 
-#include <SPI.h>
 #include <cstdint>
 
 // Define HSPI pins
@@ -150,14 +149,12 @@
 #define UB4_REG_OFFSET_USER8 0x7F 
 
 // BANK 1
-// #define GYRO_CONFIG_STATIC2 0x0B
 #define GYRO_NF_ENABLE 0x00 
 #define GYRO_NF_DISABLE 0x01 
 #define GYRO_AAF_ENABLE 0x00 
 #define GYRO_AAF_DISABLE 0x02 
 
 // BANK 2
-// #define ACCEL_CONFIG_STATIC2 0x03 
 #define ACCEL_AAF_ENABLE 0x00 
 #define ACCEL_AAF_DISABLE 0x01
 
@@ -270,9 +267,6 @@ enum AccelFS{
     gpm2 = 0x03
 };
 
-// Declare hspi as external variable
-extern SPIClass * hspi;
-
 struct ICM42688RawSample {
     int16_t accelerationX;
     int16_t accelerationY;
@@ -283,11 +277,6 @@ struct ICM42688RawSample {
     int16_t temperature;
 };
 
-// Function declarations
-void readBytes(uint8_t reg, uint8_t *data, uint8_t length);
-void writeBytes(uint8_t reg, uint8_t *data, uint8_t length);
-int16_t read16BitData(uint8_t reg_high, uint8_t reg_low);
-void selectUserBank(uint8_t bank);
 bool initICM42688(uint16_t sampleRateHz);
 bool readIMUDataIfReady(ICM42688RawSample& sample);
 

@@ -3,10 +3,9 @@
 #include <Arduino.h>
 #include <cstdint>
 
-// Define hspi variable for controlling HSPI interface for SPI communication
-SPIClass * hspi = new SPIClass(HSPI);
-
 namespace {
+SPIClass * const hspi = new SPIClass(HSPI);
+
 constexpr uint8_t kDataReadyBit = 1U << 3;
 
 bool outputRateRegisterValue(uint16_t sampleRateHz, uint8_t& registerValue) {
@@ -23,7 +22,7 @@ int16_t signedWord(const uint8_t* bytes) {
     const uint16_t value = static_cast<uint16_t>(bytes[0]) << 8 | bytes[1];
     return static_cast<int16_t>(value);
 }
-}
+
 /**
  * @brief Read multiple bytes of data starting from the specified register address of the ICM42688 sensor
  * 
@@ -67,21 +66,6 @@ void writeBytes(uint8_t reg, uint8_t *data, uint8_t length) {
 }
 
 /**
- * @brief Read 16-bit data from two consecutive registers of the ICM42688 sensor
- * 
- * @param reg_high High byte register address
- * @param reg_low Low byte register address
- * @return int16_t 16-bit data read
- */
-int16_t read16BitData(uint8_t reg_high, uint8_t reg_low) {
-    uint8_t data[2];
-    // First read data from high byte register
-    readBytes(reg_high, data, 2);
-    // Combine high byte and low byte into 16-bit data
-    return (data[0] << 8) | data[1];
-}
-
-/**
  * @brief Select user bank of ICM42688 sensor
  * 
  * @param bank User bank number to select
@@ -91,6 +75,8 @@ void selectUserBank(uint8_t bank) {
     // Write user bank number to REG_BANK_SEL register
     writeBytes(REG_BANK_SEL, &data, 1);
 }
+
+}  // namespace
 
 /**
  * @brief Initialize ICM42688 sensor, including HSPI interface, sensor reset, device ID check,
