@@ -1,124 +1,86 @@
 #!/usr/bin/env python3
-"""Compile the print_data selector and trace dispatch from the sketch source."""
+"""Check the debug selector to log profile dispatch of the DebugTelemetry module."""
 
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKETCH = ROOT / "src/ES-02/OllieFOCdrive/OllieFOCdrive.ino"
+SKETCH = ROOT / "src/ES-02/OllieFOCdrive"
+TESTS = ROOT / "tests/telemetry"
+
+SELECTED = list(range(1, 47))
+CHANNELS = list(range(60, 76))
+SILENT = [0, 47, 54, 59, 76, 80]
+TRACE_KIND = {55: "Trace", 56: "Control", 57: "Balance", 58: "Drive"}
 
 
-def extract_function(source: str) -> str:
-    start = source.index("void print_data(void) {")
-    opening = source.index("{", start)
-    depth = 0
-    for index in range(opening, len(source)):
-        if source[index] == "{":
-            depth += 1
-        elif source[index] == "}":
-            depth -= 1
-            if depth == 0:
-                return source[start : index + 1]
-    raise AssertionError("print_data has no matching closing brace")
+def compile_driver(directory: Path) -> Path:
+    executable = directory / "dispatch_driver"
+    subprocess.run([
+        "g++", "-std=c++17", "-Wall", "-Wextra", "-Werror",
+        "-I", str(TESTS / "support"), "-I", str(SKETCH),
+        str(SKETCH / "DebugTelemetry.cpp"),
+        str(TESTS / "support/RecordingStubs.cpp"),
+        str(TESTS / "dispatch_driver.cpp"),
+        "-o", str(executable),
+    ], check=True)
+    return executable
 
 
-def make_trace_harness(function: str) -> str:
-    debug_selector = function.rindex("  const Logging::DebugSelector selector =")
-    sample_start = function.index("  Logging::DebugSample sample{};", debug_selector)
-    trace_switch = function.index("  switch ((int)Select)", sample_start)
-    debug_prefix = function[:function.index("  if (selection >= 60")]
-    debug_prefix += function[debug_selector:sample_start]
-    # The payload assembly needs the full Arduino sketch state. Keep the real
-    # selector guard and trace switch while omitting only the unrelated payload.
-    if debug_prefix.rstrip().endswith("{"):
-        debug_prefix += "\n  }\n"
-    function = debug_prefix + function[trace_switch:]
-
-    return r'''#include "LogSamples.h"
-#include <algorithm>
-#include <cassert>
-#include <cstdint>
-
-struct PidState { float error = 0, output = 0, outP = 0, outI = 0, outD = 0; };
-struct TouchState { float XPdatF = 0; };
-TouchState Touch;
-PidState Angle_Pid, Yaw_Pid, Speed_Pid;
-namespace Logging {
-int traceSubmits = 0, controlSubmits = 0, balanceSubmits = 0, driveSubmits = 0;
-void submit(const TraceSample&) { ++traceSubmits; }
-void submit(const ControlSample&) { ++controlSubmits; }
-void submit(const BalanceSample&) { ++balanceSubmits; }
-void submit(const DriveSample&) { ++driveSubmits; }
-}
-namespace RobotLogCapture {
-bool selectedDebugDue(Logging::DebugSelector, uint32_t) { return true; }
-void copyServoRangesAndBeginNextWindow(int32_t ranges[4]) {
-  for (int i = 0; i < 4; ++i) ranges[i] = 0;
-}
-}
-float VoltageADCMin = 0, VoltageADC = 0, Voltage = 0, rollBiasCorrected = 0, pitchBiasCorrected = 0;
-float BodyTurn = 0, MovementSpeed = 0, m1FilteredVelocityRadPerSec = 0, m2FilteredVelocityRadPerSec = 0;
-float driveEffectiveSpeed = 0, driveSpeedBodyXRaw = 0, BodyX = 0, BodyPitchingFiltered = 0;
-float wheelVelocityFeedbackCorrection = 0, top_ball_x = 0, BodyPitching = 0, controlTimestepSec = 0;
-int pid_gains_mode = 0, posture_or_mark_mode = 0, RobotTumble = 0;
-struct Attitude { struct { float z = 0; } gyro; } attitude;
-constexpr int ROBOT_NOT_TUMBLING = 0;
-float motor1Target = 0, motor2Target = 0;
-struct Motor { float target = 0; } motor1, motor2;
-int servoTraceAngle[4] = {};
-float Select = 0;
-uint32_t controlGateSequence = 0, activeTraceSequence = 0;
-uint32_t clockMs = 1;
-uint32_t millis() { return clockMs; }
-bool pid_gains_mode_is_enabled(int) { return false; }
-int max(int a, int b) { return std::max(a, b); }
-void print_data(void);
-''' + function + r'''
-
-int submitCount() {
-  return Logging::traceSubmits + Logging::controlSubmits +
-         Logging::balanceSubmits + Logging::driveSubmits;
-}
-
-int main() {
-  const int selectors[] = {55, 56, 57, 58};
-  for (int i = 0; i < 4; ++i) {
-    Select = selectors[i];
-    controlGateSequence = 1;
-    const int before = submitCount();
-    print_data();
-    assert(submitCount() == before);
-    controlGateSequence = 7;
-    print_data();
-    assert(submitCount() == before + 1);
-  }
-  assert(Logging::traceSubmits == 1);
-  assert(Logging::controlSubmits == 1);
-  assert(Logging::balanceSubmits == 1);
-  assert(Logging::driveSubmits == 1);
-}
-'''
+def run_ticks(executable: Path, ticks):
+    """Runs ticks (selection, gate, due, variant) against one fresh telemetry state."""
+    script = "".join("%d %d %d %d\n" % tick for tick in ticks)
+    result = subprocess.run([str(executable)], input=script, capture_output=True, text=True, check=True)
+    return result.stdout.splitlines()
 
 
-def main() -> None:
-    source = SKETCH.read_text()
-    function = extract_function(source)
-    harness = make_trace_harness(function)
-    with tempfile.TemporaryDirectory(prefix="print-data-dispatch-") as temp:
-        temp_path = Path(temp)
-        cpp_path = temp_path / "print_data_dispatch.cpp"
-        binary_path = temp_path / "print_data_dispatch"
-        cpp_path.write_text(harness)
-        subprocess.run(
-            ["g++", "-std=c++11", "-Wall", "-Wextra", "-Werror", "-I",
-             str(ROOT / "src/ES-02/OllieFOCdrive"), str(cpp_path), "-o", str(binary_path)],
-            check=True,
-        )
-        subprocess.run([str(binary_path)], check=True)
-    print("print_data trace dispatch and 7-gate cadence passed")
+def expect(failures, label, actual, expected):
+    if actual != expected:
+        failures.append("%s: expected %r, got %r" % (label, expected, actual))
+
+
+def main() -> int:
+    failures = []
+    with tempfile.TemporaryDirectory(prefix="print-data-dispatch-") as directory:
+        executable = compile_driver(Path(directory))
+
+        # Variant 0 has touch state 1 and gate 1 keeps the trace profiles quiet.
+        for selector in SELECTED + CHANNELS:
+            (due, paced, touch_idle) = run_ticks(
+                executable, [(selector, 1, 1, 0), (selector, 1, 0, 0), (selector, 1, 1, 2)])
+            expect(failures, "selector %d due" % selector, due, "%d 1 -> K%d" % (selector, selector))
+            expect(failures, "selector %d paced out" % selector, paced, "%d 1 -> -" % selector)
+            touch_gated = selector in (26, 40)
+            expect(failures, "selector %d with touch state 2" % selector, touch_idle,
+                   "%d 1 -> %s" % (selector, "-" if touch_gated else "K%d" % selector))
+
+        for selector in SILENT + list(TRACE_KIND):
+            (off_gate,) = run_ticks(executable, [(selector, 1, 1, 0)])
+            expect(failures, "selector %d off the trace gate" % selector, off_gate, "%d 1 -> -" % selector)
+        for selector in SILENT:
+            (on_gate,) = run_ticks(executable, [(selector, 0, 1, 0)])
+            expect(failures, "selector %d on the trace gate" % selector, on_gate, "%d 0 -> -" % selector)
+
+        for selector, kind in TRACE_KIND.items():
+            first, quiet, second, third = run_ticks(
+                executable, [(selector, 0, 1, 0), (selector, 6, 1, 0), (selector, 7, 1, 0), (selector, 14, 0, 0)])
+            expect(failures, "selector %d first tick" % selector, first, "%d 0 -> %s#0" % (selector, kind))
+            expect(failures, "selector %d tick between gates" % selector, quiet, "%d 6 -> -" % selector)
+            expect(failures, "selector %d second row" % selector, second, "%d 7 -> %s#1" % (selector, kind))
+            expect(failures, "selector %d row ignores selected-debug pacing" % selector, third,
+                   "%d 14 -> %s#2" % (selector, kind))
+
+    for failure in failures:
+        print("FAIL " + failure, file=sys.stderr)
+    if failures:
+        return 1
+    print("print_data dispatch: %d selected, %d channel, %d trace selectors ok"
+          % (len(SELECTED), len(CHANNELS), len(TRACE_KIND)))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
