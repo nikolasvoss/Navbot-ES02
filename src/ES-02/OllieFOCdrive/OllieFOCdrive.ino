@@ -163,11 +163,11 @@ void setBodyCommandFilteringEnabled(char *cmd) {
 int statusLedOn = 1;
 int statusLedTicks = 0;
 int statusLedPeriodTicks = 100;
-// Battery voltage Measurement
+// Battery Voltage Measurement
 biquadFilter_t voltageFilterLpf;  // Second-order low-pass filter
 uint16_t voltageAdc = 0;          // Battery voltage ADC data
 float voltageAdcFiltered = 0;            // Battery voltage ADC data
-float voltage = 0;                // Battery voltage
+float batteryVoltage = 0;                // Battery voltage
 
 uint32_t controlGateSequence = 0;
 DebugTelemetry::TelemetryState debugTelemetryState{};
@@ -826,7 +826,7 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
 
   in.voltageAdc = voltageAdc;
   in.voltageAdcFiltered = voltageAdcFiltered;
-  in.voltage = voltage;
+  in.voltage = batteryVoltage;
 
   in.pidGainsMode = pidGainsMode;
   in.postureOrMarkMode = postureOrMarkMode;
@@ -1141,7 +1141,7 @@ void readBatteryVoltage(void) {
   if (debugTelemetryState.voltageAdcMin == 0 || voltageAdc < debugTelemetryState.voltageAdcMin)
     debugTelemetryState.voltageAdcMin = voltageAdc;
   voltageAdcFiltered = biquadFilterApply(&voltageFilterLpf, voltageAdc);
-  voltage = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
+  batteryVoltage = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
 }
 
 /**
@@ -1286,11 +1286,11 @@ void updateStatusLed() {
   }
 
   static uint32_t lastLowBatteryWarningMs = millis();
-  if (voltage <= board::kLowBatteryVolts) {
+  if (batteryVoltage <= board::kLowBatteryVolts) {
     statusLedPeriodTicks = 20;
     if (static_cast<uint32_t>(millis() - lastLowBatteryWarningMs) >= 1000) {
       lastLowBatteryWarningMs = millis();
-      Logging::message(Logging::Level::Warning, "Voltage", "%.5f", voltage);
+      Logging::message(Logging::Level::Warning, "Voltage", "%.5f", batteryVoltage);
     }
   } else {
     statusLedPeriodTicks = 100;
