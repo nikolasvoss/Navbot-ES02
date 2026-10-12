@@ -124,24 +124,20 @@ constexpr int BODY_HEIGHT_COMMAND_FILTER_INDEX = 2;
 // Body
 float TargetBodyHeightOverrideM = BODY_HEIGHT_OVERRIDE_DISABLED_M;  // Zero disables the Commander height override.
 float BodyHeightCommandM = BODY_HEIGHT_DEFAULT_M;  // Remote-controlled body height
-float BarycenterX = 0;              // Center of mass X
 float BodyPitching = 0;             // Pitch
 float BodyRoll = 0;                 // Roll
 float MovementSpeed = 0;            // Movement speed
 float BodyTurn = 0;                 // Turning
-float SlideStep = 0;                // Slide step
 float BodyX = 0;                    // X position (controller output)
 int RobotTumble = ROBOT_NOT_TUMBLING;  // Fall-detection state, see docs/robot/ROBOT_ROADMAP.md
 
 
-// 滤波
+// Filtered remote-control commands
 float BodyHeightCommandFilteredM = BODY_HEIGHT_DEFAULT_M;
 float BodyPitchingFiltered = 0;      // Pitch
 float BodyRollFiltered = 0;          // Roll
-float SlideStepFiltered = 0;         // Slide step
 biquadFilter_t BodyCommandFilterLPF[12];  // Second-order low-pass filter
 float TouchYPidOutputFiltered = 0;
-float TouchXPidOutputFiltered = 0;
 
 float bodyCommandFilterCutoffHz = 200; // Low-pass cutoff frequency (Hz) for remote-control body command filtering.
 float bodyCommandFilteringEnabled = 1;
@@ -265,7 +261,7 @@ PIDController touchYPidSettings(TOUCH_Y_PID_P_DEFAULT, TOUCH_Y_PID_I_DEFAULT,
 float control_torque_compensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
 float wheelVelocityFeedbackCorrection = 0;
-float driveTiltReductionGain = 1.0f; //TODO what does it do?
+float driveTiltReductionGain = 1.0f;  // Scales the speed reduction applied as tilt approaches DRIVE_TILT_REDUCTION_FULL_DEG.
 float driveEffectiveSpeed = 0;
 float driveSpeedBodyXRaw = 0;
 
@@ -278,7 +274,7 @@ MyPIDController Roll_Pid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 
 MyPIDController TouchX_Pid(0, 0, 0, 0, 10, pidTimestepSec, 0, 0);
 MyPIDController TouchY_Pid(0, 0, 0, 0, 8, pidTimestepSec, 0, 0);
-bool balancePidNeedsPriming = true; // what does this mean? 
+bool balancePidNeedsPriming = true;  // Priming avoids a derivative kick when CH5 enables the balance loop.
 
 void ControlTorqueCompensation(char *cmd) {
   command.scalar(&control_torque_compensation, cmd);
@@ -329,7 +325,8 @@ void KeyCalibration(char *cmd) {
 }
 
 #if AdjusParameter == ADJUST_BALANCE_SPEED_YAW_ROLL
-void CbAnglePid(char *cmd) { //TODO cb meaning?
+// Cb prefix: Commander callback.
+void CbAnglePid(char *cmd) {
   command.pid(&anglePidSettings, cmd);
 }
 void CbSpeedPid(char *cmd) {
@@ -364,9 +361,6 @@ double m2PrevEncoderAngleRad = 0;
 float m2VelocityRadPerSec = 0;
 float m2FilteredVelocityRadPerSec = 0;
 LowPassFilter m2VelocityFilter = LowPassFilter(0.01);  // Tf = 10ms
-
-double m1AngleRad = 0;
-double m2AngleRad = 0;
 
 float controlTimestepSec = 0;
 unsigned long loopTimeUs = 0;
@@ -509,7 +503,6 @@ void setup() {
   biquadFilterInitLPF(&BodyCommandFilterLPF[8], 50, 1000);
   biquadFilterInitLPF(&BodyCommandFilterLPF[9], 50, 1000);
   biquadFilterInitLPF(&BodyCommandFilterLPF[10], 200, 1000);
-  biquadFilterInitLPF(&BodyCommandFilterLPF[11], 200, 1000);
 
   // use monitoring with serial
   TouchscreenInit(1000);
@@ -540,7 +533,7 @@ void setup() {
   motor1.controller = MotionControlType::velocity;
 
     // TODO where do all these numbers come from? why hardcoded? some values also could be moved to a class or struct if still relevant
-  motor1.motion_downsample = 0.0;  //
+  motor1.motion_downsample = 0.0;
 
   // velocity loop PID
   motor1.PID_velocity.P = 0.006;  // 0.07;
@@ -602,16 +595,16 @@ void setup() {
   // comment out if not needed
 
   motor1.useMonitoring(Serial); //TODO logger lib usable here?
-  motor1.monitor_downsample = 10;  // disable intially
+  motor1.monitor_downsample = 10;
 
   // subscribe motor to the commander
   command.add('T', handleM1MotionCommand, "motion1 control");  // Set motor target value
   command.add('M', handleM1Command, "motor1");
 
   command.add('A', zeroBias_servo1, "my zeroBias_servo1");  // Set servo 1 bias
-  command.add('B', zeroBias_servo2, "my zeroBias_servo2");  //
-  command.add('C', zeroBias_servo3, "my zeroBias_servo3");  //
-  command.add('D', zeroBias_servo4, "my zeroBias_servo4");  //
+  command.add('B', zeroBias_servo2, "my zeroBias_servo2");
+  command.add('C', zeroBias_servo3, "my zeroBias_servo3");
+  command.add('D', zeroBias_servo4, "my zeroBias_servo4");
 
   command.add('Z', setImuLowPassCutoff, "my ImuLPF_CUTOFF_FREQ");
 
@@ -640,7 +633,6 @@ void setup() {
   command.add('V', CbWheelSpeedFeedbackGain, "wheel speed feedback gain");
   command.add('W', CbDriveTiltReductionGain, "drive tilt reduction gain");
 
-  // Run user commands to configure and the motor (find the full command list in docs.simplefoc.com)
   Serial.println("Motor ready.");
 
   _delay(1000);
@@ -686,7 +678,7 @@ void bleCtrl(){
     roll_mode             = map(ble_ctrler.ch[6], BLE_CH6_MIN, BLE_CH6_MAX, 0, 1);
     attitude_mode         = map(ble_ctrler.ch[7], BLE_CH7_MIN, BLE_CH7_MAX, 0, 2);
     // Top ball
-    top_ball_x = mapf(ble_ctrler.ch[8], BLE_CH8_MIN, BLE_CH8_MAX, -5, 5);  //  
+    top_ball_x = mapf(ble_ctrler.ch[8], BLE_CH8_MIN, BLE_CH8_MAX, -5, 5);
     top_ball_y = mapf(ble_ctrler.ch[9], BLE_CH9_MIN, BLE_CH9_MAX, -5, 5);
 
     if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT)  // Attitude control 1
@@ -770,11 +762,6 @@ void RXsbus() {
   }
 }
 
-/**
- * @brief Converts an angle from radians to degrees.
- * @param arc The angle in radians.
- * @return The angle in degrees.
- */
 /**
  * @brief Prints debugging data to the serial port based on a selection variable.
  *
@@ -901,7 +888,7 @@ void print_data(void) {
       sample.payload.touchFilteredPoint = {Touch.XPdat, Touch.YPdat, Touch.XPdatF, Touch.YPdatF};
       break;
     case 28:
-      sample.payload.filteredGeometry = {BodyPitchingFiltered, BodyRollFiltered, BodyHeightCommandFilteredM, SlideStepFiltered,
+      sample.payload.filteredGeometry = {BodyPitchingFiltered, BodyRollFiltered, BodyHeightCommandFilteredM, 0.0f,
                                          top_ball_x, top_ball_y};
       break;
     case 29:
@@ -1109,18 +1096,16 @@ void print_data(void) {
 }
 
 /**
- * @brief Applies a polynomial correction to the body pitching value.
+ * @brief Applies a quadratic correction to the body pitching value.
  *
- * This function implements a quadratic correction formula. This is likely an
- * empirical correction factor to compensate for nonlinearities in the system
- * dynamics or sensor readings, improving balance performance.
+ * Computes y = 4E-06 x^2 + 0.0004 x - 0.0008.
  *
  * @param x The raw body pitching value.
  * @return The corrected body pitching value.
  */
 float BodyPitchingCorrect(float x)  // Pitch angle correction
 {
-  float y = 0.000004 * x * x + 0.0004 * x - 0.0008;  // y = 4E-06x2 + 0.0004x - 0.0008    y = -2E-07x2 + 0.0002x - 0.0029
+  float y = 0.000004 * x * x + 0.0004 * x - 0.0008;
   return y;
 }
 
@@ -1245,10 +1230,8 @@ void PIDcontroller_posture(float dt) {
   TouchY_Pid.output = TouchY_Pid.outP + TouchY_Pid.outI + TouchY_Pid.outD + sbus_top_ball_y_smoothed;
   if ((int)bodyCommandFilteringEnabled == 1) {
     TouchYPidOutputFiltered = biquadFilterApply(&BodyCommandFilterLPF[10], TouchY_Pid.output);
-    TouchXPidOutputFiltered = biquadFilterApply(&BodyCommandFilterLPF[11], TouchX_Pid.output);
   } else {
     TouchYPidOutputFiltered = TouchY_Pid.output;
-    TouchXPidOutputFiltered = TouchX_Pid.output;
   }
 
   if ((Touch.state == 1) && (Touch.P_count < 4)) {
@@ -1299,7 +1282,7 @@ void PIDcontroller_posture(float dt) {
   Roll_Pid.iLimit = rollPidSettings.limit;  // Integral limit
 
   float TargetBodyRoll = BodyRollFiltered * 777;                            // Roll
-  if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball禁止手动横滚
+  if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball mode disables manual roll
     TargetBodyRoll = 0;
   float RollError = (-imu::latest().correctedPitchDegrees) - (-TargetBodyRoll) - (-TouchYPidOutputFiltered);
   if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)  // Roll leveling
@@ -1417,12 +1400,10 @@ void RemoteControlFiltering(void)  // Remote control filter
     BodyRollFiltered = biquadFilterApply(&BodyCommandFilterLPF[1], BodyRoll);
     BodyHeightCommandFilteredM = biquadFilterApply(
         &BodyCommandFilterLPF[BODY_HEIGHT_COMMAND_FILTER_INDEX], BodyHeightCommandM);
-    SlideStepFiltered = biquadFilterApply(&BodyCommandFilterLPF[3], SlideStep);
   } else {
     BodyPitchingFiltered = BodyPitching;
     BodyRollFiltered = BodyRoll;
     BodyHeightCommandFilteredM = BodyHeightCommandM;
-    SlideStepFiltered = SlideStep;
   }
 
   if (((int)bodyCommandFilteringEnabled != bodyCommandFilteringEnabled_last) ||
@@ -1585,10 +1566,6 @@ void loop() {
   // iterative setting FOC phase voltage
   motor1.loopFOC();
   motor2.loopFOC();
-
-
-  m1AngleRad = -sensor1.getPreciseAngle();
-  m2AngleRad = sensor2.getPreciseAngle();
 
   // user communication
   command.run();
