@@ -14,7 +14,7 @@ Diese Seite ergänzt die [Systemübersicht](../system-overview.md); alle Bauteil
 | 5 V | `U1` RT8289GSP, `L1` FXL0630-100-M, Eingangsnetz `VIN`, Ausgang `+5V` | Schaltregler für 5-V-Verbraucher/Anschlüsse. |
 | 3,3 V | `U2` XC6210B332MR von `+5V` nach `+3.3V` | Versorgt ESP32, IMU, Encoder und Logik; nicht die Servolast. |
 | Servo-Versorgung | `H11`: 1 `+5V`, 2 Servo-Versorgungsnetz, 3 `VIN`; dasselbe Netz an `H9/H10` Pins 3/4 | Dreipolige Auswahl: Brücke 1–2 = 5 V, 2–3 = VIN. Welche Brücke physisch steckt, ist nicht aus dem PCB-Projekt ableitbar. Vor 2S-VIN an Servos deren Zulässigkeit prüfen. |
-| Batteriespannung | `R1` 10 kΩ von `VIN` nach `ADC`, `R2` 1 kΩ nach GND, `C1` 100 nF; `ADC` → ESP32 `GPIO17` | Spannungsteiler ca. 1:11. `ReadVoltage()` nutzt eine lokale Kalibrierung `7.77 / 813.43 × ADC`; dieser Schätzwert ist kein direkter 3,3-V- oder Zell-Einzelwert. |
+| Batteriespannung | `R1` 10 kΩ von `VIN` nach `ADC`, `R2` 1 kΩ nach GND, `C1` 100 nF; `ADC` → ESP32 `GPIO17` | Spannungsteiler ca. 1:11. `readBatteryVoltage()` nutzt eine lokale Kalibrierung `7.77 / 813.43 × ADC`; dieser Schätzwert ist kein direkter 3,3-V- oder Zell-Einzelwert. |
 
 **Prüfpunkt 5-V-Regler:** Im PCB-Netzlistenexport ist Pin 5 (`EN`) des RT8289 `U1` als unverbunden markiert. Die Netzliste allein klärt nicht, ob ein interner Default, eine abweichende reale Bestückung oder ein Designfehler vorliegt. Bei fehlenden 5 V zuerst diesen Punkt am realen Board und mit dem Bauteildatenblatt prüfen; aus der vorhandenen Board-Beobachtung folgt keine Pin-5-Messung.
 

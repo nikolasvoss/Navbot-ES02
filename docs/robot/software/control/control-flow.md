@@ -38,21 +38,21 @@ Die IMU sitzt laut PCB-Entwurf auf dem MAIN-Board. Jeder Radmotor hat einen AS56
 | Zweig | Fehler aus Soll- und Istwert | Ergebnis im aktiven Zweiradpfad |
 | --- | --- | --- |
 | **Neigung / Balance** | `angleError = rollBiasCorrected + BodyPitchingFiltered` | `Angle_Pid` liefert den gemeinsamen Anteil beider Rad-Sollgeschwindigkeiten. `rollBiasCorrected` heißt im Code „roll“, ist hier der für Vor-/Zurückkippen verwendete Lagewinkel in Grad. |
-| **Gieren / Lenken** | `yawError = attitude.gyro.z - BodyTurn` | `Yaw_Pid` liefert einen differentiellen Anteil: Rad 1 bekommt `−yawOutput`, Rad 2 `+yawOutput`. Der Gyro-Z-Wert und der Drehbefehl sind in rad/s. |
-| **Fahren / Raddrehzahl** | `speedError = (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec)/2 - MovementSpeed` | `Speed_Pid` erzeugt `BodyX`; damit verschiebt die Beinkinematik die Servo-Sollpositionen. **Dieser Ausgang wird im aktiven Pfad nicht vom Neigungssollwert der Radmotoren abgezogen.** |
+| **Gieren / Lenken** | `yawError = attitude.gyro.z - bodyTurn` | `Yaw_Pid` liefert einen differentiellen Anteil: Rad 1 bekommt `−yawOutput`, Rad 2 `+yawOutput`. Der Gyro-Z-Wert und der Drehbefehl sind in rad/s. |
+| **Fahren / Raddrehzahl** | `speedError = (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec)/2 - movementSpeed` | `Speed_Pid` erzeugt `BodyX`; damit verschiebt die Beinkinematik die Servo-Sollpositionen. **Dieser Ausgang wird im aktiven Pfad nicht vom Neigungssollwert der Radmotoren abgezogen.** |
 | **Seitliche Haltung** | `RollError` aus `pitchBiasCorrected`, Roll-Sollwert und Touch-Y | Bei CH7/AUTO erzeugt `Roll_Pid` eine Höhenkorrektur zwischen den Beinen. Bei MANUAL ist sein Ausgang null. |
-| **Touch-/Ball-Pose** | Touch-X/Y und CH9/10 | Verändert `BodyPitching`, einen seitlichen Touch-Anteil und damit mittelbar Rad- bzw. Servo-Vorgaben; siehe unten. |
+| **Touch-/Ball-Pose** | Touch-X/Y und CH9/10 | Verändert `bodyPitching`, einen seitlichen Touch-Anteil und damit mittelbar Rad- bzw. Servo-Vorgaben; siehe unten. |
 
-Radmotoren im Kern: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`; danach werden beide auf ±88 begrenzt. Die Vorzeichen sind Softwarekonventionen und ersetzen keinen Test der mechanischen Wirkrichtung. `PIDcontroller_posture()` ist der aktive Zweiradpfad. Die ungenutzte ältere Funktion `PIDcontroller_angle()` wurde am 01.10.2026 beim Aufräumen entfernt. Sie enthielt die klassische Kaskade „Geschwindigkeit → Neigung → Radmotor“, wurde von `loop()` aber nicht aufgerufen. Der Kommentar über `PIDcontroller_posture()` nennt ebenfalls eine Kaskade und ist an dieser Stelle irreführend.
+Radmotoren im Kern: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`; danach werden beide auf ±88 begrenzt. Die Vorzeichen sind Softwarekonventionen und ersetzen keinen Test der mechanischen Wirkrichtung. `runPostureController()` ist der aktive Zweiradpfad. Die ungenutzte ältere Funktion `PIDcontroller_angle()` wurde am 01.10.2026 beim Aufräumen entfernt. Sie enthielt die klassische Kaskade „Geschwindigkeit → Neigung → Radmotor“, wurde von `loop()` aber nicht aufgerufen. Der Kommentar über `runPostureController()` nennt ebenfalls eine Kaskade und ist an dieser Stelle irreführend.
 
 **Zahlenbeispiel ohne I-/D-Anteil:** Bei `rollBiasCorrected=+1°`, `BodyPitchingFiltered=0` und Balance-P=6 trägt der P-Anteil `+6` zur gemeinsamen Rad-Sollgeschwindigkeit bei. Liegt gleichzeitig `yawError=+0,2 rad/s` und Yaw-P=5 vor, ist der Gieranteil `+1`: Rad 1 erhält `6−1=5`, Rad 2 `6+1=7 rad/s`. Das Beispiel zeigt die Mischrechnung; die tatsächliche Reaktion hängt von Vorzeichen, Dynamik, I-/D-Anteilen und Begrenzung ab.
 
 ### Was passiert bei einem Fahrbefehl?
 
-1. CH3 wird auf `MovementSpeed` abgebildet. Die Radwinkeländerung wird zur gefilterten Raddrehzahl; der Mittelwert beider Räder bildet den Istwert des Geschwindigkeitsreglers.
+1. CH3 wird auf `movementSpeed` abgebildet. Die Radwinkeländerung wird zur gefilterten Raddrehzahl; der Mittelwert beider Räder bildet den Istwert des Geschwindigkeitsreglers.
 2. `Speed_Pid` berechnet `BodyX` aus Ist minus Soll. `BodyX` geht in die X-Koordinate der inversen Beinkinematik. Die Servos verlagern so die Geometrie und damit die Last relativ zu den Rädern.
 3. Die IMU liefert über Mahony den Neigungswinkel `rollBiasCorrected`. `Angle_Pid` ändert die **beiden** Rad-Sollgeschwindigkeiten gemeinsam, damit die Neigung geregelt wird.
-4. CH4 gibt `BodyTurn` vor. Der Gierregler vergleicht ihn mit `gyro.z` und erhöht die eine Rad-Sollgeschwindigkeit, während er die andere verringert.
+4. CH4 gibt `bodyTurn` vor. Der Gierregler vergleicht ihn mit `gyro.z` und erhöht die eine Rad-Sollgeschwindigkeit, während er die andere verringert.
 5. SimpleFOC vergleicht die jeweilige Rad-Sollgeschwindigkeit mit dem Encoder und berechnet über FOC/PWM die Motoransteuerung. In dieser Konfiguration ist der SimpleFOC-Motormodus `velocity`, die innere Drehmomentregelung `voltage`; die optionalen Strommesskreise sind auskompiliert. `current_limit=5` ist daher **kein Nachweis** einer gemessenen oder hart begrenzten Akku-Stromstärke.
 
 Das Verhalten ist durch die Mechanik gekoppelt: Eine Servo-Bewegung ändert die Lage; eine Radbewegung ändert Neigung und Raddrehzahl. Deshalb kann ein Zittern in beiden Aktorgruppen sichtbar werden, auch wenn der Anstoß nur aus einem Zweig kommt.
@@ -62,18 +62,18 @@ Das Verhalten ist durch die Mechanik gekoppelt: Eine Servo-Bewegung ändert die 
 | Eingang | Wirkung im aktuellen Zweiradcode |
 | --- | --- |
 | **CH1** | Seitlicher Haltungswunsch `BodyRoll` (bei AUTO wirksam). |
-| **CH2** | Beinhöhe in Standard-/Ball-Pose; in Haltung 1 direkter `BodyPitching`-Wunsch. |
-| **CH3** | Fahrwunsch `MovementSpeed`, normalerweise ±15; im aktuellen Diagnose-Quellstand ×2. |
-| **CH4** | Drehwunsch `BodyTurn`, Bereich ungefähr ±11 rad/s nach Vorzeichenumkehr im Code. |
+| **CH2** | Beinhöhe in Standard-/Ball-Pose; in Haltung 1 direkter `bodyPitching`-Wunsch. |
+| **CH3** | Fahrwunsch `movementSpeed`, normalerweise ±15; im aktuellen Diagnose-Quellstand ×2. |
+| **CH4** | Drehwunsch `bodyTurn`, Bereich ungefähr ±11 rad/s nach Vorzeichenumkehr im Code. |
 | **CH5** | 0: Rad-Sollwerte null, PID-Integratoren zurückgesetzt. 1 und 2: beide aktivieren denselben Zweirad-Regelpfad. Ohne Diagnoseüberschreibung wählen 1/2 verschiedene Gain-Sätze. |
 | **CH6** | Posture: inverse Beinkinematik; Mark: Montage-/Kalibrierstellung der Servos. |
-| **CH7** | MANUAL/AUTO für seitliche Ausregelung. AUTO aktiviert zusätzlich den `BodyPitching`-Pfad aus Touch-X und CH9. |
-| **CH8** | Standard, Pitching Adjust, Ball Pose. Ball Pose aktiviert ebenfalls `BodyPitching` aus Touch-X und CH9. |
+| **CH7** | MANUAL/AUTO für seitliche Ausregelung. AUTO aktiviert zusätzlich den `bodyPitching`-Pfad aus Touch-X und CH9. |
+| **CH8** | Standard, Pitching Adjust, Ball Pose. Ball Pose aktiviert ebenfalls `bodyPitching` aus Touch-X und CH9. |
 | **CH9/CH10** | Ball-Sollwerte `top_ball_x/y` von ungefähr ±5. CH9 kann die Neigungsvorgabe beeinflussen, auch wenn kein Touchscreen angeschlossen ist. |
 
-**Wichtig für Vergleiche:** `BodyPitching` wird in Standardhaltung nicht überall explizit auf null gesetzt. Nach einem Moduswechsel kann ein vorheriger Wert im RAM weiterwirken, bis er überschrieben oder im CH5-aus-Pfad für `BodyPitchingFiltered` zurückgesetzt wird. `Touch.XPdatF` ist ohne angeschlossenen Touchscreen nicht als gemessene Null belegt. Für einen Versuch CH7/CH8/CH9 und den Touch-Wert gemeinsam protokollieren.
+**Wichtig für Vergleiche:** `bodyPitching` wird in Standardhaltung nicht überall explizit auf null gesetzt. Nach einem Moduswechsel kann ein vorheriger Wert im RAM weiterwirken, bis er überschrieben oder im CH5-aus-Pfad für `BodyPitchingFiltered` zurückgesetzt wird. `Touch.XPdatF` ist ohne angeschlossenen Touchscreen nicht als gemessene Null belegt. Für einen Versuch CH7/CH8/CH9 und den Touch-Wert gemeinsam protokollieren.
 
-BLE hat eine eigene Abbildung der Steuerkanäle. `loop()` ruft nach `CtrlInput()` zusätzlich `RXsbus()` auf. Kommt während einer BLE-Verbindung ein SBUS-Frame an, kann es damit die eben gesetzten BLE-Sollwerte überschreiben. Für Aussagen über die wirksame Befehlsquelle den tatsächlichen Eingangsverlauf messen.
+BLE hat eine eigene Abbildung der Steuerkanäle. `readControlInput()` liest bei verbundenem BLE nur BLE, sonst SBUS. SBUS wird pro Schleife genau einmal gelesen, sodass BLE-Sollwerte nicht überschrieben werden.
 
 ## Takt, Einheiten und Filter
 
@@ -84,7 +84,7 @@ BLE hat eine eigene Abbildung der Steuerkanäle. `loop()` ruft nach `CtrlInput()
 
 ### Biquad-Filter und Abtastraten
 
-`biquadFilterInitLPF(filter, cutoffHz, samplingRateHz)` erwartet Grenzfrequenz und Abtastrate in Hz. Die Funktion berechnet `omega = 2π · cutoffHz / samplingRateHz`. Die frühere Rechnung behandelte die Abtastrate fälschlich als Periodendauer in Mikrosekunden. Im Diagnosemodus ruft `DiagnosticLoop()` `ImuUpdate()` nominal alle 10 ms auf. Die IMU-Filter sind dort auf 20 Hz Grenzfrequenz und 100 Hz Abtastrate ausgelegt.
+`biquadFilterInitLPF(filter, cutoffHz, samplingRateHz)` erwartet Grenzfrequenz und Abtastrate in Hz. Die Funktion berechnet `omega = 2π · cutoffHz / samplingRateHz`. Die frühere Rechnung behandelte die Abtastrate fälschlich als Periodendauer in Mikrosekunden. Im Diagnosemodus ruft `diagnosticLoop()` `ImuUpdate()` nominal alle 10 ms auf. Die IMU-Filter sind dort auf 20 Hz Grenzfrequenz und 100 Hz Abtastrate ausgelegt.
 
 Im normalen Modus ruft `loop()` `ImuUpdate()` bei jedem Durchlauf auf. `imuSampleRateHz` startet bei 1000 und bestimmt nur die IMU-Filterkoeffizienten. Der Wert taktet keine Messung. `MahonyFilter::update()` erhält die gefilterten Gyro- und Beschleunigungswerte sowie das gemessene `IMUtime_dt`. Bei `imuSampleRateHz` = 1000 Hz liefert die korrigierte Rechnung dieselben Koeffizienten wie zuvor. Andere `imuSampleRateHz`-Werte haben nun die beabsichtigte Bedeutung in Hz. Der Quellcode belegt keine feste IMU-Abtastrate und keinen genauen Frequenzgang unter Last. Die Firmware berechnet die Koeffizienten bei Parameteränderungen neu, nicht bei jedem Sample.
 
@@ -108,14 +108,14 @@ Diese Aufzeichnung belegt den Diagnose-Telemetrietakt und stationäre Glättung.
 | Yaw P / I / D | 4 / 0 / 0 | 4 / 0 / 0 | 4 / 0 / 0 |
 | CH3-Abbildung | ±15 × 2 | ±15 | ±15 |
 
-Der Yaw-I-Startwert ist in beiden CH5-Modi null. Die Grenze ±0,1 ist die Grenze des **Balance-Integralzustands**, nicht des Motorziels: Mit I=200 ergibt sie maximal ±20 Beitrag; P und D können weitere Anteile liefern. Das Motorziel selbst wird auf ±88 begrenzt. Die Speed-Koeffizienten werden in `PIDcontroller_posture()` durch 100 geteilt, bevor `Speed_Pid` sie nutzt. Serielle Kommandos wie `PP5`, `PD0.12`, `SP0.04` ändern die Werte nur bis zum Neustart; die Quelle und das geflashte Image müssen vor Messvergleichen abgeglichen werden.
+Der Yaw-I-Startwert ist in beiden CH5-Modi null. Die Grenze ±0,1 ist die Grenze des **Balance-Integralzustands**, nicht des Motorziels: Mit I=200 ergibt sie maximal ±20 Beitrag; P und D können weitere Anteile liefern. Das Motorziel selbst wird auf ±88 begrenzt. Die Speed-Koeffizienten werden in `runPostureController()` durch 100 geteilt, bevor `Speed_Pid` sie nutzt. Serielle Kommandos wie `PP5`, `PD0.12`, `SP0.04` ändern die Werte nur bis zum Neustart; die Quelle und das geflashte Image müssen vor Messvergleichen abgeglichen werden.
 
 ## Freigabe und Schutz im Code
 
 - CH5=0 oder erkannter Fall: Rad-Sollwerte null, `BodyX` und die PID-Integratoren zurückgesetzt. SimpleFOC läuft weiter; „Sollwert null“ bedeutet hier nicht abgeschaltete Endstufe.
-- `Robot_Tumble()` setzt nach 20 aufeinanderfolgenden Regelaufrufen mit `|rollBiasCorrected| >= 35°` das Fall-Flag. Zur Freigabe muss der Winkel wieder `<= 5°` sein und der interne Zähler zurücklaufen. Die Zeit hängt vom realen Regeltakt ab.
+- `updateTumbleState()` setzt nach 20 aufeinanderfolgenden Regelaufrufen mit `|rollBiasCorrected| >= 35°` das Fall-Flag. Zur Freigabe muss der Winkel wieder `<= 5°` sein und der interne Zähler zurücklaufen. Die Zeit hängt vom realen Regeltakt ab.
 - Die Akkuspannung kommt über GPIO17 von der **2S-Akkuleitung**, nicht von der 3,3-V-Schiene. Unter 7,4 V blinkt die Status-LED schneller, und die Firmware loggt im Regeltakt höchstens einmal pro Sekunde eine Warnung; eine Abschaltung gibt es nicht. Ein Spannungseinbruch kann weitere Hardwareeffekte haben, wird von dieser Schwelle aber nicht aktiv unterbunden.
-- Solange SBUS die aktive Quelle ist (BLE nicht verbunden), setzt `RXsbus()` `MovementSpeed` und `BodyTurn` auf null, wenn seit mehr als 100 ms kein gültiger Frame ankam oder `sBus.Failsafe()` nicht OK meldet. Die Schaltermodi und die Körperhöhen-, Nick- und Rollbefehle behalten ihren zuletzt empfangenen Wert; der Roboter balanciert weiter auf der Stelle. Ein Übergang in den Verlustzustand und zurück wird je einmal als Warnung `RC` geloggt. Bei verbundenem BLE gilt diese Prüfung nicht.
+- Solange SBUS die aktive Quelle ist (BLE nicht verbunden), setzt `readSbus()` `movementSpeed` und `bodyTurn` auf null, wenn seit mehr als 100 ms kein gültiger Frame ankam oder `sBus.Failsafe()` nicht OK meldet. Die Schaltermodi und die Körperhöhen-, Nick- und Rollbefehle behalten ihren zuletzt empfangenen Wert; der Roboter balanciert weiter auf der Stelle. Bei verbundenem BLE gilt diese Prüfung nicht.
 - Die Gyro-Kalibrierung (`E1`) blockiert den Regeltakt für mehrere Sekunden. Sie wird abgelehnt, solange die Balance aktiv ist (CH5 an und nicht gestürzt); `CalibrationSelect` wird auf 0 zurückgesetzt und `gyro calibration refused: balance active` geloggt.
 
 ## Wo Entwickler nachsehen sollten
@@ -123,10 +123,10 @@ Der Yaw-I-Startwert ist in beiden CH5-Modi null. Die Grenze ±0,1 ist die Grenze
 | Frage | Code-/Dokumentationsstelle |
 | --- | --- |
 | Hardware, Anschlüsse, Evidenzgrad | [Hardwareübersicht](../../hardware/system-overview.md), [Hardware-Referenz](../../hardware/electronics/reference.md) |
-| Startkonfiguration, SimpleFOC, Gains | `OllieFOCdrive.ino`: Defines am Anfang, `setup()`, `PidParameter()` |
+| Startkonfiguration, SimpleFOC, Gains | `OllieFOCdrive.ino`: Defines am Anfang, `setup()`, `applyPidParameters()` |
 | Aktiver Ablauf, Freigabe, Servo-Ausgabe | `OllieFOCdrive.ino`: `loop()` |
-| Zweirad-PID und Motor-Mischung | `OllieFOCdrive.ino`: `PIDcontroller_posture()` |
-| Fernsteuerung und Modi | `OllieFOCdrive.ino`: `RXsbus()`, `CtrlInput()` |
+| Zweirad-PID und Motor-Mischung | `OllieFOCdrive.ino`: `runPostureController()` |
+| Fernsteuerung und Modi | `OllieFOCdrive.ino`: `readSbus()`, `readControlInput()` |
 | IMU-Fusion und Haltungsoffsets | `OllieFOCdrive.ino`: `ImuUpdate()`; `MahonyFilter.cpp` |
 | PID-Rechenvorschrift | `OllieFOCdrive.h`: `MyPIDController::compute()` |
 | Beinkinematik | `LegKinematics.cpp`: `LegKinematics::solveRight()`, `solveLeft()` |
