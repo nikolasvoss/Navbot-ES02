@@ -18,11 +18,6 @@ ServoTrimChangeMask changedServos(ServoTrimsDegrees current,
           current.servo4Degrees != previous.servo4Degrees};
 }
 
-bool anyChanged(ServoTrimChangeMask changed) {
-  return changed.servo1Changed || changed.servo2Changed ||
-         changed.servo3Changed || changed.servo4Changed;
-}
-
 void applyServos(ServoTrimDegreesRefs target, ServoTrimsDegrees values) {
   target.servo1Degrees = values.servo1Degrees;
   target.servo2Degrees = values.servo2Degrees;
@@ -80,12 +75,10 @@ CalibrationResult Calibration::update(
     }
     case 3: {
       result.changedServos = changedServos(currentServos, lastSeenServos_);
-      if (anyChanged(result.changedServos)) {
+      if (anyServoChanged(result.changedServos)) {
         lastSeenServos_ = currentServos;
         applyServos(servoTrims,
                     store.saveChangedServos(currentServos, result.changedServos));
-      } else {
-        store.saveChangedServos(currentServos, result.changedServos);
       }
       break;
     }

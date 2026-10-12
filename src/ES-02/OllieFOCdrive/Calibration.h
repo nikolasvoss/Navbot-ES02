@@ -54,6 +54,11 @@ struct ServoTrimChangeMask {
   bool servo4Changed;
 };
 
+inline bool anyServoChanged(ServoTrimChangeMask changed) {
+  return changed.servo1Changed || changed.servo2Changed ||
+         changed.servo3Changed || changed.servo4Changed;
+}
+
 enum class CalibrationCompletion {
   None,
   Gyroscope,
@@ -84,5 +89,5 @@ private:
   float pitchSum_ = 0.0f;
   int imuCallCount_ = 0;
   bool servoBaselineInitialized_ = false;
-  ServoTrimsDegrees lastSeenServos_;
+  ServoTrimsDegrees lastSeenServos_{};
 };
