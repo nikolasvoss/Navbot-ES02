@@ -16,4 +16,4 @@ Result submit(const BalanceSample &sample);
 Result submit(const DriveSample &sample);
 Result submit(const DebugSample &sample);
 
-}
+}  // namespace Logging

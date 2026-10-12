@@ -1,26 +1,28 @@
 #include <Arduino.h>
+#include <SimpleFOC.h>
 #include <esp_system.h>
 #include <esp_timer.h>
-#include <SimpleFOC.h>
-#include "BoardConfig.h"
-#include "FUTABA_SBUS.h"
-#include "ServoControl.h"
-#include "imu.h"
+
 #include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
-#include "OllieFOCdrive.h"
-#include "filter.h"
-#include "touchscreen.h"
-#include "ble.h"
-#include "robot.h"
-#include "Logging.h"
-#include "RobotLogCapture.h"
-#include "DebugTelemetry.h"
-#include "LegKinematics.h"
+
+#include "BoardConfig.h"
 #include "Calibration.h"
 #include "CalibrationStore.h"
+#include "DebugTelemetry.h"
+#include "FUTABA_SBUS.h"
+#include "LegKinematics.h"
+#include "Logging.h"
+#include "OllieFOCdrive.h"
+#include "RobotLogCapture.h"
+#include "ServoControl.h"
+#include "ble.h"
+#include "filter.h"
+#include "imu.h"
+#include "robot.h"
+#include "touchscreen.h"
 
 class LoggingCommandStream : public Stream {
  public:
@@ -46,7 +48,9 @@ Calibration calibration;
 CalibrationStore calibrationStore;
 
 // ----- Editable Constants
-#define COMMUNICATION_OBJECT COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE          // 0: two-wheel balance  1: simpleFOC Studio host computer  2: control dual motors
+#define COMMUNICATION_OBJECT \
+  COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE  // 0: two-wheel balance  1: simpleFOC Studio host computer  2: control dual
+                                          // motors
 
 // Safe bring-up: read sensors and receiver without energizing wheels or servos.
 // Set to 0 only after the diagnostic readings and power supply are checked.
@@ -57,7 +61,8 @@ CalibrationStore calibrationStore;
 // Set to 0 to restore the repository's mode-dependent defaults.
 #define DIAGNOSTIC_LIVE_TUNING_DEFAULTS 1
 
-#define ADJUST_PARAMETER ADJUST_BALANCE_SPEED_YAW_ROLL        // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
+#define ADJUST_PARAMETER \
+  ADJUST_BALANCE_SPEED_YAW_ROLL  // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
 
 struct PidPreset {
   float p;
@@ -73,14 +78,8 @@ struct BalancePidPreset {
 };
 
 // Two-wheel PID gains for remote control mode.
-constexpr BalancePidPreset kPidWithoutTouch{
-    {0.06, 0.0, 0.0, 2},
-    {0.045, 0.005, 0, 50},
-    {5, 200, 0.11, 0.1}};
-constexpr BalancePidPreset kPidWithTouch{
-    {0.08, 1.5, 0.005, 2},
-    {0.045, 0.005, 0, 50},
-    {5, 200, 0.11, 0.1}};
+constexpr BalancePidPreset kPidWithoutTouch{{0.06, 0.0, 0.0, 2}, {0.045, 0.005, 0, 50}, {5, 200, 0.11, 0.1}};
+constexpr BalancePidPreset kPidWithTouch{{0.08, 1.5, 0.005, 2}, {0.045, 0.005, 0, 50}, {5, 200, 0.11, 0.1}};
 constexpr PidPreset kYawPid{4, 0, 0, 0};
 constexpr PidPreset kTouchXPid{0.2, 0, 0.04, 0};
 constexpr PidPreset kTouchYPid{0.2, 170, 0.08, 0};
@@ -95,8 +94,10 @@ struct RcRange {
   long max;
 };
 
+using BodyHeightCurve = float (*)(long, const RcRange &, float);
+
 constexpr unsigned long kSerialBaudRate = 576000;
-#define DIAGNOSTIC_LOG_INTERVAL_US 5000 // Diagnostic CSV rows are emitted at 200 Hz.
+#define DIAGNOSTIC_LOG_INTERVAL_US 5000  // Diagnostic CSV rows are emitted at 200 Hz.
 constexpr unsigned int kDiagnosticLogSampleRateHz = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
 constexpr float kDriveBodyXLimitM = 0.010f;
@@ -133,32 +134,27 @@ constexpr int kBodyHeightCommandFilterIndex = 2;
 
 // Body
 float targetBodyHeightOverrideM = kBodyHeightOverrideDisabledM;  // Zero disables the Commander height override.
-float bodyHeightCommandM = kBodyHeightDefaultM;  // Remote-controlled body height
-float bodyPitching = 0;             // Pitch
-float bodyRoll = 0;                 // Roll
-float movementSpeed = 0;            // Movement speed
-float bodyTurn = 0;                 // Turning
-float bodyX = 0;                    // X position (controller output)
+float bodyHeightCommandM = kBodyHeightDefaultM;                  // Remote-controlled body height
+float bodyPitching = 0;                                          // Pitch
+float bodyRoll = 0;                                              // Roll
+float movementSpeed = 0;                                         // Movement speed
+float bodyTurn = 0;                                              // Turning
+float bodyX = 0;                                                 // X position (controller output)
 int robotTumble = ROBOT_NOT_TUMBLING;  // Fall-detection state, see docs/robot/ROBOT_ROADMAP.md
-
 
 // Filtered remote-control commands
 float bodyHeightCommandFilteredM = kBodyHeightDefaultM;
-float bodyPitchingFiltered = 0;      // Pitch
-float bodyRollFiltered = 0;          // Roll
+float bodyPitchingFiltered = 0;           // Pitch
+float bodyRollFiltered = 0;               // Roll
 biquadFilter_t bodyCommandFilterLpf[12];  // Second-order low-pass filter
 float touchYPidOutputFiltered = 0;
 
-float bodyCommandFilterCutoffHz = 200; // Low-pass cutoff frequency (Hz) for remote-control body command filtering.
+float bodyCommandFilterCutoffHz = 200;  // Low-pass cutoff frequency (Hz) for remote-control body command filtering.
 float bodyCommandFilteringEnabled = 1;
 
-void setBodyCommandFilterCutoffHz(char *cmd) {
-  command.scalar(&bodyCommandFilterCutoffHz, cmd);
-}
+void setBodyCommandFilterCutoffHz(char *cmd) { command.scalar(&bodyCommandFilterCutoffHz, cmd); }
 
-void setBodyCommandFilteringEnabled(char *cmd) {
-  command.scalar(&bodyCommandFilteringEnabled, cmd);
-}
+void setBodyCommandFilteringEnabled(char *cmd) { command.scalar(&bodyCommandFilteringEnabled, cmd); }
 
 int statusLedOn = 1;
 int statusLedTicks = 0;
@@ -166,15 +162,15 @@ int statusLedPeriodTicks = 100;
 // Battery Voltage Measurement
 biquadFilter_t voltageFilterLpf;  // Second-order low-pass filter
 uint16_t voltageAdc = 0;          // Battery voltage ADC data
-float voltageAdcFiltered = 0;            // Battery voltage ADC data
-float batteryVoltage = 0;                // Battery voltage
+float voltageAdcFiltered = 0;     // Battery voltage ADC data
+float batteryVoltage = 0;         // Battery voltage
 
 uint32_t controlGateSequence = 0;
 DebugTelemetry::TelemetryState debugTelemetryState{};
 uint32_t diagnosticSequence = 0;
 ServoTrimsDegrees servoTrims{};
 
-bool parseCommandFloat(const char *text, float& value) {
+bool parseCommandFloat(const char *text, float &value) {
   char *end = nullptr;
   value = strtof(text, &end);
   if (end == text) return false;
@@ -182,7 +178,7 @@ bool parseCommandFloat(const char *text, float& value) {
   return end && *end == '\0' && isfinite(value);
 }
 
-bool parseCommandCutoff(const char *text, uint16_t& value) {
+bool parseCommandCutoff(const char *text, uint16_t &value) {
   char *end = nullptr;
   const long parsed = strtol(text, &end, 10);
   while (end && isspace(static_cast<unsigned char>(*end))) ++end;
@@ -206,32 +202,23 @@ void setImuLowPassCutoff(char *cmd) {
   Logging::message(Logging::Level::Info, "LPF_CUTOFF_FREQ", "%u", cutoff);
 }
 
-void setTargetBodyHeight(char *cmd) {
-  command.scalar(&targetBodyHeightOverrideM, cmd);
-}
+void setTargetBodyHeight(char *cmd) { command.scalar(&targetBodyHeightOverrideM, cmd); }
 
 // Servo zero position offsets
-void zeroBiasServo1(char *cmd) {
-  command.scalar(&servoTrims.servo1Degrees, cmd);
-}
-void zeroBiasServo2(char *cmd) {
-  command.scalar(&servoTrims.servo2Degrees, cmd);
-}
-void zeroBiasServo3(char *cmd) {
-  command.scalar(&servoTrims.servo3Degrees, cmd);
-}
-void zeroBiasServo4(char *cmd) {
-  command.scalar(&servoTrims.servo4Degrees, cmd);
-}
+void zeroBiasServo1(char *cmd) { command.scalar(&servoTrims.servo1Degrees, cmd); }
+void zeroBiasServo2(char *cmd) { command.scalar(&servoTrims.servo2Degrees, cmd); }
+void zeroBiasServo3(char *cmd) { command.scalar(&servoTrims.servo3Degrees, cmd); }
+void zeroBiasServo4(char *cmd) { command.scalar(&servoTrims.servo4Degrees, cmd); }
 
 bool isPidGainsModeEnabled(int mode) {
-  return (mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH || mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH);
+  return (mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH ||
+          mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH);
 }
 
 //  Create ServoControl object
-ServoControl servoControl(board::kLegServoPin[0], board::kLegServoPin[1],
-                          board::kLegServoPin[2], board::kLegServoPin[3]);
-int servoTraceAngle[4] = { 0, 0, 0, 0 };  // Last angle arguments sent to the four servos
+ServoControl servoControl(board::kLegServoPin[0], board::kLegServoPin[1], board::kLegServoPin[2],
+                          board::kLegServoPin[3]);
+int servoTraceAngle[4] = {0, 0, 0, 0};  // Last angle arguments sent to the four servos
 
 // Remote control
 FUTABA_SBUS sBus;
@@ -246,28 +233,29 @@ float sbusTopBallXSmoothed = 0;
 float sbusTopBallYSmoothed = 0;
 
 //  Create PID controller instance
-float debugLogSelector = 0;  // Selects debug data and the log profile.
-float calibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Calibrate gyroscope  2: Calibrate Euler angle  3: Calibrate servo
+float debugLogSelector = 0;   // Selects debug data and the log profile.
+float calibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Calibrate gyroscope  2: Calibrate Euler
+                              // angle  3: Calibrate servo
 
 float pidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
 
-PIDController anglePidSettings(kPidWithTouch.angle.p, kPidWithTouch.angle.i,
-                               kPidWithTouch.angle.d, 0, kPidWithTouch.angle.limit);
-PIDController speedPidSettings(kPidWithTouch.speed.p, kPidWithTouch.speed.i,
-                               kPidWithTouch.speed.d, 0, kPidWithTouch.speed.limit);
+PIDController anglePidSettings(kPidWithTouch.angle.p, kPidWithTouch.angle.i, kPidWithTouch.angle.d, 0,
+                               kPidWithTouch.angle.limit);
+PIDController speedPidSettings(kPidWithTouch.speed.p, kPidWithTouch.speed.i, kPidWithTouch.speed.d, 0,
+                               kPidWithTouch.speed.limit);
 PIDController yawPidSettings(kYawPid.p, kYawPid.i, kYawPid.d, 0, kYawPid.limit);
-PIDController rollPidSettings(
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.p : 0.06,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.i : 1.5,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.d : 0.003, 0,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.limit : 2);
+PIDController rollPidSettings(DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.p : 0.06,
+                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.i : 1.5,
+                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.d : 0.003, 0,
+                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.limit : 2);
 PIDController touchXPidSettings(kTouchXPid.p, kTouchXPid.i, kTouchXPid.d, 0, kTouchXPid.limit);
 PIDController touchYPidSettings(kTouchYPid.p, kTouchYPid.i, kTouchYPid.d, 0, kTouchYPid.limit);
 
 float controlTorqueCompensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
 float wheelVelocityFeedbackCorrection = 0;
-float driveTiltReductionGain = 1.0f;  // Scales the speed reduction applied as tilt approaches kDriveTiltReductionFullDeg.
+float driveTiltReductionGain =
+    1.0f;  // Scales the speed reduction applied as tilt approaches kDriveTiltReductionFullDeg.
 float driveEffectiveSpeed = 0;
 float driveSpeedBodyXRaw = 0;
 
@@ -282,25 +270,17 @@ MyPIDController touchXPid(0, 0, 0, 0, 10, pidTimestepSec, 0, 0);
 MyPIDController touchYPid(0, 0, 0, 0, 8, pidTimestepSec, 0, 0);
 bool balancePidNeedsPriming = true;  // Priming avoids a derivative kick when CH5 enables the balance loop.
 
-void setControlTorqueCompensation(char *cmd) {
-  command.scalar(&controlTorqueCompensation, cmd);
-}
+void setControlTorqueCompensation(char *cmd) { command.scalar(&controlTorqueCompensation, cmd); }
 
-void setWheelSpeedFeedbackGain(char *cmd) {
-  command.scalar(&wheelSpeedFeedbackGain, cmd);
-}
+void setWheelSpeedFeedbackGain(char *cmd) { command.scalar(&wheelSpeedFeedbackGain, cmd); }
 
-void setDriveTiltReductionGain(char *cmd) {
-  command.scalar(&driveTiltReductionGain, cmd);
-}
+void setDriveTiltReductionGain(char *cmd) { command.scalar(&driveTiltReductionGain, cmd); }
 
-void setPidParameterTuning(char *cmd) {
-  command.scalar(&pidParameterTuning, cmd);
-}
+void setPidParameterTuning(char *cmd) { command.scalar(&pidParameterTuning, cmd); }
 void handleUserCommand(char *cmd) {
   if (*cmd == '{') {
     rp.json_test(cmd);
-  }else{
+  } else {
     setPidParameterTuning(cmd);
   }
 }
@@ -310,54 +290,44 @@ void setMahonyKp(char *cmd) {
   imu::Settings candidate = imu::settings();
   if (!parseCommandFloat(cmd, value)) return;
   candidate.mahonyTwoKp = value;
-  if (imu::setSettings(candidate)) Logging::message(Logging::Level::Info, "MAHONY_KP", "%.6f", value);
-  else Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Kp");
+  if (imu::setSettings(candidate))
+    Logging::message(Logging::Level::Info, "MAHONY_KP", "%.6f", value);
+  else
+    Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Kp");
 }
 void setMahonyKi(char *cmd) {
   float value = 0.0f;
   imu::Settings candidate = imu::settings();
   if (!parseCommandFloat(cmd, value)) return;
   candidate.mahonyTwoKi = value;
-  if (imu::setSettings(candidate)) Logging::message(Logging::Level::Info, "MAHONY_KI", "%.6f", value);
-  else Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Ki");
+  if (imu::setSettings(candidate))
+    Logging::message(Logging::Level::Info, "MAHONY_KI", "%.6f", value);
+  else
+    Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Ki");
 }
 
 void selectDebugLog(char *cmd) {
   command.scalar(&debugLogSelector, cmd);
   RobotLogCapture::setProfileForSelector(static_cast<int>(debugLogSelector));
 }
-void selectCalibration(char *cmd) {
-  command.scalar(&calibrationSelect, cmd);
-}
+void selectCalibration(char *cmd) { command.scalar(&calibrationSelect, cmd); }
 
 #if ADJUST_PARAMETER == ADJUST_BALANCE_SPEED_YAW_ROLL
 // Cb prefix: Commander callback.
-void setAnglePid(char *cmd) {
-  command.pid(&anglePidSettings, cmd);
-}
-void setSpeedPid(char *cmd) {
-  command.pid(&speedPidSettings, cmd);
-}
-void setYawPid(char *cmd) {
-  command.pid(&yawPidSettings, cmd);
-}
+void setAnglePid(char *cmd) { command.pid(&anglePidSettings, cmd); }
+void setSpeedPid(char *cmd) { command.pid(&speedPidSettings, cmd); }
+void setYawPid(char *cmd) { command.pid(&yawPidSettings, cmd); }
 
-void setRollPid(char *cmd) {
-  command.pid(&rollPidSettings, cmd);
-}
+void setRollPid(char *cmd) { command.pid(&rollPidSettings, cmd); }
 
 #elif ADJUST_PARAMETER == ADJUST_BALL_PUSHING
 
-void setTouchXPid(char *cmd) {
-  command.pid(&touchXPidSettings, cmd);
-}
+void setTouchXPid(char *cmd) { command.pid(&touchXPidSettings, cmd); }
 
-void setTouchYPid(char *cmd) {
-  command.pid(&touchYPidSettings, cmd);
-}
+void setTouchYPid(char *cmd) { command.pid(&touchYPidSettings, cmd); }
 #endif
 
-//Wheel Motors and Drivers
+// Wheel Motors and Drivers
 double m1PrevEncoderAngleRad = 0;
 float m1VelocityRadPerSec = 0;
 float m1FilteredVelocityRadPerSec = 0;
@@ -373,24 +343,20 @@ unsigned long loopTimeUs = 0;
 unsigned long previousControlTimeUs = 0;
 
 BLDCMotor motor1 = BLDCMotor(board::kWheelMotorPolePairs);
-BLDCDriver3PWM driver = BLDCDriver3PWM(board::kWheel1PhaseAPin, board::kWheel1PhaseBPin,
-                                       board::kWheel1PhaseCPin, board::kWheel1EnablePin);
+BLDCDriver3PWM driver =
+    BLDCDriver3PWM(board::kWheel1PhaseAPin, board::kWheel1PhaseBPin, board::kWheel1PhaseCPin, board::kWheel1EnablePin);
 
 BLDCMotor motor2 = BLDCMotor(board::kWheelMotorPolePairs);
-BLDCDriver3PWM driver2 = BLDCDriver3PWM(board::kWheel2PhaseAPin, board::kWheel2PhaseBPin,
-                                        board::kWheel2PhaseCPin, board::kWheel2EnablePin);
+BLDCDriver3PWM driver2 =
+    BLDCDriver3PWM(board::kWheel2PhaseAPin, board::kWheel2PhaseBPin, board::kWheel2PhaseCPin, board::kWheel2EnablePin);
 
 MagneticSensorI2C sensor2 = MagneticSensorI2C(AS5600_I2C);
 MagneticSensorI2C sensor1 = MagneticSensorI2C(AS5600_I2C);
 TwoWire i2cOne = TwoWire(0);
 TwoWire i2cTwo = TwoWire(1);
 
-void handleM1MotionCommand(char *cmd) {
-  command.motion(&motor1, cmd);
-}
-void handleM1Command(char *cmd) {
-  command.motor(&motor1, cmd);
-}
+void handleM1MotionCommand(char *cmd) { command.motion(&motor1, cmd); }
+void handleM1Command(char *cmd) { command.motor(&motor1, cmd); }
 
 void readSbus();
 void runPostureController(float dt);
@@ -404,9 +370,8 @@ unsigned long diagnosticLastRcFrameMs = 0;
 bool diagnosticHasRcFrame = false;
 
 void cpu0Task(void *ptParam) {
-  while(1)
-  {
-    if(tenMsecTick()){
+  while (1) {
+    if (tenMsecTick()) {
       ble_loop();
     }
   }
@@ -419,27 +384,25 @@ bool tenMsecTick(void) {
     lastMillis = currentMillis;
     return 1;
   }
-  //Overflow handling
+  // Overflow handling
   if (lastMillis > currentMillis) {
     lastMillis = currentMillis;
   }
   return 0;
 }
 
-void logCalibration(const PersistedCalibrationValues& calibrationValues) {
-  Logging::message(Logging::Level::Info, "Calibration",
-                   "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
+void logCalibration(const PersistedCalibrationValues &calibrationValues) {
+  Logging::message(Logging::Level::Info, "Calibration", "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
                    calibrationValues.attitude.rollDegrees, calibrationValues.attitude.pitchDegrees);
-  Logging::message(Logging::Level::Info, "Calibration",
-                   "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
-                   calibrationValues.gyro.xRawCounts, calibrationValues.gyro.yRawCounts, calibrationValues.gyro.zRawCounts);
-  Logging::message(Logging::Level::Info, "Calibration",
-                   "servo1: %.2f, servo2: %.2f, servo3: %.2f, servo4: %.2f",
+  Logging::message(Logging::Level::Info, "Calibration", "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
+                   calibrationValues.gyro.xRawCounts, calibrationValues.gyro.yRawCounts,
+                   calibrationValues.gyro.zRawCounts);
+  Logging::message(Logging::Level::Info, "Calibration", "servo1: %.2f, servo2: %.2f, servo3: %.2f, servo4: %.2f",
                    calibrationValues.servos.servo1Degrees, calibrationValues.servos.servo2Degrees,
                    calibrationValues.servos.servo3Degrees, calibrationValues.servos.servo4Degrees);
 }
 
-void configureWheelMotor(BLDCMotor& motor, const WheelPidParams& pid) {
+void configureWheelMotor(BLDCMotor &motor, const WheelPidParams &pid) {
   motor.torque_controller = TorqueControlType::estimated_current;
   motor.controller = MotionControlType::velocity;
   motor.motion_downsample = 0.0;
@@ -459,11 +422,10 @@ void configureWheelMotor(BLDCMotor& motor, const WheelPidParams& pid) {
   motor.modulation_centered = 1.0;
 }
 
-void initIMU(const imu::CalibrationValues& imuCalibration) {
+void initIMU(const imu::CalibrationValues &imuCalibration) {
   if (!imu::begin(imu::Settings{}, imuCalibration)) {
     Serial.println("IMU initialization failed!");
-    while (1)
-      ;
+    while (1);
   }
   Serial.println("IMU initialized successfully!");
 }
@@ -541,9 +503,7 @@ void registerCommands() {
   command.add('W', setDriveTiltReductionGain, "drive tilt reduction gain");
 }
 
-void setAssemblyPosition() {
-  servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);
-}
+void setAssemblyPosition() { servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1); }
 
 /**
  * @brief Initializes the robot's hardware and software components.
@@ -554,7 +514,6 @@ void setAssemblyPosition() {
  * and sets up the command interface for serial debugging and tuning.
  */
 void setup() {
-
 #if SENSOR_DIAGNOSTIC_MODE
   // SimpleFOC's plain BLDCDriver3PWM enable pins are active high.
   // Hold both drivers disabled before any other peripheral is initialized.
@@ -581,17 +540,17 @@ void setup() {
   biquadFilterInitLPF(&voltageFilterLpf, 20, kDiagnosticLogSampleRateHz);
   diagnosticImuReady = imu::begin(imu::Settings{}, imuCalibration);
   sBus.begin();
-  Serial.printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n",
-                (int)esp_reset_reason(), diagnosticImuReady ? 1 : 0);
+  Serial.printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n", (int)esp_reset_reason(),
+                diagnosticImuReady ? 1 : 0);
   Logging::setProfile(Logging::Profile::Diagnostic);
   return;
 #endif
 
-// TODO could be turned off?
+  // TODO could be turned off?
   ble_init();
   xTaskCreatePinnedToCore(cpu0Task, "cpu0_task", 4096, NULL, 0, NULL, 0);
 
-  biquadFilterInitLPF(&voltageFilterLpf, 50, 1000); // TODO replace numbers with names
+  biquadFilterInitLPF(&voltageFilterLpf, 50, 1000);  // TODO replace numbers with names
 
   //  Initialize servo
   servoControl.initialize();
@@ -649,26 +608,24 @@ float mapf(long x, long in_min, long in_max, float out_min, float out_max) {
 }
 
 constexpr RcRange kBleRcRanges[10] = {
-    {BLE_CH0_MIN, BLE_CH0_MAX}, {BLE_CH1_MIN, BLE_CH1_MAX}, {BLE_CH2_MIN, BLE_CH2_MAX},
-    {BLE_CH3_MIN, BLE_CH3_MAX}, {BLE_CH4_MIN, BLE_CH4_MAX}, {BLE_CH5_MIN, BLE_CH5_MAX},
-    {BLE_CH6_MIN, BLE_CH6_MAX}, {BLE_CH7_MIN, BLE_CH7_MAX}, {BLE_CH8_MIN, BLE_CH8_MAX},
-    {BLE_CH9_MIN, BLE_CH9_MAX}};
+    {BLE_CH0_MIN, BLE_CH0_MAX}, {BLE_CH1_MIN, BLE_CH1_MAX}, {BLE_CH2_MIN, BLE_CH2_MAX}, {BLE_CH3_MIN, BLE_CH3_MAX},
+    {BLE_CH4_MIN, BLE_CH4_MAX}, {BLE_CH5_MIN, BLE_CH5_MAX}, {BLE_CH6_MIN, BLE_CH6_MAX}, {BLE_CH7_MIN, BLE_CH7_MAX},
+    {BLE_CH8_MIN, BLE_CH8_MAX}, {BLE_CH9_MIN, BLE_CH9_MAX}};
 
-constexpr RcRange kSbusRcRanges[10] = {
-    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
-    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
-    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
-    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
-    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}};
+constexpr RcRange kSbusRcRanges[10] = {{SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+                                       {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+                                       {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+                                       {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+                                       {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}};
 
 constexpr long kSbusBodyHeightCenter = 992;
 
-float bleBodyHeightM(long raw, const RcRange& range, float maxHeightM) {
+float bleBodyHeightM(long raw, const RcRange &range, float maxHeightM) {
   return mapf(raw, range.min, range.max, kBodyHeightDefaultM, maxHeightM);
 }
 
 // Below the stick centre the height falls to the minimum, above it rises to maxHeightM.
-float sbusBodyHeightM(long raw, const RcRange& range, float maxHeightM) {
+float sbusBodyHeightM(long raw, const RcRange &range, float maxHeightM) {
   if (raw <= kSbusBodyHeightCenter)
     return mapf(raw, range.min, kSbusBodyHeightCenter, kBodyHeightMinM, kBodyHeightDefaultM);
   return mapf(raw, kSbusBodyHeightCenter + 1, range.max, kBodyHeightDefaultM, maxHeightM);
@@ -681,8 +638,7 @@ float sbusBodyHeightM(long raw, const RcRange& range, float maxHeightM) {
  * The two receivers differ only in their raw ranges and in the body height curve.
  */
 template <typename Raw>
-void applyRcChannels(const Raw *ch, const RcRange *range,
-                     float (*bodyHeightM)(long, const RcRange&, float)) {
+void applyRcChannels(const Raw *ch, const RcRange *range, BodyHeightCurve bodyHeightM) {
   movementSpeed = mapf(ch[2], range[2].min, range[2].max, -15, 15);
   bodyTurn = -mapf(ch[3], range[3].min, range[3].max, -11, 11);
   pidGainsMode = map(ch[4], range[4].min, range[4].max, 0, 2);
@@ -716,9 +672,7 @@ void readControlInput() {
   }
 }
 
-void bleCtrl() {
-  applyRcChannels(ble_ctrler.ch, kBleRcRanges, bleBodyHeightM);
-}
+void bleCtrl() { applyRcChannels(ble_ctrler.ch, kBleRcRanges, bleBodyHeightM); }
 
 /**
  * @brief Reads and processes data from the FUTABA S.BUS remote controller.
@@ -747,16 +701,16 @@ void readSbus() {
       movementSpeed *= 2.0f;  // Keep drive-command authority near the previous 0.03 x 3.3 setting.
   }
 
-  const bool lost = static_cast<uint32_t>(millis() - lastFrameMs) > kRcFrameTimeoutMs ||
-                    sBus.Failsafe() != FUTABA_SBUS::kSignalOk;
+  const bool lost =
+      static_cast<uint32_t>(millis() - lastFrameMs) > kRcFrameTimeoutMs || sBus.Failsafe() != FUTABA_SBUS::kSignalOk;
   if (lost) {
     movementSpeed = 0;
     bodyTurn = 0;
   }
 }
 
-DebugTelemetry::PidStatus pidStatus(const MyPIDController& pid) {
-  return {pid.Kp,   pid.Ki,   pid.Kd,   pid.deriv, pid.integral, pid.iLimit,
+DebugTelemetry::PidStatus pidStatus(const MyPIDController &pid) {
+  return {pid.Kp,   pid.Ki,   pid.Kd,   pid.deriv,  pid.integral, pid.iLimit,
           pid.outP, pid.outI, pid.outD, pid.output, pid.error};
 }
 
@@ -850,14 +804,14 @@ float bodyPitchingCorrect(float x)  // Pitch angle correction
   return y;
 }
 
-void applyPidPreset(PIDController& pid, const PidPreset& preset) {
+void applyPidPreset(PIDController &pid, const PidPreset &preset) {
   pid.P = preset.p;
   pid.I = preset.i;
   pid.D = preset.d;
   pid.limit = preset.limit;
 }
 
-void applyBalancePidPreset(const BalancePidPreset& preset) {
+void applyBalancePidPreset(const BalancePidPreset &preset) {
   applyPidPreset(rollPidSettings, preset.roll);
   applyPidPreset(speedPidSettings, preset.speed);
   applyPidPreset(anglePidSettings, preset.angle);
@@ -906,8 +860,7 @@ constexpr int kTouchDerivClamp = 11000;
  * @param dt The time delta since the last call, in seconds.
  */
 void runPostureController(float dt) {
-  if ((int)pidParameterTuning == 0)
-    applyPidParameters();
+  if ((int)pidParameterTuning == 0) applyPidParameters();
 
   // Touch screen
   touchXPid.Kp = touchXPidSettings.P / 100;
@@ -931,7 +884,8 @@ void runPostureController(float dt) {
   touchXPid.deriv = constrain(touchXPid.deriv, -kTouchDerivClamp, kTouchDerivClamp);
   touchXPid.outD = touchXKd * touchXPid.deriv;
 
-  if ((attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) || (rollMode == REMOTE_CONTROL_ROLL_MODE_AUTO))  // Top ball mode
+  if ((attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) ||
+      (rollMode == REMOTE_CONTROL_ROLL_MODE_AUTO))  // Top ball mode
   {
     bodyPitching = touchXPid.outP + touchXPid.outI + touchXPid.outD + sbusTopBallXSmoothed;
     bodyPitching = -bodyPitching;
@@ -976,7 +930,8 @@ void runPostureController(float dt) {
     Touch.start = -2;
   }
 
-  if ((attitudeMode != REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) || (rollMode != REMOTE_CONTROL_ROLL_MODE_AUTO))  // Non-top ball mode
+  if ((attitudeMode != REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) ||
+      (rollMode != REMOTE_CONTROL_ROLL_MODE_AUTO))  // Non-top ball mode
   {
     touchXPid.integral = 0;
     touchXPid.output = 0;
@@ -993,7 +948,7 @@ void runPostureController(float dt) {
   rollPid.Kd = rollPidSettings.D / 100;
   rollPid.iLimit = rollPidSettings.limit;  // Integral limit
 
-  float targetBodyRoll = bodyRollFiltered * 777;                            // Roll
+  float targetBodyRoll = bodyRollFiltered * 777;                // Roll
   if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball mode disables manual roll
     targetBodyRoll = 0;
   float rollError = (-imu::latest().correctedPitchDegrees) - (-targetBodyRoll) - (-touchYPidOutputFiltered);
@@ -1016,7 +971,7 @@ void runPostureController(float dt) {
   // Reduce only further acceleration when tilt consumes balance headroom.
   if (movementSpeed * avgVelocity >= 0.0f && fabsf(movementSpeed) > fabsf(avgVelocity)) {
     const float tiltFraction = constrain((fabsf(imu::latest().correctedRollDegrees) - kDriveTiltReductionStartDeg) /
-                                         (kDriveTiltReductionFullDeg - kDriveTiltReductionStartDeg),
+                                             (kDriveTiltReductionFullDeg - kDriveTiltReductionStartDeg),
                                          0.0f, 1.0f);
     const float reduction = tiltFraction * constrain(driveTiltReductionGain, 0.0f, 1.0f);
     driveEffectiveSpeed = avgVelocity + (movementSpeed - avgVelocity) * (1.0f - reduction);
@@ -1025,8 +980,7 @@ void runPostureController(float dt) {
 
   const float previousSpeedIntegral = speedPid.integral;
   driveSpeedBodyXRaw = speedPid.compute(speedError, dt);
-  if (speedPid.Ki != 0.0f && fabsf(driveSpeedBodyXRaw) > kDriveBodyXLimitM &&
-      driveSpeedBodyXRaw * speedError > 0.0f) {
+  if (speedPid.Ki != 0.0f && fabsf(driveSpeedBodyXRaw) > kDriveBodyXLimitM && driveSpeedBodyXRaw * speedError > 0.0f) {
     speedPid.integral = previousSpeedIntegral;
     speedPid.outI = speedPid.Ki * previousSpeedIntegral;
     driveSpeedBodyXRaw = speedPid.outP + speedPid.outI + speedPid.outD;
@@ -1069,8 +1023,7 @@ void runPostureController(float dt) {
   const float boundedWheelGain = constrain(wheelSpeedFeedbackGain, 0.0f, 0.4f);
   const bool braking = avgVelocity * (avgVelocity - movementSpeed) > 0.0f;
   const float wheelCorrection = braking ? boundedWheelGain * (avgVelocity - movementSpeed) : 0.0f;
-  wheelVelocityFeedbackCorrection = constrain(wheelCorrection, -kDriveWheelFeedbackLimit,
-                                      kDriveWheelFeedbackLimit);
+  wheelVelocityFeedbackCorrection = constrain(wheelCorrection, -kDriveWheelFeedbackLimit, kDriveWheelFeedbackLimit);
   float target1 = angleOutput - yawOutput + wheelVelocityFeedbackCorrection;
   float target2 = angleOutput + yawOutput + wheelVelocityFeedbackCorrection;
 
@@ -1110,8 +1063,8 @@ void filterRemoteControl(void)  // Remote control filter
   if ((int)bodyCommandFilteringEnabled == 1) {
     bodyPitchingFiltered = biquadFilterApply(&bodyCommandFilterLpf[0], bodyPitching);
     bodyRollFiltered = biquadFilterApply(&bodyCommandFilterLpf[1], bodyRoll);
-    bodyHeightCommandFilteredM = biquadFilterApply(
-        &bodyCommandFilterLpf[kBodyHeightCommandFilterIndex], bodyHeightCommandM);
+    bodyHeightCommandFilteredM =
+        biquadFilterApply(&bodyCommandFilterLpf[kBodyHeightCommandFilterIndex], bodyHeightCommandM);
   } else {
     bodyPitchingFiltered = bodyPitching;
     bodyRollFiltered = bodyRoll;
@@ -1189,7 +1142,7 @@ void diagnosticLoop(void) {
   }
 
   if (diagnosticImuReady && imu::service()) {
-    const imu::Snapshot& diagnosticImu = imu::latest();
+    const imu::Snapshot &diagnosticImu = imu::latest();
     const uint32_t imuSampleUs = diagnosticImu.readTimeUs;
     if ((uint32_t)(imuSampleUs - lastLogScheduleUs) >= DIAGNOSTIC_LOG_INTERVAL_US) {
       lastLogScheduleUs = imuSampleUs;
@@ -1226,13 +1179,10 @@ void diagnosticLoop(void) {
     const uint32_t elapsedUs = timingNowUs - lastTimingReportUs;
     if (elapsedUs >= 1000000U) {
       const uint32_t acceptedSamples = timing.acceptedSamples - lastTimingAcceptedSamples;
-      const float acceptedRateHz = static_cast<float>(acceptedSamples) * 1000000.0f /
-                                   static_cast<float>(elapsedUs);
+      const float acceptedRateHz = static_cast<float>(acceptedSamples) * 1000000.0f / static_cast<float>(elapsedUs);
       Serial.printf("IMU_TIMING,elapsed_us=%lu,accepted=%lu,rate_hz=%.1f,long_gap_total=%lu,max_interval_us=%lu\n",
-                    static_cast<unsigned long>(elapsedUs),
-                    static_cast<unsigned long>(acceptedSamples), acceptedRateHz,
-                    static_cast<unsigned long>(timing.longGapCount),
-                    static_cast<unsigned long>(timing.maxIntervalUs));
+                    static_cast<unsigned long>(elapsedUs), static_cast<unsigned long>(acceptedSamples), acceptedRateHz,
+                    static_cast<unsigned long>(timing.longGapCount), static_cast<unsigned long>(timing.maxIntervalUs));
       lastTimingReportUs = timingNowUs;
       lastTimingAcceptedSamples = timing.acceptedSamples;
     }
@@ -1267,7 +1217,7 @@ void updateMotorsAndCommands() {
  */
 bool readInputs() {
   const bool imuUpdated = imu::service();  // Poll once per loop without gating motor control
-  readControlInput();  // BLE or remote control input
+  readControlInput();                      // BLE or remote control input
   ReadTouchDat();
   return imuUpdated;
 }
@@ -1299,38 +1249,35 @@ void updateStatusLed() {
 
 void runCalibrationStep(bool imuUpdated) {
   imu::CalibrationValues activeCalibration = imu::calibration();
-  const imu::Snapshot& acceptedImu = imu::latest();
+  const imu::Snapshot &acceptedImu = imu::latest();
   CalibrationResult calibrationResult{CalibrationCompletion::None, false, {false, false, false, false}};
-  if (static_cast<int>(calibrationSelect) == 1 &&
-      isPidGainsModeEnabled(pidGainsMode) && robotTumble == ROBOT_NOT_TUMBLING) {
+  if (static_cast<int>(calibrationSelect) == 1 && isPidGainsModeEnabled(pidGainsMode) &&
+      robotTumble == ROBOT_NOT_TUMBLING) {
     calibrationSelect = 0;
     Logging::message(Logging::Level::Warning, "Calibration", "gyro calibration refused: balance active");
   }
-  if (imuUpdated) calibrationResult = calibration.update(
-      static_cast<int>(calibrationSelect),
-      {acceptedImu.attitudeDegrees.roll, acceptedImu.attitudeDegrees.pitch},
-      calibrationStore,
-      {activeCalibration.attitude.rollDegrees, activeCalibration.attitude.pitchDegrees},
-      {activeCalibration.gyro.xRawCounts, activeCalibration.gyro.yRawCounts, activeCalibration.gyro.zRawCounts},
-      {servoTrims.servo1Degrees, servoTrims.servo2Degrees, servoTrims.servo3Degrees, servoTrims.servo4Degrees},
-      [](GyroBiasRawCountRefs stagedBias) {
-        imu::calibrateGyroBiasBlocking();
-        const GyroBiasRawCounts measured = imu::calibration().gyro;
-        stagedBias.xRawCounts = measured.xRawCounts;
-        stagedBias.yRawCounts = measured.yRawCounts;
-        stagedBias.zRawCounts = measured.zRawCounts;
-      });
+  if (imuUpdated)
+    calibrationResult = calibration.update(
+        static_cast<int>(calibrationSelect), {acceptedImu.attitudeDegrees.roll, acceptedImu.attitudeDegrees.pitch},
+        calibrationStore, {activeCalibration.attitude.rollDegrees, activeCalibration.attitude.pitchDegrees},
+        {activeCalibration.gyro.xRawCounts, activeCalibration.gyro.yRawCounts, activeCalibration.gyro.zRawCounts},
+        {servoTrims.servo1Degrees, servoTrims.servo2Degrees, servoTrims.servo3Degrees, servoTrims.servo4Degrees},
+        [](GyroBiasRawCountRefs stagedBias) {
+          imu::calibrateGyroBiasBlocking();
+          const GyroBiasRawCounts measured = imu::calibration().gyro;
+          stagedBias.xRawCounts = measured.xRawCounts;
+          stagedBias.yRawCounts = measured.yRawCounts;
+          stagedBias.zRawCounts = measured.zRawCounts;
+        });
   if (imuUpdated) imu::setCalibration(activeCalibration);
-  if (calibrationResult.clearRequest)
-    calibrationSelect = 0;
+  if (calibrationResult.clearRequest) calibrationSelect = 0;
 
   if (calibrationResult.completion == CalibrationCompletion::Gyroscope) {
-    Logging::message(Logging::Level::Info, "Calibration",
-                     "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
-                     activeCalibration.gyro.xRawCounts, activeCalibration.gyro.yRawCounts, activeCalibration.gyro.zRawCounts);
+    Logging::message(Logging::Level::Info, "Calibration", "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
+                     activeCalibration.gyro.xRawCounts, activeCalibration.gyro.yRawCounts,
+                     activeCalibration.gyro.zRawCounts);
   } else if (calibrationResult.completion == CalibrationCompletion::Attitude) {
-    Logging::message(Logging::Level::Info, "Calibration",
-                     "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
+    Logging::message(Logging::Level::Info, "Calibration", "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
                      activeCalibration.attitude.rollDegrees, activeCalibration.attitude.pitchDegrees);
   }
 
@@ -1386,8 +1333,7 @@ BodyPose computeBodyPose() {
   } else if ((isPidGainsModeEnabled(pidGainsMode)) && (robotTumble == ROBOT_NOT_TUMBLING)) {
     runPostureController(controlTimestepSec);  // PID controller
 
-    if (rollMode == REMOTE_CONTROL_ROLL_MODE_AUTO)
-      pose.roll = rollPid.output;
+    if (rollMode == REMOTE_CONTROL_ROLL_MODE_AUTO) pose.roll = rollPid.output;
 
     if (targetBodyHeightOverrideM == kBodyHeightOverrideDisabledM)
       pose.heightM = bodyHeightCommandFilteredM;
@@ -1406,7 +1352,7 @@ BodyPose computeBodyPose() {
   return pose;
 }
 
-void warnIfLegUnreachable(const LegSolveResult& leg, const char *tag, uint32_t& lastWarningMs) {
+void warnIfLegUnreachable(const LegSolveResult &leg, const char *tag, uint32_t &lastWarningMs) {
   if (leg.status != LegSolveStatus::Success && static_cast<uint32_t>(millis() - lastWarningMs) >= 1000) {
     lastWarningMs = millis();
     Logging::message(Logging::Level::Warning, tag, "no");
@@ -1414,10 +1360,11 @@ void warnIfLegUnreachable(const LegSolveResult& leg, const char *tag, uint32_t& 
 }
 
 void writeLegServos() {
-  servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1, servoTraceAngle[3], 1);
+  servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1,
+                              servoTraceAngle[3], 1);
 }
 
-void writeServos(const LegSolveResult& right, const LegSolveResult& left) {
+void writeServos(const LegSolveResult &right, const LegSolveResult &left) {
   if (postureOrMarkMode == REMOTE_CONTROL_PM_POSTURE_MODE)  // Posture
   {
     // An unreachable leg keeps its previous servo angles.
@@ -1451,8 +1398,8 @@ void runControlTick(bool imuUpdated) {
   controlGateSequence++;
   TouchBiquadFilter();  // Touch screen filter
 
-  filterRemoteControl();  // Remote control signal filtering
-  readBatteryVoltage();             // Battery
+  filterRemoteControl();                                                  // Remote control signal filtering
+  readBatteryVoltage();                                                   // Battery
   DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
 
   updateTumbleState();  // Machine fall detection
@@ -1464,12 +1411,10 @@ void runControlTick(bool imuUpdated) {
 
   static uint32_t lastRightLegWarningMs = 0;
   static uint32_t lastLeftLegWarningMs = 0;
-  const LegSolveResult rightLeg = LegKinematics::solveRight(
-      {-bodyX, pose.heightM - pose.roll, bodyPitchingFiltered});
+  const LegSolveResult rightLeg = LegKinematics::solveRight({-bodyX, pose.heightM - pose.roll, bodyPitchingFiltered});
   warnIfLegUnreachable(rightLeg, "RightInverseKinematics", lastRightLegWarningMs);
 
-  const LegSolveResult leftLeg = LegKinematics::solveLeft(
-      {-bodyX, pose.heightM + pose.roll, bodyPitchingFiltered});
+  const LegSolveResult leftLeg = LegKinematics::solveLeft({-bodyX, pose.heightM + pose.roll, bodyPitchingFiltered});
   warnIfLegUnreachable(leftLeg, "LeftInverseKinematics", lastLeftLegWarningMs);
 
   writeServos(rightLeg, leftLeg);

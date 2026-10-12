@@ -11,9 +11,7 @@ constexpr uint32_t kTraceGatePeriod = 7;
 constexpr int kTraceSelectorFirst = 55;
 constexpr int kTraceSelectorLast = 58;
 
-float whenActive(const TelemetryInputs& in, float value) {
-  return in.balanceActive ? value : 0.0f;
-}
+float whenActive(const TelemetryInputs &in, float value) { return in.balanceActive ? value : 0.0f; }
 
 int32_t maxOfFour(const int32_t values[4]) {
   int32_t largest = values[0];
@@ -24,21 +22,20 @@ int32_t maxOfFour(const int32_t values[4]) {
 }
 
 // Selectors 1..5, 10..16 and 46.
-bool fillImu(int selection, const TelemetryInputs& in, Logging::DebugPayload& payload) {
-  const imu::Snapshot& snapshot = in.imu;
+bool fillImu(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
+  const imu::Snapshot &snapshot = in.imu;
   switch (selection) {
     case 1:
-      payload.timedVector3 = {in.controlTimestepSec, snapshot.attitudeDegrees.roll,
-                              snapshot.attitudeDegrees.pitch, snapshot.attitudeDegrees.yaw};
+      payload.timedVector3 = {in.controlTimestepSec, snapshot.attitudeDegrees.roll, snapshot.attitudeDegrees.pitch,
+                              snapshot.attitudeDegrees.yaw};
       return true;
     case 2:
-      payload.timedVector3 = {in.controlTimestepSec, snapshot.accelerationG.x,
-                              snapshot.accelerationG.y, snapshot.accelerationG.z};
+      payload.timedVector3 = {in.controlTimestepSec, snapshot.accelerationG.x, snapshot.accelerationG.y,
+                              snapshot.accelerationG.z};
       return true;
     case 3:
       payload.timedVector3 = {in.controlTimestepSec, snapshot.angularVelocityRadPerSec.x,
-                              snapshot.angularVelocityRadPerSec.y,
-                              snapshot.angularVelocityRadPerSec.z};
+                              snapshot.angularVelocityRadPerSec.y, snapshot.angularVelocityRadPerSec.z};
       return true;
     case 4:
       payload.timedVector3 = {in.controlTimestepSec,
@@ -51,9 +48,8 @@ bool fillImu(int selection, const TelemetryInputs& in, Logging::DebugPayload& pa
                               in.imuCalibration.attitude.pitchDegrees, 0.0f};
       return true;
     case 10:
-      payload.mahony = {in.imuSettings.mahonyTwoKp, in.imuSettings.mahonyTwoKi,
-                        snapshot.attitudeDegrees.roll, snapshot.attitudeDegrees.pitch,
-                        snapshot.dtSec};
+      payload.mahony = {in.imuSettings.mahonyTwoKp, in.imuSettings.mahonyTwoKi, snapshot.attitudeDegrees.roll,
+                        snapshot.attitudeDegrees.pitch, snapshot.dtSec};
       return true;
     case 11:
       payload.imuAxes = {snapshot.complementaryAnglesDegrees.x,
@@ -61,33 +57,30 @@ bool fillImu(int selection, const TelemetryInputs& in, Logging::DebugPayload& pa
                          snapshot.complementaryAnglesDegrees.z,
                          snapshot.integratedGyroAnglesDegrees.x,
                          snapshot.integratedGyroAnglesDegrees.y,
-                         snapshot.integratedGyroAnglesDegrees.z, snapshot.dtSec};
+                         snapshot.integratedGyroAnglesDegrees.z,
+                         snapshot.dtSec};
       return true;
     case 12:
       payload.pair = {snapshot.complementaryAnglesDegrees.x, snapshot.attitudeDegrees.roll};
       return true;
     case 13:
       payload.timedVector3 = {in.controlTimestepSec, snapshot.filteredAngularVelocityRadPerSec.x,
-                              snapshot.filteredAngularVelocityRadPerSec.y,
-                              snapshot.filteredAngularVelocityRadPerSec.z};
+                              snapshot.filteredAngularVelocityRadPerSec.y, snapshot.filteredAngularVelocityRadPerSec.z};
       return true;
     case 14:
-      payload.timedVector3 = {in.controlTimestepSec, snapshot.filteredAccelerationG.x,
-                              snapshot.filteredAccelerationG.y, snapshot.filteredAccelerationG.z};
+      payload.timedVector3 = {in.controlTimestepSec, snapshot.filteredAccelerationG.x, snapshot.filteredAccelerationG.y,
+                              snapshot.filteredAccelerationG.z};
       return true;
     case 15:
       payload.pair = {snapshot.accelerationG.y, snapshot.filteredAccelerationG.y};
       return true;
     case 16:
-      payload.pair = {snapshot.angularVelocityRadPerSec.y,
-                      snapshot.filteredAngularVelocityRadPerSec.y};
+      payload.pair = {snapshot.angularVelocityRadPerSec.y, snapshot.filteredAngularVelocityRadPerSec.y};
       return true;
     case 46:
-      payload.gyroFft = {static_cast<uint32_t>(snapshot.readTimeUs),
-                         snapshot.angularVelocityRadPerSec.x, snapshot.angularVelocityRadPerSec.y,
-                         snapshot.angularVelocityRadPerSec.z,
-                         snapshot.filteredAngularVelocityRadPerSec.x,
-                         snapshot.filteredAngularVelocityRadPerSec.y,
+      payload.gyroFft = {static_cast<uint32_t>(snapshot.readTimeUs),  snapshot.angularVelocityRadPerSec.x,
+                         snapshot.angularVelocityRadPerSec.y,         snapshot.angularVelocityRadPerSec.z,
+                         snapshot.filteredAngularVelocityRadPerSec.x, snapshot.filteredAngularVelocityRadPerSec.y,
                          snapshot.filteredAngularVelocityRadPerSec.z};
       return true;
     default:
@@ -96,7 +89,7 @@ bool fillImu(int selection, const TelemetryInputs& in, Logging::DebugPayload& pa
 }
 
 // Selectors 6, 7, 17 and 18.
-bool fillWheels(int selection, const TelemetryInputs& in, Logging::DebugPayload& payload) {
+bool fillWheels(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 6:
       payload.motorVelocities = {in.m1VelocityRadPerSec, in.m2VelocityRadPerSec};
@@ -108,8 +101,8 @@ bool fillWheels(int selection, const TelemetryInputs& in, Logging::DebugPayload&
       payload.currentSetpoint = {in.motor2CurrentSetpoint};
       return true;
     case 18:
-      payload.sensorAngles = {in.motor2Target, in.sensor1Angle, in.sensor1MechanicalAngle,
-                              in.sensor2Angle, in.sensor2MechanicalAngle};
+      payload.sensorAngles = {in.motor2Target, in.sensor1Angle, in.sensor1MechanicalAngle, in.sensor2Angle,
+                              in.sensor2MechanicalAngle};
       return true;
     default:
       return false;
@@ -117,14 +110,14 @@ bool fillWheels(int selection, const TelemetryInputs& in, Logging::DebugPayload&
 }
 
 // Selector 8.
-bool fillReceiver(const TelemetryInputs& in, Logging::DebugPayload& payload) {
+bool fillReceiver(const TelemetryInputs &in, Logging::DebugPayload &payload) {
   for (int i = 0; i < 10; ++i) payload.receiverChannels.channels[i] = in.sbusChannels[i];
   payload.receiverChannels.frameDtMs = in.sbusFrameIntervalMs;
   return true;
 }
 
 // Selectors 9, 22, 23, 29..35 and 39.
-bool fillPid(int selection, const TelemetryInputs& in, Logging::DebugPayload& payload) {
+bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 9:
       payload.controllerGains = {{in.anglePid.Kp, in.anglePid.Ki, in.anglePid.Kd},
@@ -133,42 +126,38 @@ bool fillPid(int selection, const TelemetryInputs& in, Logging::DebugPayload& pa
                                  in.controlTimestepSec};
       return true;
     case 22:
-      payload.pidIntegralState = {in.anglePid.iLimit, in.anglePid.integral, in.anglePid.outI,
-                                  in.anglePid.output};
+      payload.pidIntegralState = {in.anglePid.iLimit, in.anglePid.integral, in.anglePid.outI, in.anglePid.output};
       return true;
     case 23:
-      payload.pidIntegralOutputState = {in.speedPid.iLimit, in.speedPid.integral,
-                                        in.speedPid.outI, in.bodyPitchingFiltered,
-                                        in.speedPid.output};
+      payload.pidIntegralOutputState = {in.speedPid.iLimit, in.speedPid.integral, in.speedPid.outI,
+                                        in.bodyPitchingFiltered, in.speedPid.output};
       return true;
     case 29:
-      payload.pidTuningState = {in.touchYPid.Kp, in.touchYPid.Ki, in.touchYPid.Kd,
-                                in.touchYPid.deriv, in.touchYPid.output};
+      payload.pidTuningState = {in.touchYPid.Kp, in.touchYPid.Ki, in.touchYPid.Kd, in.touchYPid.deriv,
+                                in.touchYPid.output};
       return true;
     case 30:
       payload.pidDerivative = {in.touchYPid.deriv};
       return true;
     case 31:
-      payload.pidState = {in.rollPid.error, in.rollPid.iLimit, in.rollPid.integral,
-                          in.rollPid.outI, in.rollPid.output};
+      payload.pidState = {in.rollPid.error, in.rollPid.iLimit, in.rollPid.integral, in.rollPid.outI, in.rollPid.output};
       return true;
     case 32:
       payload.pidCoefficients = {in.rollPid.Kp, in.rollPid.Ki, in.rollPid.Kd};
       return true;
     case 33:
-      payload.pidIntegralOutputState = {in.yawPid.iLimit, in.yawPid.integral, in.yawPid.outI,
-                                        in.bodyPitchingFiltered, in.yawPid.output};
+      payload.pidIntegralOutputState = {in.yawPid.iLimit, in.yawPid.integral, in.yawPid.outI, in.bodyPitchingFiltered,
+                                        in.yawPid.output};
       return true;
     case 34:
-      payload.pidTuningState = {in.touchXPid.Kp, in.touchXPid.Ki, in.touchXPid.Kd,
-                                in.touchXPid.deriv, in.touchXPid.output};
+      payload.pidTuningState = {in.touchXPid.Kp, in.touchXPid.Ki, in.touchXPid.Kd, in.touchXPid.deriv,
+                                in.touchXPid.output};
       return true;
     case 35:
       payload.pidDerivative = {in.touchXPid.deriv};
       return true;
     case 39:
-      payload.pidIntegralState = {in.touchYPid.iLimit, in.touchYPid.integral,
-                                  in.touchYPid.outI, in.touchYPid.output};
+      payload.pidIntegralState = {in.touchYPid.iLimit, in.touchYPid.integral, in.touchYPid.outI, in.touchYPid.output};
       return true;
     default:
       return false;
@@ -176,8 +165,8 @@ bool fillPid(int selection, const TelemetryInputs& in, Logging::DebugPayload& pa
 }
 
 // Selectors 26, 27, 36 and 40.
-bool fillTouch(int selection, const TelemetryInputs& in, Logging::DebugPayload& payload) {
-  const TouchStatus& touch = in.touch;
+bool fillTouch(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
+  const TouchStatus &touch = in.touch;
   switch (selection) {
     case 26:
       if (touch.state == 1) {
@@ -204,11 +193,11 @@ bool fillTouch(int selection, const TelemetryInputs& in, Logging::DebugPayload& 
 }
 
 // Selectors 19..21, 24, 25, 28, 37, 38, 41 and 42.
-bool fillPose(int selection, const TelemetryInputs& in, Logging::DebugPayload& payload) {
+bool fillPose(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 19:
-      payload.servoOffsets = {{in.servoTrims.servo1Degrees, in.servoTrims.servo2Degrees,
-                               in.servoTrims.servo3Degrees, in.servoTrims.servo4Degrees}};
+      payload.servoOffsets = {{in.servoTrims.servo1Degrees, in.servoTrims.servo2Degrees, in.servoTrims.servo3Degrees,
+                               in.servoTrims.servo4Degrees}};
       return true;
     case 20:
       payload.ballBalanceGeometry = {in.topBallX, in.bodyRoll, in.bodyHeightCommandM};
@@ -223,13 +212,11 @@ bool fillPose(int selection, const TelemetryInputs& in, Logging::DebugPayload& p
       payload.bodyPitchState = {in.bodyPitchingFiltered, in.bodyPitching};
       return true;
     case 28:
-      payload.filteredGeometry = {in.bodyPitchingFiltered, in.bodyRollFiltered,
-                                  in.bodyHeightCommandFilteredM, 0.0f, in.topBallX,
-                                  in.topBallY};
+      payload.filteredGeometry = {
+          in.bodyPitchingFiltered, in.bodyRollFiltered, in.bodyHeightCommandFilteredM, 0.0f, in.topBallX, in.topBallY};
       return true;
     case 37:
-      payload.ballPosition = {in.topBallX, in.sbusTopBallXSmoothed, in.topBallY,
-                              in.sbusTopBallYSmoothed};
+      payload.ballPosition = {in.topBallX, in.sbusTopBallXSmoothed, in.topBallY, in.sbusTopBallYSmoothed};
       return true;
     case 38:
       payload.balanceOutputPair = {in.bodyPitching, in.touchYPid.output};
@@ -238,8 +225,7 @@ bool fillPose(int selection, const TelemetryInputs& in, Logging::DebugPayload& p
       payload.rollOutput = {in.imu.correctedRollDegrees, in.bodyPitching, in.speedPid.output};
       return true;
     case 42:
-      payload.rollCorrection = {in.imu.correctedRollDegrees, in.bodyPitching,
-                                in.bodyPitchCorrection};
+      payload.rollCorrection = {in.imu.correctedRollDegrees, in.bodyPitching, in.bodyPitchCorrection};
       return true;
     default:
       return false;
@@ -247,14 +233,13 @@ bool fillPose(int selection, const TelemetryInputs& in, Logging::DebugPayload& p
 }
 
 // Selectors 43..45.
-bool fillStatus(int selection, const TelemetryInputs& in, Logging::DebugPayload& payload) {
+bool fillStatus(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 43:
       payload.voltageState = {in.voltageAdc, in.voltageAdcFiltered, in.voltage};
       return true;
     case 44:
-      payload.tuningState = {static_cast<int32_t>(in.pidParameterTuning),
-                             in.targetBodyHeightOverrideM};
+      payload.tuningState = {static_cast<int32_t>(in.pidParameterTuning), in.targetBodyHeightOverrideM};
       return true;
     case 45:
       payload.tumbleState = {in.robotTumble, in.imu.correctedRollDegrees, in.anglePid.error};
@@ -265,44 +250,77 @@ bool fillStatus(int selection, const TelemetryInputs& in, Logging::DebugPayload&
 }
 
 // Returns false when the selection has no sample for the current inputs.
-bool fillSelectedPayload(const TelemetryInputs& in, Logging::DebugPayload& payload) {
+bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &payload) {
   const int selection = in.selection;
   switch (selection) {
-    case 1: case 2: case 3: case 4: case 5:
-    case 10: case 11: case 12: case 13: case 14: case 15: case 16:
+    case 1:
+    case 2:
+    case 3:
+    case 4:
+    case 5:
+    case 10:
+    case 11:
+    case 12:
+    case 13:
+    case 14:
+    case 15:
+    case 16:
     case 46:
       return fillImu(selection, in, payload);
-    case 6: case 7: case 17: case 18:
+    case 6:
+    case 7:
+    case 17:
+    case 18:
       return fillWheels(selection, in, payload);
     case 8:
       return fillReceiver(in, payload);
-    case 9: case 22: case 23:
-    case 29: case 30: case 31: case 32: case 33: case 34: case 35:
+    case 9:
+    case 22:
+    case 23:
+    case 29:
+    case 30:
+    case 31:
+    case 32:
+    case 33:
+    case 34:
+    case 35:
     case 39:
       return fillPid(selection, in, payload);
-    case 26: case 27: case 36: case 40:
+    case 26:
+    case 27:
+    case 36:
+    case 40:
       return fillTouch(selection, in, payload);
-    case 19: case 20: case 21: case 24: case 25: case 28:
-    case 37: case 38: case 41: case 42:
+    case 19:
+    case 20:
+    case 21:
+    case 24:
+    case 25:
+    case 28:
+    case 37:
+    case 38:
+    case 41:
+    case 42:
       return fillPose(selection, in, payload);
-    case 43: case 44: case 45:
+    case 43:
+    case 44:
+    case 45:
       return fillStatus(selection, in, payload);
     default:
       return false;
   }
 }
 
-void submitChannel(const TelemetryInputs& in) {
+void submitChannel(const TelemetryInputs &in) {
   const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(in.selection);
   if (!RobotLogCapture::selectedDebugDue(selector, in.nowMs)) return;
   Logging::DebugSample sample{};
   sample.selector = selector;
-  sample.payload.channelState = {
-      in.nowMs * 0.001f, in.sbusChannels[in.selection - Logging::kChannelDebugFirst]};
+  sample.payload.channelState = {in.nowMs * 0.001f, in.sbusChannels[in.selection - Logging::kChannelDebugFirst]};
   Logging::submit(sample);
 }
 
-void submitSelected(const TelemetryInputs& in) {
+void submitSelected(const TelemetryInputs &in) {
   const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(in.selection);
   if (!RobotLogCapture::selectedDebugDue(selector, in.nowMs)) return;
   Logging::DebugSample sample{};
@@ -318,7 +336,7 @@ struct TraceRow {
   int32_t maxServoRange;
 };
 
-TraceRow beginTraceRow(TelemetryState& state) {
+TraceRow beginTraceRow(TelemetryState &state) {
   TraceRow row;
   row.sequence = state.traceSequence++;
   row.minimumBatteryRawV = board::kBatteryVoltsPerAdcCount * state.voltageAdcMin;
@@ -327,7 +345,7 @@ TraceRow beginTraceRow(TelemetryState& state) {
   return row;
 }
 
-void submitTrace(const TelemetryInputs& in, const TraceRow& row) {
+void submitTrace(const TelemetryInputs &in, const TraceRow &row) {
   Logging::TraceSample sample{};
   sample.timestampMs = in.nowMs;
   sample.sequence = row.sequence;
@@ -346,7 +364,7 @@ void submitTrace(const TelemetryInputs& in, const TraceRow& row) {
   Logging::submit(sample);
 }
 
-void submitControl(const TelemetryInputs& in, const TraceRow& row) {
+void submitControl(const TelemetryInputs &in, const TraceRow &row) {
   Logging::ControlSample sample{};
   sample.timestampMs = in.nowMs;
   sample.sequence = row.sequence;
@@ -366,7 +384,7 @@ void submitControl(const TelemetryInputs& in, const TraceRow& row) {
   Logging::submit(sample);
 }
 
-void submitBalance(const TelemetryInputs& in, const TraceRow& row) {
+void submitBalance(const TelemetryInputs &in, const TraceRow &row) {
   Logging::BalanceSample sample{};
   sample.timestampMs = in.nowMs;
   sample.sequence = row.sequence;
@@ -384,7 +402,7 @@ void submitBalance(const TelemetryInputs& in, const TraceRow& row) {
   Logging::submit(sample);
 }
 
-void submitDrive(const TelemetryInputs& in, const TraceRow& row) {
+void submitDrive(const TelemetryInputs &in, const TraceRow &row) {
   Logging::DriveSample sample{};
   sample.timestampMs = in.nowMs;
   sample.sequence = row.sequence;
@@ -419,21 +437,29 @@ void submitDrive(const TelemetryInputs& in, const TraceRow& row) {
   Logging::submit(sample);
 }
 
-void submitTraceProfile(const TelemetryInputs& in, TelemetryState& state) {
+void submitTraceProfile(const TelemetryInputs &in, TelemetryState &state) {
   if (in.controlGateSequence % kTraceGatePeriod != 0) return;
   const TraceRow row = beginTraceRow(state);
   switch (in.selection) {
-    case 55: submitTrace(in, row); break;
-    case 56: submitControl(in, row); break;
-    case 57: submitBalance(in, row); break;
-    case 58: submitDrive(in, row); break;
+    case 55:
+      submitTrace(in, row);
+      break;
+    case 56:
+      submitControl(in, row);
+      break;
+    case 57:
+      submitBalance(in, row);
+      break;
+    case 58:
+      submitDrive(in, row);
+      break;
   }
   state.voltageAdcMin = in.voltageAdc;
 }
 
 }  // namespace
 
-void submit(const TelemetryInputs& in, TelemetryState& state) {
+void submit(const TelemetryInputs &in, TelemetryState &state) {
   if (Logging::isChannelDebugSelector(in.selection)) {
     submitChannel(in);
   } else if (Logging::isSelectedDebugSelector(in.selection)) {

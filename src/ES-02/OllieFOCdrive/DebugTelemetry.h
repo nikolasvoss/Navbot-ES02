@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+
 #include "imu.h"
 
 namespace DebugTelemetry {
@@ -110,6 +111,6 @@ struct TelemetryState {
 };
 
 // Emits the sample selected by in.selection: a selected-debug or channel sample, or a trace row.
-void submit(const TelemetryInputs& in, TelemetryState& state);
+void submit(const TelemetryInputs &in, TelemetryState &state);
 
 }  // namespace DebugTelemetry

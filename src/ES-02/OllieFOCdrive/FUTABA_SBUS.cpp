@@ -12,12 +12,10 @@ constexpr uint8_t kSignalFailsafe = 0x03;
 }  // namespace
 
 void FUTABA_SBUS::begin() {
-  uint8_t loc_sbusData[25] = {
-    0x0f, 0x01, 0x04, 0x20, 0x00, 0xff, 0x07, 0x40, 0x00, 0x02, 0x10, 0x80, 0x2c,
-    0x64, 0x21, 0x0b, 0x59, 0x08, 0x40, 0x00, 0x02, 0x10, 0x80, 0x00, 0x00};
-  int16_t loc_channels[18] = {
-    1023, 1023, 1023, 1023, 1023, 1023, 1023, 1023, 1023,
-    1023, 1023, 1023, 1023, 1023, 1023, 1023, 0, 0};
+  uint8_t loc_sbusData[25] = {0x0f, 0x01, 0x04, 0x20, 0x00, 0xff, 0x07, 0x40, 0x00, 0x02, 0x10, 0x80, 0x2c,
+                              0x64, 0x21, 0x0b, 0x59, 0x08, 0x40, 0x00, 0x02, 0x10, 0x80, 0x00, 0x00};
+  int16_t loc_channels[18] = {1023, 1023, 1023, 1023, 1023, 1023, 1023, 1023, 1023,
+                              1023, 1023, 1023, 1023, 1023, 1023, 1023, 0,    0};
 
   Serial2.begin(kBaudRate, SERIAL_8N1, board::kSbusRxPin, board::kSbusTxPin);
 
@@ -29,9 +27,7 @@ void FUTABA_SBUS::begin() {
   feedState = 0;
 }
 
-uint8_t FUTABA_SBUS::Failsafe() {
-  return failsafe_status;
-}
+uint8_t FUTABA_SBUS::Failsafe() { return failsafe_status; }
 
 void FUTABA_SBUS::UpdateChannels() {
   channels[0] = ((sbusData[1] | sbusData[2] << 8) & 0x07FF);

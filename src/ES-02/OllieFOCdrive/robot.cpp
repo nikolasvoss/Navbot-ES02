@@ -1,17 +1,17 @@
 
 #include "robot.h"
-#include "BoardConfig.h"
-#include "Logging.h"
+
+#include <Arduino.h>
 #include <ArduinoJson.h>
 #include <esp_mac.h>
-#include <Arduino.h>
+
+#include "BoardConfig.h"
+#include "Logging.h"
 #include "ble.h"
 
 const Message_TypeDef MESSAGE_TYPE;
 
-
 RobotProtocol rp;
-
 
 void RobotProtocol::build_dev_name(char dev_name[]) {
   char basc[] = "navbot_es02-";
@@ -20,12 +20,14 @@ void RobotProtocol::build_dev_name(char dev_name[]) {
   mac[6] = 0;
   char i;
 
-  for (i = 0; i < 6; i++)  //Convert the mac address to contain only 0-9/a-z
+  for (i = 0; i < 6; i++)  // Convert the mac address to contain only 0-9/a-z
   {
     mac[i] = mac[i] % 36;  // 10+26=36
 
-    if (mac[i] <= 9) mac[i] = mac[i] + '0';             //0-9
-    else if (mac[i] <= 35) mac[i] = mac[i] - 10 + 'a';  //a-z
+    if (mac[i] <= 9)
+      mac[i] = mac[i] + '0';  // 0-9
+    else if (mac[i] <= 35)
+      mac[i] = mac[i] - 10 + 'a';  // a-z
   }
   sprintf(dev_name, "%s%s", basc, mac);
 }
@@ -42,13 +44,12 @@ void RobotProtocol::parseJson(StaticJsonDocument<300> &doc) {
 void RobotProtocol::isSys(StaticJsonDocument<300> &doc) {
   String type = doc["type"];
   Logging::message(Logging::Level::Debug, "robot", "type:%s", type.c_str());
- if (type == MESSAGE_TYPE.GET_DEVICE_INFO) {
+  if (type == MESSAGE_TYPE.GET_DEVICE_INFO) {
     send_device_info();
   } else {
     Logging::message(Logging::Level::Debug, "robot", "Invalid json keywords.");
   }
 }
-
 
 // Send all information
 void RobotProtocol::send_device_info() {
@@ -95,7 +96,8 @@ double RobotProtocol::get_battery_level() {
   // Calculate the percentage
   double battery_percentage = (currentVoltage - minVoltage) / (maxVoltage - minVoltage) * 100.0;
 
-  battery_percentage = round(battery_percentage) / 1;  // Format to retain two significant digits (rounded to 2 decimal places)
+  battery_percentage =
+      round(battery_percentage) / 1;  // Format to retain two significant digits (rounded to 2 decimal places)
 
   // Battery logic correction (prevent out-of-bounds and display of 0 data)
   if (battery_percentage > 100) {

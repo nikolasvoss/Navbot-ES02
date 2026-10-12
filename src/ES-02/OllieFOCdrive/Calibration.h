@@ -30,21 +30,21 @@ struct AttitudeObservationDegrees {
 };
 
 struct AttitudeBiasRefs {
-  float& rollDegrees;
-  float& pitchDegrees;
+  float &rollDegrees;
+  float &pitchDegrees;
 };
 
 struct GyroBiasRawCountRefs {
-  float& xRawCounts;
-  float& yRawCounts;
-  float& zRawCounts;
+  float &xRawCounts;
+  float &yRawCounts;
+  float &zRawCounts;
 };
 
 struct ServoTrimDegreesRefs {
-  float& servo1Degrees;
-  float& servo2Degrees;
-  float& servo3Degrees;
-  float& servo4Degrees;
+  float &servo1Degrees;
+  float &servo2Degrees;
+  float &servo3Degrees;
+  float &servo4Degrees;
 };
 
 struct ServoTrimChangeMask {
@@ -55,15 +55,10 @@ struct ServoTrimChangeMask {
 };
 
 inline bool anyServoChanged(ServoTrimChangeMask changed) {
-  return changed.servo1Changed || changed.servo2Changed ||
-         changed.servo3Changed || changed.servo4Changed;
+  return changed.servo1Changed || changed.servo2Changed || changed.servo3Changed || changed.servo4Changed;
 }
 
-enum class CalibrationCompletion {
-  None,
-  Gyroscope,
-  Attitude
-};
+enum class CalibrationCompletion { None, Gyroscope, Attitude };
 
 struct CalibrationResult {
   CalibrationCompletion completion;
@@ -74,17 +69,12 @@ struct CalibrationResult {
 class CalibrationStore;
 
 class Calibration {
-public:
-  CalibrationResult update(
-      int request,
-      AttitudeObservationDegrees observation,
-      CalibrationStore& store,
-      AttitudeBiasRefs attitudeBias,
-      GyroBiasRawCountRefs gyroBias,
-      ServoTrimDegreesRefs servoTrims,
-      void (*calibrateGyro)(GyroBiasRawCountRefs));
+ public:
+  CalibrationResult update(int request, AttitudeObservationDegrees observation, CalibrationStore &store,
+                           AttitudeBiasRefs attitudeBias, GyroBiasRawCountRefs gyroBias,
+                           ServoTrimDegreesRefs servoTrims, void (*calibrateGyro)(GyroBiasRawCountRefs));
 
-private:
+ private:
   float rollSum_ = 0.0f;
   float pitchSum_ = 0.0f;
   int imuCallCount_ = 0;

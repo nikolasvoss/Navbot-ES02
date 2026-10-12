@@ -13,11 +13,7 @@ struct JointAnglesDegrees {
   float joint2Degrees;
 };
 
-enum class LegSolveStatus : uint8_t {
-  Success = 0,
-  FirstJointOutOfReach = 1,
-  SecondJointOutOfReach = 2
-};
+enum class LegSolveStatus : uint8_t { Success = 0, FirstJointOutOfReach = 1, SecondJointOutOfReach = 2 };
 
 struct LegSolveResult {
   // Always finite, but only meaningful when status == Success.
@@ -30,4 +26,4 @@ namespace LegKinematics {
 LegSolveResult solveRight(FootPoseMeters pose);
 LegSolveResult solveLeft(FootPoseMeters pose);
 
-}
+}  // namespace LegKinematics

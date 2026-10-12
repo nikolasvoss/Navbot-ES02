@@ -6,16 +6,12 @@ namespace {
 constexpr int kAttitudeSampleCount = 100;
 
 ServoTrimsDegrees readServos(ServoTrimDegreesRefs servos) {
-  return {servos.servo1Degrees, servos.servo2Degrees,
-          servos.servo3Degrees, servos.servo4Degrees};
+  return {servos.servo1Degrees, servos.servo2Degrees, servos.servo3Degrees, servos.servo4Degrees};
 }
 
-ServoTrimChangeMask changedServos(ServoTrimsDegrees current,
-                                  ServoTrimsDegrees previous) {
-  return {current.servo1Degrees != previous.servo1Degrees,
-          current.servo2Degrees != previous.servo2Degrees,
-          current.servo3Degrees != previous.servo3Degrees,
-          current.servo4Degrees != previous.servo4Degrees};
+ServoTrimChangeMask changedServos(ServoTrimsDegrees current, ServoTrimsDegrees previous) {
+  return {current.servo1Degrees != previous.servo1Degrees, current.servo2Degrees != previous.servo2Degrees,
+          current.servo3Degrees != previous.servo3Degrees, current.servo4Degrees != previous.servo4Degrees};
 }
 
 void applyServos(ServoTrimDegreesRefs target, ServoTrimsDegrees values) {
@@ -24,18 +20,12 @@ void applyServos(ServoTrimDegreesRefs target, ServoTrimsDegrees values) {
   target.servo3Degrees = values.servo3Degrees;
   target.servo4Degrees = values.servo4Degrees;
 }
-}
+}  // namespace
 
-CalibrationResult Calibration::update(
-    int request,
-    AttitudeObservationDegrees observation,
-    CalibrationStore& store,
-    AttitudeBiasRefs attitudeBias,
-    GyroBiasRawCountRefs gyroBias,
-    ServoTrimDegreesRefs servoTrims,
-    void (*calibrateGyro)(GyroBiasRawCountRefs)) {
-  CalibrationResult result{CalibrationCompletion::None, false,
-                           {false, false, false, false}};
+CalibrationResult Calibration::update(int request, AttitudeObservationDegrees observation, CalibrationStore &store,
+                                      AttitudeBiasRefs attitudeBias, GyroBiasRawCountRefs gyroBias,
+                                      ServoTrimDegreesRefs servoTrims, void (*calibrateGyro)(GyroBiasRawCountRefs)) {
+  CalibrationResult result{CalibrationCompletion::None, false, {false, false, false, false}};
 
   const ServoTrimsDegrees currentServos = readServos(servoTrims);
   if (!servoBaselineInitialized_) {
@@ -46,8 +36,8 @@ CalibrationResult Calibration::update(
   switch (request) {
     case 1: {
       calibrateGyro(gyroBias);
-      const GyroBiasRawCounts readback = store.saveGyro(
-          {gyroBias.xRawCounts, gyroBias.yRawCounts, gyroBias.zRawCounts});
+      const GyroBiasRawCounts readback =
+          store.saveGyro({gyroBias.xRawCounts, gyroBias.yRawCounts, gyroBias.zRawCounts});
       gyroBias.xRawCounts = readback.xRawCounts;
       gyroBias.yRawCounts = readback.yRawCounts;
       gyroBias.zRawCounts = readback.zRawCounts;
@@ -60,9 +50,8 @@ CalibrationResult Calibration::update(
       pitchSum_ += observation.pitchDegrees;
       ++imuCallCount_;
       if (imuCallCount_ >= kAttitudeSampleCount) {
-        const AttitudeBiasDegrees readback = store.saveAttitude(
-            {rollSum_ / kAttitudeSampleCount,
-             pitchSum_ / kAttitudeSampleCount});
+        const AttitudeBiasDegrees readback =
+            store.saveAttitude({rollSum_ / kAttitudeSampleCount, pitchSum_ / kAttitudeSampleCount});
         attitudeBias.rollDegrees = readback.rollDegrees;
         attitudeBias.pitchDegrees = readback.pitchDegrees;
         rollSum_ = 0.0f;
@@ -77,8 +66,7 @@ CalibrationResult Calibration::update(
       result.changedServos = changedServos(currentServos, lastSeenServos_);
       if (anyServoChanged(result.changedServos)) {
         lastSeenServos_ = currentServos;
-        applyServos(servoTrims,
-                    store.saveChangedServos(currentServos, result.changedServos));
+        applyServos(servoTrims, store.saveChangedServos(currentServos, result.changedServos));
       }
       break;
     }

@@ -2,10 +2,10 @@
 #define __touchscreen_H
 
 #include <Arduino.h>
+
 #include "filter.h"
 
-typedef struct
-{
+typedef struct {
   uint16_t XPressDat;
   uint16_t YPressDat;
   int16_t XPdat;
@@ -21,11 +21,10 @@ typedef struct
   int start;
 } Touch_t;
 
-
 void TouchscreenInit(unsigned int samplingRateHz);
 void ReadTouchDat(void);
 void TouchBiquadFilter(void);
 
 extern Touch_t Touch;
 
-#endif //
+#endif  //

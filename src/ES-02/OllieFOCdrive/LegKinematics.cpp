@@ -13,30 +13,19 @@ constexpr float FOOT_X_LIMIT_M = 0.05f;
 constexpr float FOOT_Y_MIN_M = 0.05f;
 constexpr float FOOT_Y_MAX_M = 0.1f;
 
-float arcToAngle(float arc) {
-  return arc * (180 / kPi);
-}
+float arcToAngle(float arc) { return arc * (180 / kPi); }
 
-float angleToArc(float angle) {
-  return angle * (kPi / 180);
-}
+float angleToArc(float angle) { return angle * (kPi / 180); }
 
-float clampX(float x) {
-  return x < -FOOT_X_LIMIT_M ? -FOOT_X_LIMIT_M : (x > FOOT_X_LIMIT_M ? FOOT_X_LIMIT_M : x);
-}
+float clampX(float x) { return x < -FOOT_X_LIMIT_M ? -FOOT_X_LIMIT_M : (x > FOOT_X_LIMIT_M ? FOOT_X_LIMIT_M : x); }
 
-float clampY(float y) {
-  return y < FOOT_Y_MIN_M ? FOOT_Y_MIN_M : (y > FOOT_Y_MAX_M ? FOOT_Y_MAX_M : y);
-}
+float clampY(float y) { return y < FOOT_Y_MIN_M ? FOOT_Y_MIN_M : (y > FOOT_Y_MAX_M ? FOOT_Y_MAX_M : y); }
 
-double square(double value) {
-  return value * value;
-}
+double square(double value) { return value * value; }
 
 // Law-of-cosines ratio clamped to [-1, 1] so acos and asin stay finite.
 double unitRatio(double numerator, double denominator) {
-  if (denominator <= 0)
-    return 0;
+  if (denominator <= 0) return 0;
   const double ratio = numerator / denominator;
   return ratio < -1 ? -1 : (ratio > 1 ? 1 : ratio);
 }
@@ -89,12 +78,8 @@ LegSolveResult solveLeg(FootPoseMeters pose) {
   return {{arcToAngle(aBAG), arcToAngle(aDEH)}, status};
 }
 
-}
+}  // namespace
 
-LegSolveResult LegKinematics::solveRight(FootPoseMeters pose) {
-  return solveLeg(pose);
-}
+LegSolveResult LegKinematics::solveRight(FootPoseMeters pose) { return solveLeg(pose); }
 
-LegSolveResult LegKinematics::solveLeft(FootPoseMeters pose) {
-  return solveLeg(pose);
-}
+LegSolveResult LegKinematics::solveLeft(FootPoseMeters pose) { return solveLeg(pose); }

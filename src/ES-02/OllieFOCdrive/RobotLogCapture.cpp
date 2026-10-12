@@ -1,8 +1,8 @@
 #include "RobotLogCapture.h"
 
-#include "Logging.h"
-
 #include <limits.h>
+
+#include "Logging.h"
 
 namespace {
 constexpr uint32_t kSelectedDebugIntervalMs = 50;
@@ -21,7 +21,7 @@ bool gateDue(uint32_t nowMs, uint32_t &lastMs) {
   lastMs = nowMs;
   return true;
 }
-}
+}  // namespace
 
 namespace RobotLogCapture {
 
@@ -30,25 +30,27 @@ Logging::Profile profileForSelector(int selector) {
     return Logging::Profile::SelectedDebug;
 
   switch (selector) {
-    case 55: return Logging::Profile::Trace;
-    case 56: return Logging::Profile::Control;
-    case 57: return Logging::Profile::Balance;
-    case 58: return Logging::Profile::Drive;
-    default: return Logging::Profile::Idle;
+    case 55:
+      return Logging::Profile::Trace;
+    case 56:
+      return Logging::Profile::Control;
+    case 57:
+      return Logging::Profile::Balance;
+    case 58:
+      return Logging::Profile::Drive;
+    default:
+      return Logging::Profile::Idle;
   }
 }
 
-void setProfileForSelector(int selector) {
-  Logging::setProfile(profileForSelector(selector));
-}
+void setProfileForSelector(int selector) { Logging::setProfile(profileForSelector(selector)); }
 
 bool selectedDebugDue(Logging::DebugSelector selector, uint32_t nowMs) {
   const int value = static_cast<int>(selector);
   if (!Logging::isSelectedDebugSelector(value) && !Logging::isChannelDebugSelector(value)) return false;
 
   if (value == 8) return gateDue(nowMs, lastSbusPrintMs);
-  if (Logging::isChannelDebugSelector(value))
-    return gateDue(nowMs, lastChannelTraceMs);
+  if (Logging::isChannelDebugSelector(value)) return gateDue(nowMs, lastChannelTraceMs);
   return true;
 }
 
@@ -88,4 +90,4 @@ void copyServoRangesAndBeginNextWindow(int32_t ranges[4]) {
   }
 }
 
-}
+}  // namespace RobotLogCapture

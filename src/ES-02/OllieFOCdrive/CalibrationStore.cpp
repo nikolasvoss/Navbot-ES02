@@ -18,19 +18,14 @@ constexpr char kServo4Key[] = "servoAngle4";
 Preferences preferences;
 
 PersistedCalibrationValues readAll() {
-  return {
-      {preferences.getFloat(kRollKey, 0.0f),
-       preferences.getFloat(kPitchKey, 0.0f)},
-      {preferences.getFloat(kGyroXKey, 0.0f),
-       preferences.getFloat(kGyroYKey, 0.0f),
-       preferences.getFloat(kGyroZKey, 0.0f)},
-      {preferences.getFloat(kServo1Key, 0.0f),
-       preferences.getFloat(kServo2Key, 0.0f),
-       preferences.getFloat(kServo3Key, 0.0f),
-       preferences.getFloat(kServo4Key, 0.0f)}};
+  return {{preferences.getFloat(kRollKey, 0.0f), preferences.getFloat(kPitchKey, 0.0f)},
+          {preferences.getFloat(kGyroXKey, 0.0f), preferences.getFloat(kGyroYKey, 0.0f),
+           preferences.getFloat(kGyroZKey, 0.0f)},
+          {preferences.getFloat(kServo1Key, 0.0f), preferences.getFloat(kServo2Key, 0.0f),
+           preferences.getFloat(kServo3Key, 0.0f), preferences.getFloat(kServo4Key, 0.0f)}};
 }
 
-}
+}  // namespace
 
 PersistedCalibrationValues CalibrationStore::load() {
   preferences.begin(kPreferencesNamespace, false);
@@ -39,14 +34,11 @@ PersistedCalibrationValues CalibrationStore::load() {
   return values;
 }
 
-AttitudeBiasDegrees CalibrationStore::saveAttitude(
-    AttitudeBiasDegrees requested) {
+AttitudeBiasDegrees CalibrationStore::saveAttitude(AttitudeBiasDegrees requested) {
   preferences.begin(kPreferencesNamespace, false);
   preferences.putFloat(kRollKey, requested.rollDegrees);
   preferences.putFloat(kPitchKey, requested.pitchDegrees);
-  const AttitudeBiasDegrees saved = {
-      preferences.getFloat(kRollKey, 0.0f),
-      preferences.getFloat(kPitchKey, 0.0f)};
+  const AttitudeBiasDegrees saved = {preferences.getFloat(kRollKey, 0.0f), preferences.getFloat(kPitchKey, 0.0f)};
   preferences.end();
   return saved;
 }
@@ -56,17 +48,13 @@ GyroBiasRawCounts CalibrationStore::saveGyro(GyroBiasRawCounts requested) {
   preferences.putFloat(kGyroXKey, requested.xRawCounts);
   preferences.putFloat(kGyroYKey, requested.yRawCounts);
   preferences.putFloat(kGyroZKey, requested.zRawCounts);
-  const GyroBiasRawCounts saved = {
-      preferences.getFloat(kGyroXKey, 0.0f),
-      preferences.getFloat(kGyroYKey, 0.0f),
-      preferences.getFloat(kGyroZKey, 0.0f)};
+  const GyroBiasRawCounts saved = {preferences.getFloat(kGyroXKey, 0.0f), preferences.getFloat(kGyroYKey, 0.0f),
+                                   preferences.getFloat(kGyroZKey, 0.0f)};
   preferences.end();
   return saved;
 }
 
-ServoTrimsDegrees CalibrationStore::saveChangedServos(
-    ServoTrimsDegrees requested,
-    ServoTrimChangeMask changed) {
+ServoTrimsDegrees CalibrationStore::saveChangedServos(ServoTrimsDegrees requested, ServoTrimChangeMask changed) {
   if (!anyServoChanged(changed)) {
     return requested;
   }
