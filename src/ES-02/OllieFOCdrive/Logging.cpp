@@ -291,7 +291,7 @@ Result submit(const DebugSample &sample) {
   }
 
   const uint32_t now = micros();
-  if (selectedDebugSubmitted && static_cast<uint32_t>(now - lastSelectedDebugMicros) < 20000)
+  if (selectedDebugSubmitted && static_cast<uint32_t>(now - lastSelectedDebugMicros) < 2500)
     return Result::Paced;
 
   LoggingInternal::Record record{};

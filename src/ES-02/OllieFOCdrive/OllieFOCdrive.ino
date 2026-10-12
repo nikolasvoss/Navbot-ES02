@@ -93,7 +93,7 @@ CalibrationStore calibrationStore;
 #define TOUCH_X_PID_D_DEFAULT 0.04
 #define TOUCH_X_PID_LIMIT_DEFAULT 0
 #define TOUCH_Y_PID_P_DEFAULT 0.2
-#define TOUCH_Y_PID_I_DEFAULT 0
+#define TOUCH_Y_PID_I_DEFAULT 170
 #define TOUCH_Y_PID_D_DEFAULT 0.08
 #define TOUCH_Y_PID_LIMIT_DEFAULT 0
 
@@ -113,7 +113,7 @@ CalibrationStore calibrationStore;
 #define SERIAL_BAUD_RATE 576000
 #define DIAGNOSTIC_SERIAL_BAUD_RATE 576000
 #define LIVE_TUNING_SERIAL_BAUD_RATE 576000
-#define DIAGNOSTIC_LOG_INTERVAL_US 10000 // Diagnostic CSV rows are emitted at 100 Hz.
+#define DIAGNOSTIC_LOG_INTERVAL_US 5000 // Diagnostic CSV rows are emitted at 200 Hz.
 constexpr unsigned int DIAGNOSTIC_LOG_SAMPLE_RATE_HZ = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
 constexpr float DRIVE_BODY_X_LIMIT_M = 0.010f;
