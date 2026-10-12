@@ -922,14 +922,14 @@ void runPostureController(float dt) {
 
   float touchXError = Touch.XPdatF;
   float touchYError = Touch.YPdatF;
-  static float TouchX_kd = 0;
-  static float TouchY_kd = 0;
+  static float touchXKd = 0;
+  static float touchYKd = 0;
 
   touchXPid.compute(touchXError, dt);
   touchYPid.compute(touchYError, dt);
 
   touchXPid.deriv = constrain(touchXPid.deriv, -kTouchDerivClamp, kTouchDerivClamp);
-  touchXPid.outD = TouchX_kd * touchXPid.deriv;
+  touchXPid.outD = touchXKd * touchXPid.deriv;
 
   if ((attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) || (rollMode == REMOTE_CONTROL_ROLL_MODE_AUTO))  // Top ball mode
   {
@@ -938,7 +938,7 @@ void runPostureController(float dt) {
   }
 
   touchYPid.deriv = constrain(touchYPid.deriv, -kTouchDerivClamp, kTouchDerivClamp);
-  touchYPid.outD = TouchY_kd * touchYPid.deriv;
+  touchYPid.outD = touchYKd * touchYPid.deriv;
   touchYPid.output = touchYPid.outP + touchYPid.outI + touchYPid.outD + sbusTopBallYSmoothed;
   if ((int)bodyCommandFilteringEnabled == 1) {
     touchYPidOutputFiltered = biquadFilterApply(&bodyCommandFilterLpf[10], touchYPid.output);
@@ -953,11 +953,11 @@ void runPostureController(float dt) {
   }
 
   if (Touch.P_count >= kTouchPressFrames) {
-    if (TouchX_kd < touchXPid.Kd) {
-      TouchX_kd = TouchX_kd + (touchXPid.Kd / kTouchKdRampDivisor);
+    if (touchXKd < touchXPid.Kd) {
+      touchXKd = touchXKd + (touchXPid.Kd / kTouchKdRampDivisor);
     }
-    if (TouchY_kd < touchYPid.Kd) {
-      TouchY_kd = TouchY_kd + (touchYPid.Kd / kTouchKdRampDivisor);
+    if (touchYKd < touchYPid.Kd) {
+      touchYKd = touchYKd + (touchYPid.Kd / kTouchKdRampDivisor);
     }
     Touch.start = 2;
   }
@@ -971,8 +971,8 @@ void runPostureController(float dt) {
     touchXPid.integral = 0;
     touchYPid.integral = 0;
     Touch.P_count = 0;
-    TouchX_kd = 0;
-    TouchY_kd = 0;
+    touchXKd = 0;
+    touchYKd = 0;
     Touch.start = -2;
   }
 
@@ -983,8 +983,8 @@ void runPostureController(float dt) {
     touchYPid.integral = 0;
     touchYPid.output = 0;
     touchYPidOutputFiltered = 0;
-    TouchX_kd = 0;
-    TouchY_kd = 0;
+    touchXKd = 0;
+    touchYKd = 0;
   }
 
   // Roll
@@ -993,13 +993,13 @@ void runPostureController(float dt) {
   rollPid.Kd = rollPidSettings.D / 100;
   rollPid.iLimit = rollPidSettings.limit;  // Integral limit
 
-  float TargetBodyRoll = bodyRollFiltered * 777;                            // Roll
+  float targetBodyRoll = bodyRollFiltered * 777;                            // Roll
   if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball mode disables manual roll
-    TargetBodyRoll = 0;
-  float RollError = (-imu::latest().correctedPitchDegrees) - (-TargetBodyRoll) - (-touchYPidOutputFiltered);
+    targetBodyRoll = 0;
+  float rollError = (-imu::latest().correctedPitchDegrees) - (-targetBodyRoll) - (-touchYPidOutputFiltered);
   if (rollMode == REMOTE_CONTROL_ROLL_MODE_AUTO)  // Roll leveling
   {
-    rollPid.compute(RollError, dt);
+    rollPid.compute(rollError, dt);
   } else {
     rollPid.output = 0;
     rollPid.integral = 0;
@@ -1101,8 +1101,8 @@ void runPostureController(float dt) {
  */
 void filterRemoteControl(void)  // Remote control filter
 {
-  static int bodyCommandFilteringEnabled_last = (int)bodyCommandFilteringEnabled;
-  static int bodyCommandFilterCutoffHz_last = (int)bodyCommandFilterCutoffHz;
+  static int bodyCommandFilteringEnabledLast = (int)bodyCommandFilteringEnabled;
+  static int bodyCommandFilterCutoffHzLast = (int)bodyCommandFilterCutoffHz;
 
   sbusTopBallXSmoothed = biquadFilterApply(&bodyCommandFilterLpf[8], topBallX);
   sbusTopBallYSmoothed = biquadFilterApply(&bodyCommandFilterLpf[9], topBallY);
@@ -1118,14 +1118,14 @@ void filterRemoteControl(void)  // Remote control filter
     bodyHeightCommandFilteredM = bodyHeightCommandM;
   }
 
-  if (((int)bodyCommandFilteringEnabled != bodyCommandFilteringEnabled_last) ||
-      ((int)bodyCommandFilterCutoffHz != bodyCommandFilterCutoffHz_last)) {
+  if (((int)bodyCommandFilteringEnabled != bodyCommandFilteringEnabledLast) ||
+      ((int)bodyCommandFilterCutoffHz != bodyCommandFilterCutoffHzLast)) {
     for (int i = 0; i < 6; i++) {
       biquadFilterInitLPF(&bodyCommandFilterLpf[i], (unsigned int)bodyCommandFilterCutoffHz, 1000);
     }
 
-    bodyCommandFilteringEnabled_last = (int)bodyCommandFilteringEnabled;
-    bodyCommandFilterCutoffHz_last = (int)bodyCommandFilterCutoffHz;
+    bodyCommandFilteringEnabledLast = (int)bodyCommandFilteringEnabled;
+    bodyCommandFilterCutoffHzLast = (int)bodyCommandFilterCutoffHz;
     Logging::message(Logging::Level::Info, "Filter", "ok");
   }
 }
