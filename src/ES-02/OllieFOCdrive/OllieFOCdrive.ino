@@ -2,6 +2,7 @@
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <SimpleFOC.h>
+#include "BoardConfig.h"
 #include "FUTABA_SBUS.h"
 #include "ServoControl.h"
 #include "imu.h"
@@ -96,16 +97,6 @@ CalibrationStore calibrationStore;
 #define TOUCH_Y_PID_I_DEFAULT 170
 #define TOUCH_Y_PID_D_DEFAULT 0.08
 #define TOUCH_Y_PID_LIMIT_DEFAULT 0
-
-#define BOARD_PIN_LED 35        // LED IO
-#define BOARD_PIN_BATTERY_VOLTAGE_ADC 17  // Battery voltage IO
-
-
-// GPIOs for the four leg-servo signals, in ServoControl order.
-#define LEG_SERVO_1_SIGNAL_PIN 11
-#define LEG_SERVO_2_SIGNAL_PIN 12
-#define LEG_SERVO_3_SIGNAL_PIN 21
-#define LEG_SERVO_4_SIGNAL_PIN 14
 
 #define SBUS_CHANNEL_MAX 1792
 #define SBUS_CHANNEL_MIN 192
@@ -232,8 +223,8 @@ bool pid_gains_mode_is_enabled(int mode) {
 }
 
 //  Create ServoControl object
-ServoControl servoControl(LEG_SERVO_1_SIGNAL_PIN, LEG_SERVO_2_SIGNAL_PIN,
-                          LEG_SERVO_3_SIGNAL_PIN, LEG_SERVO_4_SIGNAL_PIN);
+ServoControl servoControl(board::kLegServoPin[0], board::kLegServoPin[1],
+                          board::kLegServoPin[2], board::kLegServoPin[3]);
 int servoTraceAngle[4] = { 0, 0, 0, 0 };  // Last angle arguments sent to the four servos
 
 // Remote control
@@ -380,11 +371,13 @@ float controlTimestepSec = 0;
 unsigned long loopTimeUs = 0;
 unsigned long previousControlTimeUs = 0;
 
-BLDCMotor motor1 = BLDCMotor(7);  // Motor pole pairs
-BLDCDriver3PWM driver = BLDCDriver3PWM(15, 7, 6, 16); // what are the numbers? replace with names
+BLDCMotor motor1 = BLDCMotor(board::kWheelMotorPolePairs);
+BLDCDriver3PWM driver = BLDCDriver3PWM(board::kWheel1PhaseAPin, board::kWheel1PhaseBPin,
+                                       board::kWheel1PhaseCPin, board::kWheel1EnablePin);
 
-BLDCMotor motor2 = BLDCMotor(7);
-BLDCDriver3PWM driver2 = BLDCDriver3PWM(40, 39, 38, 37);
+BLDCMotor motor2 = BLDCMotor(board::kWheelMotorPolePairs);
+BLDCDriver3PWM driver2 = BLDCDriver3PWM(board::kWheel2PhaseAPin, board::kWheel2PhaseBPin,
+                                        board::kWheel2PhaseCPin, board::kWheel2EnablePin);
 
 MagneticSensorI2C sensor2 = MagneticSensorI2C(AS5600_I2C);
 MagneticSensorI2C sensor1 = MagneticSensorI2C(AS5600_I2C);
@@ -446,10 +439,10 @@ void setup() {
 #if SENSOR_DIAGNOSTIC_MODE
   // SimpleFOC's plain BLDCDriver3PWM enable pins are active high.
   // Hold both drivers disabled before any other peripheral is initialized.
-  pinMode(16, OUTPUT);
-  digitalWrite(16, LOW);
-  pinMode(37, OUTPUT);
-  digitalWrite(37, LOW);
+  pinMode(board::kWheel1EnablePin, OUTPUT);
+  digitalWrite(board::kWheel1EnablePin, LOW);
+  pinMode(board::kWheel2EnablePin, OUTPUT);
+  digitalWrite(board::kWheel2EnablePin, LOW);
 #endif
 
   Serial.begin(SENSOR_DIAGNOSTIC_MODE ? DIAGNOSTIC_SERIAL_BAUD_RATE :
@@ -469,8 +462,8 @@ void setup() {
                    servoTrims.servo1Degrees, servoTrims.servo2Degrees, servoTrims.servo3Degrees, servoTrims.servo4Degrees);
 
   // TODO is this the right location?
-  pinMode(BOARD_PIN_LED, OUTPUT);
-  digitalWrite(BOARD_PIN_LED, LOW);
+  pinMode(board::kStatusLedPin, OUTPUT);
+  digitalWrite(board::kStatusLedPin, LOW);
   Serial.println("system run.");
   delay(500);
 
@@ -523,8 +516,8 @@ void setup() {
   // comment out if not needed
   SimpleFOCDebug::enable(&Serial); // TODO a more centralized way to enable debug sections would be nice
 
-  I2Cone.begin(4, 5, 400000);
-  I2Ctwo.begin(41, 42, 400000);  // SDA1,SCL1
+  I2Cone.begin(board::kI2cOneSdaPin, board::kI2cOneSclPin, 400000);
+  I2Ctwo.begin(board::kI2cTwoSdaPin, board::kI2cTwoSclPin, 400000);
   sensor1.init(&I2Cone);
   sensor2.init(&I2Ctwo);
 
@@ -763,7 +756,7 @@ void RXsbus() {
 
     BodyRoll = mapf(sBus.channels[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);
 
-  if (Voltage <= 7.4)
+  if (Voltage <= board::kLowBatteryVolts)
     Logging::message(Logging::Level::Warning, "Voltage", "%.5f", Voltage);
 
   }
@@ -789,18 +782,18 @@ void print_data(void) {
   const imu::Snapshot& sampleImu = imu::latest();
   const imu::Settings imuSettings = imu::settings();
   const imu::CalibrationValues imuCalibration = imu::calibration();
-  if (selection >= 60 && selection <= 75) {
+  if (Logging::isChannelDebugSelector(selection)) {
     const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(selection);
     if (!RobotLogCapture::selectedDebugDue(selector, nowMs)) return;
     Logging::DebugSample sample{};
     sample.selector = selector;
-    sample.payload.channelState = {nowMs * 0.001f, sBus.channels[selection - 60]};
+    sample.payload.channelState = {nowMs * 0.001f, sBus.channels[selection - Logging::kChannelDebugFirst]};
     Logging::submit(sample);
     return;
   }
 
   const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(selection);
-  if (selection >= 1 && selection <= 46 &&
+  if (Logging::isSelectedDebugSelector(selection) &&
       RobotLogCapture::selectedDebugDue(selector, nowMs)) {
   Logging::DebugSample sample{};
   sample.selector = selector;
@@ -983,7 +976,7 @@ void print_data(void) {
         sample.sequence = activeTraceSequence++;
         sample.gainMode = pid_gains_mode;
         sample.postureOrMarkMode = posture_or_mark_mode;
-        sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
+        sample.minimumBatteryRawV = board::kBatteryVoltsPerAdcCount * VoltageADCMin;
         sample.batteryV = Voltage;
         sample.rollOk = sampleImu.correctedRollDegrees;
         sample.pitchOk = sampleImu.correctedPitchDegrees;
@@ -1004,7 +997,7 @@ void print_data(void) {
     case 56: {
       if (controlGateSequence % 7 == 0) {
         const uint32_t traceMs = millis();
-        const float rawMinV = (float)7.77 / 813.43 * VoltageADCMin;
+        const float rawMinV = board::kBatteryVoltsPerAdcCount * VoltageADCMin;
         const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
         int32_t ranges[4];
         RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
@@ -1042,7 +1035,7 @@ void print_data(void) {
         sample.timestampMs = traceMs;
         sample.sequence = activeTraceSequence++;
         sample.gainMode = pid_gains_mode;
-        sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
+        sample.minimumBatteryRawV = board::kBatteryVoltsPerAdcCount * VoltageADCMin;
         sample.rollOk = sampleImu.correctedRollDegrees;
         sample.angleError = active ? Angle_Pid.error : 0.0f;
         sample.angleProportional = active ? Angle_Pid.outP : 0.0f;
@@ -1069,7 +1062,7 @@ void print_data(void) {
         sample.timestampMs = traceMs;
         sample.sequence = activeTraceSequence++;
         sample.gainMode = pid_gains_mode;
-        sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
+        sample.minimumBatteryRawV = board::kBatteryVoltsPerAdcCount * VoltageADCMin;
         sample.batteryV = Voltage;
         sample.requestedSpeed = MovementSpeed;
         sample.effectiveSpeed = active ? driveEffectiveSpeed : 0.0f;
@@ -1444,11 +1437,11 @@ void RemoteControlFiltering(void)  // Remote control filter
  * to get a stable reading, and converts it to the actual voltage.
  */
 void ReadVoltage(void) {
-  VoltageADC = analogRead(BOARD_PIN_BATTERY_VOLTAGE_ADC);
+  VoltageADC = analogRead(board::kBatteryAdcPin);
   if (VoltageADCMin == 0 || VoltageADC < VoltageADCMin)
     VoltageADCMin = VoltageADC;
   VoltageADCf = biquadFilterApply(&VoltageFilterLPF, VoltageADC);
-  Voltage = (float)7.77 / 813.43 * VoltageADCf;
+  Voltage = board::kBatteryVoltsPerAdcCount * VoltageADCf;
 }
 
 /**
@@ -1502,7 +1495,7 @@ void DiagnosticLoop(void) {
       lastLogScheduleUs = imuSampleUs;
       const long rcAgeMs = diagnosticHasRcFrame ? (long)(nowMs - diagnosticLastRcFrameMs) : -1;
       const int rcFailsafe = diagnosticHasRcFrame ? sBus.Failsafe() : -1;
-      const float batteryRawV = (float)7.77 / 813.43 * VoltageADC;
+      const float batteryRawV = board::kBatteryVoltsPerAdcCount * VoltageADC;
       Logging::DiagnosticSample sample{};
       sample.timestampUs = imuSampleUs;
       sample.sequence = diagnosticSequence++;
@@ -1613,15 +1606,15 @@ void loop() {
     if (statusLedTicks >= statusLedPeriodTicks) {
       statusLedTicks = 0;
       if (statusLedOn == 1) {
-        digitalWrite(BOARD_PIN_LED, LOW);  // On
+        digitalWrite(board::kStatusLedPin, LOW);  // On
         statusLedOn = 0;
       } else {
-        digitalWrite(BOARD_PIN_LED, HIGH);  // Off
+        digitalWrite(board::kStatusLedPin, HIGH);  // Off
         statusLedOn = 1;
       }
     }
 
-    if (Voltage <= 7.4)
+    if (Voltage <= board::kLowBatteryVolts)
       statusLedPeriodTicks = 20;
     else
       statusLedPeriodTicks = 100;

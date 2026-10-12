@@ -1,9 +1,9 @@
 #include "FUTABA_SBUS.h"
 
+#include "BoardConfig.h"
+
 namespace {
 
-constexpr int kRxPin = 1;
-constexpr int kTxPin = 2;
 constexpr unsigned long kBaudRate = 100000;
 
 constexpr uint8_t kSignalOk = 0x00;
@@ -20,7 +20,7 @@ void FUTABA_SBUS::begin() {
     1023, 1023, 1023, 1023, 1023, 1023, 1023, 1023, 1023,
     1023, 1023, 1023, 1023, 1023, 1023, 1023, 0, 0};
 
-  Serial2.begin(kBaudRate, SERIAL_8N1, kRxPin, kTxPin);
+  Serial2.begin(kBaudRate, SERIAL_8N1, board::kSbusRxPin, board::kSbusTxPin);
 
   memcpy(sbusData, loc_sbusData, sizeof(sbusData));
   memcpy(channels, loc_channels, sizeof(channels));

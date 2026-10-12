@@ -3,11 +3,7 @@
 
 #include <cstdint>
 
-// Define HSPI pins
-#define SCK_PIN   3
-#define MOSI_PIN  9
-#define MISO_PIN  10
-#define CS_PIN    13
+#include "BoardConfig.h"
 
 // expected value in UB0_REG_WHO_AM_I reg
 #define WHO_AM_I 0x47 
