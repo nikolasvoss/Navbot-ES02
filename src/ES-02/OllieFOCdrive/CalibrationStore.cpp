@@ -67,6 +67,10 @@ GyroBiasRawCounts CalibrationStore::saveGyro(GyroBiasRawCounts requested) {
 ServoTrimsDegrees CalibrationStore::saveChangedServos(
     ServoTrimsDegrees requested,
     ServoTrimChangeMask changed) {
+  if (!anyServoChanged(changed)) {
+    return requested;
+  }
+
   preferences.begin(kPreferencesNamespace, false);
 
   ServoTrimsDegrees saved = requested;

@@ -8,6 +8,7 @@ trap 'rm -rf "$build_dir"' EXIT
 g++ -std=c++17 -Wall -Wextra -Werror \
   -I "$repo_root/tests/calibration_store/support" \
   -I "$repo_root/src/ES-02/OllieFOCdrive" \
+  "$repo_root/src/ES-02/OllieFOCdrive/Calibration.cpp" \
   "$repo_root/src/ES-02/OllieFOCdrive/CalibrationStore.cpp" \
   "$repo_root/tests/calibration_store/FakePreferences.cpp" \
   "$repo_root/tests/calibration_store/test_calibration_store.cpp" \
