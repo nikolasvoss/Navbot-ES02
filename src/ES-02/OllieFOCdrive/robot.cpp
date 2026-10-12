@@ -2,25 +2,14 @@
 #include "robot.h"
 #include "Logging.h"
 #include <ArduinoJson.h>
-#include <vector>
 #include <esp_mac.h>
 #include <Arduino.h>
-#include "filter.h"
 #include "ble.h"
 
 const Message_TypeDef MESSAGE_TYPE;
 
 
 RobotProtocol rp;
-
-
-
-
-RobotProtocol::RobotProtocol() {
-}
-
-RobotProtocol::~RobotProtocol() {
-}
 
 
 void RobotProtocol::build_dev_name(char dev_name[]) {
@@ -55,7 +44,7 @@ void RobotProtocol::isSys(StaticJsonDocument<300> &doc) {
  if (type == MESSAGE_TYPE.GET_DEVICE_INFO) {
     send_device_info();
   } else {
-    Logging::message(Logging::Level::Debug, "robot", "Invalid json keyworeds.");
+    Logging::message(Logging::Level::Debug, "robot", "Invalid json keywords.");
   }
 }
 
@@ -77,26 +66,17 @@ String RobotProtocol::get_device_info() {
   // Create static JSON document (allocate memory pool size)
   StaticJsonDocument<1024> doc;
 
-  // Read voltage
-  double battery_voltage = rp.get_battery_voltage();
-  // Calculate battery level
-  double battery_percentage = rp.get_battery_level();
-  
-  // Format to retain two decimal places (rounded to 2 decimal places)
-  battery_voltage = round(battery_voltage * 100) / 100;
-  battery_percentage = round(battery_percentage) / 1;
+  double voltage = round(get_battery_voltage() * 100) / 100;
+  double level = round(get_battery_level());
 
-  // Add simple values
   doc["type"] = "get_device_info";
-  doc["battery_level"] = rp.battery_level;
-  doc["battery_voltage"] = rp.battery_voltage;
+  doc["battery_level"] = level;
+  doc["battery_voltage"] = voltage;
   serializeJson(doc, jsonStr);
   return jsonStr;
 }
 double RobotProtocol::get_battery_voltage() {
-  // static biquadFilter_t VoltageFilterLPF;
   uint16_t VoltageADC = analogRead(17);
-  // float VoltageADCf = biquadFilterApply(&VoltageFilterLPF, VoltageADC);
   battery_voltage = (float)7.77 / 813.43 * VoltageADC;
   return battery_voltage;
 }
@@ -136,6 +116,3 @@ void RobotProtocol::json_test(char *json_arr) {
     parseJson(doc);
   }
 }
-
-
-

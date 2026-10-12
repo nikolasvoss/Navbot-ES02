@@ -11,7 +11,6 @@
 
 BLEServer* pServer = NULL;
 BLECharacteristic* pTxCharacteristic;
-bool oldDeviceConnected = false;
 
 BleDataTypDef ble_rx;
 CmdManeuverTypDef ble_ctrler;
@@ -30,7 +29,6 @@ void ble_rx_processing(void);
 void ble_rx_data_add(uint8_t* data, uint8_t len);
 void ble_rx_data_clear(void);
 void ble_cmd_maneuver_processing(void);
-void ble_cmd_wifi_processing(void);
 void ble_cmd_json_processing(void);
 bool ble_frames_validation(void);
 
@@ -120,7 +118,7 @@ void ble_rx_processing(void) {
 
     if (ble_frames_validation() == false) {
       ble_rx_data_clear();
-      Logging::message(Logging::Level::Debug, "ble", "ble deta err");
+      Logging::message(Logging::Level::Debug, "ble", "ble data err");
       ble_rx.state = BLE_STATE_IDLE;
       return;
     }
@@ -134,17 +132,12 @@ void ble_rx_processing(void) {
       ble_rx.state = BLE_STATE_RECEIVE_WAIT;
     } else  //Process data packets
     {
-      //Merge the last package of data；if there is only one package of data, that is also the last one
+      //Merge the last package of data;if there is only one package of data, that is also the last one
       ble_rx_data_add(&ble_rx.frame[5], 15);
       switch (ble_rx.cmd) {
         case CMD_MANEUVER:
           {
             ble_cmd_maneuver_processing();
-          }
-          break;
-        case CMD_WIFI:
-          {
-            //ble_cmd_wifi_processing();
           }
           break;
         case CMD_JSON:
@@ -175,7 +168,7 @@ void ble_tx_processing(void) {
     ble_tx_q.peek(&_ble_tx);
     ble_tx_q.drop();
     free(_ble_tx);
-    Logging::message(Logging::Level::Debug, "ble", "BLE not connected, deleing queue; Queue remaining: %u", static_cast<unsigned int>(ble_tx_q.getCount()));
+    Logging::message(Logging::Level::Debug, "ble", "BLE not connected, deleting queue; Queue remaining: %u", static_cast<unsigned int>(ble_tx_q.getCount()));
     return;
   }
   
@@ -215,7 +208,7 @@ void ble_tx_processing(void) {
   ble_tx->frame[1] = 0xAA;
   ble_tx->frame[2] = 0x02;  //json
   ble_tx->frame[3] = (ble_tx->len - ble_tx->index) / 15 - ((ble_tx->len - ble_tx->index)%15 ? 0:1);
-  ble_tx->frame[4] = 0;  //(ble_tx.len) / 15 ;
+  ble_tx->frame[4] = 0;
 
   memcpy(&ble_tx->frame[5], &ble_tx->data[ble_tx->index], 15);
 
@@ -235,33 +228,6 @@ void ble_tx_processing(void) {
                    static_cast<unsigned int>(ble_tx->frame[18]), static_cast<unsigned int>(ble_tx->frame[19]));
 
   ble_tx->index += 15;
-}
-void ble_offline_processing(){
-  //Clear the Bluetooth data and status after the Bluetooth connection is disconnected to prevent accidental operations.
-  if(rp.ble_connected == false){
-  }
-}
-void ble_send_string(const String& message) {
-  // Maximum payload size per packet (fixed 15 bytes)
-  const uint8_t MAX_PAYLOAD_SIZE = 15;
-  // Calculate total number of packets (round up)
-  uint16_t total_length = message.length();
-  uint8_t total_packets = (total_length + MAX_PAYLOAD_SIZE - 1) / MAX_PAYLOAD_SIZE;
-
-  // Return immediately if string is empty
-  if (total_packets == 0) return;
-
-  for (uint8_t packet_idx = 0; packet_idx < total_packets; packet_idx++) {
-    // Calculate current packet payload length
-    uint16_t start_pos = packet_idx * MAX_PAYLOAD_SIZE;
-    uint8_t payload_len = min(MAX_PAYLOAD_SIZE, (uint8_t)(total_length - start_pos));
-
-    // Send string fragment directly (no packet header)
-    ble_send_data((uint8_t*)(message.c_str() + start_pos), payload_len);
-
-    // Add short delay to prevent transmission congestion (adjust according to actual hardware)
-    delay(10);
-  }
 }
 bool ble_frames_validation(void) {
   static uint8_t last_remaining_pack;
@@ -291,10 +257,6 @@ void ble_rx_data_add(uint8_t* data, uint8_t len) {
 }
 
 void ble_rx_data_clear() {
-  // int i;
-  // for (i = 0; i < BLE_DATA_SIZE; i++) {
-  //   ble_rx.data[i] = 0;
-  // }
   ble_rx.index = 0;
   ble_rx.remaining_pack = 0;
 }
@@ -310,11 +272,6 @@ void ble_cmd_json_processing(void) {
   deserializeJson(doc, payload_str);
   rp.parseJson(doc);
 }
-// void ble_cmd_restart_processing() {
-//   StaticJsonDocument<300> doc;
-//   doc["type"] = MESSAGE_TYPE.SYS_RESTART;
-//   rp.parseJson(doc);
-// }
 void ble_tx_add_data(char* data, int len) {
 
   if(ble_tx_q.isFull() ==true){
@@ -359,40 +316,4 @@ void ble_tx_add_string(String str) {
   int len = 1 + str.length();
   str.toCharArray(buffer, len);
   ble_tx_add_data(buffer, len);
-}
-void ble_tx_add_json(StaticJsonDocument<1024> &doc)
-{
-  String jsonStr;
-  serializeJson(doc, jsonStr);
-  ble_tx_add_string(jsonStr);
-}
-
-
-
-/*****************************************************      test    ***************************************************************/
-bool one_second_tick(void);
-bool ten_msec_tick(void);
-void test_rx_json(char* data);
-
-
-
-void ble_test(void) {
-  return;
-  Serial.begin(115200);
-  ble_init();
-  while (1) {
-    if (ten_msec_tick()) {
-      ble_loop();
-    }
-    if (one_second_tick()) {
-
-      test_rx_json("{\"type\":\"get_device_info\"}");
-    }
-  }
-}
-void test_rx_json(char* data) {
-  String payload_str = String(data);
-  StaticJsonDocument<300> doc;
-  deserializeJson(doc, payload_str);
-  rp.parseJson(doc);
 }

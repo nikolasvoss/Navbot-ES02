@@ -41,13 +41,6 @@ typedef struct CmdManeuverTypDef {
   int8_t ch[10];
 } CmdManeuverTypDef;
 
-typedef struct CmdWifiTypDef {
-  uint8_t header[2];
-  uint8_t idle1[3];
-
-} CmdWifiTypDef;
-
-
 enum BLE_STATE {
   BLE_OFF_LINE = 0,
   BLE_STATE_IDLE = 1,
@@ -60,11 +53,9 @@ enum BLE_STATE {
   BLE_STATE_SEND_FINISH = 22
 };
 enum BLE_CMD {
-  CMD_RESTART = -1,
   CMD_MANEUVER = 0x10,
   CMD_WIFI = 1,
-  CMD_JSON = 2,
-  CMD_ACK = 0x7F
+  CMD_JSON = 2
 };
 
 typedef struct BleDataTypDef {
@@ -75,29 +66,12 @@ typedef struct BleDataTypDef {
   int16_t len;
   int16_t index;
   uint8_t state;
-  uint8_t timeout;
 } BleDataTypDef;
 
 
 void ble_init();
-//void ble_send_data(uint8_t* data, uint8_t len);
 void ble_loop(void);
-void ble_test(void);
-
-void ble_send_string(const String &message);
 void ble_tx_add_string(String str);
-void ble_rx_add_data(char *data, int len);
-void ble_tx_add_json(StaticJsonDocument<1024> &doc);
-void ble_offline_processing(void);
 
 extern BleDataTypDef ble_rx;
 extern CmdManeuverTypDef ble_ctrler;
-
-
-
-
-
-
-
-
-
