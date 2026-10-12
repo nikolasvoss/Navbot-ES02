@@ -38,21 +38,6 @@ Logging::Profile profileForSelector(int selector) {
   }
 }
 
-bool isMeasurementProfile(Logging::Profile profile) {
-  switch (profile) {
-    case Logging::Profile::Diagnostic:
-    case Logging::Profile::Trace:
-    case Logging::Profile::Control:
-    case Logging::Profile::Balance:
-    case Logging::Profile::Drive:
-      return true;
-    case Logging::Profile::Idle:
-    case Logging::Profile::SelectedDebug:
-      return false;
-  }
-  return false;
-}
-
 void setProfileForSelector(int selector) {
   Logging::setProfile(profileForSelector(selector));
 }
@@ -65,15 +50,6 @@ bool selectedDebugDue(Logging::DebugSelector selector, uint32_t nowMs) {
   if (Logging::isChannelDebugSelector(value))
     return gateDue(nowMs, lastChannelTraceMs);
   return true;
-}
-
-void resetControlWindow() {
-  for (int i = 0; i < 4; ++i) {
-    servoMinimum[i] = 0;
-    servoMaximum[i] = 0;
-    servoLatest[i] = 0;
-  }
-  servoWindowStarted = false;
 }
 
 void observeServoAngles(const int angles[4]) {

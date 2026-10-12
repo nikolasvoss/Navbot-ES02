@@ -26,7 +26,6 @@ enum class IncompleteReason : uint8_t {
 
 enum class Result : uint8_t {
   Accepted,
-  Filtered,
   Suppressed,
   Paced,
   Truncated,
@@ -35,20 +34,6 @@ enum class Result : uint8_t {
   Incomplete,
   QueueFull,
   Invalid
-};
-
-struct Status {
-  IncompleteReason incompleteReason;
-  uint32_t queuedRecords;
-  uint32_t droppedRecords;
-  uint32_t writeFailures;
-  uint32_t formatFailures;
-  uint32_t truncatedMessages;
-  uint32_t rejectedRecords;
-  uint32_t filteredMessages;
-  uint32_t suppressedMessages;
-  uint32_t profileEpoch;
-  uint8_t queueDepth;
 };
 
 struct DiagnosticSample {

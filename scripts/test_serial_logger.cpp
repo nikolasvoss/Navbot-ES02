@@ -118,9 +118,6 @@ void verifyQueue() {
           "full queue did not reject the next record");
   require(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100),
           "producer waited while UART sender was stalled");
-  Logging::Status status = Logging::status();
-  require(status.incompleteReason == Logging::IncompleteReason::QueueFull,
-          "overflow did not latch incomplete status");
   require(Logging::submit(diagnostic(66)) == Logging::Result::Incomplete,
           "logger accepted a row after overflow");
   releaseSerialWrites();
@@ -137,24 +134,17 @@ void verifyQueue() {
     ++expected;
   }
   require(expected == 65, "accepted queue rows were lost or duplicated");
-  require(Logging::status().incompleteReason == Logging::IncompleteReason::QueueFull,
+  require(Logging::submit(diagnostic(66)) == Logging::Result::Incomplete,
           "draining cleared the incomplete state");
-  require(Logging::status().rejectedRecords == 2,
-          "overflow and post-overflow rejection counters are incorrect");
-  const uint32_t failedEpoch = Logging::status().profileEpoch;
   Logging::setProfile(Logging::Profile::Idle);
-  require(Logging::status().incompleteReason == Logging::IncompleteReason::QueueFull,
+  Logging::setProfile(Logging::Profile::Diagnostic);
+  require(Logging::submit(diagnostic(66)) == Logging::Result::Incomplete,
           "profile change cleared the incomplete latch");
-  require(Logging::status().profileEpoch == failedEpoch + 1,
-          "profile change did not advance its epoch");
   std::puts("blocked_sender=nonblocking; capacity=32; overflow=sticky; fifo=65; reuse=verified");
 }
 
 void verifyMessagesAndBoundary() {
   require(Logging::begin(), "logger sender did not start");
-  Logging::setLevel(Logging::Level::Info);
-  require(Logging::message(Logging::Level::Debug, "filtered", "line") == Logging::Result::Filtered,
-          "severity filter did not reject a low-priority message");
   require(Logging::message(Logging::Level::Warning, "inflight", "before") == Logging::Result::Accepted,
           "idle message was not accepted");
   require(waitForSerialLines(1), "idle message was not written");
@@ -190,10 +180,6 @@ void verifyMessagesAndBoundary() {
           "capture-time message contaminated structured output");
   require(output.find("TRACE,7,") != std::string::npos,
           "typed record was not emitted after profile transition");
-  const Logging::Status status = Logging::status();
-  require(status.filteredMessages == 1 && status.suppressedMessages == 1 &&
-              status.truncatedMessages == 1 && status.incompleteReason == Logging::IncompleteReason::None,
-          "message status counters or truncation latch are incorrect");
 }
 
 void verifyShortWrite() {
@@ -202,18 +188,17 @@ void verifyShortWrite() {
   shortNextSerialWrite();
   require(Logging::submit(diagnostic(1)) == Logging::Result::Accepted,
           "record before forced short write was rejected");
-  for (int i = 0; i < 100 && Logging::status().incompleteReason == Logging::IncompleteReason::None; ++i)
+  Logging::Result result = Logging::Result::Accepted;
+  for (uint32_t id = 2; id < 102 && result != Logging::Result::Incomplete; ++id) {
+    result = Logging::submit(diagnostic(id));
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
-  const Logging::Status status = Logging::status();
-  require(status.incompleteReason == Logging::IncompleteReason::SenderWriteFailed && status.writeFailures == 1,
-          "short UART write did not latch an incomplete recording");
+  }
+  require(result == Logging::Result::Incomplete, "short UART write did not latch an incomplete recording");
 }
 
 void verifyStartFailure() {
   failNextTaskCreation();
   require(!Logging::begin(), "sender task creation failure was not reported");
-  require(Logging::status().incompleteReason == Logging::IncompleteReason::SenderStartFailed,
-          "sender task creation failure did not latch status");
   Logging::setProfile(Logging::Profile::Diagnostic);
   require(Logging::submit(diagnostic(1)) == Logging::Result::Incomplete,
           "logger accepted data after sender startup failed");

@@ -34,17 +34,8 @@ Logging::Profile currentProfile = Logging::Profile::Idle;
 uint32_t currentEpoch = 0;
 
 std::atomic<uint8_t> incompleteReason{static_cast<uint8_t>(Logging::IncompleteReason::None)};
-std::atomic<uint8_t> minimumLevel{static_cast<uint8_t>(Logging::Level::Debug)};
-std::atomic<uint32_t> queuedRecords{0};
 std::atomic<uint32_t> droppedRecords{0};
 std::atomic<uint32_t> writeFailures{0};
-std::atomic<uint32_t> formatFailures{0};
-std::atomic<uint32_t> truncatedMessages{0};
-std::atomic<uint32_t> rejectedRecords{0};
-std::atomic<uint32_t> filteredMessages{0};
-std::atomic<uint32_t> suppressedMessages{0};
-std::atomic<uint32_t> suppressedRecords{0};
-std::atomic<uint32_t> queueDepth{0};
 std::atomic<bool> beginAttempted{false};
 std::atomic<bool> senderStarted{false};
 
@@ -64,32 +55,26 @@ void latchIncomplete(Logging::IncompleteReason reason) {
                                            std::memory_order_relaxed);
 }
 
+bool isIncomplete() {
+  return incompleteReason.load(std::memory_order_relaxed) !=
+         static_cast<uint8_t>(Logging::IncompleteReason::None);
+}
+
 bool isValidDebugSelector(Logging::DebugSelector selector) {
   const int value = static_cast<int>(selector);
   return Logging::isSelectedDebugSelector(value) || Logging::isChannelDebugSelector(value);
 }
 
 Logging::Result enqueue(LoggingInternal::Record &record) {
-  if (incompleteReason.load(std::memory_order_relaxed) !=
-      static_cast<uint8_t>(Logging::IncompleteReason::None)) {
-    rejectedRecords.fetch_add(1, std::memory_order_relaxed);
-    return Logging::Result::Incomplete;
-  }
+  if (isIncomplete()) return Logging::Result::Incomplete;
   if (!logQueue || !senderStarted.load(std::memory_order_relaxed)) {
     latchIncomplete(Logging::IncompleteReason::SenderStartFailed);
-    rejectedRecords.fetch_add(1, std::memory_order_relaxed);
     return Logging::Result::NotStarted;
   }
 
-  queueDepth.fetch_add(1, std::memory_order_relaxed);
-  if (xQueueSend(logQueue, &record, 0) == pdTRUE) {
-    queuedRecords.fetch_add(1, std::memory_order_relaxed);
-    return Logging::Result::Accepted;
-  }
+  if (xQueueSend(logQueue, &record, 0) == pdTRUE) return Logging::Result::Accepted;
 
-  queueDepth.fetch_sub(1, std::memory_order_relaxed);
   droppedRecords.fetch_add(1, std::memory_order_relaxed);
-  rejectedRecords.fetch_add(1, std::memory_order_relaxed);
   latchIncomplete(Logging::IncompleteReason::QueueFull);
   return Logging::Result::QueueFull;
 }
@@ -99,20 +84,14 @@ void senderTask(void *) {
   char line[kLineBufferSize];
   for (;;) {
     if (xQueueReceive(logQueue, &record, portMAX_DELAY) != pdTRUE) continue;
-    queueDepth.fetch_sub(1, std::memory_order_relaxed);
 
     const ProfileSnapshot profile = snapshotProfile();
-    if (record.epoch != profile.epoch || record.profile != profile.profile) {
-      suppressedRecords.fetch_add(1, std::memory_order_relaxed);
-      continue;
-    }
+    if (record.epoch != profile.epoch || record.profile != profile.profile) continue;
 
     const int length = LoggingInternal::formatRecord(
         record, line, sizeof(line), droppedRecords.load(std::memory_order_relaxed),
         writeFailures.load(std::memory_order_relaxed));
     if (length <= 0 || static_cast<size_t>(length) >= sizeof(line)) {
-      formatFailures.fetch_add(1, std::memory_order_relaxed);
-      rejectedRecords.fetch_add(1, std::memory_order_relaxed);
       latchIncomplete(Logging::IncompleteReason::FormatFailed);
       continue;
     }
@@ -120,7 +99,6 @@ void senderTask(void *) {
     if (Serial.write(reinterpret_cast<const uint8_t *>(line), static_cast<size_t>(length)) !=
         static_cast<size_t>(length)) {
       writeFailures.fetch_add(1, std::memory_order_relaxed);
-      rejectedRecords.fetch_add(1, std::memory_order_relaxed);
       latchIncomplete(Logging::IncompleteReason::SenderWriteFailed);
     }
   }
@@ -131,16 +109,8 @@ Logging::Result submitMeasurement(const Sample &sample, Logging::Profile expecte
                                   LoggingInternal::RecordKind kind,
                                   void (*copyPayload)(LoggingInternal::Payload &, const Sample &)) {
   const ProfileSnapshot profile = snapshotProfile();
-  if (profile.profile != expectedProfile) {
-    suppressedRecords.fetch_add(1, std::memory_order_relaxed);
-    return Logging::Result::Suppressed;
-  }
-
-  if (incompleteReason.load(std::memory_order_relaxed) !=
-      static_cast<uint8_t>(Logging::IncompleteReason::None)) {
-    rejectedRecords.fetch_add(1, std::memory_order_relaxed);
-    return Logging::Result::Incomplete;
-  }
+  if (profile.profile != expectedProfile) return Logging::Result::Suppressed;
+  if (isIncomplete()) return Logging::Result::Incomplete;
 
   LoggingInternal::Record record{};
   record.epoch = profile.epoch;
@@ -181,7 +151,7 @@ bool begin() {
   }
 
   if (xTaskCreatePinnedToCore(senderTask, "logging", kSenderTaskStackDepth, nullptr,
-                          kSenderTaskPriority, nullptr, 0) != pdTRUE) {
+                              kSenderTaskPriority, nullptr, 0) != pdTRUE) {
     latchIncomplete(IncompleteReason::SenderStartFailed);
     return false;
   }
@@ -202,28 +172,14 @@ Profile profile() {
   return snapshotProfile().profile;
 }
 
-void setLevel(Level level) {
-  minimumLevel.store(static_cast<uint8_t>(level), std::memory_order_relaxed);
-}
-
 Result message(Level level, const char *tag, const char *format, ...) {
   if (format == nullptr || tag == nullptr) return Result::Invalid;
-  if (static_cast<uint8_t>(level) < minimumLevel.load(std::memory_order_relaxed)) {
-    filteredMessages.fetch_add(1, std::memory_order_relaxed);
-    return Result::Filtered;
-  }
 
   const ProfileSnapshot profile = snapshotProfile();
-  if (profile.profile != Profile::Idle) {
-    suppressedMessages.fetch_add(1, std::memory_order_relaxed);
-    return Result::Suppressed;
-  }
+  if (profile.profile != Profile::Idle) return Result::Suppressed;
 
   const size_t tagLength = strlen(tag);
-  if (tagLength > kMessageTagSize) {
-    truncatedMessages.fetch_add(1, std::memory_order_relaxed);
-    return Result::Truncated;
-  }
+  if (tagLength > kMessageTagSize) return Result::Truncated;
 
   LoggingInternal::MessageRecord messageRecord{};
   messageRecord.level = level;
@@ -235,15 +191,10 @@ Result message(Level level, const char *tag, const char *format, ...) {
   const int length = vsnprintf(messageRecord.text, sizeof(messageRecord.text), format, args);
   va_end(args);
   if (length < 0) {
-    formatFailures.fetch_add(1, std::memory_order_relaxed);
-    rejectedRecords.fetch_add(1, std::memory_order_relaxed);
     latchIncomplete(IncompleteReason::FormatFailed);
     return Result::FormattingFailed;
   }
-  if (static_cast<size_t>(length) >= sizeof(messageRecord.text)) {
-    truncatedMessages.fetch_add(1, std::memory_order_relaxed);
-    return Result::Truncated;
-  }
+  if (static_cast<size_t>(length) >= sizeof(messageRecord.text)) return Result::Truncated;
   messageRecord.textLength = static_cast<uint8_t>(length);
 
   LoggingInternal::Record record{};
@@ -284,18 +235,12 @@ Result submit(const DebugSample &sample) {
     return Result::Invalid;
 
   const ProfileSnapshot profile = snapshotProfile();
-  if (profile.profile != Profile::SelectedDebug) {
-    suppressedRecords.fetch_add(1, std::memory_order_relaxed);
-    return Result::Suppressed;
-  }
-  if (incompleteReason.load(std::memory_order_relaxed) !=
-      static_cast<uint8_t>(IncompleteReason::None)) {
-    rejectedRecords.fetch_add(1, std::memory_order_relaxed);
-    return Result::Incomplete;
-  }
+  if (profile.profile != Profile::SelectedDebug) return Result::Suppressed;
+  if (isIncomplete()) return Result::Incomplete;
 
   const uint32_t now = micros();
-  if (selectedDebugSubmitted && static_cast<uint32_t>(now - lastSelectedDebugMicros) < kSelectedDebugMinIntervalUs)
+  if (selectedDebugSubmitted &&
+      static_cast<uint32_t>(now - lastSelectedDebugMicros) < kSelectedDebugMinIntervalUs)
     return Result::Paced;
 
   LoggingInternal::Record record{};
@@ -308,23 +253,6 @@ Result submit(const DebugSample &sample) {
     lastSelectedDebugMicros = now;
     selectedDebugSubmitted = true;
   }
-  return result;
-}
-
-Status status() {
-  const ProfileSnapshot profile = snapshotProfile();
-  Status result{};
-  result.incompleteReason = static_cast<IncompleteReason>(incompleteReason.load(std::memory_order_relaxed));
-  result.queuedRecords = queuedRecords.load(std::memory_order_relaxed);
-  result.droppedRecords = droppedRecords.load(std::memory_order_relaxed);
-  result.writeFailures = writeFailures.load(std::memory_order_relaxed);
-  result.formatFailures = formatFailures.load(std::memory_order_relaxed);
-  result.truncatedMessages = truncatedMessages.load(std::memory_order_relaxed);
-  result.rejectedRecords = rejectedRecords.load(std::memory_order_relaxed);
-  result.filteredMessages = filteredMessages.load(std::memory_order_relaxed);
-  result.suppressedMessages = suppressedMessages.load(std::memory_order_relaxed);
-  result.profileEpoch = profile.epoch;
-  result.queueDepth = static_cast<uint8_t>(queueDepth.load(std::memory_order_relaxed));
   return result;
 }
 
