@@ -12,7 +12,7 @@ class RobotProtocol {
 public:
   double battery_voltage = 8.4f;
   double battery_level;
-  bool ble_connected = false;
+  volatile bool ble_connected = false;
 
   double get_battery_voltage(void);
   double get_battery_level(void);

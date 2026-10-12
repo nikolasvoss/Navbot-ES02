@@ -23,7 +23,40 @@ static uint8_t ble_rx_slot_frame[20];
 static uint8_t ble_rx_slot_seed;
 static bool ble_rx_slot_full = false;
 
-cppQueue	ble_tx_q(sizeof(BleDataTypDef*), 10, FIFO);	//Create a Bluetooth transmission queue, with first-in-first-out principle.
+// ble_tx_q is pushed from the main loop and from cpu0_task and drained by cpu0_task.
+// cppQueue is not thread safe, so every access goes through the wrappers below.
+static portMUX_TYPE ble_tx_mux = portMUX_INITIALIZER_UNLOCKED;
+static cppQueue ble_tx_q(sizeof(BleDataTypDef*), 10, FIFO);	//Create a Bluetooth transmission queue, with first-in-first-out principle.
+
+// ble_ctrler is written by cpu0_task and by onDisconnect (BLE stack task) and read by loop().
+static portMUX_TYPE ble_ctrl_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static bool ble_tx_q_push(BleDataTypDef* item) {
+  portENTER_CRITICAL(&ble_tx_mux);
+  bool pushed = ble_tx_q.push(&item);
+  portEXIT_CRITICAL(&ble_tx_mux);
+  return pushed;
+}
+
+static bool ble_tx_q_peek(BleDataTypDef** item) {
+  portENTER_CRITICAL(&ble_tx_mux);
+  bool found = ble_tx_q.peek(item);
+  portEXIT_CRITICAL(&ble_tx_mux);
+  return found;
+}
+
+static void ble_tx_q_drop(void) {
+  portENTER_CRITICAL(&ble_tx_mux);
+  ble_tx_q.drop();
+  portEXIT_CRITICAL(&ble_tx_mux);
+}
+
+static unsigned int ble_tx_q_count(void) {
+  portENTER_CRITICAL(&ble_tx_mux);
+  unsigned int count = ble_tx_q.getCount();
+  portEXIT_CRITICAL(&ble_tx_mux);
+  return count;
+}
 
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
@@ -69,7 +102,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
     // Restart the broadcast to allow for reconnection
     pServer->getAdvertising()->start();
 
+    portENTER_CRITICAL(&ble_ctrl_mux);
     memset(&ble_ctrler, 0, sizeof(CmdManeuverTypDef));
+    portEXIT_CRITICAL(&ble_ctrl_mux);
     Logging::message(Logging::Level::Debug, "ble", "ble disconnected");
   }
 };
@@ -171,29 +206,22 @@ void ble_rx_processing(void) {
 void ble_tx_processing(void) {
 
   /*
+  Read the queue data. After sending is completed, manual queue deletion and memory release are required.
   If the queue is empty, no sending will be carried out.
   */
-  if(ble_tx_q.getCount()==0){
+  BleDataTypDef* ble_tx;
+  if (!ble_tx_q_peek(&ble_tx)) {
     return;
   }
   /*
   If the queue is not empty but the Bluetooth connection is not established, then clear the queue.
   */
   if(rp.ble_connected == false){
-    BleDataTypDef* _ble_tx;
-    ble_tx_q.peek(&_ble_tx);
-    ble_tx_q.drop();
-    free(_ble_tx);
-    Logging::message(Logging::Level::Debug, "ble", "BLE not connected, deleting queue; Queue remaining: %u", static_cast<unsigned int>(ble_tx_q.getCount()));
+    ble_tx_q_drop();
+    free(ble_tx);
+    Logging::message(Logging::Level::Debug, "ble", "BLE not connected, deleting queue; Queue remaining: %u", ble_tx_q_count());
     return;
   }
-  
-
-  /*
-  Read the queue data. After sending is completed, manual queue deletion and memory release are required.
-  */
-  BleDataTypDef* ble_tx;
-  ble_tx_q.peek(&ble_tx);
   /*
   `ble_tx.index` is the index of the current data being sent.
   If it is greater than or equal to the total length,
@@ -202,9 +230,9 @@ void ble_tx_processing(void) {
   if (ble_tx->index >= ble_tx->len) {
     ble_tx->state = BLE_STATE_SEND_FINISH;
     Logging::message(Logging::Level::Debug, "ble", "finish!!!  ble_tx.index >= ble_tx.len  , ble_tx.index : %d , ble_tx.len : %d", static_cast<int>(ble_tx->index), static_cast<int>(ble_tx->len));
-    ble_tx_q.drop();
+    ble_tx_q_drop();
     free(ble_tx);
-    Logging::message(Logging::Level::Debug, "ble", "Queue remaining: %u", static_cast<unsigned int>(ble_tx_q.getCount()));
+    Logging::message(Logging::Level::Debug, "ble", "Queue remaining: %u", ble_tx_q_count());
     return;
   }
   /*
@@ -284,7 +312,9 @@ void ble_rx_data_clear() {
 
 //
 void ble_cmd_maneuver_processing(void) {
+  portENTER_CRITICAL(&ble_ctrl_mux);
   memcpy(ble_ctrler.ch, ble_rx.data, 10);
+  portEXIT_CRITICAL(&ble_ctrl_mux);
 }
 void ble_cmd_json_processing(void) {
   String payload_str = String((char*)ble_rx.data);
@@ -293,12 +323,6 @@ void ble_cmd_json_processing(void) {
   rp.parseJson(doc);
 }
 void ble_tx_add_data(const char* data, int len) {
-
-  if(ble_tx_q.isFull() ==true){
-    Logging::message(Logging::Level::Debug, "ble", "Queue is full, failed to add data");
-    return ;
-  }
-
   if(len>BLE_DATA_SIZE-1){
     len = BLE_DATA_SIZE-1;
   }
@@ -317,9 +341,14 @@ void ble_tx_add_data(const char* data, int len) {
   ble_tx->index = 0;
   ble_tx->state = BLE_STATE_SEND_READY;
 
-  ble_tx_q.push(&ble_tx);
+  // The consumer frees the entry once it is queued, so log it before the push.
   Logging::message(Logging::Level::Debug, "ble", "ble_tx_add_data: %.44s...", ble_tx->data);
-  Logging::message(Logging::Level::Debug, "ble", "Queue remaining: %u", static_cast<unsigned int>(ble_tx_q.getCount()));
+  if (!ble_tx_q_push(ble_tx)) {
+    free(ble_tx);
+    Logging::message(Logging::Level::Debug, "ble", "Queue is full, failed to add data");
+    return;
+  }
+  Logging::message(Logging::Level::Debug, "ble", "Queue remaining: %u", ble_tx_q_count());
 
 }
 void ble_tx_add_string(const String& str) {
