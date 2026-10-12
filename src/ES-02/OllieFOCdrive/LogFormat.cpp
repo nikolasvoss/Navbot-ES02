@@ -152,7 +152,7 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
       if (p.touchPoint.state == 1)
         return appendf(buffer, capacity, length, "  aX:%d  aY:%d\n", static_cast<int>(p.touchPoint.x), static_cast<int>(p.touchPoint.y)) ? static_cast<int>(length) : -1;
       if (p.touchPoint.state == 0)
-        return appendf(buffer, capacity, length, "  tX:%d  tX:%d\n", static_cast<int>(p.touchPoint.x), static_cast<int>(p.touchPoint.y)) ? static_cast<int>(length) : -1;
+        return appendf(buffer, capacity, length, "  tX:%d  tY:%d\n", static_cast<int>(p.touchPoint.x), static_cast<int>(p.touchPoint.y)) ? static_cast<int>(length) : -1;
       return 0;
     case Logging::DebugSelector::K41:
       return appendf(buffer, capacity, length, " roll_ok:%.5f pa:%.5f out:%.5f\n",

@@ -42,7 +42,7 @@ debug.36	 state:0 start:0\n
 debug.37	 sbus_vra:0.00 sbus_vraf:0.00 sbus_vrb:0.00 sbus_vrbf:0.00\n
 debug.38	 X OUT:0.00 Y OUT:0.00\n
 debug.39	 it:0.00000 il:0.00000 oI:0.00000 out:0.00000\n
-debug.40	  tX:0  tX:0\n
+debug.40	  tX:0  tY:0\n
 debug.41	 roll_ok:0.00000 pa:0.00000 out:0.00000\n
 debug.42	 P:0.00000 P1:0.00000 P3:0.00000\n
 debug.43	 Vdat:0 Vdatf:0.00 V:0.00000\n
