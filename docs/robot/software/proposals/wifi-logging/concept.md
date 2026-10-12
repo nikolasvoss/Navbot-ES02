@@ -24,13 +24,13 @@ Annahme: Firmwareupdates bleiben zunächst über USB; kabellose Updates wurden n
 | IMU | ICM42688 per SPI, 1-kHz-ODR, ±8 g/±2000 °/s, direkter Registerabruf | Keine FIFO-Nutzung und kein Nachweis lückenloser 1-kHz-Erfassung |
 | PC | Capture-, Versuchslauf- und Analyseskripte für Serial vorhanden | WLAN-Transport, Binärdecoder, Prüfung der Analyse auf höhere/variable Raten |
 
-Quellen: [Hauptsketch](../../../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), Funktionen `setup`, `CtrlInput`, `ImuUpdate`, `FlashInit`, `print_data`/58 und `loop`; [ble.cpp](../../../../../src/ES-02/OllieFOCdrive/ble.cpp), [robot.cpp](../../../../../src/ES-02/OllieFOCdrive/robot.cpp), [ICM42688.cpp](../../../../../src/ES-02/OllieFOCdrive/ICM42688.cpp), [run_drive_trial.py](../../../../../scripts/run_drive_trial.py), [analyze_drive_trace.py](../../../../../scripts/analyze_drive_trace.py).
+Quellen: [Hauptsketch](../../../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), Funktionen `setup`, `CtrlInput`, `ImuUpdate`, `FlashInit`, `DebugTelemetry::submit`/58 und `loop`; [ble.cpp](../../../../../src/ES-02/OllieFOCdrive/ble.cpp), [robot.cpp](../../../../../src/ES-02/OllieFOCdrive/robot.cpp), [ICM42688.cpp](../../../../../src/ES-02/OllieFOCdrive/ICM42688.cpp), [run_drive_trial.py](../../../../../scripts/run_drive_trial.py), [analyze_drive_trace.py](../../../../../scripts/analyze_drive_trace.py).
 
 Relevante Fallstricke im Bestand:
 
 - Bei BLE-Verbindung wählt `CtrlInput()` die BLE-Fahrbefehle; anschließend ruft `loop()` zusätzlich `RXsbus()` auf. Diagnoseverbindung und Fahrquelle sind nicht sauber getrennt. Ein BLE-Tuningclient wäre daher keine harmlose Serial-Brücke.
 - `time_dt >= 0.001` garantiert keinen 1-kHz-Regeltakt. Frühere Versuche dokumentieren etwa 1,664 ms, entsprechend ungefähr 601 Hz; dies ist kein Benchmark des künftigen WLAN-Builds.
-- `print_data()` läuft vor späteren Reglerberechnungen. Ein neuer Recorder muss einen definierten Snapshot nach einem vollständigen Reglerzyklus erstellen und berechnete Motorziele von bereits angewandten Ausgaben unterscheiden.
+- `DebugTelemetry::submit()` läuft vor späteren Reglerberechnungen. Ein neuer Recorder muss einen definierten Snapshot nach einem vollständigen Reglerzyklus erstellen und berechnete Motorziele von bereits angewandten Ausgaben unterscheiden.
 - Der BLE-Task auf Core 0 wartet aktiv in einer Schleife. Netzwerkverarbeitung braucht blockierendes Warten und begrenzte Arbeit; gemeinsame Daten dürfen nicht ungeschützt geändert werden.
 
 ## Speicherfrage: zuerst klären

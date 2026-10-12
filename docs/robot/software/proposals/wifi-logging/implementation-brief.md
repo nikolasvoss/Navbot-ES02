@@ -38,7 +38,7 @@ Explain the chosen path in the implementation report. Missing Wi-Fi code is not 
 Sketch: `src/ES-02/OllieFOCdrive/OllieFOCdrive.ino`; also inspect `filter.*`, `ICM42688.*`, `FUTABA_SBUS.*`, `ble.*`, `robot.*`, and existing Python capture/analysis scripts.
 
 - `loop()` executes motor FOC and sensor work, then enters the balance-control section when `time_dt >= 0.001`. This is **not a fixed 1-kHz scheduler**. Prior observations around 1.664 ms are historical, not a promise of 600 Hz under new network load.
-- `print_data()` K58 currently emits a serial DRIVE row approximately every 50 ms. Its position precedes later controller calculations; do not reuse it as the high-rate snapshot point.
+- `DebugTelemetry::submit()` K58 currently emits a serial DRIVE row approximately every 50 ms. Its position precedes later controller calculations; do not reuse it as the high-rate snapshot point.
 - At the end of the timed control section, after regulator/tumble/servo handling and before `now_us1 = now_us`, take one coherent snapshot. Read existing values only; no extra SPI, I²C, ADC or servo operations for logging.
 - `ImuUpdate()` polls an IMU configured for 1-kHz ODR, with software filters and attitude estimation. Timestamp **MCU read completion** for age information without changing filters, reads or ODR. Do not label this as sensor conversion time or proof of fresh samples.
 - `AnglePid`/`SpeedPid` etc. are configuration objects; `Angle_Pid`/`Speed_Pid` etc. are runtime states with potentially scaled/effective gains. Record that distinction. `PidParameterTuning==0` can replace configured gains automatically.
