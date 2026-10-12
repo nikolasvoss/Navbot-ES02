@@ -7,7 +7,7 @@
 // Get filter gain for pt1 (cutoff frequency, sampling time)
 float pt1FilterGain(float f_cut, float dT)
 {
-    float RC = 1 / (2 * M_PIf * f_cut);
+    float RC = 1 / (2 * kPiF * f_cut);
     return dT / (RC + dT);
 }
 
@@ -63,7 +63,7 @@ void biquadFilterInit(biquadFilter_t *filter, float cutoffHz, unsigned int sampl
 void biquadFilterUpdate(biquadFilter_t *filter, unsigned int cutoffHz, unsigned int samplingRateHz, float Q, biquadFilterType_e filterType)
 {
     // setup variables
-    const float omega = 2.0f * M_PIf * cutoffHz / samplingRateHz;
+    const float omega = 2.0f * kPiF * cutoffHz / samplingRateHz;
     const float sn = sinf(omega);
     const float cs = cosf(omega);
     const float alpha = sn / (2.0f * Q);

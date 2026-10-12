@@ -1,5 +1,6 @@
 
 #include "robot.h"
+#include "BoardConfig.h"
 #include "Logging.h"
 #include <ArduinoJson.h>
 #include <esp_mac.h>
@@ -76,8 +77,8 @@ String RobotProtocol::get_device_info() {
   return jsonStr;
 }
 double RobotProtocol::get_battery_voltage() {
-  uint16_t VoltageADC = analogRead(17);
-  battery_voltage = (float)7.77 / 813.43 * VoltageADC;
+  uint16_t VoltageADC = analogRead(board::kBatteryAdcPin);
+  battery_voltage = board::kBatteryVoltsPerAdcCount * VoltageADC;
   return battery_voltage;
 }
 

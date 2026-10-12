@@ -32,7 +32,7 @@ int16_t signedWord(const uint8_t* bytes) {
  */
 void readBytes(uint8_t reg, uint8_t *data, uint8_t length) {
     // Pull CS pin low to select ICM42688 sensor
-    digitalWrite(CS_PIN, LOW);
+    digitalWrite(board::kImuSpiCsPin, LOW);
     // Send read command by setting the highest bit of register address to 1 through bitwise OR operation
     hspi->transfer(reg | 0x80); 
     // Loop to read specified number of bytes
@@ -41,7 +41,7 @@ void readBytes(uint8_t reg, uint8_t *data, uint8_t length) {
         data[i] = hspi->transfer(0x00);
     }
     // Pull CS pin high to deselect ICM42688 sensor
-    digitalWrite(CS_PIN, HIGH);
+    digitalWrite(board::kImuSpiCsPin, HIGH);
 }
 
 /**
@@ -53,7 +53,7 @@ void readBytes(uint8_t reg, uint8_t *data, uint8_t length) {
  */
 void writeBytes(uint8_t reg, uint8_t *data, uint8_t length) {
     // Pull CS pin low to select ICM42688 sensor
-    digitalWrite(CS_PIN, LOW);
+    digitalWrite(board::kImuSpiCsPin, LOW);
     // Send register address to write
     hspi->transfer(reg);
     // Loop to write specified number of bytes
@@ -62,7 +62,7 @@ void writeBytes(uint8_t reg, uint8_t *data, uint8_t length) {
         hspi->transfer(data[i]);
     }
     // Pull CS pin high to deselect ICM42688 sensor
-    digitalWrite(CS_PIN, HIGH);
+    digitalWrite(board::kImuSpiCsPin, HIGH);
 }
 
 /**
@@ -91,10 +91,10 @@ bool initICM42688(uint16_t sampleRateHz) {
         return false;
     }
 
-    pinMode(CS_PIN, OUTPUT);
-    digitalWrite(CS_PIN, HIGH);
+    pinMode(board::kImuSpiCsPin, OUTPUT);
+    digitalWrite(board::kImuSpiCsPin, HIGH);
     // Initialize HSPI interface, set SPI pins and working mode
-    hspi->begin(SCK_PIN, MISO_PIN, MOSI_PIN, CS_PIN);
+    hspi->begin(board::kImuSpiSckPin, board::kImuSpiMisoPin, board::kImuSpiMosiPin, board::kImuSpiCsPin);
     // Set SPI data mode to mode 3
     hspi->setDataMode(SPI_MODE3);
     // Set SPI clock divider, modify SPI clock frequency to system clock/32

@@ -2,6 +2,8 @@
 
 #include <math.h>
 
+#include "MathConstants.h"
+
 namespace {
 
 constexpr float BODY_THIGH_LENGTH_M = 0.035f;
@@ -10,14 +12,13 @@ constexpr float FOOT_OFFSET_M = 0.017f;
 constexpr float FOOT_X_LIMIT_M = 0.05f;
 constexpr float FOOT_Y_MIN_M = 0.05f;
 constexpr float FOOT_Y_MAX_M = 0.1f;
-constexpr double KINEMATICS_PI = 3.1415926535897932384626433832795;
 
 float arcToAngle(float arc) {
-  return arc * (180 / KINEMATICS_PI);
+  return arc * (180 / kPi);
 }
 
 float angleToArc(float angle) {
-  return angle * (KINEMATICS_PI / 180);
+  return angle * (kPi / 180);
 }
 
 float clampX(float x) {
@@ -76,14 +77,14 @@ LegSolveResult solveLeg(FootPoseMeters pose) {
     status = LegSolveStatus::SecondJointOutOfReach;
 
   const float aOCA = acosf(unitRatio(square(OC) + square(AC) - square(OA), 2 * OC * AC));
-  const float aOAC = KINEMATICS_PI - aOCA - aAOC;
+  const float aOAC = kPi - aOCA - aAOC;
   const float aBAC = acos(unitRatio(square(AB) + square(AC) - square(BC), 2 * AB * AC));
-  const float aBAG = KINEMATICS_PI - aBAC - aOAC;
+  const float aBAG = kPi - aBAC - aOAC;
 
   const float aOCE = acosf(unitRatio(square(OC) + square(EC) - square(OE), 2 * OC * EC));
-  const float aOEC = KINEMATICS_PI - aOCE - aEOC;
+  const float aOEC = kPi - aOCE - aEOC;
   const float aDEC = acos(unitRatio(square(AB) + square(EC) - square(BC), 2 * AB * EC));
-  const float aDEH = KINEMATICS_PI - aDEC - aOEC;
+  const float aDEH = kPi - aDEC - aOEC;
 
   return {{arcToAngle(aBAG), arcToAngle(aDEH)}, status};
 }

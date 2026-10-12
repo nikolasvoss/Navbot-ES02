@@ -7,6 +7,7 @@
 #include "ICM42688.h"
 #include "Logging.h"
 #include "MahonyFilter.h"
+#include "MathConstants.h"
 #include "filter.h"
 
 namespace imu {
@@ -14,8 +15,6 @@ namespace {
 
 constexpr float kAccelRangeG = 8.0f;
 constexpr float kGyroRangeDegreesPerSecond = 2000.0f;
-constexpr float kPi = 3.14159265358979323846f;
-constexpr float kDegreesToRadians = kPi / 180.0f;
 constexpr float kGyroDegreesPerSecondPerCount = kGyroRangeDegreesPerSecond / 32768.0f;
 constexpr float kAccelGPerCount = kAccelRangeG / 32768.0f;
 constexpr float kTemperatureScale = 132.48f;
@@ -77,9 +76,9 @@ Snapshot processAccepted(const ICM42688RawSample& raw, uint32_t readTimeUs,
         static_cast<float>(raw.accelerationY) * kAccelGPerCount,
         static_cast<float>(raw.accelerationZ) * kAccelGPerCount};
     next.angularVelocityRadPerSec = {
-        static_cast<float>(gyroX) * kGyroDegreesPerSecondPerCount * kDegreesToRadians,
-        static_cast<float>(gyroY) * kGyroDegreesPerSecondPerCount * kDegreesToRadians,
-        static_cast<float>(gyroZ) * kGyroDegreesPerSecondPerCount * kDegreesToRadians};
+        static_cast<float>(gyroX) * kGyroDegreesPerSecondPerCount * kDegreesToRadiansF,
+        static_cast<float>(gyroY) * kGyroDegreesPerSecondPerCount * kDegreesToRadiansF,
+        static_cast<float>(gyroZ) * kGyroDegreesPerSecondPerCount * kDegreesToRadiansF};
     next.filteredAngularVelocityRadPerSec = {
         biquadFilterApply(&state.gyroFilters[0], next.angularVelocityRadPerSec.x),
         biquadFilterApply(&state.gyroFilters[1], next.angularVelocityRadPerSec.y),
@@ -113,10 +112,10 @@ Snapshot processAccepted(const ICM42688RawSample& raw, uint32_t readTimeUs,
 
     const float accelAngleX = atan2f(
         next.accelerationG.y,
-        next.accelerationG.z + fabsf(next.accelerationG.x)) * 360.0f / 2.0f / kPi;
+        next.accelerationG.z + fabsf(next.accelerationG.x)) * 360.0f / 2.0f / kPiF;
     const float accelAngleY = atan2f(
         next.accelerationG.x,
-        next.accelerationG.z + fabsf(next.accelerationG.y)) * 360.0f / -2.0f / kPi;
+        next.accelerationG.z + fabsf(next.accelerationG.y)) * 360.0f / -2.0f / kPiF;
     const float gyroRateX = static_cast<float>(gyroX) * kGyroDegreesPerSecondPerCount;
     const float gyroRateY = static_cast<float>(gyroY) * kGyroDegreesPerSecondPerCount;
     const float gyroRateZ = static_cast<float>(gyroZ) * kGyroDegreesPerSecondPerCount;

@@ -1,10 +1,7 @@
 #include "MahonyFilter.h"
 #include <math.h>
 
-namespace {
-constexpr float kPi = 3.14159265358979323846f;
-constexpr float kRadiansToDegrees = 180.0f / kPi;
-}
+#include "MathConstants.h"
 
 // Constructor implementation
 MahonyFilter::MahonyFilter(float kp, float ki) :
@@ -90,7 +87,7 @@ void quaternionToEuler(float q0, float q1, float q2, float q3, float *roll, floa
     *pitch = asinf(2 * (q0 * q2 - q3 * q1));
     *yaw = atan2f(2 * (q0 * q3 + q1 * q2), 1 - 2 * (q2 * q2 + q3 * q3));
 
-    *roll *= kRadiansToDegrees;
-    *pitch *= kRadiansToDegrees;
-    *yaw *= kRadiansToDegrees;
+    *roll *= kRadiansToDegreesF;
+    *pitch *= kRadiansToDegreesF;
+    *yaw *= kRadiansToDegreesF;
 }

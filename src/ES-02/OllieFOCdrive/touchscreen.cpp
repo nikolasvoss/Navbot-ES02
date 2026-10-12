@@ -1,5 +1,11 @@
 #include "touchscreen.h"
 
+#include "BoardConfig.h"
+
+namespace {
+constexpr int kTouchDeviation = 2000;
+}
+
 Touch_t Touch;
 biquadFilter_t TouchLPF[2]; // Second-order low-pass filter
 
@@ -9,32 +15,14 @@ uint8_t TouchList = 0;
 
 void TouchscreenInit(unsigned int samplingRateHz)
 {
-    Serial1.begin(115200, SERIAL_8N1, RXD1, TXD1);
+    Serial1.begin(115200, SERIAL_8N1, board::kTouchUartRxPin, board::kTouchUartTxPin);
     biquadFilterInitLPF(&TouchLPF[0], 100, samplingRateHz);
     biquadFilterInitLPF(&TouchLPF[1], 100, samplingRateHz);
 }
 
 
 void ReadTouchDat(void) // Read touch screen data
-{  
-  /*
-  // Used to record the number of bytes read
-  int bytesRead = 0;
-  // Check if there is available data in the serial buffer
-  if (Serial1.available() >= 5) 
-  {
-    // Wait until 5 bytes of data are read
-    while (bytesRead < 5) 
-    {
-       // Read one byte of data
-      Touch.rxdat[bytesRead] = Serial1.read();
-      // Increment the number of bytes read
-      bytesRead++; 
-    }
- 
-  }
-
-  */
+{
   uint8_t dat;
   if(Serial1.available() > 0)
   {
@@ -48,80 +36,58 @@ void ReadTouchDat(void) // Read touch screen data
         Touch.rxbuf[2] = 0;
         Touch.rxbuf[3] = 0;
         Touch.rxbuf[4] = 0;
-        
+
     }
     else if(TouchOk == 1) // Press data
     {
         TouchList++;
         Touch.rxbuf[TouchList] = dat;
-  
+
         if(TouchList >=4)
-        if(Touch.ok==0)
         {
-          
           Touch.YPressDat = Touch.rxbuf[1];
           Touch.YPressDat<<=8;
           Touch.YPressDat+=Touch.rxbuf[2];
-          
+
           Touch.XPressDat = Touch.rxbuf[3];
           Touch.XPressDat<<=8;
-          Touch.XPressDat+=Touch.rxbuf[4];        
-          
-          if(1)//((Touch.XPressDat!=0)&&(Touch.YPressDat!=0))
+          Touch.XPressDat+=Touch.rxbuf[4];
+
+          if(Touch.rxbuf[0]==0x81)
           {
-            if(Touch.rxbuf[0]==0x81)
-            {
-              
-                Touch.state = 1;
-                Touch.XPdat = Touch.XPressDat-TouchDeviation;
-                Touch.YPdat = Touch.YPressDat-TouchDeviation;
-                
-                /*
-                Serial.print("  aX:");
-                Serial.print(Touch.XPdat); 
-                Serial.print("  aY:");
-                Serial.println(Touch.YPdat);  
-                */
-            }
-            else if(Touch.rxbuf[0]==0x80)
-            {
-                Touch.state = 0;
-                Touch.XLdat = Touch.XPressDat-TouchDeviation;
-                Touch.YLdat = Touch.YPressDat-TouchDeviation;
-                /*
-                Serial.print("  tX:");
-                Serial.print(Touch.XLdat); 
-                Serial.print("  tX:");
-                Serial.println(Touch.YLdat);      
-                */        
-            }       
+              Touch.state = 1;
+              Touch.XPdat = Touch.XPressDat-kTouchDeviation;
+              Touch.YPdat = Touch.YPressDat-kTouchDeviation;
           }
-  
-  
-              Touch.ok = 0; 
-              TouchList = 0;
+          else if(Touch.rxbuf[0]==0x80)
+          {
+              Touch.state = 0;
+              Touch.XLdat = Touch.XPressDat-kTouchDeviation;
+              Touch.YLdat = Touch.YPressDat-kTouchDeviation;
+          }
+
+          TouchList = 0;
           TouchOk = 0;
-          
         }
-  
+
     }
-    else 
+    else
     {
         TouchList = 0;
-        TouchOk = 0; 
+        TouchOk = 0;
         Touch.rxbuf[0] = 0;
         Touch.rxbuf[1] = 0;
         Touch.rxbuf[2] = 0;
         Touch.rxbuf[3] = 0;
-        Touch.rxbuf[4] = 0;   
+        Touch.rxbuf[4] = 0;
     }
-      
-  }    
+
+  }
 
 }
 
 void TouchBiquadFilter(void)
 {
   Touch.XPdatF = biquadFilterApply(&TouchLPF[0], Touch.XPdat);
-  Touch.YPdatF = biquadFilterApply(&TouchLPF[1], Touch.YPdat); 
+  Touch.YPdatF = biquadFilterApply(&TouchLPF[1], Touch.YPdat);
 }
