@@ -113,6 +113,20 @@ constexpr float DRIVE_TILT_REDUCTION_START_DEG = 5.0f;
 constexpr float DRIVE_TILT_REDUCTION_FULL_DEG = 10.0f;
 // -------------------------------------
 
+struct WheelPidParams {
+  float p;
+  float i;
+  float d;
+};
+
+constexpr float kWheelSupplyVoltageV = 8.4;
+constexpr float kWheelVelocityLimitRadPerSec = 88.0;
+constexpr float kWheelCurrentLimitA = 5.0;
+constexpr float kWheelPhaseResistanceOhm = 22;
+constexpr float kWheelVelocityPidOutputRamp = 10000;
+constexpr float kWheelVelocityFilterTfSec = 0.001;
+constexpr WheelPidParams kWheelVelocityPid{0.006, 0, 0};
+
 constexpr float BODY_HEIGHT_OVERRIDE_DISABLED_M = 0.0f;
 constexpr float BODY_HEIGHT_MIN_M = 0.05f;
 constexpr float BODY_HEIGHT_DEFAULT_M = 0.06f;
@@ -431,6 +445,26 @@ void logCalibration(const PersistedCalibrationValues& calibrationValues) {
                    calibrationValues.servos.servo3Degrees, calibrationValues.servos.servo4Degrees);
 }
 
+void configureWheelMotor(BLDCMotor& motor, const WheelPidParams& pid) {
+  motor.torque_controller = TorqueControlType::estimated_current;
+  motor.controller = MotionControlType::velocity;
+  motor.motion_downsample = 0.0;
+
+  motor.PID_velocity.P = pid.p;
+  motor.PID_velocity.I = pid.i;
+  motor.PID_velocity.D = pid.d;
+  motor.PID_velocity.output_ramp = kWheelVelocityPidOutputRamp;
+  motor.PID_velocity.limit = kWheelSupplyVoltageV;
+  motor.LPF_velocity.Tf = kWheelVelocityFilterTfSec;
+
+  motor.velocity_limit = kWheelVelocityLimitRadPerSec;
+  motor.voltage_limit = kWheelSupplyVoltageV;
+  motor.current_limit = kWheelCurrentLimitA;
+  motor.phase_resistance = kWheelPhaseResistanceOhm;
+  motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
+  motor.modulation_centered = 1.0;
+}
+
 void setAssemblyPosition() {
   servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);
 }
@@ -526,64 +560,16 @@ void setup() {
 
   // driver config
   // power supply voltage [V]
-  driver.voltage_power_supply = 8.4;
+  driver.voltage_power_supply = kWheelSupplyVoltageV;
   driver.init();
 
-  driver2.voltage_power_supply = 8.4;
+  driver2.voltage_power_supply = kWheelSupplyVoltageV;
   driver2.init();
   // link driver
   motor1.linkDriver(&driver);
   motor2.linkDriver(&driver2);
-  motor1.torque_controller = TorqueControlType::estimated_current;
-  motor1.controller = MotionControlType::velocity;
-
-    // TODO where do all these numbers come from? why hardcoded? some values also could be moved to a class or struct if still relevant
-  motor1.motion_downsample = 0.0;
-
-  // velocity loop PID
-  motor1.PID_velocity.P = 0.006;  // 0.07;
-  motor1.PID_velocity.I = 0;
-  motor1.PID_velocity.D = 0.0;
-  motor1.PID_velocity.output_ramp = 10000;
-  motor1.PID_velocity.limit = 8.4;
-  // Low pass filtering time constant
-  motor1.LPF_velocity.Tf = 0.001;
-  // Limits
-  motor1.velocity_limit = 88.0;
-  motor1.voltage_limit = 8.4;
-  motor1.current_limit = 5.0;
-  // general settings
-  // motor phase resistance
-  motor1.phase_resistance = 22;
-  // pwm modulation settings
-  motor1.foc_modulation = FOCModulationType::SpaceVectorPWM;
-  // Set PWM modulation to center alignment mode
-  motor1.modulation_centered = 1.0;
-
-  motor2.torque_controller = TorqueControlType::estimated_current;
-  motor2.controller = MotionControlType::velocity;
-
-  // TODO where do all these numbers come from? why hardcoded? some values also could be moved to a class or struct if still relevant
-  motor2.motion_downsample = 0.0;
-
-  // velocity loop PID
-  motor2.PID_velocity.P = 0.006;
-  motor2.PID_velocity.I = 0;
-  motor2.PID_velocity.D = 0;
-  motor2.PID_velocity.output_ramp = 10000;
-  motor2.PID_velocity.limit = 8.4;
-  // Low pass filtering time constant
-  motor2.LPF_velocity.Tf = 0.001;
-  // Limits
-  motor2.velocity_limit = motor1.velocity_limit;
-  motor2.voltage_limit = motor1.voltage_limit;
-  motor2.current_limit = motor1.current_limit;
-  // general settings
-  // motor phase resistance
-  motor2.phase_resistance = motor1.phase_resistance;
-  // pwm modulation settings
-  motor2.foc_modulation = FOCModulationType::SpaceVectorPWM;
-  motor2.modulation_centered = motor1.modulation_centered;
+  configureWheelMotor(motor1, kWheelVelocityPid);
+  configureWheelMotor(motor2, kWheelVelocityPid);
 
   // initialise motor
   motor1.init();
