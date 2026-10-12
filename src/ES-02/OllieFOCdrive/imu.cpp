@@ -14,7 +14,10 @@ namespace {
 
 constexpr float kAccelRangeG = 8.0f;
 constexpr float kGyroRangeDegreesPerSecond = 2000.0f;
-constexpr float kDegreesToRadians = 3.1415926f / 180.0f;
+constexpr float kPi = 3.14159265358979323846f;
+constexpr float kDegreesToRadians = kPi / 180.0f;
+constexpr float kGyroDegreesPerSecondPerCount = kGyroRangeDegreesPerSecond / 32768.0f;
+constexpr float kAccelGPerCount = kAccelRangeG / 32768.0f;
 constexpr float kTemperatureScale = 132.48f;
 constexpr float kTemperatureOffsetC = 25.0f;
 constexpr float kComplementaryGyroWeight = 0.98f;
@@ -46,22 +49,16 @@ bool validSettings(const Settings& candidate) {
            std::isfinite(candidate.mahonyTwoKi) && candidate.mahonyTwoKi >= 0.0f;
 }
 
-void resetGyroFilters(const Settings& settings) {
-    for (biquadFilter_t& filter : state.gyroFilters) {
-        biquadFilterInitLPF(&filter, settings.gyroCutoffHz, kSampleRateHz);
-    }
-}
-
-void resetAccelFilters(const Settings& settings) {
-    for (biquadFilter_t& filter : state.accelFilters) {
-        biquadFilterInitLPF(&filter, settings.accelCutoffHz, kSampleRateHz);
+void initLowPass(biquadFilter_t (&filters)[3], uint16_t cutoffHz) {
+    for (biquadFilter_t& filter : filters) {
+        biquadFilterInitLPF(&filter, cutoffHz, kSampleRateHz);
     }
 }
 
 int16_t biasCorrectedCount(int16_t raw, float bias) {
-    int16_t corrected = raw;
-    corrected -= static_cast<int16_t>(bias);
-    return corrected;
+    const float corrected = static_cast<float>(raw) - bias;
+    const float saturated = fmaxf(fminf(corrected, INT16_MAX), INT16_MIN);
+    return static_cast<int16_t>(lroundf(saturated));
 }
 
 Snapshot processAccepted(const ICM42688RawSample& raw, uint32_t readTimeUs,
@@ -76,13 +73,13 @@ Snapshot processAccepted(const ICM42688RawSample& raw, uint32_t readTimeUs,
     next.readTimeUs = readTimeUs;
     next.dtSec = hasInterval ? intervalUs * 1e-6f : 0.0f;
     next.accelerationG = {
-        static_cast<float>(raw.accelerationX) * kAccelRangeG / 32768.0f,
-        static_cast<float>(raw.accelerationY) * kAccelRangeG / 32768.0f,
-        static_cast<float>(raw.accelerationZ) * kAccelRangeG / 32768.0f};
+        static_cast<float>(raw.accelerationX) * kAccelGPerCount,
+        static_cast<float>(raw.accelerationY) * kAccelGPerCount,
+        static_cast<float>(raw.accelerationZ) * kAccelGPerCount};
     next.angularVelocityRadPerSec = {
-        static_cast<float>(gyroX) * kGyroRangeDegreesPerSecond / 32768.0f * kDegreesToRadians,
-        static_cast<float>(gyroY) * kGyroRangeDegreesPerSecond / 32768.0f * kDegreesToRadians,
-        static_cast<float>(gyroZ) * kGyroRangeDegreesPerSecond / 32768.0f * kDegreesToRadians};
+        static_cast<float>(gyroX) * kGyroDegreesPerSecondPerCount * kDegreesToRadians,
+        static_cast<float>(gyroY) * kGyroDegreesPerSecondPerCount * kDegreesToRadians,
+        static_cast<float>(gyroZ) * kGyroDegreesPerSecondPerCount * kDegreesToRadians};
     next.filteredAngularVelocityRadPerSec = {
         biquadFilterApply(&state.gyroFilters[0], next.angularVelocityRadPerSec.x),
         biquadFilterApply(&state.gyroFilters[1], next.angularVelocityRadPerSec.y),
@@ -116,13 +113,13 @@ Snapshot processAccepted(const ICM42688RawSample& raw, uint32_t readTimeUs,
 
     const float accelAngleX = atan2f(
         next.accelerationG.y,
-        next.accelerationG.z + fabsf(next.accelerationG.x)) * 360.0f / 2.0f / PI;
+        next.accelerationG.z + fabsf(next.accelerationG.x)) * 360.0f / 2.0f / kPi;
     const float accelAngleY = atan2f(
         next.accelerationG.x,
-        next.accelerationG.z + fabsf(next.accelerationG.y)) * 360.0f / -2.0f / PI;
-    const float gyroRateX = static_cast<float>(gyroX) * kGyroRangeDegreesPerSecond / 32768.0f;
-    const float gyroRateY = static_cast<float>(gyroY) * kGyroRangeDegreesPerSecond / 32768.0f;
-    const float gyroRateZ = static_cast<float>(gyroZ) * kGyroRangeDegreesPerSecond / 32768.0f;
+        next.accelerationG.z + fabsf(next.accelerationG.y)) * 360.0f / -2.0f / kPi;
+    const float gyroRateX = static_cast<float>(gyroX) * kGyroDegreesPerSecondPerCount;
+    const float gyroRateY = static_cast<float>(gyroY) * kGyroDegreesPerSecondPerCount;
+    const float gyroRateZ = static_cast<float>(gyroZ) * kGyroDegreesPerSecondPerCount;
     const Snapshot& previous = state.published;
     next.integratedGyroAnglesDegrees = {
         previous.integratedGyroAnglesDegrees.x + gyroRateX * next.dtSec,
@@ -147,18 +144,12 @@ bool begin(const Settings& settings, const CalibrationValues& calibration) {
         return false;
     }
 
-    ImuState initial{};
-    initial.started = true;
-    initial.activeSettings = settings;
-    initial.activeCalibration = calibration;
-    initial.mahony = MahonyFilter(settings.mahonyTwoKp, settings.mahonyTwoKi);
-    for (biquadFilter_t& filter : initial.gyroFilters) {
-        biquadFilterInitLPF(&filter, settings.gyroCutoffHz, kSampleRateHz);
-    }
-    for (biquadFilter_t& filter : initial.accelFilters) {
-        biquadFilterInitLPF(&filter, settings.accelCutoffHz, kSampleRateHz);
-    }
-    state = initial;
+    state.started = true;
+    state.activeSettings = settings;
+    state.activeCalibration = calibration;
+    state.mahony = MahonyFilter(settings.mahonyTwoKp, settings.mahonyTwoKi);
+    initLowPass(state.gyroFilters, settings.gyroCutoffHz);
+    initLowPass(state.accelFilters, settings.accelCutoffHz);
     return true;
 }
 
@@ -214,10 +205,10 @@ bool setSettings(const Settings& settings) {
     }
 
     if (settings.gyroCutoffHz != state.activeSettings.gyroCutoffHz) {
-        resetGyroFilters(settings);
+        initLowPass(state.gyroFilters, settings.gyroCutoffHz);
     }
     if (settings.accelCutoffHz != state.activeSettings.accelCutoffHz) {
-        resetAccelFilters(settings);
+        initLowPass(state.accelFilters, settings.accelCutoffHz);
     }
     state.mahony.twoKp = settings.mahonyTwoKp;
     state.mahony.twoKi = settings.mahonyTwoKi;
@@ -235,12 +226,12 @@ void setCalibration(const CalibrationValues& calibration) {
 
 void calibrateGyroBiasBlocking() {
     if (Logging::profile() == Logging::Profile::Idle) {
-        Serial.println("Calibrating gyroscope. Keep the device still...");
+      Serial.println("Calibrating gyroscope. Keep the device still...");
     }
 
-    int16_t gyroXSum = 0;
-    int16_t gyroYSum = 0;
-    int16_t gyroZSum = 0;
+    int32_t gyroXSum = 0;
+    int32_t gyroYSum = 0;
+    int32_t gyroZSum = 0;
     int validSamples = 0;
     while (validSamples < kGyroCalibrationSamples) {
         ICM42688RawSample raw{};
@@ -258,13 +249,13 @@ void calibrateGyroBiasBlocking() {
             ++validSamples;
         } else {
             if (Logging::profile() == Logging::Profile::Idle) {
-                Serial.print(" | x: ");
-                Serial.print(raw.gyroscopeX);
-                Serial.print(" y: ");
-                Serial.print(raw.gyroscopeY);
-                Serial.print(" Z: ");
-                Serial.print(raw.gyroscopeZ);
-                Serial.println("Device moved during calibration. Restarting...");
+              Serial.print(" | x: ");
+              Serial.print(raw.gyroscopeX);
+              Serial.print(" y: ");
+              Serial.print(raw.gyroscopeY);
+              Serial.print(" Z: ");
+              Serial.print(raw.gyroscopeZ);
+              Serial.println("Device moved during calibration. Restarting...");
             }
             gyroXSum = 0;
             gyroYSum = 0;
@@ -281,7 +272,7 @@ void calibrateGyroBiasBlocking() {
     state.hasPreviousRead = false;
 
     if (Logging::profile() == Logging::Profile::Idle) {
-        Serial.println("Gyroscope calibration completed.");
+      Serial.println("Gyroscope calibration completed.");
     }
 }
 
