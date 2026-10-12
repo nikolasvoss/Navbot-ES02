@@ -30,11 +30,8 @@
 #define REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE 2      // Ball poise mode
 
 class MyPIDController {
-  private:
-
-
   public:
-  
+
     float Kp;  // Proportional coefficient
     float Ki;  // Integral coefficient
     float Kd;  // Derivative coefficient
@@ -57,16 +54,19 @@ class MyPIDController {
       Kp = p;
       Ki = i;
       Kd = d;
+      this->iLimit = iLimit;
+      this->outputLimit = outputLimit;
       enableDFilter = EnableDFilter;
-      integral = iLimit;
-      previousError = outputLimit;//Output limit
       cutoffFreq = CutoffFreq;
-      
+      integral = 0;
+      previousError = 0;
+      deriv = 0;
+      outP = outI = outD = output = error = 0;
+
       if ((int)enableDFilter==1)
       {
         biquadFilterInitLPF(&dFilter, (unsigned int)cutoffFreq, (unsigned int)(1.0f / dt));
-      }      
-      
+      }
     }
 
     // Function to calculate PID output, parameters include error and time interval dt
@@ -88,7 +88,7 @@ class MyPIDController {
 
       // Calculate error derivative
       deriv = (error - previousError) / dt;
-      if (enableDFilter==1)
+      if ((int)enableDFilter==1)
       {
         deriv = biquadFilterApply(&dFilter, deriv);
       }
@@ -120,15 +120,17 @@ class MyPIDController {
       Kp = p;
       Ki = i;
       Kd = d;
+      this->iLimit = iLimit;
+      this->outputLimit = outputLimit;
       enableDFilter = EnableDFilter;
-      integral = iLimit;
-      previousError = outputLimit;//Output limit
       cutoffFreq = CutoffFreq;
-      
-      if ((int)enableDFilter)
+      integral = 0;
+      previousError = 0;
+
+      if ((int)enableDFilter==1)
       {
         biquadFilterInitLPF(&dFilter, (unsigned int)cutoffFreq, (unsigned int)(1.0f / dt));
-      }    
+      }
     }
 };
 
