@@ -20,6 +20,7 @@ enum class LegSolveStatus : uint8_t {
 };
 
 struct LegSolveResult {
+  // Always finite, but only meaningful when status == Success.
   JointAnglesDegrees angles;
   LegSolveStatus status;
 };
