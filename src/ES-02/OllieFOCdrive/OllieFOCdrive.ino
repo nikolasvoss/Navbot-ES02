@@ -46,7 +46,7 @@ Calibration calibration;
 CalibrationStore calibrationStore;
 
 // ----- Editable Constants
-#define Communication_object COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE          // 0: two-wheel balance  1: simpleFOC Studio host computer  2: control dual motors
+#define COMMUNICATION_OBJECT COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE          // 0: two-wheel balance  1: simpleFOC Studio host computer  2: control dual motors
 
 // Safe bring-up: read sensors and receiver without energizing wheels or servos.
 // Set to 0 only after the diagnostic readings and power supply are checked.
@@ -57,7 +57,7 @@ CalibrationStore calibrationStore;
 // Set to 0 to restore the repository's mode-dependent defaults.
 #define DIAGNOSTIC_LIVE_TUNING_DEFAULTS 1
 
-#define AdjusParameter ADJUST_BALANCE_SPEED_YAW_ROLL        // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
+#define ADJUST_PARAMETER ADJUST_BALANCE_SPEED_YAW_ROLL        // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
 
 struct PidPreset {
   float p;
@@ -97,12 +97,12 @@ struct RcRange {
 
 constexpr unsigned long kSerialBaudRate = 576000;
 #define DIAGNOSTIC_LOG_INTERVAL_US 5000 // Diagnostic CSV rows are emitted at 200 Hz.
-constexpr unsigned int DIAGNOSTIC_LOG_SAMPLE_RATE_HZ = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
+constexpr unsigned int kDiagnosticLogSampleRateHz = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
-constexpr float DRIVE_BODY_X_LIMIT_M = 0.010f;
-constexpr float DRIVE_WHEEL_FEEDBACK_LIMIT = 8.0f;
-constexpr float DRIVE_TILT_REDUCTION_START_DEG = 5.0f;
-constexpr float DRIVE_TILT_REDUCTION_FULL_DEG = 10.0f;
+constexpr float kDriveBodyXLimitM = 0.010f;
+constexpr float kDriveWheelFeedbackLimit = 8.0f;
+constexpr float kDriveTiltReductionStartDeg = 5.0f;
+constexpr float kDriveTiltReductionFullDeg = 10.0f;
 // -------------------------------------
 
 struct BodyPose {
@@ -124,16 +124,16 @@ constexpr float kWheelVelocityPidOutputRamp = 10000;
 constexpr float kWheelVelocityFilterTfSec = 0.001;
 constexpr WheelPidParams kWheelVelocityPid{0.006, 0, 0};
 
-constexpr float BODY_HEIGHT_OVERRIDE_DISABLED_M = 0.0f;
-constexpr float BODY_HEIGHT_MIN_M = 0.05f;
-constexpr float BODY_HEIGHT_DEFAULT_M = 0.06f;
-constexpr float BALL_POISE_MAX_BODY_HEIGHT_M = 0.07f;
-constexpr float BODY_HEIGHT_MAX_M = 0.09f;
-constexpr int BODY_HEIGHT_COMMAND_FILTER_INDEX = 2;
+constexpr float kBodyHeightOverrideDisabledM = 0.0f;
+constexpr float kBodyHeightMinM = 0.05f;
+constexpr float kBodyHeightDefaultM = 0.06f;
+constexpr float kBallPoiseMaxBodyHeightM = 0.07f;
+constexpr float kBodyHeightMaxM = 0.09f;
+constexpr int kBodyHeightCommandFilterIndex = 2;
 
 // Body
-float TargetBodyHeightOverrideM = BODY_HEIGHT_OVERRIDE_DISABLED_M;  // Zero disables the Commander height override.
-float BodyHeightCommandM = BODY_HEIGHT_DEFAULT_M;  // Remote-controlled body height
+float TargetBodyHeightOverrideM = kBodyHeightOverrideDisabledM;  // Zero disables the Commander height override.
+float BodyHeightCommandM = kBodyHeightDefaultM;  // Remote-controlled body height
 float BodyPitching = 0;             // Pitch
 float BodyRoll = 0;                 // Roll
 float MovementSpeed = 0;            // Movement speed
@@ -143,7 +143,7 @@ int RobotTumble = ROBOT_NOT_TUMBLING;  // Fall-detection state, see docs/robot/R
 
 
 // Filtered remote-control commands
-float BodyHeightCommandFilteredM = BODY_HEIGHT_DEFAULT_M;
+float BodyHeightCommandFilteredM = kBodyHeightDefaultM;
 float BodyPitchingFiltered = 0;      // Pitch
 float BodyRollFiltered = 0;          // Roll
 biquadFilter_t BodyCommandFilterLPF[12];  // Second-order low-pass filter
@@ -267,7 +267,7 @@ PIDController touchYPidSettings(kTouchYPid.p, kTouchYPid.i, kTouchYPid.d, 0, kTo
 float control_torque_compensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
 float wheelVelocityFeedbackCorrection = 0;
-float driveTiltReductionGain = 1.0f;  // Scales the speed reduction applied as tilt approaches DRIVE_TILT_REDUCTION_FULL_DEG.
+float driveTiltReductionGain = 1.0f;  // Scales the speed reduction applied as tilt approaches kDriveTiltReductionFullDeg.
 float driveEffectiveSpeed = 0;
 float driveSpeedBodyXRaw = 0;
 
@@ -330,7 +330,7 @@ void KeyCalibration(char *cmd) {
   command.scalar(&CalibrationSelect, cmd);
 }
 
-#if AdjusParameter == ADJUST_BALANCE_SPEED_YAW_ROLL
+#if ADJUST_PARAMETER == ADJUST_BALANCE_SPEED_YAW_ROLL
 // Cb prefix: Commander callback.
 void CbAnglePid(char *cmd) {
   command.pid(&anglePidSettings, cmd);
@@ -346,7 +346,7 @@ void CbRollPid(char *cmd) {
   command.pid(&rollPidSettings, cmd);
 }
 
-#elif AdjusParameter == ADJUST_BALL_PUSHING
+#elif ADJUST_PARAMETER == ADJUST_BALL_PUSHING
 
 void CbTouchXPid(char *cmd) {
   command.pid(&touchXPidSettings, cmd);
@@ -524,13 +524,13 @@ void registerCommands() {
   command.add('F', SetBodyCommandFilterCutoffHz, "my CutoffFreq");
   command.add('J', SetBodyCommandFilteringEnabled, "my EnableDFilter");
 
-#if AdjusParameter == ADJUST_BALANCE_SPEED_YAW_ROLL
+#if ADJUST_PARAMETER == ADJUST_BALANCE_SPEED_YAW_ROLL
   command.add('P', CbAnglePid, "anglePidSettings");
   command.add('S', CbSpeedPid, "speedPidSettings");
   command.add('Y', CbYawPid, "yawPidSettings");
   command.add('R', CbRollPid, "rollPidSettings");
   command.add('O', Target_Body_Height, "my Target_Body_Height");
-#elif AdjusParameter == ADJUST_BALL_PUSHING
+#elif ADJUST_PARAMETER == ADJUST_BALL_PUSHING
   command.add('L', CbTouchXPid, "touchXPidSettings");
   command.add('N', CbTouchYPid, "touchYPidSettings");
   command.add('G', ControlTorqueCompensation, "my ControlTorqueCompensation");
@@ -578,7 +578,7 @@ void setup() {
   delay(500);
 
 #if SENSOR_DIAGNOSTIC_MODE
-  biquadFilterInitLPF(&VoltageFilterLPF, 20, DIAGNOSTIC_LOG_SAMPLE_RATE_HZ);
+  biquadFilterInitLPF(&VoltageFilterLPF, 20, kDiagnosticLogSampleRateHz);
   diagnosticImuReady = imu::begin(imu::Settings{}, imuCalibration);
   sBus.begin();
   Serial.printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n",
@@ -664,14 +664,14 @@ constexpr RcRange kSbusRcRanges[10] = {
 constexpr long kSbusBodyHeightCenter = 992;
 
 float bleBodyHeightM(long raw, const RcRange& range, float maxHeightM) {
-  return mapf(raw, range.min, range.max, BODY_HEIGHT_DEFAULT_M, maxHeightM);
+  return mapf(raw, range.min, range.max, kBodyHeightDefaultM, maxHeightM);
 }
 
 // Below the stick centre the height falls to the minimum, above it rises to maxHeightM.
 float sbusBodyHeightM(long raw, const RcRange& range, float maxHeightM) {
   if (raw <= kSbusBodyHeightCenter)
-    return mapf(raw, range.min, kSbusBodyHeightCenter, BODY_HEIGHT_MIN_M, BODY_HEIGHT_DEFAULT_M);
-  return mapf(raw, kSbusBodyHeightCenter + 1, range.max, BODY_HEIGHT_DEFAULT_M, maxHeightM);
+    return mapf(raw, range.min, kSbusBodyHeightCenter, kBodyHeightMinM, kBodyHeightDefaultM);
+  return mapf(raw, kSbusBodyHeightCenter + 1, range.max, kBodyHeightDefaultM, maxHeightM);
 }
 
 /**
@@ -694,11 +694,11 @@ void applyRcChannels(const Raw *ch, const RcRange *range,
   top_ball_y = mapf(ch[9], range[9].min, range[9].max, -5, 5);
 
   if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT) {
-    BodyHeightCommandM = bodyHeightM(ch[1], range[1], BODY_HEIGHT_MAX_M);
+    BodyHeightCommandM = bodyHeightM(ch[1], range[1], kBodyHeightMaxM);
   } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST) {
     BodyPitching = mapf(ch[1], range[1].min, range[1].max, -12, 12);
   } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) {
-    BodyHeightCommandM = bodyHeightM(ch[1], range[1], BALL_POISE_MAX_BODY_HEIGHT_M);
+    BodyHeightCommandM = bodyHeightM(ch[1], range[1], kBallPoiseMaxBodyHeightM);
   }
   BodyRoll = mapf(ch[0], range[0].min, range[0].max, -0.011, 0.011);
 }
@@ -1015,8 +1015,8 @@ void PIDcontroller_posture(float dt) {
   driveEffectiveSpeed = MovementSpeed;
   // Reduce only further acceleration when tilt consumes balance headroom.
   if (MovementSpeed * avgVelocity >= 0.0f && fabsf(MovementSpeed) > fabsf(avgVelocity)) {
-    const float tiltFraction = constrain((fabsf(imu::latest().correctedRollDegrees) - DRIVE_TILT_REDUCTION_START_DEG) /
-                                         (DRIVE_TILT_REDUCTION_FULL_DEG - DRIVE_TILT_REDUCTION_START_DEG),
+    const float tiltFraction = constrain((fabsf(imu::latest().correctedRollDegrees) - kDriveTiltReductionStartDeg) /
+                                         (kDriveTiltReductionFullDeg - kDriveTiltReductionStartDeg),
                                          0.0f, 1.0f);
     const float reduction = tiltFraction * constrain(driveTiltReductionGain, 0.0f, 1.0f);
     driveEffectiveSpeed = avgVelocity + (MovementSpeed - avgVelocity) * (1.0f - reduction);
@@ -1025,14 +1025,14 @@ void PIDcontroller_posture(float dt) {
 
   const float previousSpeedIntegral = Speed_Pid.integral;
   driveSpeedBodyXRaw = Speed_Pid.compute(speedError, dt);
-  if (Speed_Pid.Ki != 0.0f && fabsf(driveSpeedBodyXRaw) > DRIVE_BODY_X_LIMIT_M &&
+  if (Speed_Pid.Ki != 0.0f && fabsf(driveSpeedBodyXRaw) > kDriveBodyXLimitM &&
       driveSpeedBodyXRaw * speedError > 0.0f) {
     Speed_Pid.integral = previousSpeedIntegral;
     Speed_Pid.outI = Speed_Pid.Ki * previousSpeedIntegral;
     driveSpeedBodyXRaw = Speed_Pid.outP + Speed_Pid.outI + Speed_Pid.outD;
     Speed_Pid.output = driveSpeedBodyXRaw;
   }
-  const float speedBodyX = constrain(driveSpeedBodyXRaw, -DRIVE_BODY_X_LIMIT_M, DRIVE_BODY_X_LIMIT_M);
+  const float speedBodyX = constrain(driveSpeedBodyXRaw, -kDriveBodyXLimitM, kDriveBodyXLimitM);
 
   BodyX = speedBodyX + BodyPitchingCorrect(BodyPitchingFiltered);
 
@@ -1069,8 +1069,8 @@ void PIDcontroller_posture(float dt) {
   const float boundedWheelGain = constrain(wheelSpeedFeedbackGain, 0.0f, 0.4f);
   const bool braking = avgVelocity * (avgVelocity - MovementSpeed) > 0.0f;
   const float wheelCorrection = braking ? boundedWheelGain * (avgVelocity - MovementSpeed) : 0.0f;
-  wheelVelocityFeedbackCorrection = constrain(wheelCorrection, -DRIVE_WHEEL_FEEDBACK_LIMIT,
-                                      DRIVE_WHEEL_FEEDBACK_LIMIT);
+  wheelVelocityFeedbackCorrection = constrain(wheelCorrection, -kDriveWheelFeedbackLimit,
+                                      kDriveWheelFeedbackLimit);
   float target1 = angleOutput - yawOutput + wheelVelocityFeedbackCorrection;
   float target2 = angleOutput + yawOutput + wheelVelocityFeedbackCorrection;
 
@@ -1111,7 +1111,7 @@ void RemoteControlFiltering(void)  // Remote control filter
     BodyPitchingFiltered = biquadFilterApply(&BodyCommandFilterLPF[0], BodyPitching);
     BodyRollFiltered = biquadFilterApply(&BodyCommandFilterLPF[1], BodyRoll);
     BodyHeightCommandFilteredM = biquadFilterApply(
-        &BodyCommandFilterLPF[BODY_HEIGHT_COMMAND_FILTER_INDEX], BodyHeightCommandM);
+        &BodyCommandFilterLPF[kBodyHeightCommandFilterIndex], BodyHeightCommandM);
   } else {
     BodyPitchingFiltered = BodyPitching;
     BodyRollFiltered = BodyRoll;
@@ -1245,9 +1245,9 @@ void DiagnosticLoop(void) {
 }
 void updateMotorsAndCommands() {
   // iterative function setting the outer loop target
-  if (Communication_object == COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO) {
+  if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO) {
     if (Logging::profile() == Logging::Profile::Idle) motor1.monitor();
-  } else if (Communication_object == COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS) {
+  } else if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS) {
     motor2.target = motor1.target;
   }
 
@@ -1362,16 +1362,16 @@ void updateWheelVelocities() {
  * controller integrals instead.
  */
 BodyPose computeBodyPose() {
-  BodyPose pose{BODY_HEIGHT_DEFAULT_M, BodyRollFiltered};
+  BodyPose pose{kBodyHeightDefaultM, BodyRollFiltered};
 
   if ((pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (RobotTumble == ROBOT_TUMBLING)) {
     balancePidNeedsPriming = true;
-    if (Communication_object == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE) {
+    if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE) {
       motor1.target = 0;
       motor2.target = 0;
     }
 
-    pose.heightM = BODY_HEIGHT_DEFAULT_M;
+    pose.heightM = kBodyHeightDefaultM;
     BodyX = 0;
     pose.roll = 0;
     BodyPitchingFiltered = 0;
@@ -1389,7 +1389,7 @@ BodyPose computeBodyPose() {
     if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)
       pose.roll = Roll_Pid.output;
 
-    if (TargetBodyHeightOverrideM == BODY_HEIGHT_OVERRIDE_DISABLED_M)
+    if (TargetBodyHeightOverrideM == kBodyHeightOverrideDisabledM)
       pose.heightM = BodyHeightCommandFilteredM;
     else
       pose.heightM = TargetBodyHeightOverrideM;
@@ -1397,7 +1397,7 @@ BodyPose computeBodyPose() {
 
   if (RobotTumble == ROBOT_TUMBLING)  // Machine fall
   {
-    pose.heightM = BODY_HEIGHT_DEFAULT_M;
+    pose.heightM = kBodyHeightDefaultM;
     BodyX = 0;
     pose.roll = 0;
     BodyPitchingFiltered = 0;
