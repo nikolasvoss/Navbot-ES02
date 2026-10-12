@@ -1,10 +1,16 @@
 #include "MahonyFilter.h"
 #include <math.h>
 
+namespace {
+constexpr float kPi = 3.14159265358979323846f;
+constexpr float kRadiansToDegrees = 180.0f / kPi;
+}
+
 // Constructor implementation
-MahonyFilter::MahonyFilter(float kp, float ki) : twoKp(kp), twoKi(ki), 
-    q0(1.0f), q1(0.0f), q2(0.0f), q3(0.0f), 
-    integralFBx(0.0f), integralFBy(0.0f), integralFBz(0.0f) {}
+MahonyFilter::MahonyFilter(float kp, float ki) :
+    q0(1.0f), q1(0.0f), q2(0.0f), q3(0.0f),
+    integralFBx(0.0f), integralFBy(0.0f), integralFBz(0.0f),
+    twoKp(kp), twoKi(ki) {}
 
 // Mahony filter update function implementation
 void MahonyFilter::update(float gx, float gy, float gz, float ax, float ay, float az, float dt) {
@@ -15,7 +21,7 @@ void MahonyFilter::update(float gx, float gy, float gz, float ax, float ay, floa
     // If accelerometer measurement is zero, skip filter update
     if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
         // Normalize accelerometer measurement
-        recipNorm = 1.0f / sqrt(ax * ax + ay * ay + az * az);
+        recipNorm = 1.0f / sqrtf(ax * ax + ay * ay + az * az);
         ax *= recipNorm;
         ay *= recipNorm;
         az *= recipNorm;
@@ -63,7 +69,7 @@ void MahonyFilter::update(float gx, float gy, float gz, float ax, float ay, floa
     q3 += (qa * gz + qb * gy - qc * gx);
 
     // Normalize quaternion
-    recipNorm = 1.0f / sqrt(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
+    recipNorm = 1.0f / sqrtf(q0 * q0 + q1 * q1 + q2 * q2 + q3 * q3);
     q0 *= recipNorm;
     q1 *= recipNorm;
     q2 *= recipNorm;
@@ -80,12 +86,11 @@ void MahonyFilter::getQuaternion(float& q0_out, float& q1_out, float& q2_out, fl
 
 // Quaternion to Euler angles conversion function
 void quaternionToEuler(float q0, float q1, float q2, float q3, float *roll, float *pitch, float *yaw) {
-    *roll = atan2(2 * (q0 * q1 + q2 * q3), 1 - 2 * (q1 * q1 + q2 * q2));
-    *pitch = asin(2 * (q0 * q2 - q3 * q1));
-    *yaw = atan2(2 * (q0 * q3 + q1 * q2), 1 - 2 * (q2 * q2 + q3 * q3));
+    *roll = atan2f(2 * (q0 * q1 + q2 * q3), 1 - 2 * (q1 * q1 + q2 * q2));
+    *pitch = asinf(2 * (q0 * q2 - q3 * q1));
+    *yaw = atan2f(2 * (q0 * q3 + q1 * q2), 1 - 2 * (q2 * q2 + q3 * q3));
 
-    // Convert radians to degrees
-    *roll *= (180.0f / 3.1415926f);
-    *pitch *= (180.0f / 3.1415926f);
-    *yaw *= (180.0f / 3.1415926f);
+    *roll *= kRadiansToDegrees;
+    *pitch *= kRadiansToDegrees;
+    *yaw *= kRadiansToDegrees;
 }
