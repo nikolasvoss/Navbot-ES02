@@ -24,7 +24,7 @@ Annahme: Firmwareupdates bleiben zunächst über USB; kabellose Updates wurden n
 | IMU | ICM42688 per SPI, 1-kHz-ODR, ±8 g/±2000 °/s, direkter Registerabruf | Keine FIFO-Nutzung und kein Nachweis lückenloser 1-kHz-Erfassung |
 | PC | Capture-, Versuchslauf- und Analyseskripte für Serial vorhanden | WLAN-Transport, Binärdecoder, Prüfung der Analyse auf höhere/variable Raten |
 
-Quellen: [Hauptsketch](../../../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), Funktionen `setup`, `CtrlInput`, `ImuUpdate`, `FlashInit`, `DebugTelemetry::submit`/58 und `loop`; [ble.cpp](../../../../../src/ES-02/OllieFOCdrive/ble.cpp), [robot.cpp](../../../../../src/ES-02/OllieFOCdrive/robot.cpp), [ICM42688.cpp](../../../../../src/ES-02/OllieFOCdrive/ICM42688.cpp), [run_drive_trial.py](../../../../../scripts/run_drive_trial.py), [analyze_drive_trace.py](../../../../../scripts/analyze_drive_trace.py).
+Quellen: [Hauptsketch](../../../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), Funktionen `setup`, `readControlInput`, `DebugTelemetry::submit`/58 und `loop`; [imu.cpp](../../../../../src/ES-02/OllieFOCdrive/imu.cpp), Funktion `imu::service`; [ble.cpp](../../../../../src/ES-02/OllieFOCdrive/ble.cpp), [robot.cpp](../../../../../src/ES-02/OllieFOCdrive/robot.cpp), [ICM42688.cpp](../../../../../src/ES-02/OllieFOCdrive/ICM42688.cpp), [run_drive_trial.py](../../../../../scripts/run_drive_trial.py), [analyze_drive_trace.py](../../../../../scripts/analyze_drive_trace.py).
 
 Relevante Fallstricke im Bestand:
 
