@@ -17,7 +17,8 @@ int main() {
   assert(profileForSelector(0) == Profile::Idle);
   assert(profileForSelector(1) == Profile::SelectedDebug);
   assert(profileForSelector(45) == Profile::SelectedDebug);
-  assert(profileForSelector(46) == Profile::Idle);
+  assert(profileForSelector(46) == Profile::SelectedDebug);
+  assert(profileForSelector(47) == Profile::Idle);
   assert(profileForSelector(55) == Profile::Trace);
   assert(profileForSelector(56) == Profile::Control);
   assert(profileForSelector(57) == Profile::Balance);
@@ -45,7 +46,8 @@ int main() {
   assert(RobotLogCapture::selectedDebugDue(DebugSelector::K8, 50));
   assert(!RobotLogCapture::selectedDebugDue(DebugSelector::K8, 99));
   assert(RobotLogCapture::selectedDebugDue(DebugSelector::K8, 100));
-  assert(!RobotLogCapture::selectedDebugDue(static_cast<DebugSelector>(46), 100));
+  assert(RobotLogCapture::selectedDebugDue(DebugSelector::K46, 100));
+  assert(!RobotLogCapture::selectedDebugDue(static_cast<DebugSelector>(47), 100));
 
   assert(!RobotLogCapture::selectedDebugDue(DebugSelector::K60, 49));
   assert(RobotLogCapture::selectedDebugDue(DebugSelector::K60, 50));
