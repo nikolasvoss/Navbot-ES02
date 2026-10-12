@@ -10,8 +10,8 @@ void FUTABA_SBUS::begin(){
   	port.begin(BAUDRATE, SERIAL_8N1, RXD2, TXD2); 
 
 	memcpy(sbusData,loc_sbusData,25);
-	memcpy(channels,loc_channels,18);
-	memcpy(servos,loc_servos,18);
+	memcpy(channels,loc_channels,sizeof(channels));
+	memcpy(servos,loc_servos,sizeof(servos));
 	failsafe_status = SBUS_SIGNAL_OK;
 	sbus_passthrough = 1;
 	toChannels = 0;
