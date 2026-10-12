@@ -115,23 +115,6 @@ class MyPIDController {
       return output;
     }
 
-    // Function to set PID coefficients
-    void setPID(float p, float i, float d, float iLimit, float outputLimit,float dt, float EnableDFilter, float CutoffFreq) {
-      Kp = p;
-      Ki = i;
-      Kd = d;
-      this->iLimit = iLimit;
-      this->outputLimit = outputLimit;
-      enableDFilter = EnableDFilter;
-      cutoffFreq = CutoffFreq;
-      integral = 0;
-      previousError = 0;
-
-      if ((int)enableDFilter==1)
-      {
-        biquadFilterInitLPF(&dFilter, (unsigned int)cutoffFreq, (unsigned int)(1.0f / dt));
-      }
-    }
 };
 
 

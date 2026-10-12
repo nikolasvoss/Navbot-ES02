@@ -65,20 +65,6 @@ static void integralLimitClampsBothSides() {
   expectNear("negative outI", pid.outI, -3.0f);
 }
 
-static void setPidStoresLimitsAndResetsState() {
-  MyPIDController pid(1.0f, 1.0f, 1.0f, 50.0f, 0.0f, 1.0f, 0.0f, 0.0f);
-  pid.compute(4.0f, 1.0f);
-  pid.compute(6.0f, 1.0f);
-
-  pid.setPID(1.0f, 0.0f, 0.0f, 2.0f, 4.0f, 1.0f, 0.0f, 0.0f);
-
-  expectNear("setPID iLimit", pid.iLimit, 2.0f);
-  expectNear("setPID outputLimit", pid.outputLimit, 4.0f);
-  expectNear("setPID integral", pid.integral, 0.0f);
-  expectNear("setPID previousError", pid.previousError, 0.0f);
-  expectNear("setPID output clamp", pid.compute(100.0f, 1.0f), 4.0f);
-}
-
 static void derivativeFilterAttenuatesFirstStep() {
   // 16 Hz Butterworth LPF at 128 Hz: b0 = 0.0976311, so the first filtered
   // derivative of a unit step over dt = 1/128 s is 0.0976311 * 128.
@@ -89,24 +75,13 @@ static void derivativeFilterAttenuatesFirstStep() {
   expectNear("filtered first deriv", pid.deriv, 12.49678f, 1e-3f);
 }
 
-static void setPidEnablesDerivativeFilter() {
-  MyPIDController pid(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0078125f, 0.0f, 0.0f);
-  pid.setPID(0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0078125f, 1.0f, 16.0f);
-
-  pid.compute(1.0f, 0.0078125f);
-
-  expectNear("setPID filtered first deriv", pid.deriv, 12.49678f, 1e-3f);
-}
-
 int main() {
   constructorStoresLimitsAndStartsAtZero();
   firstComputeHasNoDerivativeKick();
   outputLimitClampsBothSides();
   zeroOutputLimitMeansUnlimited();
   integralLimitClampsBothSides();
-  setPidStoresLimitsAndResetsState();
   derivativeFilterAttenuatesFirstStep();
-  setPidEnablesDerivativeFilter();
 
   if (failures != 0) {
     std::printf("%d PID checks failed\n", failures);
