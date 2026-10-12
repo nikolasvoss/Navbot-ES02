@@ -48,6 +48,7 @@ debug.42	 P:0.00000 P1:0.00000 P3:0.00000\n
 debug.43	 Vdat:0 Vdatf:0.00 V:0.00000\n
 debug.44	 PidParameterTuning:0 TargetBodyHeightM:0.000000\n
 debug.45	 RobotTumble:0 roll_ok:0.000000 Angle_Pid.error:0.000000\n
+debug.46	0,0.0000000,0.0000000,0.0000000,0.0000000,0.0000000,0.0000000\n
 debug.60	0.000,0\n
 debug.61	0.000,0\n
 debug.62	0.000,0\n

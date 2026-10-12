@@ -45,7 +45,7 @@ void verifyFormatters(const char *fixturePath) {
       value.replace(position, 2, "\n");
     fixtures[line.substr(0, separator)] = value;
   }
-  require(fixtures.size() == 66, "format fixture does not cover every active selector and profile");
+  require(fixtures.size() == 67, "format fixture does not cover every active selector and profile");
 
   const LoggingInternal::RecordKind kinds[] = {
       LoggingInternal::RecordKind::Diagnostic, LoggingInternal::RecordKind::Trace,
@@ -57,7 +57,7 @@ void verifyFormatters(const char *fixturePath) {
     compareFixture(fixtures, "csv." + std::to_string(i), record);
   }
 
-  for (int selector = 1; selector <= 45; ++selector) {
+  for (int selector = 1; selector <= 46; ++selector) {
     LoggingInternal::Record record{};
     record.kind = LoggingInternal::RecordKind::Debug;
     record.payload.debug.selector = static_cast<Logging::DebugSelector>(selector);
