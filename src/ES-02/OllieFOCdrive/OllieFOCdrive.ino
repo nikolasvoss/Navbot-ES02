@@ -1461,14 +1461,14 @@ void ReadVoltage(void) {
  */
 void Robot_Tumble(void) {
   static int x = 0;
-  if (abs(imu::latest().correctedRollDegrees) >= 35) {
+  if (fabsf(imu::latest().correctedRollDegrees) >= 35) {
     x++;
     if (x >= 20) {
       x = 20;
       RobotTumble = ROBOT_TUMBLING;  // Machine fall
     }
   } else {
-    if ((RobotTumble == ROBOT_TUMBLING) && (abs(imu::latest().correctedRollDegrees) <= 5))  // Machine fall after fall
+    if ((RobotTumble == ROBOT_TUMBLING) && (fabsf(imu::latest().correctedRollDegrees) <= 5))  // Machine fall after fall
     {
       x--;
       if (x <= 0) {
@@ -1620,14 +1620,25 @@ void loop() {
       }
     }
 
-    if (Voltage <= board::kLowBatteryVolts)
+    static uint32_t lastLowBatteryWarningMs = millis();
+    if (Voltage <= board::kLowBatteryVolts) {
       statusLedPeriodTicks = 20;
-    else
+      if (static_cast<uint32_t>(millis() - lastLowBatteryWarningMs) >= 1000) {
+        lastLowBatteryWarningMs = millis();
+        Logging::message(Logging::Level::Warning, "Voltage", "%.5f", Voltage);
+      }
+    } else {
       statusLedPeriodTicks = 100;
+    }
 
     imu::CalibrationValues activeCalibration = imu::calibration();
     const imu::Snapshot& acceptedImu = imu::latest();
     CalibrationResult calibrationResult{CalibrationCompletion::None, false, {false, false, false, false}};
+    if (static_cast<int>(CalibrationSelect) == 1 &&
+        pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING) {
+      CalibrationSelect = 0;
+      Logging::message(Logging::Level::Warning, "Calibration", "gyro calibration refused: balance active");
+    }
     if (imuUpdated) calibrationResult = calibration.update(
         static_cast<int>(CalibrationSelect),
         {acceptedImu.attitudeDegrees.roll, acceptedImu.attitudeDegrees.pitch},
@@ -1716,24 +1727,36 @@ void loop() {
       BodyPitchingFiltered = 0;
     }
 
+    static uint32_t lastRightLegWarningMs = 0;
+    static uint32_t lastLeftLegWarningMs = 0;
     const LegSolveResult rightLeg = LegKinematics::solveRight(
-        {BarycenterX - BodyX, bodyH - bodyRoll, BodyPitchingFiltered});
-    if (rightLeg.status != LegSolveStatus::Success)
+        {-BodyX, bodyH - bodyRoll, BodyPitchingFiltered});
+    const bool rightLegReachable = rightLeg.status == LegSolveStatus::Success;
+    if (!rightLegReachable && static_cast<uint32_t>(millis() - lastRightLegWarningMs) >= 1000) {
+      lastRightLegWarningMs = millis();
       Logging::message(Logging::Level::Warning, "RightInverseKinematics", "no");
+    }
 
     const LegSolveResult leftLeg = LegKinematics::solveLeft(
-        {BarycenterX - BodyX, bodyH + bodyRoll, BodyPitchingFiltered});
-    if (leftLeg.status != LegSolveStatus::Success)
+        {-BodyX, bodyH + bodyRoll, BodyPitchingFiltered});
+    const bool leftLegReachable = leftLeg.status == LegSolveStatus::Success;
+    if (!leftLegReachable && static_cast<uint32_t>(millis() - lastLeftLegWarningMs) >= 1000) {
+      lastLeftLegWarningMs = millis();
       Logging::message(Logging::Level::Warning, "LeftInverseKinematics", "no");
+    }
 
     if (posture_or_mark_mode == REMOTE_CONTROL_PM_POSTURE_MODE)  // Posture
     {
 
-      // Set the angle of the four servos
-      servoTraceAngle[0] = leftLeg.angles.joint1Degrees - servoTrims.servo1Degrees;
-      servoTraceAngle[1] = leftLeg.angles.joint2Degrees - servoTrims.servo2Degrees;
-      servoTraceAngle[2] = rightLeg.angles.joint1Degrees - servoTrims.servo3Degrees;
-      servoTraceAngle[3] = rightLeg.angles.joint2Degrees - servoTrims.servo4Degrees;
+      // An unreachable leg keeps its previous servo angles.
+      if (leftLegReachable) {
+        servoTraceAngle[0] = leftLeg.angles.joint1Degrees - servoTrims.servo1Degrees;
+        servoTraceAngle[1] = leftLeg.angles.joint2Degrees - servoTrims.servo2Degrees;
+      }
+      if (rightLegReachable) {
+        servoTraceAngle[2] = rightLeg.angles.joint1Degrees - servoTrims.servo3Degrees;
+        servoTraceAngle[3] = rightLeg.angles.joint2Degrees - servoTrims.servo4Degrees;
+      }
       servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1, servoTraceAngle[3], 1);
     } else  // Assembly position and calibration
     {
