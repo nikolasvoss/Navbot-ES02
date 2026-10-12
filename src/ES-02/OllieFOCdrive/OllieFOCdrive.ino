@@ -103,9 +103,7 @@ CalibrationStore calibrationStore;
 #define SBUS_CHANNEL_MIN 192
 constexpr uint32_t kRcFrameTimeoutMs = 100;
 
-#define SERIAL_BAUD_RATE 576000
-#define DIAGNOSTIC_SERIAL_BAUD_RATE 576000
-#define LIVE_TUNING_SERIAL_BAUD_RATE 576000
+constexpr unsigned long kSerialBaudRate = 576000;
 #define DIAGNOSTIC_LOG_INTERVAL_US 5000 // Diagnostic CSV rows are emitted at 200 Hz.
 constexpr unsigned int DIAGNOSTIC_LOG_SAMPLE_RATE_HZ = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
@@ -420,6 +418,23 @@ bool ten_msec_tick(void) {
   return 0;
 }
 
+void logCalibration(const PersistedCalibrationValues& calibrationValues) {
+  Logging::message(Logging::Level::Info, "Calibration",
+                   "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
+                   calibrationValues.attitude.rollDegrees, calibrationValues.attitude.pitchDegrees);
+  Logging::message(Logging::Level::Info, "Calibration",
+                   "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
+                   calibrationValues.gyro.xRawCounts, calibrationValues.gyro.yRawCounts, calibrationValues.gyro.zRawCounts);
+  Logging::message(Logging::Level::Info, "Calibration",
+                   "servo1: %.2f, servo2: %.2f, servo3: %.2f, servo4: %.2f",
+                   calibrationValues.servos.servo1Degrees, calibrationValues.servos.servo2Degrees,
+                   calibrationValues.servos.servo3Degrees, calibrationValues.servos.servo4Degrees);
+}
+
+void setAssemblyPosition() {
+  servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);
+}
+
 /**
  * @brief Initializes the robot's hardware and software components.
  *
@@ -439,21 +454,12 @@ void setup() {
   digitalWrite(board::kWheel2EnablePin, LOW);
 #endif
 
-  Serial.begin(SENSOR_DIAGNOSTIC_MODE ? DIAGNOSTIC_SERIAL_BAUD_RATE :
-               (DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? LIVE_TUNING_SERIAL_BAUD_RATE : SERIAL_BAUD_RATE)); //TODO simplify to one serial baud rate
+  Serial.begin(kSerialBaudRate);
   Logging::begin();
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
   servoTrims = loadedCalibration.servos;
   const imu::CalibrationValues imuCalibration{loadedCalibration.gyro, loadedCalibration.attitude};
-  Logging::message(Logging::Level::Info, "Calibration",
-                   "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
-                   loadedCalibration.attitude.rollDegrees, loadedCalibration.attitude.pitchDegrees);
-  Logging::message(Logging::Level::Info, "Calibration",
-                   "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
-                   loadedCalibration.gyro.xRawCounts, loadedCalibration.gyro.yRawCounts, loadedCalibration.gyro.zRawCounts);
-  Logging::message(Logging::Level::Info, "Calibration",
-                   "servo1: %.2f, servo2: %.2f, servo3: %.2f, servo4: %.2f",
-                   servoTrims.servo1Degrees, servoTrims.servo2Degrees, servoTrims.servo3Degrees, servoTrims.servo4Degrees);
+  logCalibration(loadedCalibration);
 
   // TODO is this the right location?
   pinMode(board::kStatusLedPin, OUTPUT);
@@ -480,10 +486,10 @@ void setup() {
   //  Initialize servo
   servoControl.initialize();
 
-  servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);
+  setAssemblyPosition();
   _delay(555);
 
-  servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);  // Assembly position TODO why is this repeated?
+  setAssemblyPosition();  // TODO why is this repeated?
   // IMU
   if (!imu::begin(imu::Settings{}, imuCalibration)) {
     Serial.println("IMU initialization failed!");
