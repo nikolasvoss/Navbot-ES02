@@ -114,8 +114,9 @@ Der Yaw-I-Startwert ist in beiden CH5-Modi null. Die Grenze ±0,1 ist die Grenze
 
 - CH5=0 oder erkannter Fall: Rad-Sollwerte null, `BodyX` und die PID-Integratoren zurückgesetzt. SimpleFOC läuft weiter; „Sollwert null“ bedeutet hier nicht abgeschaltete Endstufe.
 - `Robot_Tumble()` setzt nach 20 aufeinanderfolgenden Regelaufrufen mit `|rollBiasCorrected| >= 35°` das Fall-Flag. Zur Freigabe muss der Winkel wieder `<= 5°` sein und der interne Zähler zurücklaufen. Die Zeit hängt vom realen Regeltakt ab.
-- Die Akkuspannung kommt über GPIO17 von der **2S-Akkuleitung**, nicht von der 3,3-V-Schiene. Unter 7,4 V blinken/warnt die Firmware; in `RXsbus()` ist die Abschaltung auskommentiert. Ein Spannungseinbruch kann weitere Hardwareeffekte haben, wird von dieser Schwelle aber nicht aktiv unterbunden.
-- `sBus.Failsafe()` wird im Sensor-Diagnosemodus ausgegeben, ist im normalen Zweirad-Regelpfad jedoch nicht als Freigabebedingung zu sehen. Die Reaktion auf einen verlorenen Empfänger hängt daher auch davon ab, welche Kanalwerte die SBUS-Bibliothek danach liefert.
+- Die Akkuspannung kommt über GPIO17 von der **2S-Akkuleitung**, nicht von der 3,3-V-Schiene. Unter 7,4 V blinkt die Status-LED schneller, und die Firmware loggt im Regeltakt höchstens einmal pro Sekunde eine Warnung; eine Abschaltung gibt es nicht. Ein Spannungseinbruch kann weitere Hardwareeffekte haben, wird von dieser Schwelle aber nicht aktiv unterbunden.
+- Solange SBUS die aktive Quelle ist (BLE nicht verbunden), setzt `RXsbus()` `MovementSpeed` und `BodyTurn` auf null, wenn seit mehr als 100 ms kein gültiger Frame ankam oder `sBus.Failsafe()` nicht OK meldet. Die Schaltermodi und die Körperhöhen-, Nick- und Rollbefehle behalten ihren zuletzt empfangenen Wert; der Roboter balanciert weiter auf der Stelle. Ein Übergang in den Verlustzustand und zurück wird je einmal als Warnung `RC` geloggt. Bei verbundenem BLE gilt diese Prüfung nicht.
+- Die Gyro-Kalibrierung (`E1`) blockiert den Regeltakt für mehrere Sekunden. Sie wird abgelehnt, solange die Balance aktiv ist (CH5 an und nicht gestürzt); `CalibrationSelect` wird auf 0 zurückgesetzt und `gyro calibration refused: balance active` geloggt.
 
 ## Wo Entwickler nachsehen sollten
 
