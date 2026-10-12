@@ -16,6 +16,9 @@
 namespace {
 constexpr UBaseType_t kQueueDepth = Logging::kQueueDepth;
 constexpr size_t kLineBufferSize = 384;
+constexpr uint32_t kSenderTaskStackDepth = 4096;
+constexpr UBaseType_t kSenderTaskPriority = 1;
+constexpr uint32_t kSelectedDebugMinIntervalUs = 2500;
 
 StaticQueue_t queueControl DRAM_ATTR;
 uint8_t queueStorage[kQueueDepth * sizeof(LoggingInternal::Record)] DRAM_ATTR;
@@ -62,8 +65,8 @@ void latchIncomplete(Logging::IncompleteReason reason) {
 }
 
 bool isValidDebugSelector(Logging::DebugSelector selector) {
-  const uint8_t value = static_cast<uint8_t>(selector);
-  return (value >= 1 && value <= 46) || (value >= 60 && value <= 75);
+  const int value = static_cast<int>(selector);
+  return Logging::isSelectedDebugSelector(value) || Logging::isChannelDebugSelector(value);
 }
 
 Logging::Result enqueue(LoggingInternal::Record &record) {
@@ -177,7 +180,8 @@ bool begin() {
     return false;
   }
 
-  if (xTaskCreatePinnedToCore(senderTask, "logging", 4096, nullptr, 1, nullptr, 0) != pdTRUE) {
+  if (xTaskCreatePinnedToCore(senderTask, "logging", kSenderTaskStackDepth, nullptr,
+                          kSenderTaskPriority, nullptr, 0) != pdTRUE) {
     latchIncomplete(IncompleteReason::SenderStartFailed);
     return false;
   }
@@ -291,7 +295,7 @@ Result submit(const DebugSample &sample) {
   }
 
   const uint32_t now = micros();
-  if (selectedDebugSubmitted && static_cast<uint32_t>(now - lastSelectedDebugMicros) < 2500)
+  if (selectedDebugSubmitted && static_cast<uint32_t>(now - lastSelectedDebugMicros) < kSelectedDebugMinIntervalUs)
     return Result::Paced;
 
   LoggingInternal::Record record{};

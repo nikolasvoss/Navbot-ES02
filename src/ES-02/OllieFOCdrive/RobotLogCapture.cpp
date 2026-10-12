@@ -15,10 +15,6 @@ int32_t servoMaximum[4] = {0, 0, 0, 0};
 int32_t servoLatest[4] = {0, 0, 0, 0};
 bool servoWindowStarted = false;
 
-bool isChannelSelector(int selector) {
-  return selector >= 60 && selector <= 75;
-}
-
 bool gateDue(uint32_t nowMs, uint32_t &lastMs) {
   if (static_cast<uint32_t>(nowMs - lastMs) < kSelectedDebugIntervalMs) return false;
 
@@ -30,7 +26,7 @@ bool gateDue(uint32_t nowMs, uint32_t &lastMs) {
 namespace RobotLogCapture {
 
 Logging::Profile profileForSelector(int selector) {
-  if ((selector >= 1 && selector <= 46) || isChannelSelector(selector))
+  if (Logging::isSelectedDebugSelector(selector) || Logging::isChannelDebugSelector(selector))
     return Logging::Profile::SelectedDebug;
 
   switch (selector) {
@@ -63,10 +59,10 @@ void setProfileForSelector(int selector) {
 
 bool selectedDebugDue(Logging::DebugSelector selector, uint32_t nowMs) {
   const int value = static_cast<int>(selector);
-  if (value < 1 || (value > 46 && !isChannelSelector(value))) return false;
+  if (!Logging::isSelectedDebugSelector(value) && !Logging::isChannelDebugSelector(value)) return false;
 
   if (value == 8) return gateDue(nowMs, lastSbusPrintMs);
-  if (isChannelSelector(value))
+  if (Logging::isChannelDebugSelector(value))
     return gateDue(nowMs, lastChannelTraceMs);
   return true;
 }
