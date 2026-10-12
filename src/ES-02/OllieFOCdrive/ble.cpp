@@ -12,8 +12,16 @@
 BLEServer* pServer = NULL;
 BLECharacteristic* pTxCharacteristic;
 
-BleDataTypDef ble_rx;
+// Reassembly state, private to ble_loop() (cpu0_task).
+static BleDataTypDef ble_rx;
 CmdManeuverTypDef ble_ctrler;
+
+// Single-slot handoff from the BLE stack task (onWrite) to ble_rx_processing().
+// A frame written while the slot is still occupied overwrites it.
+static portMUX_TYPE ble_rx_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint8_t ble_rx_slot_frame[20];
+static uint8_t ble_rx_slot_seed;
+static bool ble_rx_slot_full = false;
 
 cppQueue	ble_tx_q(sizeof(BleDataTypDef*), 10, FIFO);	//Create a Bluetooth transmission queue, with first-in-first-out principle.
 
@@ -36,18 +44,16 @@ bool ble_frames_validation(void);
 class MyCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) {
     uint8_t* rxData = pCharacteristic->getData();
-    LED2_TOGGLE();
     if (pCharacteristic->getLength() == 20) {
-      int i;
-      for (i = 0; i < 20; i++) {
-        ble_rx.frame[i] = *(rxData + i);  //Transfer data
+      portENTER_CRITICAL(&ble_rx_mux);
+      // The first non-zero pack count among unprocessed frames seeds remaining_pack,
+      // so an overwritten frame still makes the sequence check fail as it did before the handoff.
+      if (ble_rx_slot_seed == 0) {
+        ble_rx_slot_seed = rxData[3];
       }
-      if (ble_rx.remaining_pack == 0) {
-        ble_rx.remaining_pack = ble_rx.frame[3];
-      }
-      //Status setting and acquisition commands
-      ble_rx.state = BLE_STATE_RECEIVE_OK;
-      ble_rx.cmd = ble_rx.frame[2];
+      memcpy(ble_rx_slot_frame, rxData, 20);
+      ble_rx_slot_full = true;
+      portEXIT_CRITICAL(&ble_rx_mux);
     }
   }
 };
@@ -102,7 +108,6 @@ void ble_send_data(uint8_t* data, uint8_t len) {
   if (len > 20) {
     len = 20;
   }
-  LED2_TOGGLE();
   pTxCharacteristic->setValue(data, len);  //reply
   pTxCharacteristic->notify();
 }
@@ -113,13 +118,28 @@ void ble_loop(void) {
   ble_tx_processing();
 }
 void ble_rx_processing(void) {
+  uint8_t slot_seed = 0;
+  bool received = false;
+  portENTER_CRITICAL(&ble_rx_mux);
+  if (ble_rx_slot_full) {
+    memcpy(ble_rx.frame, ble_rx_slot_frame, 20);
+    slot_seed = ble_rx_slot_seed;
+    ble_rx_slot_seed = 0;
+    ble_rx_slot_full = false;
+    received = true;
+  }
+  portEXIT_CRITICAL(&ble_rx_mux);
+
   //The BLE data reception has been completed
-  if (ble_rx.state == BLE_STATE_RECEIVE_OK) {
+  if (received) {
+    if (ble_rx.remaining_pack == 0) {
+      ble_rx.remaining_pack = slot_seed;
+    }
+    ble_rx.cmd = ble_rx.frame[2];
 
     if (ble_frames_validation() == false) {
       ble_rx_data_clear();
       Logging::message(Logging::Level::Debug, "ble", "ble data err");
-      ble_rx.state = BLE_STATE_IDLE;
       return;
     }
     //BLE reply
@@ -128,11 +148,9 @@ void ble_rx_processing(void) {
     if (ble_rx.remaining_pack > 0) {
       ble_rx_data_add(&ble_rx.frame[5], 15);
       ble_rx.remaining_pack--;
-      //There is still BLE data to be received and status changes
-      ble_rx.state = BLE_STATE_RECEIVE_WAIT;
     } else  //Process data packets
     {
-      //Merge the last package of data;if there is only one package of data, that is also the last one
+      //Merge the last package of data; if there is only one package of data, that is also the last one
       ble_rx_data_add(&ble_rx.frame[5], 15);
       switch (ble_rx.cmd) {
         case CMD_MANEUVER:
@@ -146,8 +164,6 @@ void ble_rx_processing(void) {
           }
           break;
       }
-      //The data processing is completed and the status is changed to idle
-      ble_rx.state = BLE_STATE_IDLE;
       ble_rx_data_clear();
     }
   }
@@ -210,9 +226,14 @@ void ble_tx_processing(void) {
   ble_tx->frame[3] = (ble_tx->len - ble_tx->index) / 15 - ((ble_tx->len - ble_tx->index)%15 ? 0:1);
   ble_tx->frame[4] = 0;
 
-  memcpy(&ble_tx->frame[5], &ble_tx->data[ble_tx->index], 15);
+  // The last frame is zero-padded to 15 bytes.
+  int16_t chunk = ble_tx->len - ble_tx->index;
+  if (chunk > 15) {
+    chunk = 15;
+  }
+  memset(&ble_tx->frame[5], 0, 15);
+  memcpy(&ble_tx->frame[5], &ble_tx->data[ble_tx->index], chunk);
 
-  
   ble_send_data((uint8_t*)ble_tx->frame, 20);
 
   Logging::message(Logging::Level::Debug, "ble", "ble send frame -> %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X ----",
@@ -264,7 +285,6 @@ void ble_rx_data_clear() {
 //
 void ble_cmd_maneuver_processing(void) {
   memcpy(ble_ctrler.ch, ble_rx.data, 10);
-  ble_rx.state = BLE_STATE_IDLE;
 }
 void ble_cmd_json_processing(void) {
   String payload_str = String((char*)ble_rx.data);
@@ -272,7 +292,7 @@ void ble_cmd_json_processing(void) {
   deserializeJson(doc, payload_str);
   rp.parseJson(doc);
 }
-void ble_tx_add_data(char* data, int len) {
+void ble_tx_add_data(const char* data, int len) {
 
   if(ble_tx_q.isFull() ==true){
     Logging::message(Logging::Level::Debug, "ble", "Queue is full, failed to add data");
@@ -291,16 +311,7 @@ void ble_tx_add_data(char* data, int len) {
     return;
   }
   memcpy(ble_tx->data, data, len);
-  /*
-  The remaining bytes are filled with zeros; 
-  at most, 15 bytes are filled with zeros because sending one frame of data is 15 bytes long.
-  */
- uint8_t i;
-  for(i=0;i+len<BLE_DATA_SIZE;i++)
-  {
-    *(ble_tx->data+i+len ) = 0;
-    if(i>15) break;
-  }
+  ble_tx->data[len] = 0;
 
   ble_tx->len = len;
   ble_tx->index = 0;
@@ -311,9 +322,7 @@ void ble_tx_add_data(char* data, int len) {
   Logging::message(Logging::Level::Debug, "ble", "Queue remaining: %u", static_cast<unsigned int>(ble_tx_q.getCount()));
 
 }
-void ble_tx_add_string(String str) {
-  char buffer[1024] = { 0 };
-  int len = 1 + str.length();
-  str.toCharArray(buffer, len);
-  ble_tx_add_data(buffer, len);
+void ble_tx_add_string(const String& str) {
+  // The terminating NUL is part of the payload, as it was with the copy through a local buffer.
+  ble_tx_add_data(str.c_str(), str.length() + 1);
 }

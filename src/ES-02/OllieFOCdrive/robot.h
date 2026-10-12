@@ -2,9 +2,6 @@
 
 #include <ArduinoJson.h>
 
-#define LED2_BUILTIN 35
-#define LED2_TOGGLE() digitalWrite(LED2_BUILTIN, !digitalRead(LED2_BUILTIN));
-
 typedef struct {
   const String GET_DEVICE_INFO = "get_device_info";
 } Message_TypeDef;

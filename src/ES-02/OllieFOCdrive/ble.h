@@ -1,7 +1,7 @@
 #pragma once
 
 #define BLE_DATA_SIZE 1024
-#include <ArduinoJson.h>
+#include <Arduino.h>
 
 
   //Please refer to the protocol specification for the mapping value.
@@ -42,12 +42,6 @@ typedef struct CmdManeuverTypDef {
 } CmdManeuverTypDef;
 
 enum BLE_STATE {
-  BLE_OFF_LINE = 0,
-  BLE_STATE_IDLE = 1,
-  BLE_STATE_RECEIVE_OK = 2,
-  BLE_STATE_RECEIVE_WAIT = 3,
-  BLE_STATE_WAITING_PROCEDD = 4,
-
   BLE_STATE_SEND_READY = 20,
   BLE_STATE_SEND_BEING = 21,
   BLE_STATE_SEND_FINISH = 22
@@ -71,7 +65,6 @@ typedef struct BleDataTypDef {
 
 void ble_init();
 void ble_loop(void);
-void ble_tx_add_string(String str);
+void ble_tx_add_string(const String &str);
 
-extern BleDataTypDef ble_rx;
 extern CmdManeuverTypDef ble_ctrler;
