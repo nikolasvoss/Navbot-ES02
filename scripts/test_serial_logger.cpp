@@ -224,16 +224,20 @@ void verifySelectedPacing() {
   Logging::setProfile(Logging::Profile::SelectedDebug);
   Logging::DebugSample sample{};
   sample.selector = Logging::DebugSelector::K1;
+  // Offers arrive every 1 ms. The 2.5 ms minimum interval accepts one row every 3 ms
+  // (t = 0, 3, 6, ... ms), so 200 offers spanning 0..199 ms yield 67 accepted rows.
   size_t accepted = 0;
-  for (size_t i = 0; i < 200; ++i) {
+  for (uint32_t i = 0; i < 200; ++i) {
+    setMicrosForTest(i * 1000);
     const Logging::Result result = Logging::submit(sample);
     if (result == Logging::Result::Accepted) ++accepted;
     else require(result == Logging::Result::Paced, "selected debug submit returned an unexpected result");
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-  require(accepted >= 8 && accepted <= 12, "selected debug output did not retain its 50 Hz cap");
-  require(Logging::status().incompleteReason == Logging::IncompleteReason::None,
-          "paced selected-debug rows were counted as data loss");
+  require(accepted == 67, "selected debug output exceeded its 2.5 ms minimum interval");
+  setMicrosForTest(199000 + 2500);
+  require(Logging::submit(sample) == Logging::Result::Accepted,
+          "paced selected-debug rows latched the logger as incomplete");
 }
 }
 
