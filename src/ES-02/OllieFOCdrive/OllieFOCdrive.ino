@@ -944,11 +944,8 @@ void print_data(void) {
                                          TouchY_Pid.outI, TouchY_Pid.output};
       break;
     case 40:
-      if (Touch.state == 1) {
-        sample.payload.touchPoint = {Touch.state, Touch.XPressDat, Touch.YPressDat};
-      } else if (Touch.state == 0) {
-        sample.payload.touchPoint = {Touch.state, Touch.XPressDat, Touch.YPressDat};
-      } else return;
+      if (Touch.state != 0 && Touch.state != 1) return;
+      sample.payload.touchPoint = {Touch.state, Touch.XPressDat, Touch.YPressDat};
       break;
     case 41:
       sample.payload.rollOutput = {sampleImu.correctedRollDegrees, BodyPitching, Speed_Pid.output};
@@ -968,8 +965,10 @@ void print_data(void) {
       break;
     case 46:
       sample.payload.gyroFft = {
-          static_cast<uint32_t>(sampleImu.readTimeUs), sampleImu.accelerationG.x, sampleImu.accelerationG.y,
-          sampleImu.accelerationG.z, sampleImu.filteredAccelerationG.x, sampleImu.filteredAccelerationG.y, sampleImu.filteredAccelerationG.z};
+          static_cast<uint32_t>(sampleImu.readTimeUs),
+          sampleImu.angularVelocityRadPerSec.x, sampleImu.angularVelocityRadPerSec.y,
+          sampleImu.angularVelocityRadPerSec.z, sampleImu.filteredAngularVelocityRadPerSec.x,
+          sampleImu.filteredAngularVelocityRadPerSec.y, sampleImu.filteredAngularVelocityRadPerSec.z};
       break;
     default: return;
   }
@@ -1510,9 +1509,9 @@ void DiagnosticLoop(void) {
       sample.gyroX = diagnosticImu.angularVelocityRadPerSec.x;
       sample.gyroY = diagnosticImu.angularVelocityRadPerSec.y;
       sample.gyroZ = diagnosticImu.angularVelocityRadPerSec.z;
-      sample.accelX = diagnosticImu.filteredAngularVelocityRadPerSec.x;
-      sample.accelY = diagnosticImu.filteredAngularVelocityRadPerSec.y;
-      sample.accelZ = diagnosticImu.filteredAngularVelocityRadPerSec.z;
+      sample.accelX = diagnosticImu.accelerationG.x;
+      sample.accelY = diagnosticImu.accelerationG.y;
+      sample.accelZ = diagnosticImu.accelerationG.z;
       sample.rollDeg = diagnosticImu.attitudeDegrees.roll;
       sample.pitchDeg = diagnosticImu.attitudeDegrees.pitch;
       sample.yawDeg = diagnosticImu.attitudeDegrees.yaw;
