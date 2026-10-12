@@ -875,6 +875,11 @@ void PidParameter(void) {
   applyPidPreset(touchYPidSettings, kTouchYPid);
 }
 
+constexpr int kTouchPressFrames = 4;
+constexpr int kTouchLiftFrames = 44;
+constexpr int kTouchKdRampDivisor = 22;
+constexpr int kTouchDerivClamp = 11000;
+
 /**
  * @brief Main PID control loop for two-wheel balancing and posture control.
  *
@@ -911,7 +916,7 @@ void PIDcontroller_posture(float dt) {
   TouchX_Pid.compute(touchXError, dt);
   TouchY_Pid.compute(touchYError, dt);
 
-  TouchX_Pid.deriv = constrain(TouchX_Pid.deriv, -11000, 11000);
+  TouchX_Pid.deriv = constrain(TouchX_Pid.deriv, -kTouchDerivClamp, kTouchDerivClamp);
   TouchX_Pid.outD = TouchX_kd * TouchX_Pid.deriv;
 
   if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) || (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO))  // Top ball mode
@@ -920,7 +925,7 @@ void PIDcontroller_posture(float dt) {
     BodyPitching = -BodyPitching;
   }
 
-  TouchY_Pid.deriv = constrain(TouchY_Pid.deriv, -11000, 11000);
+  TouchY_Pid.deriv = constrain(TouchY_Pid.deriv, -kTouchDerivClamp, kTouchDerivClamp);
   TouchY_Pid.outD = TouchY_kd * TouchY_Pid.deriv;
   TouchY_Pid.output = TouchY_Pid.outP + TouchY_Pid.outI + TouchY_Pid.outD + sbus_top_ball_y_smoothed;
   if ((int)bodyCommandFilteringEnabled == 1) {
@@ -929,28 +934,28 @@ void PIDcontroller_posture(float dt) {
     TouchYPidOutputFiltered = TouchY_Pid.output;
   }
 
-  if ((Touch.state == 1) && (Touch.P_count < 4)) {
+  if ((Touch.state == 1) && (Touch.P_count < kTouchPressFrames)) {
     Touch.P_count++;
     TouchX_Pid.integral = 0;
     TouchY_Pid.integral = 0;
   }
 
-  if (Touch.P_count >= 4) {
+  if (Touch.P_count >= kTouchPressFrames) {
     if (TouchX_kd < TouchX_Pid.Kd) {
-      TouchX_kd = TouchX_kd + (TouchX_Pid.Kd / 22);
+      TouchX_kd = TouchX_kd + (TouchX_Pid.Kd / kTouchKdRampDivisor);
     }
     if (TouchY_kd < TouchY_Pid.Kd) {
-      TouchY_kd = TouchY_kd + (TouchY_Pid.Kd / 22);
+      TouchY_kd = TouchY_kd + (TouchY_Pid.Kd / kTouchKdRampDivisor);
     }
     Touch.start = 2;
   }
 
-  if ((Touch.state == 0) && (Touch.L_count < 44))
+  if ((Touch.state == 0) && (Touch.L_count < kTouchLiftFrames))
     Touch.L_count++;
   else
     Touch.L_count = 0;
 
-  if (Touch.L_count >= 44) {
+  if (Touch.L_count >= kTouchLiftFrames) {
     TouchX_Pid.integral = 0;
     TouchY_Pid.integral = 0;
     Touch.P_count = 0;
