@@ -152,11 +152,11 @@ float TouchYPidOutputFiltered = 0;
 float bodyCommandFilterCutoffHz = 200; // Low-pass cutoff frequency (Hz) for remote-control body command filtering.
 float bodyCommandFilteringEnabled = 1;
 
-void SetBodyCommandFilterCutoffHz(char *cmd) {
+void setBodyCommandFilterCutoffHz(char *cmd) {
   command.scalar(&bodyCommandFilterCutoffHz, cmd);
 }
 
-void SetBodyCommandFilteringEnabled(char *cmd) {
+void setBodyCommandFilteringEnabled(char *cmd) {
   command.scalar(&bodyCommandFilteringEnabled, cmd);
 }
 
@@ -206,25 +206,25 @@ void setImuLowPassCutoff(char *cmd) {
   Logging::message(Logging::Level::Info, "LPF_CUTOFF_FREQ", "%u", cutoff);
 }
 
-void Target_Body_Height(char *cmd) {
+void setTargetBodyHeight(char *cmd) {
   command.scalar(&TargetBodyHeightOverrideM, cmd);
 }
 
 // Servo zero position offsets
-void zeroBias_servo1(char *cmd) {
+void zeroBiasServo1(char *cmd) {
   command.scalar(&servoTrims.servo1Degrees, cmd);
 }
-void zeroBias_servo2(char *cmd) {
+void zeroBiasServo2(char *cmd) {
   command.scalar(&servoTrims.servo2Degrees, cmd);
 }
-void zeroBias_servo3(char *cmd) {
+void zeroBiasServo3(char *cmd) {
   command.scalar(&servoTrims.servo3Degrees, cmd);
 }
-void zeroBias_servo4(char *cmd) {
+void zeroBiasServo4(char *cmd) {
   command.scalar(&servoTrims.servo4Degrees, cmd);
 }
 
-bool pid_gains_mode_is_enabled(int mode) {
+bool isPidGainsModeEnabled(int mode) {
   return (mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH || mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH);
 }
 
@@ -282,30 +282,30 @@ MyPIDController TouchX_Pid(0, 0, 0, 0, 10, pidTimestepSec, 0, 0);
 MyPIDController TouchY_Pid(0, 0, 0, 0, 8, pidTimestepSec, 0, 0);
 bool balancePidNeedsPriming = true;  // Priming avoids a derivative kick when CH5 enables the balance loop.
 
-void ControlTorqueCompensation(char *cmd) {
+void setControlTorqueCompensation(char *cmd) {
   command.scalar(&control_torque_compensation, cmd);
 }
 
-void CbWheelSpeedFeedbackGain(char *cmd) {
+void setWheelSpeedFeedbackGain(char *cmd) {
   command.scalar(&wheelSpeedFeedbackGain, cmd);
 }
 
-void CbDriveTiltReductionGain(char *cmd) {
+void setDriveTiltReductionGain(char *cmd) {
   command.scalar(&driveTiltReductionGain, cmd);
 }
 
-void Pid_Parameter_Tuning(char *cmd) {
+void setPidParameterTuning(char *cmd) {
   command.scalar(&PidParameterTuning, cmd);
 }
-void User_command(char *cmd) {
+void handleUserCommand(char *cmd) {
   if (*cmd == '{') {
     rp.json_test(cmd);
   }else{
-    Pid_Parameter_Tuning(cmd);
+    setPidParameterTuning(cmd);
   }
 }
 
-void TwoKp(char *cmd) {
+void setMahonyKp(char *cmd) {
   float value = 0.0f;
   imu::Settings candidate = imu::settings();
   if (!parseCommandFloat(cmd, value)) return;
@@ -313,7 +313,7 @@ void TwoKp(char *cmd) {
   if (imu::setSettings(candidate)) Logging::message(Logging::Level::Info, "MAHONY_KP", "%.6f", value);
   else Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Kp");
 }
-void TwoKi(char *cmd) {
+void setMahonyKi(char *cmd) {
   float value = 0.0f;
   imu::Settings candidate = imu::settings();
   if (!parseCommandFloat(cmd, value)) return;
@@ -322,37 +322,37 @@ void TwoKi(char *cmd) {
   else Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Ki");
 }
 
-void KeyScalar(char *cmd) {
+void selectDebugLog(char *cmd) {
   command.scalar(&debugLogSelector, cmd);
   RobotLogCapture::setProfileForSelector(static_cast<int>(debugLogSelector));
 }
-void KeyCalibration(char *cmd) {
+void selectCalibration(char *cmd) {
   command.scalar(&CalibrationSelect, cmd);
 }
 
 #if ADJUST_PARAMETER == ADJUST_BALANCE_SPEED_YAW_ROLL
 // Cb prefix: Commander callback.
-void CbAnglePid(char *cmd) {
+void setAnglePid(char *cmd) {
   command.pid(&anglePidSettings, cmd);
 }
-void CbSpeedPid(char *cmd) {
+void setSpeedPid(char *cmd) {
   command.pid(&speedPidSettings, cmd);
 }
-void CbYawPid(char *cmd) {
+void setYawPid(char *cmd) {
   command.pid(&yawPidSettings, cmd);
 }
 
-void CbRollPid(char *cmd) {
+void setRollPid(char *cmd) {
   command.pid(&rollPidSettings, cmd);
 }
 
 #elif ADJUST_PARAMETER == ADJUST_BALL_PUSHING
 
-void CbTouchXPid(char *cmd) {
+void setTouchXPid(char *cmd) {
   command.pid(&touchXPidSettings, cmd);
 }
 
-void CbTouchYPid(char *cmd) {
+void setTouchYPid(char *cmd) {
   command.pid(&touchYPidSettings, cmd);
 }
 #endif
@@ -392,26 +392,26 @@ void handleM1Command(char *cmd) {
   command.motor(&motor1, cmd);
 }
 
-void RXsbus();
-void PIDcontroller_posture(float dt);
-void RemoteControlFiltering(void);
-void ReadVoltage(void);
-void PidParameter(void);
-void Robot_Tumble(void);
-void DiagnosticLoop(void);
+void readSbus();
+void runPostureController(float dt);
+void filterRemoteControl(void);
+void readBatteryVoltage(void);
+void applyPidParameters(void);
+void updateTumbleState(void);
+void diagnosticLoop(void);
 bool diagnosticImuReady = false;
 unsigned long diagnosticLastRcFrameMs = 0;
 bool diagnosticHasRcFrame = false;
 
-void cpu0_task(void *ptParam) {
+void cpu0Task(void *ptParam) {
   while(1)
   {
-    if(ten_msec_tick()){
+    if(tenMsecTick()){
       ble_loop();
     }
   }
 }
-bool ten_msec_tick(void) {
+bool tenMsecTick(void) {
   static unsigned long lastMillis = 0;
   unsigned long currentMillis = millis();
 
@@ -508,37 +508,37 @@ void registerCommands() {
   command.add('T', handleM1MotionCommand, "motion1 control");  // Set motor target value
   command.add('M', handleM1Command, "motor1");
 
-  command.add('A', zeroBias_servo1, "my zeroBias_servo1");  // Set servo 1 bias
-  command.add('B', zeroBias_servo2, "my zeroBias_servo2");
-  command.add('C', zeroBias_servo3, "my zeroBias_servo3");
-  command.add('D', zeroBias_servo4, "my zeroBias_servo4");
+  command.add('A', zeroBiasServo1, "my zeroBias_servo1");  // Set servo 1 bias
+  command.add('B', zeroBiasServo2, "my zeroBias_servo2");
+  command.add('C', zeroBiasServo3, "my zeroBias_servo3");
+  command.add('D', zeroBiasServo4, "my zeroBias_servo4");
 
   command.add('Z', setImuLowPassCutoff, "my ImuLPF_CUTOFF_FREQ");
 
-  command.add('Q', TwoKp, "my TwoKp");  // MahonyFilter
-  command.add('I', TwoKi, "my TwoKi");  // MahonyFilter
+  command.add('Q', setMahonyKp, "my TwoKp");  // MahonyFilter
+  command.add('I', setMahonyKi, "my TwoKi");  // MahonyFilter
 
-  command.add('K', KeyScalar, "my Select");
-  command.add('E', KeyCalibration, "my CalibrationSelect");
+  command.add('K', selectDebugLog, "my Select");
+  command.add('E', selectCalibration, "my CalibrationSelect");
 
-  command.add('F', SetBodyCommandFilterCutoffHz, "my CutoffFreq");
-  command.add('J', SetBodyCommandFilteringEnabled, "my EnableDFilter");
+  command.add('F', setBodyCommandFilterCutoffHz, "my CutoffFreq");
+  command.add('J', setBodyCommandFilteringEnabled, "my EnableDFilter");
 
 #if ADJUST_PARAMETER == ADJUST_BALANCE_SPEED_YAW_ROLL
-  command.add('P', CbAnglePid, "anglePidSettings");
-  command.add('S', CbSpeedPid, "speedPidSettings");
-  command.add('Y', CbYawPid, "yawPidSettings");
-  command.add('R', CbRollPid, "rollPidSettings");
-  command.add('O', Target_Body_Height, "my Target_Body_Height");
+  command.add('P', setAnglePid, "anglePidSettings");
+  command.add('S', setSpeedPid, "speedPidSettings");
+  command.add('Y', setYawPid, "yawPidSettings");
+  command.add('R', setRollPid, "rollPidSettings");
+  command.add('O', setTargetBodyHeight, "my Target_Body_Height");
 #elif ADJUST_PARAMETER == ADJUST_BALL_PUSHING
-  command.add('L', CbTouchXPid, "touchXPidSettings");
-  command.add('N', CbTouchYPid, "touchYPidSettings");
-  command.add('G', ControlTorqueCompensation, "my ControlTorqueCompensation");
+  command.add('L', setTouchXPid, "touchXPidSettings");
+  command.add('N', setTouchYPid, "touchYPidSettings");
+  command.add('G', setControlTorqueCompensation, "my ControlTorqueCompensation");
 #endif
 
-  command.add('U', User_command, "my User_command");
-  command.add('V', CbWheelSpeedFeedbackGain, "wheel speed feedback gain");
-  command.add('W', CbDriveTiltReductionGain, "drive tilt reduction gain");
+  command.add('U', handleUserCommand, "my User_command");
+  command.add('V', setWheelSpeedFeedbackGain, "wheel speed feedback gain");
+  command.add('W', setDriveTiltReductionGain, "drive tilt reduction gain");
 }
 
 void setAssemblyPosition() {
@@ -589,7 +589,7 @@ void setup() {
 
 // TODO could be turned off?
   ble_init();
-  xTaskCreatePinnedToCore(cpu0_task, "cpu0_task", 4096, NULL, 0, NULL, 0);
+  xTaskCreatePinnedToCore(cpu0Task, "cpu0_task", 4096, NULL, 0, NULL, 0);
 
   biquadFilterInitLPF(&VoltageFilterLPF, 50, 1000); // TODO replace numbers with names
 
@@ -708,11 +708,11 @@ void applyRcChannels(const Raw *ch, const RcRange *range,
  *
  * Use the remote control as the input when BLE connection is lost.
  */
-void CtrlInput() {
+void readControlInput() {
   if (rp.ble_connected) {
     bleCtrl();
   } else {
-    RXsbus();
+    readSbus();
   }
 }
 
@@ -730,7 +730,7 @@ void bleCtrl() {
  * failsafe, `MovementSpeed` and `BodyTurn` are forced to zero and every other
  * command keeps its last received value.
  */
-void RXsbus() {
+void readSbus() {
   static uint32_t lastFrameMs = millis();
 
   sBus.FeedLine();
@@ -768,7 +768,7 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.selection = (int)debugLogSelector;
   in.nowMs = millis();
   in.controlGateSequence = controlGateSequence;
-  in.balanceActive = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
+  in.balanceActive = isPidGainsModeEnabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
 
   in.imu = imu::latest();
   in.imuSettings = imu::settings();
@@ -811,7 +811,7 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.bodyPitching = BodyPitching;
   in.bodyPitchingFiltered = BodyPitchingFiltered;
   in.bodyRollFiltered = BodyRollFiltered;
-  in.bodyPitchCorrection = BodyPitchingCorrect(BodyPitchingFiltered);
+  in.bodyPitchCorrection = bodyPitchingCorrect(BodyPitchingFiltered);
   in.bodyHeightCommandM = BodyHeightCommandM;
   in.bodyHeightCommandFilteredM = BodyHeightCommandFilteredM;
   in.bodyTurn = BodyTurn;
@@ -844,7 +844,7 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
  * @param x The raw body pitching value.
  * @return The corrected body pitching value.
  */
-float BodyPitchingCorrect(float x)  // Pitch angle correction
+float bodyPitchingCorrect(float x)  // Pitch angle correction
 {
   float y = 0.000004 * x * x + 0.0004 * x - 0.0008;
   return y;
@@ -871,7 +871,7 @@ void applyBalancePidPreset(const BalancePidPreset& preset) {
  * the other for operation with the touchscreen, which may change the robot's
  * weight distribution and dynamics.
  */
-void PidParameter(void) {
+void applyPidParameters(void) {
 #if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
   const int gainMode = REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH;
 #else
@@ -905,9 +905,9 @@ constexpr int kTouchDerivClamp = 11000;
  *
  * @param dt The time delta since the last call, in seconds.
  */
-void PIDcontroller_posture(float dt) {
+void runPostureController(float dt) {
   if ((int)PidParameterTuning == 0)
-    PidParameter();
+    applyPidParameters();
 
   // Touch screen
   TouchX_Pid.Kp = touchXPidSettings.P / 100;
@@ -1034,7 +1034,7 @@ void PIDcontroller_posture(float dt) {
   }
   const float speedBodyX = constrain(driveSpeedBodyXRaw, -kDriveBodyXLimitM, kDriveBodyXLimitM);
 
-  BodyX = speedBodyX + BodyPitchingCorrect(BodyPitchingFiltered);
+  BodyX = speedBodyX + bodyPitchingCorrect(BodyPitchingFiltered);
 
   // Balance loop
   Angle_Pid.Kp = anglePidSettings.P;
@@ -1099,7 +1099,7 @@ void PIDcontroller_posture(float dt) {
  * This prevents jerky movements and improves the stability of the robot's response
  * to user commands. The filter cutoff frequency can be adjusted live.
  */
-void RemoteControlFiltering(void)  // Remote control filter
+void filterRemoteControl(void)  // Remote control filter
 {
   static int bodyCommandFilteringEnabled_last = (int)bodyCommandFilteringEnabled;
   static int bodyCommandFilterCutoffHz_last = (int)bodyCommandFilterCutoffHz;
@@ -1136,7 +1136,7 @@ void RemoteControlFiltering(void)  // Remote control filter
  * Reads the analog value from the voltage divider, applies a low-pass filter
  * to get a stable reading, and converts it to the actual voltage.
  */
-void ReadVoltage(void) {
+void readBatteryVoltage(void) {
   VoltageADC = analogRead(board::kBatteryAdcPin);
   if (debugTelemetryState.voltageAdcMin == 0 || VoltageADC < debugTelemetryState.voltageAdcMin)
     debugTelemetryState.voltageAdcMin = VoltageADC;
@@ -1152,7 +1152,7 @@ void ReadVoltage(void) {
  * is reset to 0 only after the robot is brought back to a near-level position.
  * This is a safety feature to disable motors upon falling.
  */
-void Robot_Tumble(void) {
+void updateTumbleState(void) {
   static int x = 0;
   if (fabsf(imu::latest().correctedRollDegrees) >= 35) {
     x++;
@@ -1172,7 +1172,7 @@ void Robot_Tumble(void) {
   }
 }
 
-void DiagnosticLoop(void) {
+void diagnosticLoop(void) {
   static uint32_t lastLogScheduleUs = 0;
   static uint32_t lastTimingReportUs = 0;
   static uint32_t lastTimingAcceptedSamples = 0;
@@ -1240,7 +1240,7 @@ void DiagnosticLoop(void) {
 
   if (nowMs - lastVoltageMs >= 10) {
     lastVoltageMs = nowMs;
-    ReadVoltage();
+    readBatteryVoltage();
   }
 }
 void updateMotorsAndCommands() {
@@ -1267,7 +1267,7 @@ void updateMotorsAndCommands() {
  */
 bool readInputs() {
   const bool imuUpdated = imu::service();  // Poll once per loop without gating motor control
-  CtrlInput();  // BLE or remote control input
+  readControlInput();  // BLE or remote control input
   ReadTouchDat();
   return imuUpdated;
 }
@@ -1302,7 +1302,7 @@ void runCalibrationStep(bool imuUpdated) {
   const imu::Snapshot& acceptedImu = imu::latest();
   CalibrationResult calibrationResult{CalibrationCompletion::None, false, {false, false, false, false}};
   if (static_cast<int>(CalibrationSelect) == 1 &&
-      pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING) {
+      isPidGainsModeEnabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING) {
     CalibrationSelect = 0;
     Logging::message(Logging::Level::Warning, "Calibration", "gyro calibration refused: balance active");
   }
@@ -1383,8 +1383,8 @@ BodyPose computeBodyPose() {
     driveEffectiveSpeed = 0;
     driveSpeedBodyXRaw = 0;
 
-  } else if ((pid_gains_mode_is_enabled(pid_gains_mode)) && (RobotTumble == ROBOT_NOT_TUMBLING)) {
-    PIDcontroller_posture(controlTimestepSec);  // PID controller
+  } else if ((isPidGainsModeEnabled(pid_gains_mode)) && (RobotTumble == ROBOT_NOT_TUMBLING)) {
+    runPostureController(controlTimestepSec);  // PID controller
 
     if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)
       pose.roll = Roll_Pid.output;
@@ -1451,11 +1451,11 @@ void runControlTick(bool imuUpdated) {
   controlGateSequence++;
   TouchBiquadFilter();  // Touch screen filter
 
-  RemoteControlFiltering();  // Remote control signal filtering
-  ReadVoltage();             // Battery
+  filterRemoteControl();  // Remote control signal filtering
+  readBatteryVoltage();             // Battery
   DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
 
-  Robot_Tumble();  // Machine fall detection
+  updateTumbleState();  // Machine fall detection
   updateStatusLed();
   runCalibrationStep(imuUpdated);
   updateWheelVelocities();
@@ -1489,7 +1489,7 @@ void runControlTick(bool imuUpdated) {
  */
 void loop() {
 #if SENSOR_DIAGNOSTIC_MODE
-  DiagnosticLoop();
+  diagnosticLoop();
   return;
 #endif
   loopTimeUs = micros();
