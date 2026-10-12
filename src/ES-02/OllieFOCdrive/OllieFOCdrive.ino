@@ -59,45 +59,31 @@ CalibrationStore calibrationStore;
 
 #define AdjusParameter ADJUST_BALANCE_SPEED_YAW_ROLL        // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
 
-//      Two-Wheel PID Gains for Remote Control Mode (Without Touchscreen)
-#define PID_ROLL_P_NO_TOUCH 0.06
-#define PID_ROLL_I_NO_TOUCH 0.0
-#define PID_ROLL_D_NO_TOUCH 0.0
-#define PID_ROLL_LIMIT_NO_TOUCH 2
-#define PID_SPEED_P_NO_TOUCH 0.045
-#define PID_SPEED_I_NO_TOUCH 0.005
-#define PID_SPEED_D_NO_TOUCH 0
-#define PID_SPEED_LIMIT_NO_TOUCH 50
-#define PID_ANGLE_P_NO_TOUCH 5
-#define PID_ANGLE_I_NO_TOUCH 200
-#define PID_ANGLE_D_NO_TOUCH 0.11
-#define PID_ANGLE_LIMIT_NO_TOUCH 0.1
+struct PidPreset {
+  float p;
+  float i;
+  float d;
+  float limit;  // Integral limit
+};
 
-//      Two-Wheel PID Gains for Remote Control Mode (With Touchscreen)
-#define PID_ROLL_P_WITH_TOUCH 0.08
-#define PID_ROLL_I_WITH_TOUCH 1.5
-#define PID_ROLL_D_WITH_TOUCH 0.005
-#define PID_ROLL_LIMIT_WITH_TOUCH 2
-#define PID_SPEED_P_WITH_TOUCH 0.045
-#define PID_SPEED_I_WITH_TOUCH 0.005
-#define PID_SPEED_D_WITH_TOUCH 0
-#define PID_SPEED_LIMIT_WITH_TOUCH 50
-#define PID_ANGLE_P_WITH_TOUCH 5
-#define PID_ANGLE_I_WITH_TOUCH 200
-#define PID_ANGLE_D_WITH_TOUCH 0.11
-#define PID_ANGLE_LIMIT_WITH_TOUCH 0.1
-#define PID_YAW_P_DEFAULT 4
-#define PID_YAW_I_DEFAULT 0
-#define PID_YAW_D_DEFAULT 0
-#define PID_YAW_LIMIT_DEFAULT 0
-#define TOUCH_X_PID_P_DEFAULT 0.2
-#define TOUCH_X_PID_I_DEFAULT 0
-#define TOUCH_X_PID_D_DEFAULT 0.04
-#define TOUCH_X_PID_LIMIT_DEFAULT 0
-#define TOUCH_Y_PID_P_DEFAULT 0.2
-#define TOUCH_Y_PID_I_DEFAULT 170
-#define TOUCH_Y_PID_D_DEFAULT 0.08
-#define TOUCH_Y_PID_LIMIT_DEFAULT 0
+struct BalancePidPreset {
+  PidPreset roll;
+  PidPreset speed;
+  PidPreset angle;
+};
+
+// Two-wheel PID gains for remote control mode.
+constexpr BalancePidPreset kPidWithoutTouch{
+    {0.06, 0.0, 0.0, 2},
+    {0.045, 0.005, 0, 50},
+    {5, 200, 0.11, 0.1}};
+constexpr BalancePidPreset kPidWithTouch{
+    {0.08, 1.5, 0.005, 2},
+    {0.045, 0.005, 0, 50},
+    {5, 200, 0.11, 0.1}};
+constexpr PidPreset kYawPid{4, 0, 0, 0};
+constexpr PidPreset kTouchXPid{0.2, 0, 0.04, 0};
+constexpr PidPreset kTouchYPid{0.2, 170, 0.08, 0};
 
 #define SBUS_CHANNEL_MAX 1792
 #define SBUS_CHANNEL_MIN 192
@@ -254,21 +240,18 @@ float CalibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Ca
 
 float PidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
 
-PIDController anglePidSettings(PID_ANGLE_P_WITH_TOUCH, PID_ANGLE_I_WITH_TOUCH,
-                               PID_ANGLE_D_WITH_TOUCH, 0, PID_ANGLE_LIMIT_WITH_TOUCH);
-PIDController speedPidSettings(PID_SPEED_P_WITH_TOUCH, PID_SPEED_I_WITH_TOUCH,
-                               PID_SPEED_D_WITH_TOUCH, 0, PID_SPEED_LIMIT_WITH_TOUCH);
-PIDController yawPidSettings(PID_YAW_P_DEFAULT, PID_YAW_I_DEFAULT, PID_YAW_D_DEFAULT,
-                             0, PID_YAW_LIMIT_DEFAULT);
+PIDController anglePidSettings(kPidWithTouch.angle.p, kPidWithTouch.angle.i,
+                               kPidWithTouch.angle.d, 0, kPidWithTouch.angle.limit);
+PIDController speedPidSettings(kPidWithTouch.speed.p, kPidWithTouch.speed.i,
+                               kPidWithTouch.speed.d, 0, kPidWithTouch.speed.limit);
+PIDController yawPidSettings(kYawPid.p, kYawPid.i, kYawPid.d, 0, kYawPid.limit);
 PIDController rollPidSettings(
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_P_WITH_TOUCH : 0.06,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_I_WITH_TOUCH : 1.5,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_D_WITH_TOUCH : 0.003, 0,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_LIMIT_WITH_TOUCH : 2);
-PIDController touchXPidSettings(TOUCH_X_PID_P_DEFAULT, TOUCH_X_PID_I_DEFAULT,
-                               TOUCH_X_PID_D_DEFAULT, 0, TOUCH_X_PID_LIMIT_DEFAULT);
-PIDController touchYPidSettings(TOUCH_Y_PID_P_DEFAULT, TOUCH_Y_PID_I_DEFAULT,
-                               TOUCH_Y_PID_D_DEFAULT, 0, TOUCH_Y_PID_LIMIT_DEFAULT);
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.p : 0.06,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.i : 1.5,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.d : 0.003, 0,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.limit : 2);
+PIDController touchXPidSettings(kTouchXPid.p, kTouchXPid.i, kTouchXPid.d, 0, kTouchXPid.limit);
+PIDController touchYPidSettings(kTouchYPid.p, kTouchYPid.i, kTouchYPid.d, 0, kTouchYPid.limit);
 
 float control_torque_compensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
@@ -855,6 +838,19 @@ float BodyPitchingCorrect(float x)  // Pitch angle correction
   return y;
 }
 
+void applyPidPreset(PIDController& pid, const PidPreset& preset) {
+  pid.P = preset.p;
+  pid.I = preset.i;
+  pid.D = preset.d;
+  pid.limit = preset.limit;
+}
+
+void applyBalancePidPreset(const BalancePidPreset& preset) {
+  applyPidPreset(rollPidSettings, preset.roll);
+  applyPidPreset(speedPidSettings, preset.speed);
+  applyPidPreset(anglePidSettings, preset.angle);
+}
+
 /**
  * @brief Sets the PID gains for the main controllers based on the S.BUS switch `pid_gains_mode`.
  *
@@ -869,61 +865,14 @@ void PidParameter(void) {
 #else
   const int gainMode = pid_gains_mode;
 #endif
-  if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH)  // No touch screen
-  {
-    // Roll
-    rollPidSettings.P = PID_ROLL_P_NO_TOUCH;
-    rollPidSettings.I = PID_ROLL_I_NO_TOUCH;
-    rollPidSettings.D = PID_ROLL_D_NO_TOUCH;
-    rollPidSettings.limit = PID_ROLL_LIMIT_NO_TOUCH;  // Integral limit
+  if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH)
+    applyBalancePidPreset(kPidWithoutTouch);
+  else if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH)
+    applyBalancePidPreset(kPidWithTouch);
 
-    // Speed loop
-    speedPidSettings.P = PID_SPEED_P_NO_TOUCH;
-    speedPidSettings.I = PID_SPEED_I_NO_TOUCH;
-    speedPidSettings.D = PID_SPEED_D_NO_TOUCH;
-    speedPidSettings.limit = PID_SPEED_LIMIT_NO_TOUCH;  // Integral limit
-
-    // Balance loop
-    anglePidSettings.P = PID_ANGLE_P_NO_TOUCH;
-    anglePidSettings.I = PID_ANGLE_I_NO_TOUCH;
-    anglePidSettings.D = PID_ANGLE_D_NO_TOUCH;
-    anglePidSettings.limit = PID_ANGLE_LIMIT_NO_TOUCH;  // Integral limit
-  } else if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH)  // With touch screen
-  {
-    // Roll
-    rollPidSettings.P = PID_ROLL_P_WITH_TOUCH;
-    rollPidSettings.I = PID_ROLL_I_WITH_TOUCH;
-    rollPidSettings.D = PID_ROLL_D_WITH_TOUCH;
-    rollPidSettings.limit = PID_ROLL_LIMIT_WITH_TOUCH;  // Integral limit
-
-    // Speed loop
-    speedPidSettings.P = PID_SPEED_P_WITH_TOUCH;
-    speedPidSettings.I = PID_SPEED_I_WITH_TOUCH;
-    speedPidSettings.D = PID_SPEED_D_WITH_TOUCH;
-    speedPidSettings.limit = PID_SPEED_LIMIT_WITH_TOUCH;  // Integral limit
-
-    // Balance loop
-    anglePidSettings.P = PID_ANGLE_P_WITH_TOUCH;
-    anglePidSettings.I = PID_ANGLE_I_WITH_TOUCH;
-    anglePidSettings.D = PID_ANGLE_D_WITH_TOUCH;
-    anglePidSettings.limit = PID_ANGLE_LIMIT_WITH_TOUCH;  // Integral limit
-  }
-
-  yawPidSettings.P = PID_YAW_P_DEFAULT;
-  yawPidSettings.I = PID_YAW_I_DEFAULT;
-  yawPidSettings.D = PID_YAW_D_DEFAULT;
-  yawPidSettings.limit = PID_YAW_LIMIT_DEFAULT;
-
-  // Touch screen
-  touchXPidSettings.P = TOUCH_X_PID_P_DEFAULT;
-  touchXPidSettings.I = TOUCH_X_PID_I_DEFAULT;
-  touchXPidSettings.D = TOUCH_X_PID_D_DEFAULT;
-  touchXPidSettings.limit = TOUCH_X_PID_LIMIT_DEFAULT;  // Integral limit
-
-  touchYPidSettings.P = TOUCH_Y_PID_P_DEFAULT;
-  touchYPidSettings.I = TOUCH_Y_PID_I_DEFAULT;
-  touchYPidSettings.D = TOUCH_Y_PID_D_DEFAULT;
-  touchYPidSettings.limit = TOUCH_Y_PID_LIMIT_DEFAULT;  // Integral limit
+  applyPidPreset(yawPidSettings, kYawPid);
+  applyPidPreset(touchXPidSettings, kTouchXPid);
+  applyPidPreset(touchYPidSettings, kTouchYPid);
 }
 
 /**
