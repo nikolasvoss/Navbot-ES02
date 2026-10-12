@@ -5,6 +5,8 @@
 
 class FUTABA_SBUS {
   public:
+    static constexpr uint8_t kSignalOk = 0x00;
+
     int16_t channels[18];
     int toChannels;
 

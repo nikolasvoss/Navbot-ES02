@@ -100,6 +100,7 @@ CalibrationStore calibrationStore;
 
 #define SBUS_CHANNEL_MAX 1792
 #define SBUS_CHANNEL_MIN 192
+constexpr uint32_t kRcFrameTimeoutMs = 100;
 
 #define SERIAL_BAUD_RATE 576000
 #define DIAGNOSTIC_SERIAL_BAUD_RATE 576000
@@ -708,14 +709,18 @@ void bleCtrl(){
  * This function decodes the S.BUS signal, maps the raw channel values to
  * meaningful control variables like `MovementSpeed`, `BodyTurn`, `BodyHeightCommandM`,
  * and `BodyPitching`, and updates global state based on the RC switch positions.
+ * While frames are missing for `kRcFrameTimeoutMs` or the receiver reports a
+ * failsafe, `MovementSpeed` and `BodyTurn` are forced to zero and every other
+ * command keeps its last received value.
  */
 void RXsbus() {
-  static unsigned long now_ms = millis();
+  static uint32_t lastFrameMs = millis();
 
   sBus.FeedLine();
   if (sBus.toChannels == 1) {
-    sbusFrameIntervalMs = millis() - now_ms;
-    now_ms = millis();
+    const uint32_t frameMs = millis();
+    sbusFrameIntervalMs = frameMs - lastFrameMs;
+    lastFrameMs = frameMs;
     sBus.toChannels = 0;
     sBus.UpdateChannels();
     sBus.toChannels = 0;
@@ -755,10 +760,13 @@ void RXsbus() {
     }
 
     BodyRoll = mapf(sBus.channels[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);
+  }
 
-  if (Voltage <= board::kLowBatteryVolts)
-    Logging::message(Logging::Level::Warning, "Voltage", "%.5f", Voltage);
-
+  const bool lost = static_cast<uint32_t>(millis() - lastFrameMs) > kRcFrameTimeoutMs ||
+                    sBus.Failsafe() != FUTABA_SBUS::kSignalOk;
+  if (lost) {
+    MovementSpeed = 0;
+    BodyTurn = 0;
   }
 }
 
@@ -1588,7 +1596,6 @@ void loop() {
 
   const bool imuUpdated = imu::service();  // Poll once per loop without gating motor control
   CtrlInput();  // BLE or remote control input
-  RXsbus();
 
   ReadTouchDat();
 

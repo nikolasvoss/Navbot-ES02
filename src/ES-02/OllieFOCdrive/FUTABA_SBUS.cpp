@@ -6,7 +6,6 @@ namespace {
 
 constexpr unsigned long kBaudRate = 100000;
 
-constexpr uint8_t kSignalOk = 0x00;
 constexpr uint8_t kSignalLost = 0x01;
 constexpr uint8_t kSignalFailsafe = 0x03;
 
