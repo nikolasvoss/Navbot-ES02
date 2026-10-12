@@ -24,8 +24,8 @@ Diese Seite ergänzt die [Systemübersicht](../system-overview.md); alle Bauteil
 | --- | --- | --- |
 | A / `motor1` | `U6` MP6536; `PWM1_A/2_A/3_A` = GPIO15/7/6, `EN_A` = GPIO16; `H7` Pins 1/2/3 = `U_A/V_A/W_A` | Dreiphasiger Radmotor; Firmware `BLDCDriver3PWM(15, 7, 6, 16)`. |
 | B / `motor2` | `U7` MP6536; `PWM1_B/2_B/3_B` = GPIO40/39/38, `EN_B` = GPIO37; `H8` Pins 1/2/3 = `U_B/V_B/W_B` | Zweiter dreiphasiger Radmotor; Firmware `BLDCDriver3PWM(40, 39, 38, 37)`. |
-| Encoder A | `H5` Pins 1 SDA = GPIO4, 2 SCL = GPIO5, 3 GND, 4 +3,3 V; 5/6 GND laut PCB-Pads | `I2Cone.begin(4, 5, 400000)` und `sensor1` AS5600. Pins 5/6 gehören nicht zum vieradrigen Kabel. |
-| Encoder B | `H6` Pins 1 SDA = GPIO41, 2 SCL = GPIO42, 3 GND, 4 +3,3 V; 5/6 GND laut PCB-Pads | `I2Ctwo.begin(41, 42, 400000)` und `sensor2` AS5600. Pins 5/6 gehören nicht zum vieradrigen Kabel. |
+| Encoder A | `H5` Pins 1 SDA = GPIO4, 2 SCL = GPIO5, 3 GND, 4 +3,3 V; 5/6 GND laut PCB-Pads | `i2cOne.begin(4, 5, 400000)` und `sensor1` AS5600. Pins 5/6 gehören nicht zum vieradrigen Kabel. |
+| Encoder B | `H6` Pins 1 SDA = GPIO41, 2 SCL = GPIO42, 3 GND, 4 +3,3 V; 5/6 GND laut PCB-Pads | `i2cTwo.begin(41, 42, 400000)` und `sensor2` AS5600. Pins 5/6 gehören nicht zum vieradrigen Kabel. |
 
 Die kleine **CODER**-Platine enthält `U1` AS5600-ASOM, lokale 3,3-V-Abblockung und 10-kΩ-Pull-ups für SDA/SCL. Deren `H1` hat dieselbe logische Reihenfolge: 1 SDA, 2 SCL, 3 GND, 4 3,3 V; weitere Footprint-Pads 5/6 liegen an GND und sind keine zusätzlichen Kabeladern. Der MAIN-Pull-up ist je I²C-Leitung 3,3 kΩ. Die BOM nennt zwei AS5600-Module, zwei 2208-90-kV-Motoren und zwei radiale 6 × 1,5-mm-Magnete. Magnetposition und elektrischer Nullwinkel müssen mechanisch/mit SimpleFOC kalibriert werden; sie folgen nicht aus der Netzliste.
 
