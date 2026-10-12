@@ -162,6 +162,19 @@ enum class DebugSelector : uint8_t {
   K68, K69, K70, K71, K72, K73, K74, K75
 };
 
+constexpr int kSelectedDebugFirst = 1;
+constexpr int kSelectedDebugLast = 46;
+constexpr int kChannelDebugFirst = 60;
+constexpr int kChannelDebugLast = 75;
+
+constexpr bool isSelectedDebugSelector(int value) {
+  return value >= kSelectedDebugFirst && value <= kSelectedDebugLast;
+}
+
+constexpr bool isChannelDebugSelector(int value) {
+  return value >= kChannelDebugFirst && value <= kChannelDebugLast;
+}
+
 struct TimedVector3 { float dtSec; float x; float y; float z; };
 struct Attitude3 { float firstDeg; float secondDeg; float thirdDeg; };
 struct MotorVelocities { float left; float right; };
