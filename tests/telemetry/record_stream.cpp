@@ -7,7 +7,8 @@
 int main() {
   const std::string stream = Scenarios::recordAll(
       [](const DebugTelemetry::TelemetryInputs& in, DebugTelemetry::TelemetryState& state) {
-        DebugTelemetry::submit(in, state);
+        if (DebugTelemetry::due(in.selection, in.nowMs, in.controlGateSequence))
+          DebugTelemetry::submit(in, state);
       });
   fwrite(stream.data(), 1, stream.size(), stdout);
   return 0;
