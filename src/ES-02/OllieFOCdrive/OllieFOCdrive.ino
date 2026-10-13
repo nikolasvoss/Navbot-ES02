@@ -59,49 +59,41 @@ CalibrationStore calibrationStore;
 
 #define AdjusParameter ADJUST_BALANCE_SPEED_YAW_ROLL        // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
 
-//      Two-Wheel PID Gains for Remote Control Mode (Without Touchscreen)
-#define PID_ROLL_P_NO_TOUCH 0.06
-#define PID_ROLL_I_NO_TOUCH 0.0
-#define PID_ROLL_D_NO_TOUCH 0.0
-#define PID_ROLL_LIMIT_NO_TOUCH 2
-#define PID_SPEED_P_NO_TOUCH 0.045
-#define PID_SPEED_I_NO_TOUCH 0.005
-#define PID_SPEED_D_NO_TOUCH 0
-#define PID_SPEED_LIMIT_NO_TOUCH 50
-#define PID_ANGLE_P_NO_TOUCH 5
-#define PID_ANGLE_I_NO_TOUCH 200
-#define PID_ANGLE_D_NO_TOUCH 0.11
-#define PID_ANGLE_LIMIT_NO_TOUCH 0.1
+struct PidPreset {
+  float p;
+  float i;
+  float d;
+  float limit;  // Integral limit
+};
 
-//      Two-Wheel PID Gains for Remote Control Mode (With Touchscreen)
-#define PID_ROLL_P_WITH_TOUCH 0.08
-#define PID_ROLL_I_WITH_TOUCH 1.5
-#define PID_ROLL_D_WITH_TOUCH 0.005
-#define PID_ROLL_LIMIT_WITH_TOUCH 2
-#define PID_SPEED_P_WITH_TOUCH 0.045
-#define PID_SPEED_I_WITH_TOUCH 0.005
-#define PID_SPEED_D_WITH_TOUCH 0
-#define PID_SPEED_LIMIT_WITH_TOUCH 50
-#define PID_ANGLE_P_WITH_TOUCH 5
-#define PID_ANGLE_I_WITH_TOUCH 200
-#define PID_ANGLE_D_WITH_TOUCH 0.11
-#define PID_ANGLE_LIMIT_WITH_TOUCH 0.1
-#define PID_YAW_P_DEFAULT 4
-#define PID_YAW_I_DEFAULT 0
-#define PID_YAW_D_DEFAULT 0
-#define PID_YAW_LIMIT_DEFAULT 0
-#define TOUCH_X_PID_P_DEFAULT 0.2
-#define TOUCH_X_PID_I_DEFAULT 0
-#define TOUCH_X_PID_D_DEFAULT 0.04
-#define TOUCH_X_PID_LIMIT_DEFAULT 0
-#define TOUCH_Y_PID_P_DEFAULT 0.2
-#define TOUCH_Y_PID_I_DEFAULT 170
-#define TOUCH_Y_PID_D_DEFAULT 0.08
-#define TOUCH_Y_PID_LIMIT_DEFAULT 0
+struct BalancePidPreset {
+  PidPreset roll;
+  PidPreset speed;
+  PidPreset angle;
+};
+
+// Two-wheel PID gains for remote control mode.
+constexpr BalancePidPreset kPidWithoutTouch{
+    {0.06, 0.0, 0.0, 2},
+    {0.045, 0.005, 0, 50},
+    {5, 200, 0.11, 0.1}};
+constexpr BalancePidPreset kPidWithTouch{
+    {0.08, 1.5, 0.005, 2},
+    {0.045, 0.005, 0, 50},
+    {5, 200, 0.11, 0.1}};
+constexpr PidPreset kYawPid{4, 0, 0, 0};
+constexpr PidPreset kTouchXPid{0.2, 0, 0.04, 0};
+constexpr PidPreset kTouchYPid{0.2, 170, 0.08, 0};
 
 #define SBUS_CHANNEL_MAX 1792
 #define SBUS_CHANNEL_MIN 192
 constexpr uint32_t kRcFrameTimeoutMs = 100;
+constexpr float kControlTimestepMinSec = 0.001f;
+
+struct RcRange {
+  long min;
+  long max;
+};
 
 constexpr unsigned long kSerialBaudRate = 576000;
 #define DIAGNOSTIC_LOG_INTERVAL_US 5000 // Diagnostic CSV rows are emitted at 200 Hz.
@@ -112,6 +104,11 @@ constexpr float DRIVE_WHEEL_FEEDBACK_LIMIT = 8.0f;
 constexpr float DRIVE_TILT_REDUCTION_START_DEG = 5.0f;
 constexpr float DRIVE_TILT_REDUCTION_FULL_DEG = 10.0f;
 // -------------------------------------
+
+struct BodyPose {
+  float heightM;
+  float roll;
+};
 
 struct WheelPidParams {
   float p;
@@ -254,21 +251,18 @@ float CalibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Ca
 
 float PidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
 
-PIDController anglePidSettings(PID_ANGLE_P_WITH_TOUCH, PID_ANGLE_I_WITH_TOUCH,
-                               PID_ANGLE_D_WITH_TOUCH, 0, PID_ANGLE_LIMIT_WITH_TOUCH);
-PIDController speedPidSettings(PID_SPEED_P_WITH_TOUCH, PID_SPEED_I_WITH_TOUCH,
-                               PID_SPEED_D_WITH_TOUCH, 0, PID_SPEED_LIMIT_WITH_TOUCH);
-PIDController yawPidSettings(PID_YAW_P_DEFAULT, PID_YAW_I_DEFAULT, PID_YAW_D_DEFAULT,
-                             0, PID_YAW_LIMIT_DEFAULT);
+PIDController anglePidSettings(kPidWithTouch.angle.p, kPidWithTouch.angle.i,
+                               kPidWithTouch.angle.d, 0, kPidWithTouch.angle.limit);
+PIDController speedPidSettings(kPidWithTouch.speed.p, kPidWithTouch.speed.i,
+                               kPidWithTouch.speed.d, 0, kPidWithTouch.speed.limit);
+PIDController yawPidSettings(kYawPid.p, kYawPid.i, kYawPid.d, 0, kYawPid.limit);
 PIDController rollPidSettings(
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_P_WITH_TOUCH : 0.06,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_I_WITH_TOUCH : 1.5,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_D_WITH_TOUCH : 0.003, 0,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_LIMIT_WITH_TOUCH : 2);
-PIDController touchXPidSettings(TOUCH_X_PID_P_DEFAULT, TOUCH_X_PID_I_DEFAULT,
-                               TOUCH_X_PID_D_DEFAULT, 0, TOUCH_X_PID_LIMIT_DEFAULT);
-PIDController touchYPidSettings(TOUCH_Y_PID_P_DEFAULT, TOUCH_Y_PID_I_DEFAULT,
-                               TOUCH_Y_PID_D_DEFAULT, 0, TOUCH_Y_PID_LIMIT_DEFAULT);
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.p : 0.06,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.i : 1.5,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.d : 0.003, 0,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.limit : 2);
+PIDController touchXPidSettings(kTouchXPid.p, kTouchXPid.i, kTouchXPid.d, 0, kTouchXPid.limit);
+PIDController touchYPidSettings(kTouchYPid.p, kTouchYPid.i, kTouchYPid.d, 0, kTouchYPid.limit);
 
 float control_torque_compensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
@@ -654,45 +648,78 @@ float mapf(long x, long in_min, long in_max, float out_min, float out_max) {
   return (x - in_min) * (out_max - out_min) / divisor + out_min;
 }
 
+constexpr RcRange kBleRcRanges[10] = {
+    {BLE_CH0_MIN, BLE_CH0_MAX}, {BLE_CH1_MIN, BLE_CH1_MAX}, {BLE_CH2_MIN, BLE_CH2_MAX},
+    {BLE_CH3_MIN, BLE_CH3_MAX}, {BLE_CH4_MIN, BLE_CH4_MAX}, {BLE_CH5_MIN, BLE_CH5_MAX},
+    {BLE_CH6_MIN, BLE_CH6_MAX}, {BLE_CH7_MIN, BLE_CH7_MAX}, {BLE_CH8_MIN, BLE_CH8_MAX},
+    {BLE_CH9_MIN, BLE_CH9_MAX}};
+
+constexpr RcRange kSbusRcRanges[10] = {
+    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
+    {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}};
+
+constexpr long kSbusBodyHeightCenter = 992;
+
+float bleBodyHeightM(long raw, const RcRange& range, float maxHeightM) {
+  return mapf(raw, range.min, range.max, BODY_HEIGHT_DEFAULT_M, maxHeightM);
+}
+
+// Below the stick centre the height falls to the minimum, above it rises to maxHeightM.
+float sbusBodyHeightM(long raw, const RcRange& range, float maxHeightM) {
+  if (raw <= kSbusBodyHeightCenter)
+    return mapf(raw, range.min, kSbusBodyHeightCenter, BODY_HEIGHT_MIN_M, BODY_HEIGHT_DEFAULT_M);
+  return mapf(raw, kSbusBodyHeightCenter + 1, range.max, BODY_HEIGHT_DEFAULT_M, maxHeightM);
+}
+
+/**
+ * @brief Maps ten raw remote channels to the body commands and mode switches.
+ *
+ * Channel 1 drives the body height or the pitching, depending on `attitude_mode`.
+ * The two receivers differ only in their raw ranges and in the body height curve.
+ */
+template <typename Raw>
+void applyRcChannels(const Raw *ch, const RcRange *range,
+                     float (*bodyHeightM)(long, const RcRange&, float)) {
+  MovementSpeed = mapf(ch[2], range[2].min, range[2].max, -15, 15);
+  BodyTurn = -mapf(ch[3], range[3].min, range[3].max, -11, 11);
+  pid_gains_mode = map(ch[4], range[4].min, range[4].max, 0, 2);
+  posture_or_mark_mode = map(ch[5], range[5].min, range[5].max, 0, 1);
+  roll_mode = map(ch[6], range[6].min, range[6].max, 0, 1);
+  attitude_mode = map(ch[7], range[7].min, range[7].max, 0, 2);
+  // Top ball
+  top_ball_x = mapf(ch[8], range[8].min, range[8].max, -5, 5);
+  top_ball_y = mapf(ch[9], range[9].min, range[9].max, -5, 5);
+
+  if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT) {
+    BodyHeightCommandM = bodyHeightM(ch[1], range[1], BODY_HEIGHT_MAX_M);
+  } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST) {
+    BodyPitching = mapf(ch[1], range[1].min, range[1].max, -12, 12);
+  } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) {
+    BodyHeightCommandM = bodyHeightM(ch[1], range[1], BALL_POISE_MAX_BODY_HEIGHT_M);
+  }
+  BodyRoll = mapf(ch[0], range[0].min, range[0].max, -0.011, 0.011);
+}
+
 /**
  * @brief Choose BLE or remote control input
  *
  * Use the remote control as the input when BLE connection is lost.
  */
-
-void CtrlInput(){
-  if(rp.ble_connected){
+void CtrlInput() {
+  if (rp.ble_connected) {
     bleCtrl();
-  }else{
+  } else {
     RXsbus();
   }
 }
-void bleCtrl(){
 
-    MovementSpeed         = mapf(ble_ctrler.ch[2], BLE_CH2_MIN, BLE_CH2_MAX, -15, 15);
-    BodyTurn              = -mapf(ble_ctrler.ch[3], BLE_CH3_MIN, BLE_CH3_MAX, -11, 11);
-    pid_gains_mode        = map(ble_ctrler.ch[4], BLE_CH4_MIN, BLE_CH4_MAX, 0, 2);
-    posture_or_mark_mode  = map(ble_ctrler.ch[5], BLE_CH5_MIN, BLE_CH5_MAX, 0, 1);
-    roll_mode             = map(ble_ctrler.ch[6], BLE_CH6_MIN, BLE_CH6_MAX, 0, 1);
-    attitude_mode         = map(ble_ctrler.ch[7], BLE_CH7_MIN, BLE_CH7_MAX, 0, 2);
-    // Top ball
-    top_ball_x = mapf(ble_ctrler.ch[8], BLE_CH8_MIN, BLE_CH8_MAX, -5, 5);
-    top_ball_y = mapf(ble_ctrler.ch[9], BLE_CH9_MIN, BLE_CH9_MAX, -5, 5);
+void bleCtrl() {
+  applyRcChannels(ble_ctrler.ch, kBleRcRanges, bleBodyHeightM);
+}
 
-    if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT)  // Attitude control 1
-    {
-      BodyHeightCommandM = mapf(ble_ctrler.ch[1], BLE_CH1_MIN, BLE_CH1_MAX,
-                                BODY_HEIGHT_DEFAULT_M, BODY_HEIGHT_MAX_M);  // Body height
-    } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST)  // Attitude control 2
-    {
-      BodyPitching = mapf(ble_ctrler.ch[1], BLE_CH1_MIN, BLE_CH1_MAX, -12, 12);  // Pitching       + sbus_vrb
-    } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)              // Attitude control 3
-    {
-      BodyHeightCommandM = mapf(ble_ctrler.ch[1], BLE_CH1_MIN, BLE_CH1_MAX,
-                                BODY_HEIGHT_DEFAULT_M, BALL_POISE_MAX_BODY_HEIGHT_M);
-    }
-    BodyRoll = mapf(ble_ctrler.ch[0], BLE_CH0_MIN, BLE_CH0_MAX, -0.011, 0.011);
-} 
 /**
  * @brief Reads and processes data from the FUTABA S.BUS remote controller.
  *
@@ -715,41 +742,9 @@ void RXsbus() {
     sBus.UpdateChannels();
     sBus.toChannels = 0;
 
-    MovementSpeed = mapf(sBus.channels[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -15, 15);
+    applyRcChannels(sBus.channels, kSbusRcRanges, sbusBodyHeightM);
     if (DIAGNOSTIC_LIVE_TUNING_DEFAULTS)
       MovementSpeed *= 2.0f;  // Keep drive-command authority near the previous 0.03 x 3.3 setting.
-    BodyTurn = -mapf(sBus.channels[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -11, 11);
-    pid_gains_mode = map(sBus.channels[4], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
-    posture_or_mark_mode = map(sBus.channels[5], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
-    roll_mode = map(sBus.channels[6], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
-    attitude_mode = map(sBus.channels[7], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
-    // Top ball
-    top_ball_x = mapf(sBus.channels[8], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -5, 5);  // Modify top ball target position
-    top_ball_y = mapf(sBus.channels[9], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -5, 5);
-
-    if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT)  // Attitude control 1
-    {
-      if (sBus.channels[1] <= 992)
-        BodyHeightCommandM = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, 992,
-                                  BODY_HEIGHT_MIN_M, BODY_HEIGHT_DEFAULT_M);  // Body height
-      else
-        BodyHeightCommandM = mapf(sBus.channels[1], 993, SBUS_CHANNEL_MAX,
-                                  BODY_HEIGHT_DEFAULT_M, BODY_HEIGHT_MAX_M);  // Body height
-    } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST)  // Attitude control 2
-    {
-      BodyPitching = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -12, 12);  // Pitching       + sbus_vrb
-    } else if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)              // Attitude control 3
-    {
-      if (sBus.channels[1] <= 992)
-        BodyHeightCommandM = mapf(sBus.channels[1], SBUS_CHANNEL_MIN, 992,
-                                  BODY_HEIGHT_MIN_M, BODY_HEIGHT_DEFAULT_M);
-      else
-        BodyHeightCommandM = mapf(sBus.channels[1], 993, SBUS_CHANNEL_MAX,
-                                  BODY_HEIGHT_DEFAULT_M, BALL_POISE_MAX_BODY_HEIGHT_M);
-
-    }
-
-    BodyRoll = mapf(sBus.channels[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);
   }
 
   const bool lost = static_cast<uint32_t>(millis() - lastFrameMs) > kRcFrameTimeoutMs ||
@@ -855,6 +850,19 @@ float BodyPitchingCorrect(float x)  // Pitch angle correction
   return y;
 }
 
+void applyPidPreset(PIDController& pid, const PidPreset& preset) {
+  pid.P = preset.p;
+  pid.I = preset.i;
+  pid.D = preset.d;
+  pid.limit = preset.limit;
+}
+
+void applyBalancePidPreset(const BalancePidPreset& preset) {
+  applyPidPreset(rollPidSettings, preset.roll);
+  applyPidPreset(speedPidSettings, preset.speed);
+  applyPidPreset(anglePidSettings, preset.angle);
+}
+
 /**
  * @brief Sets the PID gains for the main controllers based on the S.BUS switch `pid_gains_mode`.
  *
@@ -869,62 +877,20 @@ void PidParameter(void) {
 #else
   const int gainMode = pid_gains_mode;
 #endif
-  if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH)  // No touch screen
-  {
-    // Roll
-    rollPidSettings.P = PID_ROLL_P_NO_TOUCH;
-    rollPidSettings.I = PID_ROLL_I_NO_TOUCH;
-    rollPidSettings.D = PID_ROLL_D_NO_TOUCH;
-    rollPidSettings.limit = PID_ROLL_LIMIT_NO_TOUCH;  // Integral limit
+  if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH)
+    applyBalancePidPreset(kPidWithoutTouch);
+  else if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH)
+    applyBalancePidPreset(kPidWithTouch);
 
-    // Speed loop
-    speedPidSettings.P = PID_SPEED_P_NO_TOUCH;
-    speedPidSettings.I = PID_SPEED_I_NO_TOUCH;
-    speedPidSettings.D = PID_SPEED_D_NO_TOUCH;
-    speedPidSettings.limit = PID_SPEED_LIMIT_NO_TOUCH;  // Integral limit
-
-    // Balance loop
-    anglePidSettings.P = PID_ANGLE_P_NO_TOUCH;
-    anglePidSettings.I = PID_ANGLE_I_NO_TOUCH;
-    anglePidSettings.D = PID_ANGLE_D_NO_TOUCH;
-    anglePidSettings.limit = PID_ANGLE_LIMIT_NO_TOUCH;  // Integral limit
-  } else if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH)  // With touch screen
-  {
-    // Roll
-    rollPidSettings.P = PID_ROLL_P_WITH_TOUCH;
-    rollPidSettings.I = PID_ROLL_I_WITH_TOUCH;
-    rollPidSettings.D = PID_ROLL_D_WITH_TOUCH;
-    rollPidSettings.limit = PID_ROLL_LIMIT_WITH_TOUCH;  // Integral limit
-
-    // Speed loop
-    speedPidSettings.P = PID_SPEED_P_WITH_TOUCH;
-    speedPidSettings.I = PID_SPEED_I_WITH_TOUCH;
-    speedPidSettings.D = PID_SPEED_D_WITH_TOUCH;
-    speedPidSettings.limit = PID_SPEED_LIMIT_WITH_TOUCH;  // Integral limit
-
-    // Balance loop
-    anglePidSettings.P = PID_ANGLE_P_WITH_TOUCH;
-    anglePidSettings.I = PID_ANGLE_I_WITH_TOUCH;
-    anglePidSettings.D = PID_ANGLE_D_WITH_TOUCH;
-    anglePidSettings.limit = PID_ANGLE_LIMIT_WITH_TOUCH;  // Integral limit
-  }
-
-  yawPidSettings.P = PID_YAW_P_DEFAULT;
-  yawPidSettings.I = PID_YAW_I_DEFAULT;
-  yawPidSettings.D = PID_YAW_D_DEFAULT;
-  yawPidSettings.limit = PID_YAW_LIMIT_DEFAULT;
-
-  // Touch screen
-  touchXPidSettings.P = TOUCH_X_PID_P_DEFAULT;
-  touchXPidSettings.I = TOUCH_X_PID_I_DEFAULT;
-  touchXPidSettings.D = TOUCH_X_PID_D_DEFAULT;
-  touchXPidSettings.limit = TOUCH_X_PID_LIMIT_DEFAULT;  // Integral limit
-
-  touchYPidSettings.P = TOUCH_Y_PID_P_DEFAULT;
-  touchYPidSettings.I = TOUCH_Y_PID_I_DEFAULT;
-  touchYPidSettings.D = TOUCH_Y_PID_D_DEFAULT;
-  touchYPidSettings.limit = TOUCH_Y_PID_LIMIT_DEFAULT;  // Integral limit
+  applyPidPreset(yawPidSettings, kYawPid);
+  applyPidPreset(touchXPidSettings, kTouchXPid);
+  applyPidPreset(touchYPidSettings, kTouchYPid);
 }
+
+constexpr int kTouchPressFrames = 4;
+constexpr int kTouchLiftFrames = 44;
+constexpr int kTouchKdRampDivisor = 22;
+constexpr int kTouchDerivClamp = 11000;
 
 /**
  * @brief Main PID control loop for two-wheel balancing and posture control.
@@ -962,7 +928,7 @@ void PIDcontroller_posture(float dt) {
   TouchX_Pid.compute(touchXError, dt);
   TouchY_Pid.compute(touchYError, dt);
 
-  TouchX_Pid.deriv = constrain(TouchX_Pid.deriv, -11000, 11000);
+  TouchX_Pid.deriv = constrain(TouchX_Pid.deriv, -kTouchDerivClamp, kTouchDerivClamp);
   TouchX_Pid.outD = TouchX_kd * TouchX_Pid.deriv;
 
   if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) || (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO))  // Top ball mode
@@ -971,7 +937,7 @@ void PIDcontroller_posture(float dt) {
     BodyPitching = -BodyPitching;
   }
 
-  TouchY_Pid.deriv = constrain(TouchY_Pid.deriv, -11000, 11000);
+  TouchY_Pid.deriv = constrain(TouchY_Pid.deriv, -kTouchDerivClamp, kTouchDerivClamp);
   TouchY_Pid.outD = TouchY_kd * TouchY_Pid.deriv;
   TouchY_Pid.output = TouchY_Pid.outP + TouchY_Pid.outI + TouchY_Pid.outD + sbus_top_ball_y_smoothed;
   if ((int)bodyCommandFilteringEnabled == 1) {
@@ -980,28 +946,28 @@ void PIDcontroller_posture(float dt) {
     TouchYPidOutputFiltered = TouchY_Pid.output;
   }
 
-  if ((Touch.state == 1) && (Touch.P_count < 4)) {
+  if ((Touch.state == 1) && (Touch.P_count < kTouchPressFrames)) {
     Touch.P_count++;
     TouchX_Pid.integral = 0;
     TouchY_Pid.integral = 0;
   }
 
-  if (Touch.P_count >= 4) {
+  if (Touch.P_count >= kTouchPressFrames) {
     if (TouchX_kd < TouchX_Pid.Kd) {
-      TouchX_kd = TouchX_kd + (TouchX_Pid.Kd / 22);
+      TouchX_kd = TouchX_kd + (TouchX_Pid.Kd / kTouchKdRampDivisor);
     }
     if (TouchY_kd < TouchY_Pid.Kd) {
-      TouchY_kd = TouchY_kd + (TouchY_Pid.Kd / 22);
+      TouchY_kd = TouchY_kd + (TouchY_Pid.Kd / kTouchKdRampDivisor);
     }
     Touch.start = 2;
   }
 
-  if ((Touch.state == 0) && (Touch.L_count < 44))
+  if ((Touch.state == 0) && (Touch.L_count < kTouchLiftFrames))
     Touch.L_count++;
   else
     Touch.L_count = 0;
 
-  if (Touch.L_count >= 44) {
+  if (Touch.L_count >= kTouchLiftFrames) {
     TouchX_Pid.integral = 0;
     TouchY_Pid.integral = 0;
     Touch.P_count = 0;
@@ -1277,29 +1243,8 @@ void DiagnosticLoop(void) {
     ReadVoltage();
   }
 }
-/**
- * @brief The main execution loop of the program.
- *
- * This function runs repeatedly after `setup()` is complete. It is the heart
- * of the robot's operation, responsible for:
- * 1. Calling the SimpleFOC `move()` and `loopFOC()` methods to update motor states.
- * 2. Handling serial communication for commands and telemetry.
- * 3. Reading sensors (IMU, RC, Touchscreen).
- * 4. Running posture control for two-wheel balancing.
- * 5. Calculating inverse kinematics to determine servo angles.
- * 6. Sending final commands to the servos.
- * 7. Handling safety checks like fall detection.
- * 8. Printing debug data.
- */
-void loop() {
-#if SENSOR_DIAGNOSTIC_MODE
-  DiagnosticLoop();
-  return;
-#endif
-  loopTimeUs = micros();
-
-  // iterative function setting the outter loop target
-
+void updateMotorsAndCommands() {
+  // iterative function setting the outer loop target
   if (Communication_object == COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO) {
     if (Logging::profile() == Logging::Profile::Idle) motor1.monitor();
   } else if (Communication_object == COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS) {
@@ -1315,188 +1260,245 @@ void loop() {
 
   // user communication
   command.run();
+}
 
+/**
+ * @return True when the IMU accepted a new sample in this call.
+ */
+bool readInputs() {
   const bool imuUpdated = imu::service();  // Poll once per loop without gating motor control
   CtrlInput();  // BLE or remote control input
-
   ReadTouchDat();
+  return imuUpdated;
+}
+
+void updateStatusLed() {
+  statusLedTicks++;
+  if (statusLedTicks >= statusLedPeriodTicks) {
+    statusLedTicks = 0;
+    if (statusLedOn == 1) {
+      digitalWrite(board::kStatusLedPin, LOW);  // On
+      statusLedOn = 0;
+    } else {
+      digitalWrite(board::kStatusLedPin, HIGH);  // Off
+      statusLedOn = 1;
+    }
+  }
+
+  static uint32_t lastLowBatteryWarningMs = millis();
+  if (Voltage <= board::kLowBatteryVolts) {
+    statusLedPeriodTicks = 20;
+    if (static_cast<uint32_t>(millis() - lastLowBatteryWarningMs) >= 1000) {
+      lastLowBatteryWarningMs = millis();
+      Logging::message(Logging::Level::Warning, "Voltage", "%.5f", Voltage);
+    }
+  } else {
+    statusLedPeriodTicks = 100;
+  }
+}
+
+void runCalibrationStep(bool imuUpdated) {
+  imu::CalibrationValues activeCalibration = imu::calibration();
+  const imu::Snapshot& acceptedImu = imu::latest();
+  CalibrationResult calibrationResult{CalibrationCompletion::None, false, {false, false, false, false}};
+  if (static_cast<int>(CalibrationSelect) == 1 &&
+      pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING) {
+    CalibrationSelect = 0;
+    Logging::message(Logging::Level::Warning, "Calibration", "gyro calibration refused: balance active");
+  }
+  if (imuUpdated) calibrationResult = calibration.update(
+      static_cast<int>(CalibrationSelect),
+      {acceptedImu.attitudeDegrees.roll, acceptedImu.attitudeDegrees.pitch},
+      calibrationStore,
+      {activeCalibration.attitude.rollDegrees, activeCalibration.attitude.pitchDegrees},
+      {activeCalibration.gyro.xRawCounts, activeCalibration.gyro.yRawCounts, activeCalibration.gyro.zRawCounts},
+      {servoTrims.servo1Degrees, servoTrims.servo2Degrees, servoTrims.servo3Degrees, servoTrims.servo4Degrees},
+      [](GyroBiasRawCountRefs stagedBias) {
+        imu::calibrateGyroBiasBlocking();
+        const GyroBiasRawCounts measured = imu::calibration().gyro;
+        stagedBias.xRawCounts = measured.xRawCounts;
+        stagedBias.yRawCounts = measured.yRawCounts;
+        stagedBias.zRawCounts = measured.zRawCounts;
+      });
+  if (imuUpdated) imu::setCalibration(activeCalibration);
+  if (calibrationResult.clearRequest)
+    CalibrationSelect = 0;
+
+  if (calibrationResult.completion == CalibrationCompletion::Gyroscope) {
+    Logging::message(Logging::Level::Info, "Calibration",
+                     "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
+                     activeCalibration.gyro.xRawCounts, activeCalibration.gyro.yRawCounts, activeCalibration.gyro.zRawCounts);
+  } else if (calibrationResult.completion == CalibrationCompletion::Attitude) {
+    Logging::message(Logging::Level::Info, "Calibration",
+                     "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
+                     activeCalibration.attitude.rollDegrees, activeCalibration.attitude.pitchDegrees);
+  }
+
+  if (calibrationResult.changedServos.servo1Changed)
+    Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo1: %.2f", servoTrims.servo1Degrees);
+  if (calibrationResult.changedServos.servo2Changed)
+    Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo2: %.2f", servoTrims.servo2Degrees);
+  if (calibrationResult.changedServos.servo3Changed)
+    Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo3: %.2f", servoTrims.servo3Degrees);
+  if (calibrationResult.changedServos.servo4Changed)
+    Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo4: %.2f", servoTrims.servo4Degrees);
+}
+
+void updateWheelVelocities() {
+  const float wheelVelocityDt = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? controlTimestepSec : 0.01f;
+  m1VelocityRadPerSec = (sensor1.getAngle() - m1PrevEncoderAngleRad) / wheelVelocityDt;
+  m1FilteredVelocityRadPerSec = m1VelocityFilter(m1VelocityRadPerSec);
+  m1PrevEncoderAngleRad = sensor1.getAngle();
+
+  m2VelocityRadPerSec = -(sensor2.getAngle() - m2PrevEncoderAngleRad) / wheelVelocityDt;
+  m2FilteredVelocityRadPerSec = m2VelocityFilter(m2VelocityRadPerSec);
+  m2PrevEncoderAngleRad = sensor2.getAngle();
+}
+
+/**
+ * @brief Runs the balance controller when enabled and returns the body height and roll offset.
+ *
+ * With balance off or the robot tumbling it zeroes the wheel targets, the body offsets and the
+ * controller integrals instead.
+ */
+BodyPose computeBodyPose() {
+  BodyPose pose{BODY_HEIGHT_DEFAULT_M, BodyRollFiltered};
+
+  if ((pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (RobotTumble == ROBOT_TUMBLING)) {
+    balancePidNeedsPriming = true;
+    if (Communication_object == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE) {
+      motor1.target = 0;
+      motor2.target = 0;
+    }
+
+    pose.heightM = BODY_HEIGHT_DEFAULT_M;
+    BodyX = 0;
+    pose.roll = 0;
+    BodyPitchingFiltered = 0;
+
+    Angle_Pid.integral = 0;
+    Speed_Pid.integral = 0;
+    Yaw_Pid.integral = 0;
+    wheelVelocityFeedbackCorrection = 0;
+    driveEffectiveSpeed = 0;
+    driveSpeedBodyXRaw = 0;
+
+  } else if ((pid_gains_mode_is_enabled(pid_gains_mode)) && (RobotTumble == ROBOT_NOT_TUMBLING)) {
+    PIDcontroller_posture(controlTimestepSec);  // PID controller
+
+    if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)
+      pose.roll = Roll_Pid.output;
+
+    if (TargetBodyHeightOverrideM == BODY_HEIGHT_OVERRIDE_DISABLED_M)
+      pose.heightM = BodyHeightCommandFilteredM;
+    else
+      pose.heightM = TargetBodyHeightOverrideM;
+  }
+
+  if (RobotTumble == ROBOT_TUMBLING)  // Machine fall
+  {
+    pose.heightM = BODY_HEIGHT_DEFAULT_M;
+    BodyX = 0;
+    pose.roll = 0;
+    BodyPitchingFiltered = 0;
+  }
+
+  return pose;
+}
+
+void warnIfLegUnreachable(const LegSolveResult& leg, const char *tag, uint32_t& lastWarningMs) {
+  if (leg.status != LegSolveStatus::Success && static_cast<uint32_t>(millis() - lastWarningMs) >= 1000) {
+    lastWarningMs = millis();
+    Logging::message(Logging::Level::Warning, tag, "no");
+  }
+}
+
+void writeLegServos() {
+  servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1, servoTraceAngle[3], 1);
+}
+
+void writeServos(const LegSolveResult& right, const LegSolveResult& left) {
+  if (posture_or_mark_mode == REMOTE_CONTROL_PM_POSTURE_MODE)  // Posture
+  {
+    // An unreachable leg keeps its previous servo angles.
+    if (left.status == LegSolveStatus::Success) {
+      servoTraceAngle[0] = left.angles.joint1Degrees - servoTrims.servo1Degrees;
+      servoTraceAngle[1] = left.angles.joint2Degrees - servoTrims.servo2Degrees;
+    }
+    if (right.status == LegSolveStatus::Success) {
+      servoTraceAngle[2] = right.angles.joint1Degrees - servoTrims.servo3Degrees;
+      servoTraceAngle[3] = right.angles.joint2Degrees - servoTrims.servo4Degrees;
+    }
+    writeLegServos();
+  } else  // Assembly position and calibration
+  {
+    if ((int)CalibrationSelect == 3)  // Servo calibration
+    {
+      servoTraceAngle[0] = -servoTrims.servo1Degrees;
+      servoTraceAngle[1] = -servoTrims.servo2Degrees;
+      servoTraceAngle[2] = -servoTrims.servo3Degrees;
+      servoTraceAngle[3] = -servoTrims.servo4Degrees;
+    } else {
+      servoTraceAngle[0] = servoTraceAngle[1] = servoTraceAngle[2] = servoTraceAngle[3] = 0;
+    }
+    writeLegServos();
+  }
+
+  RobotLogCapture::observeServoAngles(servoTraceAngle);
+}
+
+void runControlTick(bool imuUpdated) {
+  controlGateSequence++;
+  TouchBiquadFilter();  // Touch screen filter
+
+  RemoteControlFiltering();  // Remote control signal filtering
+  ReadVoltage();             // Battery
+  DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
+
+  Robot_Tumble();  // Machine fall detection
+  updateStatusLed();
+  runCalibrationStep(imuUpdated);
+  updateWheelVelocities();
+
+  const BodyPose pose = computeBodyPose();
+
+  static uint32_t lastRightLegWarningMs = 0;
+  static uint32_t lastLeftLegWarningMs = 0;
+  const LegSolveResult rightLeg = LegKinematics::solveRight(
+      {-BodyX, pose.heightM - pose.roll, BodyPitchingFiltered});
+  warnIfLegUnreachable(rightLeg, "RightInverseKinematics", lastRightLegWarningMs);
+
+  const LegSolveResult leftLeg = LegKinematics::solveLeft(
+      {-BodyX, pose.heightM + pose.roll, BodyPitchingFiltered});
+  warnIfLegUnreachable(leftLeg, "LeftInverseKinematics", lastLeftLegWarningMs);
+
+  writeServos(rightLeg, leftLeg);
+
+  previousControlTimeUs = loopTimeUs;
+}
+
+/**
+ * @brief The main execution loop of the program.
+ *
+ * This function runs repeatedly after `setup()` is complete:
+ * 1. `updateMotorsAndCommands`: SimpleFOC `move()` and `loopFOC()` for both wheels, then Commander input.
+ * 2. `readInputs`: IMU sample, BLE or S.BUS commands, touchscreen.
+ * 3. `runControlTick`, once at least 1 ms has passed since the previous tick: input filtering,
+ *    battery reading, telemetry, fall detection, status LED, calibration, wheel velocities,
+ *    posture control, leg kinematics and servo output.
+ */
+void loop() {
+#if SENSOR_DIAGNOSTIC_MODE
+  DiagnosticLoop();
+  return;
+#endif
+  loopTimeUs = micros();
+
+  updateMotorsAndCommands();
+  const bool imuUpdated = readInputs();
 
   controlTimestepSec = (loopTimeUs - previousControlTimeUs) / 1000000.0f;
-  if (controlTimestepSec >= 0.001f) {   //1kHz
-    controlGateSequence++;
-    TouchBiquadFilter();  // Touch screen filter
-
-    RemoteControlFiltering();  // Remote control signal filtering
-    ReadVoltage();             // Battery
-    DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
-
-    Robot_Tumble();  // Machine fall detection
-    statusLedTicks++;
-    if (statusLedTicks >= statusLedPeriodTicks) {
-      statusLedTicks = 0;
-      if (statusLedOn == 1) {
-        digitalWrite(board::kStatusLedPin, LOW);  // On
-        statusLedOn = 0;
-      } else {
-        digitalWrite(board::kStatusLedPin, HIGH);  // Off
-        statusLedOn = 1;
-      }
-    }
-
-    static uint32_t lastLowBatteryWarningMs = millis();
-    if (Voltage <= board::kLowBatteryVolts) {
-      statusLedPeriodTicks = 20;
-      if (static_cast<uint32_t>(millis() - lastLowBatteryWarningMs) >= 1000) {
-        lastLowBatteryWarningMs = millis();
-        Logging::message(Logging::Level::Warning, "Voltage", "%.5f", Voltage);
-      }
-    } else {
-      statusLedPeriodTicks = 100;
-    }
-
-    imu::CalibrationValues activeCalibration = imu::calibration();
-    const imu::Snapshot& acceptedImu = imu::latest();
-    CalibrationResult calibrationResult{CalibrationCompletion::None, false, {false, false, false, false}};
-    if (static_cast<int>(CalibrationSelect) == 1 &&
-        pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING) {
-      CalibrationSelect = 0;
-      Logging::message(Logging::Level::Warning, "Calibration", "gyro calibration refused: balance active");
-    }
-    if (imuUpdated) calibrationResult = calibration.update(
-        static_cast<int>(CalibrationSelect),
-        {acceptedImu.attitudeDegrees.roll, acceptedImu.attitudeDegrees.pitch},
-        calibrationStore,
-        {activeCalibration.attitude.rollDegrees, activeCalibration.attitude.pitchDegrees},
-        {activeCalibration.gyro.xRawCounts, activeCalibration.gyro.yRawCounts, activeCalibration.gyro.zRawCounts},
-        {servoTrims.servo1Degrees, servoTrims.servo2Degrees, servoTrims.servo3Degrees, servoTrims.servo4Degrees},
-        [](GyroBiasRawCountRefs stagedBias) {
-          imu::calibrateGyroBiasBlocking();
-          const GyroBiasRawCounts measured = imu::calibration().gyro;
-          stagedBias.xRawCounts = measured.xRawCounts;
-          stagedBias.yRawCounts = measured.yRawCounts;
-          stagedBias.zRawCounts = measured.zRawCounts;
-        });
-    if (imuUpdated) imu::setCalibration(activeCalibration);
-    if (calibrationResult.clearRequest)
-      CalibrationSelect = 0;
-
-    if (calibrationResult.completion == CalibrationCompletion::Gyroscope) {
-      Logging::message(Logging::Level::Info, "Calibration",
-                       "gyroBiasX: %.2f, gyroBiasY: %.2f, gyroBiasZ: %.2f",
-                       activeCalibration.gyro.xRawCounts, activeCalibration.gyro.yRawCounts, activeCalibration.gyro.zRawCounts);
-    } else if (calibrationResult.completion == CalibrationCompletion::Attitude) {
-      Logging::message(Logging::Level::Info, "Calibration",
-                       "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
-                       activeCalibration.attitude.rollDegrees, activeCalibration.attitude.pitchDegrees);
-    }
-
-    if (calibrationResult.changedServos.servo1Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo1: %.2f", servoTrims.servo1Degrees);
-    if (calibrationResult.changedServos.servo2Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo2: %.2f", servoTrims.servo2Degrees);
-    if (calibrationResult.changedServos.servo3Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo3: %.2f", servoTrims.servo3Degrees);
-    if (calibrationResult.changedServos.servo4Changed)
-      Logging::message(Logging::Level::Info, "Calibration", "imuAndServoOffsets.servo4: %.2f", servoTrims.servo4Degrees);
-
-    const float wheelVelocityDt = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? controlTimestepSec : 0.01f;
-    m1VelocityRadPerSec = (sensor1.getAngle() - m1PrevEncoderAngleRad) / wheelVelocityDt;
-    m1FilteredVelocityRadPerSec = m1VelocityFilter(m1VelocityRadPerSec);
-    m1PrevEncoderAngleRad = sensor1.getAngle();
-
-    m2VelocityRadPerSec = -(sensor2.getAngle() - m2PrevEncoderAngleRad) / wheelVelocityDt;
-    m2FilteredVelocityRadPerSec = m2VelocityFilter(m2VelocityRadPerSec);
-    m2PrevEncoderAngleRad = sensor2.getAngle();
-
-    float bodyH = BODY_HEIGHT_DEFAULT_M;
-    float bodyRoll = BodyRollFiltered;
-
-    if ((pid_gains_mode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (RobotTumble == ROBOT_TUMBLING)) {
-      balancePidNeedsPriming = true;
-      if (Communication_object == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE) {
-        motor1.target = 0;
-        motor2.target = 0;
-      }
-
-      bodyH = BODY_HEIGHT_DEFAULT_M;
-      BodyX = 0;
-      bodyRoll = 0;
-      BodyPitchingFiltered = 0;
-
-      Angle_Pid.integral = 0;
-      Speed_Pid.integral = 0;
-      Yaw_Pid.integral = 0;
-      wheelVelocityFeedbackCorrection = 0;
-      driveEffectiveSpeed = 0;
-      driveSpeedBodyXRaw = 0;
-
-    } else if ((pid_gains_mode_is_enabled(pid_gains_mode)) && (RobotTumble == ROBOT_NOT_TUMBLING)) {
-      PIDcontroller_posture(controlTimestepSec);  // PID controller
-
-      if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)
-        bodyRoll = Roll_Pid.output;
-
-      if (TargetBodyHeightOverrideM == BODY_HEIGHT_OVERRIDE_DISABLED_M)
-        bodyH = BodyHeightCommandFilteredM;
-      else
-        bodyH = TargetBodyHeightOverrideM;
-    }
-
-    if (RobotTumble == ROBOT_TUMBLING)  // Machine fall
-    {
-      bodyH = BODY_HEIGHT_DEFAULT_M;
-      BodyX = 0;
-      bodyRoll = 0;
-      BodyPitchingFiltered = 0;
-    }
-
-    static uint32_t lastRightLegWarningMs = 0;
-    static uint32_t lastLeftLegWarningMs = 0;
-    const LegSolveResult rightLeg = LegKinematics::solveRight(
-        {-BodyX, bodyH - bodyRoll, BodyPitchingFiltered});
-    const bool rightLegReachable = rightLeg.status == LegSolveStatus::Success;
-    if (!rightLegReachable && static_cast<uint32_t>(millis() - lastRightLegWarningMs) >= 1000) {
-      lastRightLegWarningMs = millis();
-      Logging::message(Logging::Level::Warning, "RightInverseKinematics", "no");
-    }
-
-    const LegSolveResult leftLeg = LegKinematics::solveLeft(
-        {-BodyX, bodyH + bodyRoll, BodyPitchingFiltered});
-    const bool leftLegReachable = leftLeg.status == LegSolveStatus::Success;
-    if (!leftLegReachable && static_cast<uint32_t>(millis() - lastLeftLegWarningMs) >= 1000) {
-      lastLeftLegWarningMs = millis();
-      Logging::message(Logging::Level::Warning, "LeftInverseKinematics", "no");
-    }
-
-    if (posture_or_mark_mode == REMOTE_CONTROL_PM_POSTURE_MODE)  // Posture
-    {
-
-      // An unreachable leg keeps its previous servo angles.
-      if (leftLegReachable) {
-        servoTraceAngle[0] = leftLeg.angles.joint1Degrees - servoTrims.servo1Degrees;
-        servoTraceAngle[1] = leftLeg.angles.joint2Degrees - servoTrims.servo2Degrees;
-      }
-      if (rightLegReachable) {
-        servoTraceAngle[2] = rightLeg.angles.joint1Degrees - servoTrims.servo3Degrees;
-        servoTraceAngle[3] = rightLeg.angles.joint2Degrees - servoTrims.servo4Degrees;
-      }
-      servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1, servoTraceAngle[3], 1);
-    } else  // Assembly position and calibration
-    {
-      if ((int)CalibrationSelect == 3)  // Servo calibration
-      {
-        servoTraceAngle[0] = -servoTrims.servo1Degrees;
-        servoTraceAngle[1] = -servoTrims.servo2Degrees;
-        servoTraceAngle[2] = -servoTrims.servo3Degrees;
-        servoTraceAngle[3] = -servoTrims.servo4Degrees;
-      } else {
-        servoTraceAngle[0] = servoTraceAngle[1] = servoTraceAngle[2] = servoTraceAngle[3] = 0;
-      }
-      servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1, servoTraceAngle[3], 1);
-    }
-
-    RobotLogCapture::observeServoAngles(servoTraceAngle);
-
-    previousControlTimeUs = loopTimeUs;
+  if (controlTimestepSec >= kControlTimestepMinSec) {
+    runControlTick(imuUpdated);
   }
 }
