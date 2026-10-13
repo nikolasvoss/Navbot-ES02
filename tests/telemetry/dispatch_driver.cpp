@@ -21,7 +21,7 @@ int main() {
     in.controlGateSequence = gate;
     Recording::reset();
     Recording::dueResult = due != 0;
-    DebugTelemetry::submit(in, state);
+    if (DebugTelemetry::due(in.selection, in.nowMs, in.controlGateSequence)) DebugTelemetry::submit(in, state);
     std::string submitted;
     for (const Recording::Event& e : Recording::events()) {
       if (e.kind == "due" || e.kind == "ranges") continue;

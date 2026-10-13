@@ -32,7 +32,8 @@ struct TouchStatus {
   int start;
 };
 
-// Snapshot of the sketch state read by the debug selections, taken once per control tick.
+// Snapshot of the sketch state read by the selection, taken on ticks where due() is true. Fields
+// the selection's profile does not read stay zero.
 struct TelemetryInputs {
   int selection;
   uint32_t nowMs;
@@ -109,7 +110,12 @@ struct TelemetryState {
   uint32_t traceSequence;
 };
 
+// True when the selection emits a sample on this control tick. Consumes the receiver and channel
+// rate gates, so call it once per tick and collect inputs and submit only when it returns true.
+bool due(int selection, uint32_t nowMs, uint32_t controlGateSequence);
+
 // Emits the sample selected by in.selection: a selected-debug or channel sample, or a trace row.
+// Call only after due() returned true for the same tick.
 void submit(const TelemetryInputs& in, TelemetryState& state);
 
 }  // namespace DebugTelemetry

@@ -763,10 +763,10 @@ DebugTelemetry::PidStatus pidStatus(const MyPIDController& pid) {
 /**
  * @brief Collects the sketch state read by the debug selections for DebugTelemetry.
  */
-DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
+DebugTelemetry::TelemetryInputs collectTelemetryInputs(int selection, uint32_t nowMs) {
   DebugTelemetry::TelemetryInputs in{};
-  in.selection = (int)debugLogSelector;
-  in.nowMs = millis();
+  in.selection = selection;
+  in.nowMs = nowMs;
   in.controlGateSequence = controlGateSequence;
   in.balanceActive = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
 
@@ -1453,7 +1453,10 @@ void runControlTick(bool imuUpdated) {
 
   RemoteControlFiltering();  // Remote control signal filtering
   ReadVoltage();             // Battery
-  DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
+  const int telemetrySelection = (int)debugLogSelector;
+  const uint32_t telemetryNowMs = millis();
+  if (DebugTelemetry::due(telemetrySelection, telemetryNowMs, controlGateSequence))  // Serial port data printing
+    DebugTelemetry::submit(collectTelemetryInputs(telemetrySelection, telemetryNowMs), debugTelemetryState);
 
   Robot_Tumble();  // Machine fall detection
   updateStatusLed();
