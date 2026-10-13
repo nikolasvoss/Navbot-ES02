@@ -766,79 +766,88 @@ DebugTelemetry::PidStatus pidStatus(const MyPIDController& pid) {
           pid.outP, pid.outI, pid.outD, pid.output, pid.error};
 }
 
-/**
- * @brief Collects the sketch state read by the debug selections for DebugTelemetry.
- */
-DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
-  DebugTelemetry::TelemetryInputs in{};
-  in.selection = (int)debugLogSelector;
-  in.nowMs = millis();
-  in.controlGateSequence = controlGateSequence;
+// Fields every telemetry profile reads.
+void collectCommonTelemetryInputs(DebugTelemetry::TelemetryInputs& in) {
   in.balanceActive = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
-
   in.imu = imu::latest();
+  in.controlTimestepSec = controlTimestepSec;
+  in.motor1Target = motor1.target;
+  in.motor2Target = motor2.target;
+  in.anglePid = pidStatus(Angle_Pid);
+  in.speedPid = pidStatus(Speed_Pid);
+  in.yawPid = pidStatus(Yaw_Pid);
+  in.topBallX = top_ball_x;
+  in.bodyPitching = BodyPitching;
+  in.bodyPitchingFiltered = BodyPitchingFiltered;
+  in.bodyX = BodyX;
+  in.voltageAdc = VoltageADC;
+  in.voltage = Voltage;
+  in.pidGainsMode = pid_gains_mode;
+}
+
+void collectTraceTelemetryInputs(DebugTelemetry::TelemetryInputs& in) {
+  in.m1FilteredVelocityRadPerSec = m1FilteredVelocityRadPerSec;
+  in.m2FilteredVelocityRadPerSec = m2FilteredVelocityRadPerSec;
+  for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = servoTraceAngle[i];
+  in.bodyTurn = BodyTurn;
+  in.movementSpeed = MovementSpeed;
+  in.driveEffectiveSpeed = driveEffectiveSpeed;
+  in.driveSpeedBodyXRaw = driveSpeedBodyXRaw;
+  in.wheelVelocityFeedbackCorrection = wheelVelocityFeedbackCorrection;
+  in.postureOrMarkMode = posture_or_mark_mode;
+  in.touch.XPdatF = Touch.XPdatF;
+}
+
+void collectSelectedTelemetryInputs(DebugTelemetry::TelemetryInputs& in) {
   in.imuSettings = imu::settings();
   in.imuCalibration = imu::calibration();
-  in.controlTimestepSec = controlTimestepSec;
-
   in.m1VelocityRadPerSec = m1VelocityRadPerSec;
   in.m2VelocityRadPerSec = m2VelocityRadPerSec;
   in.m1FilteredVelocityRadPerSec = m1FilteredVelocityRadPerSec;
-  in.m2FilteredVelocityRadPerSec = m2FilteredVelocityRadPerSec;
-  in.motor1Target = motor1.target;
-  in.motor2Target = motor2.target;
   in.motor2CurrentSetpoint = motor2.current_sp;
   in.sensor1Angle = sensor1.getAngle();
   in.sensor1MechanicalAngle = sensor1.getMechanicalAngle();
   in.sensor2Angle = sensor2.getAngle();
   in.sensor2MechanicalAngle = sensor2.getMechanicalAngle();
-
   for (int i = 0; i < 18; ++i) in.sbusChannels[i] = sBus.channels[i];
   in.sbusFrameIntervalMs = sbusFrameIntervalMs;
-
-  in.anglePid = pidStatus(Angle_Pid);
-  in.speedPid = pidStatus(Speed_Pid);
-  in.yawPid = pidStatus(Yaw_Pid);
   in.rollPid = pidStatus(Roll_Pid);
   in.touchXPid = pidStatus(TouchX_Pid);
   in.touchYPid = pidStatus(TouchY_Pid);
   in.touch = {Touch.XPressDat, Touch.YPressDat, Touch.XPdat,  Touch.YPdat, Touch.XLdat,
               Touch.YLdat,     Touch.XPdatF,    Touch.YPdatF, Touch.state, Touch.start};
-
   in.servoTrims = servoTrims;
-  for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = servoTraceAngle[i];
-
-  in.topBallX = top_ball_x;
   in.topBallY = top_ball_y;
   in.sbusTopBallXSmoothed = sbus_top_ball_x_smoothed;
   in.sbusTopBallYSmoothed = sbus_top_ball_y_smoothed;
-
   in.bodyRoll = BodyRoll;
-  in.bodyPitching = BodyPitching;
-  in.bodyPitchingFiltered = BodyPitchingFiltered;
   in.bodyRollFiltered = BodyRollFiltered;
   in.bodyPitchCorrection = BodyPitchingCorrect(BodyPitchingFiltered);
   in.bodyHeightCommandM = BodyHeightCommandM;
   in.bodyHeightCommandFilteredM = BodyHeightCommandFilteredM;
-  in.bodyTurn = BodyTurn;
-  in.bodyX = BodyX;
   in.bodyCommandFilteringEnabled = bodyCommandFilteringEnabled;
   in.bodyCommandFilterCutoffHz = bodyCommandFilterCutoffHz;
-
-  in.movementSpeed = MovementSpeed;
-  in.driveEffectiveSpeed = driveEffectiveSpeed;
-  in.driveSpeedBodyXRaw = driveSpeedBodyXRaw;
-  in.wheelVelocityFeedbackCorrection = wheelVelocityFeedbackCorrection;
-
-  in.voltageAdc = VoltageADC;
   in.voltageAdcFiltered = VoltageADCf;
-  in.voltage = Voltage;
-
-  in.pidGainsMode = pid_gains_mode;
-  in.postureOrMarkMode = posture_or_mark_mode;
   in.robotTumble = RobotTumble;
   in.pidParameterTuning = PidParameterTuning;
   in.targetBodyHeightOverrideM = TargetBodyHeightOverrideM;
+}
+
+/**
+ * @brief Collects the sketch state the selected profile reads, for DebugTelemetry.
+ *
+ * Call only when DebugTelemetry::due() returned true.
+ */
+DebugTelemetry::TelemetryInputs collectTelemetryInputs(int selection, uint32_t nowMs) {
+  DebugTelemetry::TelemetryInputs in{};
+  in.selection = selection;
+  in.nowMs = nowMs;
+  in.controlGateSequence = controlGateSequence;
+  collectCommonTelemetryInputs(in);
+  if (RobotLogCapture::profileForSelector(selection) == Logging::Profile::SelectedDebug)
+    collectSelectedTelemetryInputs(in);
+  else
+    collectTraceTelemetryInputs(in);
   return in;
 }
 
@@ -1329,7 +1338,10 @@ void loop() {
 
     RemoteControlFiltering();  // Remote control signal filtering
     ReadVoltage();             // Battery
-    DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
+    const int telemetrySelection = (int)debugLogSelector;
+    const uint32_t telemetryNowMs = millis();
+    if (DebugTelemetry::due(telemetrySelection, telemetryNowMs, controlGateSequence))  // Serial port data printing
+      DebugTelemetry::submit(collectTelemetryInputs(telemetrySelection, telemetryNowMs), debugTelemetryState);
 
     Robot_Tumble();  // Machine fall detection
     statusLedTicks++;
