@@ -9,3 +9,4 @@ src/ES-02/OllieFOCdrive/build/
 # Python cache files
 __pycache__/
 *.py[cod]
+./TASK_STATE.md

@@ -15,3 +15,5 @@ Build the default firmware from the project root with `python3 scripts/build_fir
 5. When a new hardware finding changes the overview or reference, update the affected canonical page and record the observation, evidence, and practical consequence in `agent_notes/robot/hardware-findings/` so the next agent can find it without reopening the PCB project.
 
 The upcoming ros2_pc has its own canonical documentation tree under `docs/ros2_pc/`. Treat its hardware and attached peripherals as pending until they are selected and verified; do not infer pinouts, power paths, or software behavior.
+
+Run Haiku calls with network access enabled (`sandbox_permissions: "require_escalated"`), because sandboxed calls can stall.
