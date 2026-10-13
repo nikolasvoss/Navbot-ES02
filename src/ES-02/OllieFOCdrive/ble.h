@@ -3,8 +3,7 @@
 #define BLE_DATA_SIZE 1024
 #include <Arduino.h>
 
-
-  //Please refer to the protocol specification for the mapping value.
+// Please refer to the protocol specification for the mapping value.
 #define BLE_CH0_MAX 100
 #define BLE_CH0_MIN -100
 
@@ -35,33 +34,23 @@
 #define BLE_CH9_MAX 5
 #define BLE_CH9_MIN -5
 
-
-
 typedef struct CmdManeuverTypDef {
   int8_t ch[10];
 } CmdManeuverTypDef;
 
-enum BLE_STATE {
-  BLE_STATE_SEND_READY = 20,
-  BLE_STATE_SEND_BEING = 21,
-  BLE_STATE_SEND_FINISH = 22
-};
-enum BLE_CMD {
-  CMD_MANEUVER = 0x10,
-  CMD_WIFI = 1,
-  CMD_JSON = 2
-};
+enum BLE_STATE { BLE_STATE_SEND_READY = 20, BLE_STATE_SEND_BEING = 21, BLE_STATE_SEND_FINISH = 22 };
+enum BLE_CMD { CMD_MANEUVER = 0x10, CMD_WIFI = 1, CMD_JSON = 2 };
 
 typedef struct BleDataTypDef {
   uint8_t frame[20];
-  uint8_t cmd;                  //The processing command is consistent with the third byte in the received data
-  uint8_t remaining_pack;       //The received data frames are still needed. After the reception is completed, data processing will be carried out
-  uint8_t data[BLE_DATA_SIZE];  //Bluetooth cache data, including the merged ones, should be released after processing
+  uint8_t cmd;             // The processing command is consistent with the third byte in the received data
+  uint8_t remaining_pack;  // The received data frames are still needed. After the reception is completed, data
+                           // processing will be carried out
+  uint8_t data[BLE_DATA_SIZE];  // Bluetooth cache data, including the merged ones, should be released after processing
   int16_t len;
   int16_t index;
   uint8_t state;
 } BleDataTypDef;
-
 
 void ble_init();
 void ble_loop(void);

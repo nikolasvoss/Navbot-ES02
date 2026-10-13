@@ -1,17 +1,17 @@
 #include "Logging.h"
 
-#include "Arduino.h"
-#include "LoggingInternal.h"
-
 #include <esp_attr.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
-
-#include <atomic>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+
+#include <atomic>
+
+#include "Arduino.h"
+#include "LoggingInternal.h"
 
 namespace {
 constexpr UBaseType_t kQueueDepth = Logging::kQueueDepth;
@@ -51,13 +51,11 @@ ProfileSnapshot snapshotProfile() {
 
 void latchIncomplete(Logging::IncompleteReason reason) {
   uint8_t expected = static_cast<uint8_t>(Logging::IncompleteReason::None);
-  incompleteReason.compare_exchange_strong(expected, static_cast<uint8_t>(reason),
-                                           std::memory_order_relaxed);
+  incompleteReason.compare_exchange_strong(expected, static_cast<uint8_t>(reason), std::memory_order_relaxed);
 }
 
 bool isIncomplete() {
-  return incompleteReason.load(std::memory_order_relaxed) !=
-         static_cast<uint8_t>(Logging::IncompleteReason::None);
+  return incompleteReason.load(std::memory_order_relaxed) != static_cast<uint8_t>(Logging::IncompleteReason::None);
 }
 
 bool isValidDebugSelector(Logging::DebugSelector selector) {
@@ -88,9 +86,9 @@ void senderTask(void *) {
     const ProfileSnapshot profile = snapshotProfile();
     if (record.epoch != profile.epoch || record.profile != profile.profile) continue;
 
-    const int length = LoggingInternal::formatRecord(
-        record, line, sizeof(line), droppedRecords.load(std::memory_order_relaxed),
-        writeFailures.load(std::memory_order_relaxed));
+    const int length =
+        LoggingInternal::formatRecord(record, line, sizeof(line), droppedRecords.load(std::memory_order_relaxed),
+                                      writeFailures.load(std::memory_order_relaxed));
     if (length <= 0 || static_cast<size_t>(length) >= sizeof(line)) {
       latchIncomplete(Logging::IncompleteReason::FormatFailed);
       continue;
@@ -123,19 +121,11 @@ Logging::Result submitMeasurement(const Sample &sample, Logging::Profile expecte
 void copyPayload(LoggingInternal::Payload &payload, const Logging::DiagnosticSample &sample) {
   payload.diagnostic = sample;
 }
-void copyPayload(LoggingInternal::Payload &payload, const Logging::TraceSample &sample) {
-  payload.trace = sample;
-}
-void copyPayload(LoggingInternal::Payload &payload, const Logging::ControlSample &sample) {
-  payload.control = sample;
-}
-void copyPayload(LoggingInternal::Payload &payload, const Logging::BalanceSample &sample) {
-  payload.balance = sample;
-}
-void copyPayload(LoggingInternal::Payload &payload, const Logging::DriveSample &sample) {
-  payload.drive = sample;
-}
-}
+void copyPayload(LoggingInternal::Payload &payload, const Logging::TraceSample &sample) { payload.trace = sample; }
+void copyPayload(LoggingInternal::Payload &payload, const Logging::ControlSample &sample) { payload.control = sample; }
+void copyPayload(LoggingInternal::Payload &payload, const Logging::BalanceSample &sample) { payload.balance = sample; }
+void copyPayload(LoggingInternal::Payload &payload, const Logging::DriveSample &sample) { payload.drive = sample; }
+}  // namespace
 
 namespace Logging {
 
@@ -150,8 +140,8 @@ bool begin() {
     return false;
   }
 
-  if (xTaskCreatePinnedToCore(senderTask, "logging", kSenderTaskStackDepth, nullptr,
-                              kSenderTaskPriority, nullptr, 0) != pdTRUE) {
+  if (xTaskCreatePinnedToCore(senderTask, "logging", kSenderTaskStackDepth, nullptr, kSenderTaskPriority, nullptr, 0) !=
+      pdTRUE) {
     latchIncomplete(IncompleteReason::SenderStartFailed);
     return false;
   }
@@ -168,9 +158,7 @@ void setProfile(Profile nextProfile) {
   portEXIT_CRITICAL(&profileMux);
 }
 
-Profile profile() {
-  return snapshotProfile().profile;
-}
+Profile profile() { return snapshotProfile().profile; }
 
 Result message(Level level, const char *tag, const char *format, ...) {
   if (format == nullptr || tag == nullptr) return Result::Invalid;
@@ -206,8 +194,7 @@ Result message(Level level, const char *tag, const char *format, ...) {
 }
 
 Result submit(const DiagnosticSample &sample) {
-  return submitMeasurement(sample, Profile::Diagnostic, LoggingInternal::RecordKind::Diagnostic,
-                           copyPayload);
+  return submitMeasurement(sample, Profile::Diagnostic, LoggingInternal::RecordKind::Diagnostic, copyPayload);
 }
 
 Result submit(const TraceSample &sample) {
@@ -215,13 +202,11 @@ Result submit(const TraceSample &sample) {
 }
 
 Result submit(const ControlSample &sample) {
-  return submitMeasurement(sample, Profile::Control, LoggingInternal::RecordKind::Control,
-                           copyPayload);
+  return submitMeasurement(sample, Profile::Control, LoggingInternal::RecordKind::Control, copyPayload);
 }
 
 Result submit(const BalanceSample &sample) {
-  return submitMeasurement(sample, Profile::Balance, LoggingInternal::RecordKind::Balance,
-                           copyPayload);
+  return submitMeasurement(sample, Profile::Balance, LoggingInternal::RecordKind::Balance, copyPayload);
 }
 
 Result submit(const DriveSample &sample) {
@@ -239,8 +224,7 @@ Result submit(const DebugSample &sample) {
   if (isIncomplete()) return Result::Incomplete;
 
   const uint32_t now = micros();
-  if (selectedDebugSubmitted &&
-      static_cast<uint32_t>(now - lastSelectedDebugMicros) < kSelectedDebugMinIntervalUs)
+  if (selectedDebugSubmitted && static_cast<uint32_t>(now - lastSelectedDebugMicros) < kSelectedDebugMinIntervalUs)
     return Result::Paced;
 
   LoggingInternal::Record record{};
@@ -256,4 +240,4 @@ Result submit(const DebugSample &sample) {
   return result;
 }
 
-}
+}  // namespace Logging

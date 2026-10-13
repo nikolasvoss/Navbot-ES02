@@ -9,7 +9,7 @@ typedef struct {
 extern const Message_TypeDef MESSAGE_TYPE;
 
 class RobotProtocol {
-public:
+ public:
   double battery_voltage = 8.4f;
   double battery_level;
   volatile bool ble_connected = false;
@@ -20,7 +20,8 @@ public:
   void isSys(StaticJsonDocument<300> &doc);
   void parseJson(StaticJsonDocument<300> &doc);
   void json_test(char *json_arr);
-private:
+
+ private:
   String get_device_info(void);
   void send_device_info();
 };

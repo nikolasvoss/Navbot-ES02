@@ -1,16 +1,18 @@
+#include "ble.h"
+
+#include <ArduinoJson.h>
+#include <BLE2902.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
-#include <BLE2902.h>
-#include <ArduinoJson.h>
-#include "ble.h"
 #include <cppQueue.h>
-#include "robot.h"
+
 #include "Logging.h"
+#include "robot.h"
 #include "string.h"
 
-BLEServer* pServer = NULL;
-BLECharacteristic* pTxCharacteristic;
+BLEServer *pServer = NULL;
+BLECharacteristic *pTxCharacteristic;
 
 // Reassembly state, private to ble_loop() (cpu0_task).
 static BleDataTypDef ble_rx;
@@ -26,19 +28,20 @@ static bool ble_rx_slot_full = false;
 // ble_tx_q is pushed from the main loop and from cpu0_task and drained by cpu0_task.
 // cppQueue is not thread safe, so every access goes through the wrappers below.
 static portMUX_TYPE ble_tx_mux = portMUX_INITIALIZER_UNLOCKED;
-static cppQueue ble_tx_q(sizeof(BleDataTypDef*), 10, FIFO);	//Create a Bluetooth transmission queue, with first-in-first-out principle.
+static cppQueue ble_tx_q(sizeof(BleDataTypDef *), 10,
+                         FIFO);  // Create a Bluetooth transmission queue, with first-in-first-out principle.
 
 // ble_ctrler is written by cpu0_task and by onDisconnect (BLE stack task) and read by loop().
 static portMUX_TYPE ble_ctrl_mux = portMUX_INITIALIZER_UNLOCKED;
 
-static bool ble_tx_q_push(BleDataTypDef* item) {
+static bool ble_tx_q_push(BleDataTypDef *item) {
   portENTER_CRITICAL(&ble_tx_mux);
   bool pushed = ble_tx_q.push(&item);
   portEXIT_CRITICAL(&ble_tx_mux);
   return pushed;
 }
 
-static bool ble_tx_q_peek(BleDataTypDef** item) {
+static bool ble_tx_q_peek(BleDataTypDef **item) {
   portENTER_CRITICAL(&ble_tx_mux);
   bool found = ble_tx_q.peek(item);
   portEXIT_CRITICAL(&ble_tx_mux);
@@ -67,16 +70,15 @@ static unsigned int ble_tx_q_count(void) {
 
 void ble_tx_processing(void);
 void ble_rx_processing(void);
-void ble_rx_data_add(uint8_t* data, uint8_t len);
+void ble_rx_data_add(uint8_t *data, uint8_t len);
 void ble_rx_data_clear(void);
 void ble_cmd_maneuver_processing(void);
 void ble_cmd_json_processing(void);
 bool ble_frames_validation(void);
 
-
 class MyCallbacks : public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic* pCharacteristic) {
-    uint8_t* rxData = pCharacteristic->getData();
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    uint8_t *rxData = pCharacteristic->getData();
     if (pCharacteristic->getLength() == 20) {
       portENTER_CRITICAL(&ble_rx_mux);
       // The first non-zero pack count among unprocessed frames seeds remaining_pack,
@@ -92,12 +94,12 @@ class MyCallbacks : public BLECharacteristicCallbacks {
 };
 
 class MyServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer* pServer) {
+  void onConnect(BLEServer *pServer) {
     rp.ble_connected = true;
     Logging::message(Logging::Level::Debug, "ble", "ble connected");
   };
 
-  void onDisconnect(BLEServer* pServer) {
+  void onDisconnect(BLEServer *pServer) {
     rp.ble_connected = false;
     // Restart the broadcast to allow for reconnection
     pServer->getAdvertising()->start();
@@ -110,7 +112,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
 };
 
 void ble_init() {
-  char ble_name[20] = { 0 };
+  char ble_name[20] = {0};
   rp.build_dev_name(ble_name);
   // Create the BLE Device
   BLEDevice::init(ble_name);
@@ -118,17 +120,14 @@ void ble_init() {
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   // Create the BLE Service
-  BLEService* pService = pServer->createService(SERVICE_UUID);
+  BLEService *pService = pServer->createService(SERVICE_UUID);
   // Create a BLE Characteristic
-  pTxCharacteristic = pService->createCharacteristic(
-    CHARACTERISTIC_UUID_TX,
-    BLECharacteristic::PROPERTY_NOTIFY);
+  pTxCharacteristic = pService->createCharacteristic(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_NOTIFY);
 
   pTxCharacteristic->addDescriptor(new BLE2902());
 
-  BLECharacteristic* pRxCharacteristic = pService->createCharacteristic(
-    CHARACTERISTIC_UUID_RX,
-    BLECharacteristic::PROPERTY_WRITE);
+  BLECharacteristic *pRxCharacteristic =
+      pService->createCharacteristic(CHARACTERISTIC_UUID_RX, BLECharacteristic::PROPERTY_WRITE);
 
   pRxCharacteristic->setCallbacks(new MyCallbacks());
   // Start the service
@@ -139,14 +138,13 @@ void ble_init() {
 
   ble_rx_data_clear();
 }
-void ble_send_data(uint8_t* data, uint8_t len) {
+void ble_send_data(uint8_t *data, uint8_t len) {
   if (len > 20) {
     len = 20;
   }
-  pTxCharacteristic->setValue(data, len);  //reply
+  pTxCharacteristic->setValue(data, len);  // reply
   pTxCharacteristic->notify();
 }
-
 
 void ble_loop(void) {
   ble_rx_processing();
@@ -165,7 +163,7 @@ void ble_rx_processing(void) {
   }
   portEXIT_CRITICAL(&ble_rx_mux);
 
-  //The BLE data reception has been completed
+  // The BLE data reception has been completed
   if (received) {
     if (ble_rx.remaining_pack == 0) {
       ble_rx.remaining_pack = slot_seed;
@@ -177,59 +175,57 @@ void ble_rx_processing(void) {
       Logging::message(Logging::Level::Debug, "ble", "ble data err");
       return;
     }
-    //BLE reply
-    ble_send_data((uint8_t*)ble_rx.frame, 20);
-    //Merge data packets
+    // BLE reply
+    ble_send_data((uint8_t *)ble_rx.frame, 20);
+    // Merge data packets
     if (ble_rx.remaining_pack > 0) {
       ble_rx_data_add(&ble_rx.frame[5], 15);
       ble_rx.remaining_pack--;
-    } else  //Process data packets
+    } else  // Process data packets
     {
-      //Merge the last package of data; if there is only one package of data, that is also the last one
+      // Merge the last package of data; if there is only one package of data, that is also the last one
       ble_rx_data_add(&ble_rx.frame[5], 15);
       switch (ble_rx.cmd) {
-        case CMD_MANEUVER:
-          {
-            ble_cmd_maneuver_processing();
-          }
-          break;
-        case CMD_JSON:
-          {
-            ble_cmd_json_processing();
-          }
-          break;
+        case CMD_MANEUVER: {
+          ble_cmd_maneuver_processing();
+        } break;
+        case CMD_JSON: {
+          ble_cmd_json_processing();
+        } break;
       }
       ble_rx_data_clear();
     }
   }
 }
 void ble_tx_processing(void) {
-
   /*
   Read the queue data. After sending is completed, manual queue deletion and memory release are required.
   If the queue is empty, no sending will be carried out.
   */
-  BleDataTypDef* ble_tx;
+  BleDataTypDef *ble_tx;
   if (!ble_tx_q_peek(&ble_tx)) {
     return;
   }
   /*
   If the queue is not empty but the Bluetooth connection is not established, then clear the queue.
   */
-  if(rp.ble_connected == false){
+  if (rp.ble_connected == false) {
     ble_tx_q_drop();
     free(ble_tx);
-    Logging::message(Logging::Level::Debug, "ble", "BLE not connected, deleting queue; Queue remaining: %u", ble_tx_q_count());
+    Logging::message(Logging::Level::Debug, "ble", "BLE not connected, deleting queue; Queue remaining: %u",
+                     ble_tx_q_count());
     return;
   }
   /*
   `ble_tx.index` is the index of the current data being sent.
   If it is greater than or equal to the total length,
   it indicates that the sending is complete or there is no data to be sent.
-  */ 
+  */
   if (ble_tx->index >= ble_tx->len) {
     ble_tx->state = BLE_STATE_SEND_FINISH;
-    Logging::message(Logging::Level::Debug, "ble", "finish!!!  ble_tx.index >= ble_tx.len  , ble_tx.index : %d , ble_tx.len : %d", static_cast<int>(ble_tx->index), static_cast<int>(ble_tx->len));
+    Logging::message(Logging::Level::Debug, "ble",
+                     "finish!!!  ble_tx.index >= ble_tx.len  , ble_tx.index : %d , ble_tx.len : %d",
+                     static_cast<int>(ble_tx->index), static_cast<int>(ble_tx->len));
     ble_tx_q_drop();
     free(ble_tx);
     Logging::message(Logging::Level::Debug, "ble", "Queue remaining: %u", ble_tx_q_count());
@@ -250,8 +246,8 @@ void ble_tx_processing(void) {
 
   ble_tx->frame[0] = 0x55;
   ble_tx->frame[1] = 0xAA;
-  ble_tx->frame[2] = 0x02;  //json
-  ble_tx->frame[3] = (ble_tx->len - ble_tx->index) / 15 - ((ble_tx->len - ble_tx->index)%15 ? 0:1);
+  ble_tx->frame[2] = 0x02;  // json
+  ble_tx->frame[3] = (ble_tx->len - ble_tx->index) / 15 - ((ble_tx->len - ble_tx->index) % 15 ? 0 : 1);
   ble_tx->frame[4] = 0;
 
   // The last frame is zero-padded to 15 bytes.
@@ -262,9 +258,11 @@ void ble_tx_processing(void) {
   memset(&ble_tx->frame[5], 0, 15);
   memcpy(&ble_tx->frame[5], &ble_tx->data[ble_tx->index], chunk);
 
-  ble_send_data((uint8_t*)ble_tx->frame, 20);
+  ble_send_data((uint8_t *)ble_tx->frame, 20);
 
-  Logging::message(Logging::Level::Debug, "ble", "ble send frame -> %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X ----",
+  Logging::message(Logging::Level::Debug, "ble",
+                   "ble send frame -> %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X "
+                   "%02X %02X %02X %02X ----",
                    static_cast<unsigned int>(ble_tx->frame[0]), static_cast<unsigned int>(ble_tx->frame[1]),
                    static_cast<unsigned int>(ble_tx->frame[2]), static_cast<unsigned int>(ble_tx->frame[3]),
                    static_cast<unsigned int>(ble_tx->frame[4]), static_cast<unsigned int>(ble_tx->frame[5]),
@@ -281,10 +279,10 @@ void ble_tx_processing(void) {
 bool ble_frames_validation(void) {
   static uint8_t last_remaining_pack;
   static uint8_t last_cmd;
-  //Fixed header
+  // Fixed header
   if (ble_rx.frame[0] != 0x55) return false;
   if (ble_rx.frame[1] != 0xAA) return false;
-  //If there is a subsequent frame in the previous data, the command must be the same.
+  // If there is a subsequent frame in the previous data, the command must be the same.
   if ((ble_rx.frame[2] != last_cmd) && (last_remaining_pack > 0)) return false;
   if (ble_rx.frame[3] != ble_rx.remaining_pack) return false;
 
@@ -293,7 +291,7 @@ bool ble_frames_validation(void) {
   return true;
 }
 
-void ble_rx_data_add(uint8_t* data, uint8_t len) {
+void ble_rx_data_add(uint8_t *data, uint8_t len) {
   int i;
   for (i = 0; i < len; i++) {
     ble_rx.data[ble_rx.index] = *(data + i);
@@ -317,20 +315,19 @@ void ble_cmd_maneuver_processing(void) {
   portEXIT_CRITICAL(&ble_ctrl_mux);
 }
 void ble_cmd_json_processing(void) {
-  String payload_str = String((char*)ble_rx.data);
+  String payload_str = String((char *)ble_rx.data);
   StaticJsonDocument<300> doc;
   deserializeJson(doc, payload_str);
   rp.parseJson(doc);
 }
-void ble_tx_add_data(const char* data, int len) {
-  if(len>BLE_DATA_SIZE-1){
-    len = BLE_DATA_SIZE-1;
+void ble_tx_add_data(const char *data, int len) {
+  if (len > BLE_DATA_SIZE - 1) {
+    len = BLE_DATA_SIZE - 1;
   }
 
-  BleDataTypDef* ble_tx;
-  ble_tx = (BleDataTypDef*)malloc(sizeof(BleDataTypDef));
-  if(ble_tx == NULL)
-  {
+  BleDataTypDef *ble_tx;
+  ble_tx = (BleDataTypDef *)malloc(sizeof(BleDataTypDef));
+  if (ble_tx == NULL) {
     Logging::message(Logging::Level::Debug, "ble", "error!!!!malloc false,ble txdata");
     return;
   }
@@ -349,9 +346,8 @@ void ble_tx_add_data(const char* data, int len) {
     return;
   }
   Logging::message(Logging::Level::Debug, "ble", "Queue remaining: %u", ble_tx_q_count());
-
 }
-void ble_tx_add_string(const String& str) {
+void ble_tx_add_string(const String &str) {
   // The terminating NUL is part of the payload, as it was with the copy through a local buffer.
   ble_tx_add_data(str.c_str(), str.length() + 1);
 }
