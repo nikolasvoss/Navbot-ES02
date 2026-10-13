@@ -32,6 +32,7 @@ Das EasyEDA-Projekt enthält **MAIN** (Steuerung, Versorgung, Motortreiber, Ansc
 | Fernsteuerung | `H4`: GND, +5 V, SBUS; Inverter `Q1`; ESP32 `GPIO1` | [Anschlüsse](electronics/reference.md#anschlüsse) |
 | Touch oder UART | `H2`/`CN4`: UART1; `H3`: UART2; `H1`: UART0 | [Serielle Schnittstellen](electronics/reference.md#serielle-schnittstellen) |
 | Einzelner Widerstand, IC-Pin oder unbenanntes Netz | Alle elektrisch verbundenen Pads beider PCBs | [Bauteil-Netzliste](electronics/netlist.md) |
+| Touchscreen-Ständer: Befestigungslöcher | `touchscreenstand.stl`: Rechteck 96,4 × 72,9 mm, Ø 2,2 mm mit Senkung; Maße aus Nutzerangabe | [Touchscreen-Ständer](mechanics/touchscreenstand.md) |
 | Flash / USB-Diagnose | USB-C → CH340X → UART0; nicht als natives USB-CDC voraussetzen | [USB/serial guide](../software/development/usb-serial-flashing.md) |
 
 ## Wichtige Feststellungen und Konsequenzen

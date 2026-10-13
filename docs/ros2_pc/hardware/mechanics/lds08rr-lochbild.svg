@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160mm" height="120mm" viewBox="0 0 160 120">
+  <rect width="160" height="120" fill="white"/>
+  <g font-family="DejaVu Sans, sans-serif" fill="black">
+    <text x="80" y="9" font-size="5" text-anchor="middle">LDS08RR Befestigungslochbild</text>
+    <text x="80" y="16" font-size="3" text-anchor="middle">Ansicht von der Platinenunterseite · Motor links</text>
+  </g>
+  <g fill="none" stroke="black" stroke-width="0.35">
+    <circle cx="46" cy="40" r="1.55"/>
+    <circle cx="100" cy="40" r="1.55"/>
+    <circle cx="46" cy="84" r="1.55"/>
+    <circle cx="100" cy="84" r="1.55"/>
+  </g>
+  <g fill="none" stroke="#555" stroke-width="0.18" stroke-dasharray="4 1 0.6 1">
+    <line x1="40" y1="40" x2="106" y2="40"/><line x1="40" y1="84" x2="106" y2="84"/><line x1="46" y1="34" x2="46" y2="90"/><line x1="100" y1="34" x2="100" y2="90"/>
+  </g>
+  <g fill="none" stroke="black" stroke-width="0.2">
+    <path d="M46 37 V26 M100 37 V26 M46 29 H100"/>
+    <path d="M103 40 H119 M103 84 H119 M116 40 V84"/>
+    <path d="M101.1 38.9 L130 26 H149"/>
+  </g>
+  <g fill="black">
+    <path d="M46 29 L49 28 L49 30 Z M100 29 L97 28 L97 30 Z"/>
+    <path d="M116 40 L115 43 L117 43 Z M116 84 L115 81 L117 81 Z"/>
+    <path d="M101.1 38.9 L104.25 36.35 L105.08 38.18 Z"/>
+  </g>
+  <g font-family="DejaVu Sans, sans-serif" font-size="4" fill="black">
+    <text x="73" y="27" text-anchor="middle">54</text>
+    <text x="121" y="64">44</text>
+    <text x="131" y="24" font-size="3.5">4 × Ø 3,1</text>
+    <text x="9" y="62" font-size="3">Motorseite</text>
+    <text x="80" y="102" text-anchor="middle" font-size="3">Alle Maße in mm · Lochabstände von Mitte zu Mitte</text>
+    <text x="80" y="109" text-anchor="middle" font-size="2.7">Maße gemäß Nutzerskizze · Gehäuseumriss nicht dargestellt</text>
+  </g>
+</svg>
