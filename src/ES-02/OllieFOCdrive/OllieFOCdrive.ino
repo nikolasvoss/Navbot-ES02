@@ -16,6 +16,7 @@
 #include "robot.h"
 #include "Logging.h"
 #include "RobotLogCapture.h"
+#include "DebugTelemetry.h"
 #include "LegKinematics.h"
 #include "Calibration.h"
 #include "CalibrationStore.h"
@@ -165,12 +166,11 @@ int statusLedPeriodTicks = 100;
 // Battery Voltage Measurement
 biquadFilter_t VoltageFilterLPF;  // Second-order low-pass filter
 uint16_t VoltageADC = 0;          // Battery voltage ADC data
-uint16_t VoltageADCMin = 0;       // Lowest raw battery reading since the last balance trace row
 float VoltageADCf = 0;            // Battery voltage ADC data
 float Voltage = 0;                // Battery voltage
 
 uint32_t controlGateSequence = 0;
-uint32_t activeTraceSequence = 0;
+DebugTelemetry::TelemetryState debugTelemetryState{};
 uint32_t diagnosticSequence = 0;
 ServoTrimsDegrees servoTrims{};
 
@@ -394,7 +394,6 @@ void handleM1Command(char *cmd) {
 }
 
 void RXsbus();
-void print_data(void);
 void PIDcontroller_posture(float dt);
 void RemoteControlFiltering(void);
 void ReadVoltage(void);
@@ -769,337 +768,94 @@ void RXsbus() {
   }
 }
 
+DebugTelemetry::PidStatus pidStatus(const MyPIDController& pid) {
+  return {pid.Kp,   pid.Ki,   pid.Kd,   pid.deriv, pid.integral, pid.iLimit,
+          pid.outP, pid.outI, pid.outD, pid.output, pid.error};
+}
+
+// Fields every telemetry profile reads.
+void collectCommonTelemetryInputs(DebugTelemetry::TelemetryInputs& in) {
+  in.balanceActive = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
+  in.imu = imu::latest();
+  in.controlTimestepSec = controlTimestepSec;
+  in.motor1Target = motor1.target;
+  in.motor2Target = motor2.target;
+  in.anglePid = pidStatus(Angle_Pid);
+  in.speedPid = pidStatus(Speed_Pid);
+  in.yawPid = pidStatus(Yaw_Pid);
+  in.topBallX = top_ball_x;
+  in.bodyPitching = BodyPitching;
+  in.bodyPitchingFiltered = BodyPitchingFiltered;
+  in.bodyX = BodyX;
+  in.voltageAdc = VoltageADC;
+  in.voltage = Voltage;
+  in.pidGainsMode = pid_gains_mode;
+}
+
+void collectTraceTelemetryInputs(DebugTelemetry::TelemetryInputs& in) {
+  in.m1FilteredVelocityRadPerSec = m1FilteredVelocityRadPerSec;
+  in.m2FilteredVelocityRadPerSec = m2FilteredVelocityRadPerSec;
+  for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = servoTraceAngle[i];
+  in.bodyTurn = BodyTurn;
+  in.movementSpeed = MovementSpeed;
+  in.driveEffectiveSpeed = driveEffectiveSpeed;
+  in.driveSpeedBodyXRaw = driveSpeedBodyXRaw;
+  in.wheelVelocityFeedbackCorrection = wheelVelocityFeedbackCorrection;
+  in.postureOrMarkMode = posture_or_mark_mode;
+  in.touch.XPdatF = Touch.XPdatF;
+}
+
+void collectSelectedTelemetryInputs(DebugTelemetry::TelemetryInputs& in) {
+  in.imuSettings = imu::settings();
+  in.imuCalibration = imu::calibration();
+  in.m1VelocityRadPerSec = m1VelocityRadPerSec;
+  in.m2VelocityRadPerSec = m2VelocityRadPerSec;
+  in.m1FilteredVelocityRadPerSec = m1FilteredVelocityRadPerSec;
+  in.motor2CurrentSetpoint = motor2.current_sp;
+  in.sensor1Angle = sensor1.getAngle();
+  in.sensor1MechanicalAngle = sensor1.getMechanicalAngle();
+  in.sensor2Angle = sensor2.getAngle();
+  in.sensor2MechanicalAngle = sensor2.getMechanicalAngle();
+  for (int i = 0; i < 18; ++i) in.sbusChannels[i] = sBus.channels[i];
+  in.sbusFrameIntervalMs = sbusFrameIntervalMs;
+  in.rollPid = pidStatus(Roll_Pid);
+  in.touchXPid = pidStatus(TouchX_Pid);
+  in.touchYPid = pidStatus(TouchY_Pid);
+  in.touch = {Touch.XPressDat, Touch.YPressDat, Touch.XPdat,  Touch.YPdat, Touch.XLdat,
+              Touch.YLdat,     Touch.XPdatF,    Touch.YPdatF, Touch.state, Touch.start};
+  in.servoTrims = servoTrims;
+  in.topBallY = top_ball_y;
+  in.sbusTopBallXSmoothed = sbus_top_ball_x_smoothed;
+  in.sbusTopBallYSmoothed = sbus_top_ball_y_smoothed;
+  in.bodyRoll = BodyRoll;
+  in.bodyRollFiltered = BodyRollFiltered;
+  in.bodyPitchCorrection = BodyPitchingCorrect(BodyPitchingFiltered);
+  in.bodyHeightCommandM = BodyHeightCommandM;
+  in.bodyHeightCommandFilteredM = BodyHeightCommandFilteredM;
+  in.bodyCommandFilteringEnabled = bodyCommandFilteringEnabled;
+  in.bodyCommandFilterCutoffHz = bodyCommandFilterCutoffHz;
+  in.voltageAdcFiltered = VoltageADCf;
+  in.robotTumble = RobotTumble;
+  in.pidParameterTuning = PidParameterTuning;
+  in.targetBodyHeightOverrideM = TargetBodyHeightOverrideM;
+}
+
 /**
- * @brief Prints debugging data to the serial port based on a selection variable.
+ * @brief Collects the sketch state the selected profile reads, for DebugTelemetry.
  *
- * This function uses a large switch statement controlled by the global `debugLogSelector`
- * variable (which can be set via the serial commander). Each case prints a
- * different set of variables, such as IMU data, PID controller states, motor
- * velocities, S.BUS channels, etc. This is a flexible way to debug different
- * parts of the system without recompiling.
+ * Call only when DebugTelemetry::due() returned true.
  */
-void print_data(void) {
-  const int selection = (int)debugLogSelector;
-  const uint32_t nowMs = millis();
-  const imu::Snapshot& sampleImu = imu::latest();
-  const imu::Settings imuSettings = imu::settings();
-  const imu::CalibrationValues imuCalibration = imu::calibration();
-  if (selection >= 60 && selection <= 75) {
-    const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(selection);
-    if (!RobotLogCapture::selectedDebugDue(selector, nowMs)) return;
-    Logging::DebugSample sample{};
-    sample.selector = selector;
-    sample.payload.channelState = {nowMs * 0.001f, sBus.channels[selection - 60]};
-    Logging::submit(sample);
-    return;
-  }
-
-  const Logging::DebugSelector selector = static_cast<Logging::DebugSelector>(selection);
-  if (selection >= 1 && selection <= 46 &&
-      RobotLogCapture::selectedDebugDue(selector, nowMs)) {
-  Logging::DebugSample sample{};
-  sample.selector = selector;
-  switch (selection) {
-    case 1:
-      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.attitudeDegrees.roll, sampleImu.attitudeDegrees.pitch, sampleImu.attitudeDegrees.yaw};
-      break;
-    case 2:
-      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.accelerationG.x, sampleImu.accelerationG.y, sampleImu.accelerationG.z};
-      break;
-    case 3:
-      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.angularVelocityRadPerSec.x, sampleImu.angularVelocityRadPerSec.y, sampleImu.angularVelocityRadPerSec.z};
-      break;
-    case 4:
-      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.attitudeDegrees.roll - imuCalibration.attitude.rollDegrees,
-                                     sampleImu.attitudeDegrees.pitch - imuCalibration.attitude.pitchDegrees,
-                                     sampleImu.attitudeDegrees.yaw - 0.0f};
-      break;
-    case 5:
-      sample.payload.timedVector3 = {controlTimestepSec, imuCalibration.attitude.rollDegrees, imuCalibration.attitude.pitchDegrees, 0.0f};
-      break;
-    case 6:
-      sample.payload.motorVelocities = {m1VelocityRadPerSec, m2VelocityRadPerSec};
-      break;
-    case 7:
-      sample.payload.pair = {m1VelocityRadPerSec, m1FilteredVelocityRadPerSec};
-      break;
-    case 8:
-      for (int i = 0; i < 10; ++i) sample.payload.receiverChannels.channels[i] = sBus.channels[i];
-      sample.payload.receiverChannels.frameDtMs = sbusFrameIntervalMs;
-      break;
-    case 9:
-      sample.payload.controllerGains = {{Angle_Pid.Kp, Angle_Pid.Ki, Angle_Pid.Kd},
-                                        {Speed_Pid.Kp, Speed_Pid.Ki, Speed_Pid.Kd},
-                                        {Yaw_Pid.Kp, Yaw_Pid.Ki, Yaw_Pid.Kd}, controlTimestepSec};
-      break;
-    case 10:
-      sample.payload.mahony = {imuSettings.mahonyTwoKp, imuSettings.mahonyTwoKi, sampleImu.attitudeDegrees.roll,
-                               sampleImu.attitudeDegrees.pitch, sampleImu.dtSec};
-      break;
-    case 11:
-      sample.payload.imuAxes = {sampleImu.complementaryAnglesDegrees.x, sampleImu.complementaryAnglesDegrees.y, sampleImu.complementaryAnglesDegrees.z, sampleImu.integratedGyroAnglesDegrees.x, sampleImu.integratedGyroAnglesDegrees.y, sampleImu.integratedGyroAnglesDegrees.z, sampleImu.dtSec};
-      break;
-    case 12:
-      sample.payload.pair = {sampleImu.complementaryAnglesDegrees.x, sampleImu.attitudeDegrees.roll};
-      break;
-    case 13:
-      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.filteredAngularVelocityRadPerSec.x, sampleImu.filteredAngularVelocityRadPerSec.y, sampleImu.filteredAngularVelocityRadPerSec.z};
-      break;
-    case 14:
-      sample.payload.timedVector3 = {controlTimestepSec, sampleImu.filteredAccelerationG.x, sampleImu.filteredAccelerationG.y, sampleImu.filteredAccelerationG.z};
-      break;
-    case 15:
-      sample.payload.pair = {sampleImu.accelerationG.y, sampleImu.filteredAccelerationG.y};
-      break;
-    case 16:
-      sample.payload.pair = {sampleImu.angularVelocityRadPerSec.y, sampleImu.filteredAngularVelocityRadPerSec.y};
-      break;
-    case 17:
-      sample.payload.currentSetpoint = {motor2.current_sp};
-      break;
-    case 18:
-      sample.payload.sensorAngles = {motor2.target, sensor1.getAngle(), sensor1.getMechanicalAngle(),
-                                     sensor2.getAngle(), sensor2.getMechanicalAngle()};
-      break;
-    case 19:
-      sample.payload.servoOffsets = {{servoTrims.servo1Degrees, servoTrims.servo2Degrees, servoTrims.servo3Degrees, servoTrims.servo4Degrees}};
-      break;
-    case 20:
-      sample.payload.ballBalanceGeometry = {top_ball_x, BodyRoll, BodyHeightCommandM};
-      break;
-    case 21:
-      sample.payload.balanceState = {sampleImu.correctedRollDegrees, BodyPitching};
-      break;
-    case 22:
-      sample.payload.pidIntegralState = {Angle_Pid.iLimit, Angle_Pid.integral,
-                                         Angle_Pid.outI, Angle_Pid.output};
-      break;
-    case 23:
-      sample.payload.pidIntegralOutputState = {Speed_Pid.iLimit, Speed_Pid.integral,
-                                               Speed_Pid.outI, BodyPitchingFiltered, Speed_Pid.output};
-      break;
-    case 24:
-      sample.payload.pair = {bodyCommandFilteringEnabled, bodyCommandFilterCutoffHz};
-      break;
-    case 25:
-      sample.payload.bodyPitchState = {BodyPitchingFiltered, BodyPitching};
-      break;
-    case 26:
-      if (Touch.state == 1) {
-        sample.payload.touchPoint = {Touch.state, Touch.XPdat, Touch.YPdat};
-      } else if (Touch.state == 0) {
-        sample.payload.touchPoint = {Touch.state, Touch.XLdat, Touch.YLdat};
-      } else return;
-      break;
-    case 27:
-      sample.payload.touchFilteredPoint = {Touch.XPdat, Touch.YPdat, Touch.XPdatF, Touch.YPdatF};
-      break;
-    case 28:
-      sample.payload.filteredGeometry = {BodyPitchingFiltered, BodyRollFiltered, BodyHeightCommandFilteredM, 0.0f,
-                                         top_ball_x, top_ball_y};
-      break;
-    case 29:
-      sample.payload.pidTuningState = {TouchY_Pid.Kp, TouchY_Pid.Ki, TouchY_Pid.Kd,
-                                       TouchY_Pid.deriv, TouchY_Pid.output};
-      break;
-    case 30:
-      sample.payload.pidDerivative = {TouchY_Pid.deriv};
-      break;
-    case 31:
-      sample.payload.pidState = {Roll_Pid.error, Roll_Pid.iLimit, Roll_Pid.integral,
-                                 Roll_Pid.outI, Roll_Pid.output};
-      break;
-    case 32:
-      sample.payload.pidCoefficients = {Roll_Pid.Kp, Roll_Pid.Ki, Roll_Pid.Kd};
-      break;
-    case 33:
-      sample.payload.pidIntegralOutputState = {Yaw_Pid.iLimit, Yaw_Pid.integral,
-                                               Yaw_Pid.outI, BodyPitchingFiltered, Yaw_Pid.output};
-      break;
-    case 34:
-      sample.payload.pidTuningState = {TouchX_Pid.Kp, TouchX_Pid.Ki, TouchX_Pid.Kd,
-                                       TouchX_Pid.deriv, TouchX_Pid.output};
-      break;
-    case 35:
-      sample.payload.pidDerivative = {TouchX_Pid.deriv};
-      break;
-    case 36:
-      sample.payload.touchState = {Touch.state, Touch.start};
-      break;
-    case 37:
-      sample.payload.ballPosition = {top_ball_x, sbus_top_ball_x_smoothed,
-                                     top_ball_y, sbus_top_ball_y_smoothed};
-      break;
-    case 38:
-      sample.payload.balanceOutputPair = {BodyPitching, TouchY_Pid.output};
-      break;
-    case 39:
-      sample.payload.pidIntegralState = {TouchY_Pid.iLimit, TouchY_Pid.integral,
-                                         TouchY_Pid.outI, TouchY_Pid.output};
-      break;
-    case 40:
-      if (Touch.state != 0 && Touch.state != 1) return;
-      sample.payload.touchPoint = {Touch.state, Touch.XPressDat, Touch.YPressDat};
-      break;
-    case 41:
-      sample.payload.rollOutput = {sampleImu.correctedRollDegrees, BodyPitching, Speed_Pid.output};
-      break;
-    case 42:
-      sample.payload.rollCorrection = {sampleImu.correctedRollDegrees, BodyPitching,
-                                       BodyPitchingCorrect(BodyPitchingFiltered)};
-      break;
-    case 43:
-      sample.payload.voltageState = {VoltageADC, VoltageADCf, Voltage};
-      break;
-    case 44:
-      sample.payload.tuningState = {PidParameterTuning, TargetBodyHeightOverrideM};
-      break;
-    case 45:
-      sample.payload.tumbleState = {RobotTumble, sampleImu.correctedRollDegrees, Angle_Pid.error};
-      break;
-    case 46:
-      sample.payload.gyroFft = {
-          static_cast<uint32_t>(sampleImu.readTimeUs),
-          sampleImu.angularVelocityRadPerSec.x, sampleImu.angularVelocityRadPerSec.y,
-          sampleImu.angularVelocityRadPerSec.z, sampleImu.filteredAngularVelocityRadPerSec.x,
-          sampleImu.filteredAngularVelocityRadPerSec.y, sampleImu.filteredAngularVelocityRadPerSec.z};
-      break;
-    default: return;
-  }
-  Logging::submit(sample);
-  }
-  switch ((int)debugLogSelector) {
-    case 55: {
-      if (controlGateSequence % 7 == 0) {
-        const uint32_t traceMs = millis();
-        Logging::TraceSample sample{};
-        sample.timestampMs = traceMs;
-        sample.sequence = activeTraceSequence++;
-        sample.gainMode = pid_gains_mode;
-        sample.postureOrMarkMode = posture_or_mark_mode;
-        sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
-        sample.batteryV = Voltage;
-        sample.rollOk = sampleImu.correctedRollDegrees;
-        sample.pitchOk = sampleImu.correctedPitchDegrees;
-        int32_t ranges[4];
-        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
-        for (int i = 0; i < 4; ++i) {
-          sample.servoAngle[i] = servoTraceAngle[i];
-          sample.servoRange[i] = ranges[i];
-        }
-        sample.leftMotorTarget = motor1.target;
-        sample.rightMotorTarget = motor2.target;
-        Logging::submit(sample);
-        VoltageADCMin = VoltageADC;
-      }
-      break;
-    }
-
-    case 56: {
-      if (controlGateSequence % 7 == 0) {
-        const uint32_t traceMs = millis();
-        const float rawMinV = (float)7.77 / 813.43 * VoltageADCMin;
-        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
-        int32_t ranges[4];
-        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
-        const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
-        Logging::ControlSample sample{};
-        sample.timestampMs = traceMs;
-        sample.sequence = activeTraceSequence++;
-        sample.gainMode = pid_gains_mode;
-        sample.minimumBatteryRawV = rawMinV;
-        sample.batteryV = Voltage;
-        sample.rollOk = sampleImu.correctedRollDegrees;
-        sample.yawRateRadPerSec = sampleImu.angularVelocityRadPerSec.z;
-        sample.bodyTurn = BodyTurn;
-        sample.angleError = active ? Angle_Pid.error : 0.0f;
-        sample.angleOutput = active ? Angle_Pid.output : 0.0f;
-        sample.yawError = active ? Yaw_Pid.error : 0.0f;
-        sample.yawOutput = active ? Yaw_Pid.output : 0.0f;
-        sample.leftMotorTarget = motor1.target;
-        sample.rightMotorTarget = motor2.target;
-        sample.maxServoRange = maxServoRange;
-        Logging::submit(sample);
-        VoltageADCMin = VoltageADC;
-      }
-      break;
-    }
-
-    case 57: {
-      if (controlGateSequence % 7 == 0) {
-        const uint32_t traceMs = millis();
-        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
-        int32_t ranges[4];
-        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
-        const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
-        Logging::BalanceSample sample{};
-        sample.timestampMs = traceMs;
-        sample.sequence = activeTraceSequence++;
-        sample.gainMode = pid_gains_mode;
-        sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
-        sample.rollOk = sampleImu.correctedRollDegrees;
-        sample.angleError = active ? Angle_Pid.error : 0.0f;
-        sample.angleProportional = active ? Angle_Pid.outP : 0.0f;
-        sample.angleIntegral = active ? Angle_Pid.outI : 0.0f;
-        sample.angleDerivative = active ? Angle_Pid.outD : 0.0f;
-        sample.bodyX = active ? BodyX : 0.0f;
-        sample.leftMotorTarget = motor1.target;
-        sample.rightMotorTarget = motor2.target;
-        sample.maxServoRange = maxServoRange;
-        Logging::submit(sample);
-        VoltageADCMin = VoltageADC;
-      }
-      break;
-    }
-
-    case 58: {
-      if (controlGateSequence % 7 == 0) {
-        const uint32_t traceMs = millis();
-        const bool active = pid_gains_mode_is_enabled(pid_gains_mode) && RobotTumble == ROBOT_NOT_TUMBLING;
-        int32_t ranges[4];
-        RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
-        const int maxServoRange = max(max(ranges[0], ranges[1]), max(ranges[2], ranges[3]));
-        Logging::DriveSample sample{};
-        sample.timestampMs = traceMs;
-        sample.sequence = activeTraceSequence++;
-        sample.gainMode = pid_gains_mode;
-        sample.minimumBatteryRawV = (float)7.77 / 813.43 * VoltageADCMin;
-        sample.batteryV = Voltage;
-        sample.requestedSpeed = MovementSpeed;
-        sample.effectiveSpeed = active ? driveEffectiveSpeed : 0.0f;
-        sample.leftWheelVelocity = m1FilteredVelocityRadPerSec;
-        sample.rightWheelVelocity = m2FilteredVelocityRadPerSec;
-        sample.controlDtSec = controlTimestepSec;
-        sample.speedError = active ? Speed_Pid.error : 0.0f;
-        sample.speedProportional = active ? Speed_Pid.outP : 0.0f;
-        sample.speedIntegral = active ? Speed_Pid.outI : 0.0f;
-        sample.speedDerivative = active ? Speed_Pid.outD : 0.0f;
-        sample.speedOutput = active ? Speed_Pid.output : 0.0f;
-        sample.driveBodyXRaw = active ? driveSpeedBodyXRaw : 0.0f;
-        sample.bodyX = active ? BodyX : 0.0f;
-        sample.bodyPitchFiltered = BodyPitchingFiltered;
-        sample.rollOk = sampleImu.correctedRollDegrees;
-        sample.angleOutput = active ? Angle_Pid.output : 0.0f;
-        sample.angleProportional = active ? Angle_Pid.outP : 0.0f;
-        sample.angleIntegral = active ? Angle_Pid.outI : 0.0f;
-        sample.angleDerivative = active ? Angle_Pid.outD : 0.0f;
-        sample.wheelSpeedFeedbackOutput = active ? wheelVelocityFeedbackCorrection : 0.0f;
-        sample.leftMotorTarget = motor1.target;
-        sample.rightMotorTarget = motor2.target;
-        sample.ballX = top_ball_x;
-        sample.touchXFiltered = Touch.XPdatF;
-        sample.bodyPitch = BodyPitching;
-        sample.maxServoRange = maxServoRange;
-        Logging::submit(sample);
-        VoltageADCMin = VoltageADC;
-      }
-      break;
-    }
-
-    default:
-
-      break;
-  }
+DebugTelemetry::TelemetryInputs collectTelemetryInputs(int selection, uint32_t nowMs) {
+  DebugTelemetry::TelemetryInputs in{};
+  in.selection = selection;
+  in.nowMs = nowMs;
+  in.controlGateSequence = controlGateSequence;
+  collectCommonTelemetryInputs(in);
+  if (RobotLogCapture::profileForSelector(selection) == Logging::Profile::SelectedDebug)
+    collectSelectedTelemetryInputs(in);
+  else
+    collectTraceTelemetryInputs(in);
+  return in;
 }
 
 /**
@@ -1432,9 +1188,9 @@ void RemoteControlFiltering(void)  // Remote control filter
  * to get a stable reading, and converts it to the actual voltage.
  */
 void ReadVoltage(void) {
-  VoltageADC = analogRead(BOARD_PIN_BATTERY_VOLTAGE_ADC);
-  if (VoltageADCMin == 0 || VoltageADC < VoltageADCMin)
-    VoltageADCMin = VoltageADC;
+  VoltageADC = analogRead(board::kBatteryAdcPin);
+  if (debugTelemetryState.voltageAdcMin == 0 || VoltageADC < debugTelemetryState.voltageAdcMin)
+    debugTelemetryState.voltageAdcMin = VoltageADC;
   VoltageADCf = biquadFilterApply(&VoltageFilterLPF, VoltageADC);
   Voltage = (float)7.77 / 813.43 * VoltageADCf;
 }
@@ -1589,7 +1345,10 @@ void loop() {
 
     RemoteControlFiltering();  // Remote control signal filtering
     ReadVoltage();             // Battery
-    print_data();              // Serial port data printing
+    const int telemetrySelection = (int)debugLogSelector;
+    const uint32_t telemetryNowMs = millis();
+    if (DebugTelemetry::due(telemetrySelection, telemetryNowMs, controlGateSequence))  // Serial port data printing
+      DebugTelemetry::submit(collectTelemetryInputs(telemetrySelection, telemetryNowMs), debugTelemetryState);
 
     Robot_Tumble();  // Machine fall detection
     statusLedTicks++;
