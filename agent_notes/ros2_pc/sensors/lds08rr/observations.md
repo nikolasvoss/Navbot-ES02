@@ -1,5 +1,13 @@
 # LDS08RR photo evidence, 2026-10-13
 
+## User voltage and installation clarification, 2026-10-14
+
+Observation: The user reports `M−` at 5 V idle and a 1.8 V DMM reading on LiDAR TX. The LiDAR is not connected to the ros2_pc. The UART logic-high voltage and protocol remain unconfirmed.
+
+Evidence: User answers: "m- is 5V idle and lidar tx is 1.8V (measured with dmm, not sure if it averages from 3v3 or so)" and "not connected atm. implement both, but add todo to remove later again". These are user measurements and installation statements, not independent agent measurements.
+
+Practical consequence: Use an external transistor sink for `M−`; its 5 V idle signal must not reach a GPIO directly. The TX reading does not establish a 1.8 V logic interface; measure high and low waveform levels before deciding on level translation. Keep both implemented LDS08RR decoders temporarily. Once this module's capture identifies the protocol and valid scans confirm the selected driver, remove the unused project variant, its selector, tests, and documentation. The roadmap records this removal TODO. Motor output remains inert.
+
 ## ros2_pc UART2 inspection, 2026-10-14
 
 Observation: The software host identifies as `Raspberry Pi Compute Module 5 Rev 1.0` running Ubuntu 24.04.5. `/dev/ttyAMA0` and `/dev/ttyAMA10` exist; `/dev/ttyAMA2` does not. `/boot/firmware/config.txt` has no UART2 overlay. `pinctrl get 4-5` reports GPIO4 and GPIO5 with no alternate function, while GPIO14 and GPIO15 carry UART0. The installed overlay README documents `dtoverlay=uart2-pi5` for UART2 on GPIO4 and GPIO5.

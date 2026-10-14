@@ -31,6 +31,11 @@ Signalpegel, UART2-Mapping, Motoransteuerung und Datenprotokoll dieses Moduls
 geklärt werden. Der Upstream-Treiber ist ausgewählt. Die konkrete Protokollvariante
 bleibt bis zu einem Rohdatenmitschnitt offen.
 
+- [ ] TODO: Nach einem Rohdatenmitschnitt dieses Moduls und gültigen Scans mit dem
+  bestätigten Treiber die unbenutzte Protokollvariante aus der Projektauswahl,
+  Treiberanbindung, den Tests und der Dokumentation entfernen. Delta und Camsense
+  bleiben bis dahin gemäß Nutzerauftrag beide implementiert.
+
 ### Geplanter Umfang
 
 - Identifikation des Moduls und Dokumentation der belegten Anschlussdaten.

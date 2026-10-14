@@ -27,9 +27,9 @@ The [PCB photograph](images/lds08rr-pcb.jpg) shows a six-contact connector at th
 | Photo position | Silkscreen | Verification status |
 | ---: | --- | --- |
 | 1, leftmost | `NC` | Marking only; internal connection unverified |
-| 2 | `M−` | Active low; user reports 1 mA when pulled to GND on 14 October 2026 |
+| 2 | `M−` | Active low; user reports 1 mA when pulled to GND and 5 V idle on 14 October 2026 |
 | 3 | `RX` | Likely module receive signal by naming; direction and voltage unmeasured |
-| 4 | `TX` | Likely module transmit signal by naming; direction and voltage unmeasured |
+| 4 | `TX` | User reports 1.8 V on a DMM on 14 October 2026; actual UART high and low levels remain unverified |
 | 5 | `GND` | Lidar Ground |
 | 6, rightmost | `VIN` | Supply input, 500mA max., 230mA measured with Motor ON. |
 
@@ -76,7 +76,9 @@ The Camsense support derives from a user's capture in [LDS issue 17](https://git
 
 The proposed J8 connection is listed below; physical wiring remains unverified. A direct UART or USB-to-UART connection depends on confirmed connector mapping and signal voltages. The labelled 5 V supply rating does not establish 5 V UART logic. A connection requires verified ground continuity and a supply arrangement that avoids backfeeding another source.
 
-The Delta software driver normally activates host PWM. This integration injects an inert motor output, so it never toggles a GPIO or PWM pin. The Camsense driver has no host motor output. Neither driver choice proves which protocol or motor circuit this module uses. The connector's `M−` active-low polarity and 1 mA current when pulled to GND are user-reported measurements above. Its open-circuit voltage, logic thresholds, waveform, motor voltage, and total motor current still need measurement before a sink circuit is selected.
+The Delta software driver normally activates host PWM. This integration injects an inert motor output, so it never toggles a GPIO or PWM pin. The Camsense driver has no host motor output. Neither driver choice proves which protocol or motor circuit this module uses. The connector's `M−` active-low polarity, 1 mA current when pulled to GND, and 5 V idle voltage are user-reported measurements. An external transistor sink, such as an open-collector or open-drain interface, must isolate this 5 V signal from the GPIO. Logic thresholds, waveform, motor voltage, and total motor current remain unverified.
+
+The user measured 1.8 V on LiDAR TX with a DMM and explicitly questioned whether that reading averages an active 3.3 V UART stream. Record it as a DMM reading, not a verified 1.8 V logic-high level. Measure the waveform's high and low levels with an oscilloscope before deciding whether direct UART wiring or level translation is appropriate. A UART capture establishes framing; a voltage measurement establishes the electrical interface.
 
 The remaining hardware record needs:
 
@@ -95,9 +97,11 @@ The Compute Module 5 used for software checks reported model `Raspberry Pi Compu
 
 Do not edit the boot configuration or connect the module as part of software setup. After the supply, ground, connector mapping, and UART voltage levels are confirmed, add `dtoverlay=uart2-pi5` to `/boot/firmware/config.txt` and reboot the Compute Module 5. Check the pin mux with `pinctrl get 4-5`. Then inspect `/dev/ttyAMA*` and confirm which device maps to UART2 on that image before passing it to the launcher. Do not assume that UART2 is `/dev/ttyAMA2` from its UART number alone.
 
-Reserve J8 pin 11 (GPIO17) for a possible future external sink that controls `M−`. Do not connect `M−` directly to GPIO17 or add a transistor until you measure its idle voltage, logic thresholds, and drive requirements. No boot overlay, GPIO output, or motor-control code activates this pin.
+Reserve J8 pin 11 (GPIO17) to control a future external sink for `M−`. Its reported 5 V idle voltage excludes direct connection to the GPIO. Select and verify the sink circuit and its drive requirements before using it. No boot overlay, GPIO output, or motor-control code activates this pin. Raspberry Pi's [GPIO guidance](https://pip-assets.raspberrypi.com/categories/685-whitepapers-app-notes/documents/RP-006553-WP/A-history-of-GPIO-usage-on-Raspberry-Pi-devices-and-current-best-practices) specifies a maximum 3.3 V input for the standard GPIO interface.
 
 The selected protocol remains unverified. Choose `delta` or `camsense` explicitly from a capture made from this module. The software does not auto-detect or switch protocols.
+
+On 14 October 2026, the user confirmed that the LiDAR is not connected to the ros2_pc and requested temporary support for both protocol variants. After a capture from this module identifies the protocol and the selected driver produces valid scans, remove the unused project protocol selection, driver wiring, tests, and documentation. This TODO is tracked in the [roadmap](../ROS_ROADMAP.md#grundlage-und-offene-fragen).
 
 ## Evidence
 
