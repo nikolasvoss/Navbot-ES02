@@ -1,5 +1,15 @@
 # LDS08RR photo evidence, 2026-10-13
 
+## Connector M− measurement, 2026-10-14
+
+Observation: The LiDAR connector's `M−` pin is active low and draws 1 mA when pulled to GND.
+
+Evidence: User report on 2026-10-14: "the lidar m- pin on the connector is low active and draws 1mA when pulled to GND". No independent measurement was performed by the agent.
+
+Practical consequence: Activate by pulling the connector's `M−` pin low; the controlling sink must handle the reported 1 mA. This is connector-pin current, not total module or motor current. Open-circuit voltage, logic thresholds, and PWM behaviour are still unverified. This updates the electrical evidence beyond the photographs described below.
+
+## Photo evidence
+
 Observation: The user-provided module label reads LDS08RR, 5VDC/1.5W, Class 1 Laser Product, IEC 60825-1:2014, and EN 60825-1:2014+A11:2021. A separate label reads HHCD2SAA1204104. The PCB has a six-contact connector whose upright photographed left-to-right labels are NC, M−, RX, TX, GND, VIN. A separate two-contact connector has red and black wires. Four outer mounting ears are visible.
 
 Evidence: Original user photographs 59725.jpg and 59723.jpg supplied in this chat on 2026-10-13, preserved as [label](../../../../docs/ros2_pc/hardware/images/lds08rr-label.jpg) and [PCB](../../../../docs/ros2_pc/hardware/images/lds08rr-pcb.jpg). Canonical reference: [LDS08RR hardware](../../../../docs/ros2_pc/hardware/lds08rr-lidar.md).

@@ -27,11 +27,11 @@ The [PCB photograph](images/lds08rr-pcb.jpg) shows a six-contact connector at th
 | Photo position | Silkscreen | Verification status |
 | ---: | --- | --- |
 | 1, leftmost | `NC` | Marking only; internal connection unverified |
-| 2 | `M−` | Function and electrical requirements unverified |
+| 2 | `M−` | Active low; user reports 1 mA when pulled to GND on 14 October 2026 |
 | 3 | `RX` | Likely module receive signal by naming; direction and voltage unmeasured |
 | 4 | `TX` | Likely module transmit signal by naming; direction and voltage unmeasured |
-| 5 | `GND` | Ground marking; continuity unmeasured |
-| 6, rightmost | `VIN` | Supply-input marking; connection to the labelled 5 V supply unverified |
+| 5 | `GND` | Lidar Ground |
+| 6, rightmost | `VIN` | Supply input, 500mA max., 230mA measured with Motor ON. |
 
 A mating plug viewed from its cable side reverses the apparent order. Connector series, pitch, and pin-1 convention are not established by the photograph. `NC` is not an available GPIO assignment. `M−` does not by itself establish a PWM input or a motor-power connection.
 
@@ -76,7 +76,7 @@ The Camsense support derives from a user's capture in [LDS issue 17](https://git
 
 The ros2_pc connection is not assigned. A UART or USB-to-UART adapter choice depends on confirmed connector mapping and signal voltages. The labelled 5 V supply rating does not establish 5 V UART logic. A connection requires verified ground continuity and a supply arrangement that avoids backfeeding another source.
 
-If this module requires external motor control, it needs a suitable motor power stage; a GPIO cannot supply motor current. Motor voltage, current, control polarity, PWM frequency, and the role of `M−` remain unknown. The upstream onboard-motor classification for one variant does not resolve those questions from a photo.
+If this module requires external motor power control, it needs a suitable motor power stage; a GPIO cannot supply motor current. Motor voltage, motor current, PWM frequency, and the internal role of `M−` remain unknown. The connector's `M−` active-low polarity and 1 mA current when pulled to GND are user-reported measurements above. The upstream onboard-motor classification for one variant does not resolve the remaining questions from a photo.
 
 The remaining hardware record needs:
 
