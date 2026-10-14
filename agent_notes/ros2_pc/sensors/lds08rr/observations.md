@@ -1,12 +1,20 @@
 # LDS08RR photo evidence, 2026-10-13
 
+## TX peak clarification, 2026-10-14
+
+Observation: The user reports LiDAR TX at 3 V peak. The earlier 1.8 V DMM reading is retained as a separate measurement.
+
+Evidence: User statement: "lidar tx is 3V peak. document." Instrument and measurement conditions were not specified. No independent agent measurement was performed.
+
+Practical consequence: Record 3 V as the reported TX peak in the canonical hardware reference and browser notes. This supersedes the earlier absence of a reported peak voltage. Low level, timing, protocol, and installed UART operation remain unverified; this documentation update does not establish live hardware acceptance.
+
 ## User voltage and installation clarification, 2026-10-14
 
-Observation: The user reports `M−` at 5 V idle and a 1.8 V DMM reading on LiDAR TX. The LiDAR is not connected to the ros2_pc. The UART logic-high voltage and protocol remain unconfirmed.
+Observation: The user reports `M−` at 5 V idle and a 1.8 V DMM reading on LiDAR TX. The LiDAR is not connected to the ros2_pc. At the time of this earlier report, TX's peak voltage and protocol were unconfirmed; the later 3 V peak report is recorded above.
 
 Evidence: User answers: "m- is 5V idle and lidar tx is 1.8V (measured with dmm, not sure if it averages from 3v3 or so)" and "not connected atm. implement both, but add todo to remove later again". These are user measurements and installation statements, not independent agent measurements.
 
-Practical consequence: Use an external transistor sink for `M−`; its 5 V idle signal must not reach a GPIO directly. The TX reading does not establish a 1.8 V logic interface; measure high and low waveform levels before deciding on level translation. Keep both implemented LDS08RR decoders temporarily. Once this module's capture identifies the protocol and valid scans confirm the selected driver, remove the unused project variant, its selector, tests, and documentation. The roadmap records this removal TODO. Motor output remains inert.
+Practical consequence: Use an external transistor sink for `M−`; its 5 V idle signal must not reach a GPIO directly. That DMM reading alone did not establish a 1.8 V logic interface. Keep both implemented LDS08RR decoders temporarily. Once this module's capture identifies the protocol and valid scans confirm the selected driver, remove the unused project variant, its selector, tests, and documentation. The roadmap records this removal TODO. Motor output remains inert.
 
 ## ros2_pc UART2 inspection, 2026-10-14
 

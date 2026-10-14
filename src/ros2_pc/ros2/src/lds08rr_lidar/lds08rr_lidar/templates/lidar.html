@@ -51,7 +51,7 @@
       <h2>Hardware notes</h2>
       <p>Planned UART2 uses J8 pin 7 (GPIO4 TX) and pin 29 (GPIO5 RX). The module TX connects to RX only after its signal level is checked.</p>
       <p>Use J8 pin 4 for 5 V and pin 6 for ground only after supply and current checks. No motor GPIO or PWM output is enabled.</p>
-      <p>Reported measurements: M− is 5 V idle and needs an external transistor sink, not a direct GPIO connection. TX reads 1.8 V on a DMM; its UART high and low voltages still need a waveform measurement.</p>
+      <p>Reported measurements: M− is 5 V idle and needs an external transistor sink, not a direct GPIO connection. TX is reported at 3 V peak; the earlier DMM reading was 1.8 V. Its low level, timing, and protocol still need verification.</p>
       <p>Angle zero and direction are native and uncalibrated. See <code>docs/ros2_pc/hardware/lds08rr-lidar.md</code> for setup and evidence.</p>
       <p>Software uses <code>lds2d[viz]==0.7.0</code>; the selected protocol and device path must be confirmed for the connected sensor.</p>
       <p>Delta and Camsense support is temporary. TODO: remove the unused project variant after a capture from this module identifies its protocol and the selected driver produces valid scans.</p>

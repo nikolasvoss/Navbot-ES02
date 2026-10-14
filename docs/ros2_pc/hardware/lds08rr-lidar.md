@@ -29,7 +29,7 @@ The [PCB photograph](images/lds08rr-pcb.jpg) shows a six-contact connector at th
 | 1, leftmost | `NC` | Marking only; internal connection unverified |
 | 2 | `M−` | Active low; user reports 1 mA when pulled to GND and 5 V idle on 14 October 2026 |
 | 3 | `RX` | Likely module receive signal by naming; direction and voltage unmeasured |
-| 4 | `TX` | User reports 1.8 V on a DMM on 14 October 2026; actual UART high and low levels remain unverified |
+| 4 | `TX` | User reports 3 V peak on 14 October 2026; earlier DMM reading was 1.8 V. Low level and timing remain unverified |
 | 5 | `GND` | Lidar Ground |
 | 6, rightmost | `VIN` | Supply input, 500mA max., 230mA measured with Motor ON. |
 
@@ -78,7 +78,7 @@ The proposed J8 connection is listed below; physical wiring remains unverified. 
 
 The Delta software driver normally activates host PWM. This integration injects an inert motor output, so it never toggles a GPIO or PWM pin. The Camsense driver has no host motor output. Neither driver choice proves which protocol or motor circuit this module uses. The connector's `M−` active-low polarity, 1 mA current when pulled to GND, and 5 V idle voltage are user-reported measurements. An external transistor sink, such as an open-collector or open-drain interface, must isolate this 5 V signal from the GPIO. Logic thresholds, waveform, motor voltage, and total motor current remain unverified.
 
-The user measured 1.8 V on LiDAR TX with a DMM and explicitly questioned whether that reading averages an active 3.3 V UART stream. Record it as a DMM reading, not a verified 1.8 V logic-high level. Measure the waveform's high and low levels with an oscilloscope before deciding whether direct UART wiring or level translation is appropriate. A UART capture establishes framing; a voltage measurement establishes the electrical interface.
+On 14 October 2026, the user reported LiDAR TX at 3 V peak. The earlier 1.8 V DMM reading remains a separate measurement, not the reported peak voltage. The peak is user-reported; the instrument and measurement conditions were not specified, and no independent agent measurement was performed. TX's low level, timing, and protocol remain unverified. A UART capture establishes framing; a voltage measurement establishes the electrical interface.
 
 The remaining hardware record needs:
 
