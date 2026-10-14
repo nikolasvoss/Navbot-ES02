@@ -10,19 +10,26 @@ Vor Abschluss sind der aktuelle ROS-2-Build auf dem ros2_pc, die physische UART-
 
 ## 2. Roborock-LiDAR in ROS 2 integrieren
 
-Status: geplant. Zweiter ROS-2-Meilenstein.
+Status: Software implementiert; Live-Abnahme steht noch aus. Zweiter ROS-2-Meilenstein.
 
-Ein LiDAR-Sensor aus einem Roborock-Staubsaugerroboter wird an den ros2_pc angebunden.
-Das erste sichtbare Ergebnis ist ein Live-Laserscan in RViz. Der erste Test erfolgt
-stationär außerhalb des Navbot. Die Integration schafft eine Grundlage für spätere
-Kartierung und Navigation.
+Das `lds08rr_lidar`-Paket bietet eine Demo ohne Radar, einen unabhängigen Browserstatus
+und einen ROS-2-Adapter. Es verwendet `lds2d[viz]==0.7.0`, lässt den Protokolltyp
+explizit wählen und veröffentlicht vollständige Scans auf `/scan` sowie den Status
+auf `/lidar/status`. Ein Host-PWM-Ausgang bleibt inert. Die Hardware- und
+Protokollgrenzen stehen in der [LDS08RR-Hardwaredokumentation](hardware/lds08rr-lidar.md).
+Die [Softwareanleitung](software/README.md#lds08rr-lidar) enthält Build-, Demo- und
+Startbefehle.
+
+Das erste sichtbare Hardwareergebnis soll ein Live-Laserscan in RViz sein. Der erste
+Test erfolgt stationär außerhalb des Navbot. Die Software allein bestätigt weder
+Wiring noch Sensorprotokoll, Orientierung, Reichweite oder Scanrate.
 
 ### Grundlage und offene Fragen
 
-Das genaue Roborock-Modell und die Sensorbezeichnung sind noch offen.
-Vor dem Anschluss müssen Pinbelegung, Versorgungsspannung, Signalpegel,
-Motoransteuerung und Datenprotokoll des konkreten Moduls geklärt werden.
-Ein vorhandener ROS-2-Treiber wird erst nach Abgleich mit diesem Modul ausgewählt.
+Das Modul ist als LDS08RR identifiziert. Vor dem Anschluss müssen Pinbelegung,
+Signalpegel, UART2-Mapping, Motoransteuerung und Datenprotokoll dieses Moduls
+geklärt werden. Der Upstream-Treiber ist ausgewählt. Die konkrete Protokollvariante
+bleibt bis zu einem Rohdatenmitschnitt offen.
 
 ### Geplanter Umfang
 
@@ -30,7 +37,8 @@ Ein vorhandener ROS-2-Treiber wird erst nach Abgleich mit diesem Modul ausgewäh
 - Stationärer Betrieb mit geeigneter Versorgung und der erforderlichen Ansteuerung
   des Scanmotors, sofern das Modul diese extern benötigt.
 - Anbindung an den ros2_pc und Veröffentlichung als `sensor_msgs/msg/LaserScan`
-  auf dem Topic `/scan`.
+  auf dem Topic `/scan`. Die Software verwendet einen festen Winkelraster und
+  positive Unendlichkeit für Messwerte ohne Rücklauf.
 - Dokumentation von Winkelrichtung, Winkelnullpunkt, Entfernungseinheiten,
   Zeitstempeln und ungültigen Messwerten.
 - Darstellung in RViz mit einem eigenen Sensor-Koordinatensystem.

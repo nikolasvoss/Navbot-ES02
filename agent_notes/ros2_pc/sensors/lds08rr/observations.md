@@ -1,5 +1,21 @@
 # LDS08RR photo evidence, 2026-10-13
 
+## ros2_pc UART2 inspection, 2026-10-14
+
+Observation: The software host identifies as `Raspberry Pi Compute Module 5 Rev 1.0` running Ubuntu 24.04.5. `/dev/ttyAMA0` and `/dev/ttyAMA10` exist; `/dev/ttyAMA2` does not. `/boot/firmware/config.txt` has no UART2 overlay. `pinctrl get 4-5` reports GPIO4 and GPIO5 with no alternate function, while GPIO14 and GPIO15 carry UART0. The installed overlay README documents `dtoverlay=uart2-pi5` for UART2 on GPIO4 and GPIO5.
+
+Evidence: Direct inspection of `/proc/device-tree/model`, `/etc/os-release`, `/dev`, `/boot/firmware/config.txt`, `pinctrl get`, and `/boot/firmware/overlays/README` on the ros2_pc on 2026-10-14. No boot configuration was changed and no sensor wiring was performed.
+
+Practical consequence: Reserve J8 pin 7 / GPIO4 for UART2 TX and pin 29 / GPIO5 for UART2 RX. After electrical checks, add the documented overlay and reboot, then inspect the resulting device mapping. Do not assume `/dev/ttyAMA2` until the active image confirms it. Reserve GPIO17 on J8 pin 11 for a future external `M−` sink only; do not wire it directly to the module.
+
+## LiDAR software status, 2026-10-14
+
+Observation: The `lds08rr_lidar` package uses the released `lds2d[viz]==0.7.0` drivers with explicit Delta or Camsense selection. One reader feeds the upstream plot and ROS 2 output. The web status page starts without a UART or the HMMD radar. Delta opens with an inert motor-output adapter.
+
+Evidence: The implementation and hardware-free protocol fixtures in the `feat/lds08rr-lidar` worktree. Upstream driver fixtures exercise both protocol parsers; they do not identify the installed module's protocol.
+
+Practical consequence: Use demo mode for browser checks. Keep protocol selection provisional until a raw capture from this module identifies it. The ROS angle zero, direction, range limits, and scan-start timestamp remain software assumptions or estimates until hardware measurements establish them.
+
 ## Connector M− measurement, 2026-10-14
 
 Observation: The LiDAR connector's `M−` pin is active low and draws 1 mA when pulled to GND.

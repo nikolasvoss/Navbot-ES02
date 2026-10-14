@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Navbot LDS08RR</title>
+  <style>
+    :root { color-scheme: dark; font: 16px system-ui, sans-serif; background: #101820; color: #edf3f7; }
+    body { margin: 0 auto; max-width: 1100px; padding: 1rem; }
+    h1 { margin: 0; font-size: 1.5rem; }
+    a { color: #7dd3fc; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .badge { border: 1px solid #64748b; border-radius: 999px; padding: .35rem .7rem; font-weight: 700; }
+    .demo { border-color: #f59e0b; color: #fbbf24; }
+    .error { color: #fca5a5; }
+    [hidden] { display: none !important; }
+    .grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(250px, 1fr); gap: 1rem; margin-top: 1rem; }
+    section { min-width: 0; background: #18232d; border: 1px solid #354552; border-radius: .6rem; padding: 1rem; }
+    pre { overflow-x: auto; }
+    iframe { width: 100%; height: min(72vh, 720px); border: 0; background: #fff; border-radius: .3rem; }
+    #plotState { min-height: 8rem; display: grid; place-items: center; color: #cbd5e1; text-align: center; }
+    dt { color: #9fb0bd; margin-top: .8rem; }
+    dd { margin: .15rem 0 0; overflow-wrap: anywhere; }
+    @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } iframe { height: 55vh; } }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>Navbot LDS08RR</h1>
+    <span id="modeBadge" class="badge">Connecting</span>
+  </header>
+  <p id="summary" role="status">Loading LiDAR status…</p>
+  <div class="grid">
+    <section aria-label="LiDAR scan">
+      <div id="plotState">Waiting for a complete scan.</div>
+      <iframe id="plot" title="Upstream lds2d polar scan" hidden></iframe>
+    </section>
+    <section aria-label="Connection and hardware status">
+      <h2>Connection</h2>
+      <dl>
+        <dt>State</dt><dd id="state">Unknown</dd>
+        <dt>Protocol</dt><dd id="protocol">Not selected</dd>
+        <dt>Device</dt><dd id="device">Not selected</dd>
+        <dt>Received bytes</dt><dd id="bytes">0</dd>
+        <dt>Complete scans</dt><dd id="scans">0</dd>
+        <dt>Last scan age</dt><dd id="age">No scan</dd>
+        <dt>Scan rate</dt><dd id="rate">Unknown</dd>
+        <dt>Valid points</dt><dd id="points">0</dd>
+        <dt>Last error</dt><dd id="error">None</dd>
+      </dl>
+      <h2>Hardware notes</h2>
+      <p>Planned UART2 uses J8 pin 7 (GPIO4 TX) and pin 29 (GPIO5 RX). The module TX connects to RX only after its signal level is checked.</p>
+      <p>Use J8 pin 4 for 5 V and pin 6 for ground only after supply and current checks. No motor GPIO or PWM output is enabled.</p>
+      <p>Angle zero and direction are native and uncalibrated. See <code>docs/ros2_pc/hardware/lds08rr-lidar.md</code> for setup and evidence.</p>
+      <p>Software uses <code>lds2d[viz]==0.7.0</code>; the selected protocol and device path must be confirmed for the connected sensor.</p>
+      <details>
+        <summary>Software and UART setup</summary>
+        <p>On the robot, install ROS 2 Jazzy and create the documented Python environment:</p>
+        <pre>python3 -m venv --system-site-packages "$HOME/.venvs/navbot-lidar"
+source "$HOME/.venvs/navbot-lidar/bin/activate"
+python -m pip install 'lds2d[viz]==0.7.0'</pre>
+        <p>Run these commands from the project checkout. Use <code>--demo</code> to check the page without hardware:</p>
+        <pre>python scripts/start_lidar.py --demo --host 0.0.0.0</pre>
+        <p>After confirming the protocol and serial device, replace <code>--demo</code> with <code>--device /dev/ttyAMA2 --protocol camsense</code> or <code>--protocol delta</code> as appropriate. Source <code>/opt/ros/jazzy/setup.bash</code> to enable ROS output.</p>
+        <p>UART2 is planned for GPIO4/TX on J8 pin 7 and GPIO5/RX on pin 29. Confirm supply, ground, connector mapping, and signal voltage before wiring. Only then enable <code>dtoverlay=uart2-pi5</code>; verify the pin mux and identify the resulting <code>/dev/ttyAMA*</code> mapping instead of assuming its name.</p>
+      </details>
+    </section>
+  </div>
+  <script>
+    const frame = document.querySelector('#plot');
+    const plotState = document.querySelector('#plotState');
+    let frameLoaded = false;
+    function showPlot(show, message) {
+      plotState.textContent = message;
+      frame.hidden = !show;
+      plotState.hidden = show;
+      if (show && !frameLoaded) {
+        frame.src = '/';
+        frameLoaded = true;
+      } else if (!show && frameLoaded) {
+        frame.src = 'about:blank';
+        frameLoaded = false;
+      }
+    }
+    async function refresh() {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 2500);
+      try {
+        const response = await fetch('/status.json', { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const demo = data.mode === 'demo';
+        const badge = document.querySelector('#modeBadge');
+        badge.textContent = demo ? 'DEMO DATA · synthetic scan' : data.state.toUpperCase();
+        badge.className = `badge${demo ? ' demo' : ''}`;
+        document.querySelector('#summary').textContent = demo && data.state === 'demo'
+          ? 'This animated scan is generated in software. It does not come from the LiDAR.'
+          : demo
+            ? `DEMO ${data.state.toUpperCase()} · synthetic scan is not currently fresh.`
+          : `${data.state.toUpperCase()} · ${data.device || 'No serial device configured'}`;
+        document.querySelector('#state').textContent = data.state;
+        document.querySelector('#protocol').textContent = data.protocol || 'Demo';
+        document.querySelector('#device').textContent = data.device || 'None';
+        document.querySelector('#bytes').textContent = data.bytes_received;
+        document.querySelector('#scans').textContent = data.scans_received;
+        document.querySelector('#age').textContent = data.last_scan_age_sec == null ? 'No scan' : `${data.last_scan_age_sec.toFixed(1)} s`;
+        document.querySelector('#rate').textContent = data.scan_rate_hz == null ? 'Unknown' : `${data.scan_rate_hz.toFixed(2)} Hz`;
+        document.querySelector('#points').textContent = data.valid_points;
+        const error = document.querySelector('#error');
+        error.textContent = data.last_error || 'None';
+        error.className = data.last_error ? 'error' : '';
+        const canShow = data.scans_received > 0 && (data.state === 'live' || data.state === 'demo');
+        showPlot(canShow, demo ? 'Waiting for the first synthetic scan.' : data.state === 'live'
+          ? 'Waiting for a complete scan.' : `${data.state.toUpperCase()}. The scan plot is hidden until data is fresh.`);
+      } catch (error) {
+        document.querySelector('#modeBadge').textContent = 'SERVER UNAVAILABLE';
+        document.querySelector('#modeBadge').className = 'badge error';
+        document.querySelector('#summary').textContent = `Status request failed: ${error.message}`;
+        document.querySelector('#error').textContent = error.message;
+        showPlot(false, 'LiDAR status server unavailable.');
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    }
+    refresh();
+    window.setInterval(refresh, 1000);
+  </script>
+</body>
+</html>

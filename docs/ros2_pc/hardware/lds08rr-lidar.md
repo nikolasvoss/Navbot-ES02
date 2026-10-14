@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-The LDS08RR is the module named for the planned ros2_pc LiDAR integration. User-supplied photographs received on 13 October 2026 confirm the model marking and the PCB markings below. They do not confirm an installed connection, electrical measurements, or a working ROS 2 driver. Integration remains planned in the [ros2_pc roadmap](../ROS_ROADMAP.md#2-roborock-lidar-in-ros-2-integrieren).
+The LDS08RR is the module selected for ros2_pc LiDAR software. User-supplied photographs received on 13 October 2026 confirm the model marking and the PCB markings below. The software has a demo page, serial reader, and ROS 2 publisher. No live sensor capture or electrical acceptance has been completed. See the [LiDAR software steps](../software/README.md#lds08rr-lidar) and the [ros2_pc roadmap](../ROS_ROADMAP.md#2-roborock-lidar-in-ros-2-integrieren).
 
 ## Module label
 
@@ -74,9 +74,9 @@ The Camsense support derives from a user's capture in [LDS issue 17](https://git
 
 ## Pending electrical and mechanical verification
 
-The ros2_pc connection is not assigned. A UART or USB-to-UART adapter choice depends on confirmed connector mapping and signal voltages. The labelled 5 V supply rating does not establish 5 V UART logic. A connection requires verified ground continuity and a supply arrangement that avoids backfeeding another source.
+The proposed J8 connection is listed below; physical wiring remains unverified. A direct UART or USB-to-UART connection depends on confirmed connector mapping and signal voltages. The labelled 5 V supply rating does not establish 5 V UART logic. A connection requires verified ground continuity and a supply arrangement that avoids backfeeding another source.
 
-If this module requires external motor power control, it needs a suitable motor power stage; a GPIO cannot supply motor current. Motor voltage, motor current, PWM frequency, and the internal role of `M−` remain unknown. The connector's `M−` active-low polarity and 1 mA current when pulled to GND are user-reported measurements above. The upstream onboard-motor classification for one variant does not resolve the remaining questions from a photo.
+The Delta software driver normally activates host PWM. This integration injects an inert motor output, so it never toggles a GPIO or PWM pin. The Camsense driver has no host motor output. Neither driver choice proves which protocol or motor circuit this module uses. The connector's `M−` active-low polarity and 1 mA current when pulled to GND are user-reported measurements above. Its open-circuit voltage, logic thresholds, waveform, motor voltage, and total motor current still need measurement before a sink circuit is selected.
 
 The remaining hardware record needs:
 
@@ -85,7 +85,19 @@ The remaining hardware record needs:
 - A raw serial capture identifying framing, scan rate, distance units, and invalid measurements.
 - Range, accuracy, optical clearance, independently measured dimensions and mounting-hole spacing, and scan-plane alignment for this module.
 
-The future ROS 2 integration can publish `sensor_msgs/msg/LaserScan` as described in the roadmap. No driver, GPIO allocation, motor-control implementation, or sensor transform has been selected by this hardware reference.
+The software publishes `sensor_msgs/msg/LaserScan` on `/scan` and diagnostics on `/lidar/status`. Its 360 one-degree bins preserve the nearest valid return in metres and use positive infinity for missing returns. The range limits of 0.01 m and 30 m are provisional software bounds, not measured LDS08RR limits. Angle zero and rotation direction follow the driver output and remain uncalibrated. The scan timestamp estimates scan start by subtracting one reported rotation period from host receive completion time.
+
+## Planned ros2_pc connection
+
+Reserve UART2 on the Compute Module 5 J8 header. GPIO4 is UART2 TX on physical pin 7. GPIO5 is UART2 RX on physical pin 29. Connect LiDAR TX to pin 29 only after measuring the signal level. Leave LiDAR RX disconnected unless a captured protocol shows that the host must send commands. Use J8 pin 4 for the module's 5 V input and pin 6 for ground only after checking the carrier supply path and current budget.
+
+The Compute Module 5 used for software checks reported model `Raspberry Pi Compute Module 5 Rev 1.0` and Ubuntu 24.04.5. At the time of inspection, `/dev/ttyAMA0` and `/dev/ttyAMA10` existed, `/dev/ttyAMA2` did not, and `/boot/firmware/config.txt` had no UART2 overlay. `pinctrl get 4-5` showed GPIO4 and GPIO5 with no alternate function. GPIO14 and GPIO15 were assigned to UART0. The installed overlay documentation lists `dtoverlay=uart2-pi5` for UART2 GPIO4 and GPIO5. These checks establish the software host's current pin mux and overlay availability. They do not establish the sensor wiring or the device name after enabling UART2.
+
+Do not edit the boot configuration or connect the module as part of software setup. After the supply, ground, connector mapping, and UART voltage levels are confirmed, add `dtoverlay=uart2-pi5` to `/boot/firmware/config.txt` and reboot the Compute Module 5. Check the pin mux with `pinctrl get 4-5`. Then inspect `/dev/ttyAMA*` and confirm which device maps to UART2 on that image before passing it to the launcher. Do not assume that UART2 is `/dev/ttyAMA2` from its UART number alone.
+
+Reserve J8 pin 11 (GPIO17) for a possible future external sink that controls `M−`. Do not connect `M−` directly to GPIO17 or add a transistor until you measure its idle voltage, logic thresholds, and drive requirements. No boot overlay, GPIO output, or motor-control code activates this pin.
+
+The selected protocol remains unverified. Choose `delta` or `camsense` explicitly from a capture made from this module. The software does not auto-detect or switch protocols.
 
 ## Evidence
 
