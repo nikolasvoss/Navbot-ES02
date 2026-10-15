@@ -1,6 +1,6 @@
 # ESP32 ↔ ros2_pc UART protocol (NavBot link v1)
 
-Status: **specification and PC-side framing library only.** Firmware integration (nanopb), the ROS 2 bridge node and the UART/pin choice are not done; no hardware test has been run.
+Status: **specification and PC-side framing library only.** Firmware integration (nanopb), and the ROS 2 bridge node are not done; the UART settings are fixed below but no hardware test has been run.
 
 ## Design
 

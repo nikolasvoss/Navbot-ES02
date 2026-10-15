@@ -60,13 +60,14 @@ def encode_frame(payload: bytes) -> bytes:
 
 
 class FrameDecoder:
-    """Feed arbitrary byte chunks; yields valid payloads, counts bad frames."""
+    """Feed arbitrary byte chunks; returns the valid payloads, counts bad frames."""
 
     def __init__(self):
         self._buf = bytearray()
         self.bad_frames = 0
 
-    def feed(self, chunk: bytes):
+    def feed(self, chunk: bytes) -> list:
+        frames = []
         for b in chunk:
             if b != 0:
                 self._buf.append(b)
@@ -85,4 +86,8 @@ class FrameDecoder:
             if len(body) < 2 or crc16(body[:-2]) != int.from_bytes(body[-2:], "little"):
                 self.bad_frames += 1
                 continue
-            yield body[:-2]
+            if len(body) - 2 > MAX_PAYLOAD:
+                self.bad_frames += 1
+                continue
+            frames.append(body[:-2])
+        return frames

@@ -27,7 +27,7 @@ class Framing(unittest.TestCase):
         dec = FrameDecoder()
         out = []
         for i in range(len(stream)):  # byte-at-a-time
-            out += list(dec.feed(stream[i:i + 1]))
+            out += dec.feed(stream[i:i + 1])
         self.assertEqual(out, [b"\x00\x00\x00", b"\x02\x00\x02"])
         self.assertEqual(dec.bad_frames, 2)
 

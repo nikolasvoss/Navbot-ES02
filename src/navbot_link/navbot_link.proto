@@ -19,9 +19,9 @@ message Message {
 
 // Sensor data. SI units; the field name carries the unit where it is not SI.
 message Imu {
-  float ax = 2; float ay = 3; float az = 4;     // m/s^2
-  float gx = 5; float gy = 6; float gz = 7;     // rad/s
-  float roll_rad = 8; float pitch_rad = 9; float yaw_rad = 10;
+  float ax = 1; float ay = 2; float az = 3;     // m/s^2
+  float gx = 4; float gy = 5; float gz = 6;     // rad/s
+  float roll_rad = 7; float pitch_rad = 8; float yaw_rad = 9;
 }
 
 message Battery {
