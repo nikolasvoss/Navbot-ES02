@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from lds2d.viz import ScanBuffer, make_app
+from lds2d.viz import ScanBuffer
 
 
 class FreshScanBuffer:
@@ -19,15 +17,19 @@ class FreshScanBuffer:
 
 
 def make_lidar_app(runtime):
-    from flask import jsonify, render_template
+    from flask import Flask, jsonify, render_template
 
-    app = make_app(FreshScanBuffer(runtime), model="Navbot LDS08RR", rotation="ccw")
-    template_root = Path(__file__).parent / "templates"
-    app.template_folder = str(template_root)
+    app = Flask(__name__)
+    scan_buffer = FreshScanBuffer(runtime)
 
+    @app.get("/")
     @app.get("/lidar")
     def lidar_page():
         return render_template("lidar.html")
+
+    @app.get("/scan.json")
+    def scan_json():
+        return jsonify(scan_buffer.latest())
 
     @app.get("/status.json")
     def status_json():

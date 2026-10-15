@@ -41,8 +41,6 @@ def main(argv=None) -> int:
     parser = build_parser(include_ssh=True)
     options = parser.parse_args(values)
     service_args = ["--demo"] if options.demo else ["--device", options.device]
-    if options.protocol is not None:
-        service_args.extend(["--protocol", options.protocol])
     service_args.extend([
         "--baud", str(options.baud), "--host", options.host,
         "--port", str(options.port), "--ros", options.ros,

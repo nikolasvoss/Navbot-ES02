@@ -1,0 +1,33 @@
+{
+  "device": "/dev/ttyAMA0",
+  "baud": 115200,
+  "bytes": 27005,
+  "elapsed_sec": 3.0126353320001726,
+  "checksum_valid_packets": 450,
+  "checksum_failed_candidates": 0,
+  "packet_examples": [
+    {
+      "offset": 5,
+      "rpm": 299.828125,
+      "start_deg": 19.546875,
+      "end_deg": 30.484375,
+      "valid_returns": 12
+    },
+    {
+      "offset": 65,
+      "rpm": 299.765625,
+      "start_deg": 31.46875,
+      "end_deg": 42.328125,
+      "valid_returns": 12
+    },
+    {
+      "offset": 125,
+      "rpm": 299.765625,
+      "start_deg": 43.3125,
+      "end_deg": 54.328125,
+      "valid_returns": 9
+    }
+  ],
+  "format": "LDS08RR Camsense; 60 bytes; 55 AA 07 0C; 115200 8N1",
+  "date": "2026-10-15"
+}

@@ -11,8 +11,7 @@ def build_parser(include_ssh: bool = False):
     parser = argparse.ArgumentParser(description="Run the LDS08RR status page and optional ROS publisher.")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--demo", action="store_true", help="show a synthetic scan without hardware")
-    source.add_argument("--device", help="serial device, for example /dev/ttyAMA2")
-    parser.add_argument("--protocol", choices=("delta", "camsense"))
+    source.add_argument("--device", help="serial device, for example /dev/ttyAMA0")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--host", default="127.0.0.1", help="HTTP bind address; use 0.0.0.0 for LAN access")
     parser.add_argument("--port", type=int, default=8081)
@@ -26,10 +25,6 @@ def build_parser(include_ssh: bool = False):
 def parse_args(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.device and not args.protocol:
-        parser.error("--device requires an explicit --protocol")
-    if args.protocol and not args.device:
-        parser.error("--protocol requires --device")
     if args.baud <= 0:
         parser.error("--baud must be positive")
     return args
@@ -56,7 +51,6 @@ def run(argv=None) -> int:
     config = SourceConfig(
         mode="demo" if args.demo else "serial",
         device=None if args.demo else Path(args.device),
-        protocol=None if args.demo else args.protocol,
         baud=args.baud,
     )
     runtime = None

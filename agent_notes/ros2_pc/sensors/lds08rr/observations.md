@@ -1,5 +1,17 @@
 # LDS08RR photo evidence, 2026-10-13
 
+## Capture and live UART confirmation, 2026-10-15
+
+Observation: The user supplied `acq0003.csv`, a 16,384-sample logic capture at 800 kHz. UART decoding at 115200 baud, 8N1, non-inverted gives three complete LDS08RR Camsense packets. All three 60-byte packets have header `55 AA 07 0C` and valid checksums (`0x5FBF`, `0x40B4`, `0x6D09`). The first spans 175.328125°–186.25°, with 193–288 mm returns and a reported 300.8125 RPM. `0x8000` occurs as the missing-return marker. The first packet is retained literally in `test_module_tx_capture_decodes_literal_measurements`.
+
+Evidence: User attachment `acq0003.csv`, supplied in this chat on 2026-10-15. The user then stated "do that now, lidar connected". Direct UART capture on `/dev/ttyAMA0` at 115200 received 27,005 bytes in 3.01 seconds, containing 450 checksum-valid Camsense packets and zero failed checksum candidates. Raw [UART capture](captures/2026-10-15-uart0.bin) and [summary](captures/2026-10-15-uart0.json) preserve the live evidence.
+
+Observation: The current working tree assigns LiDAR UART0 on J8 pin 10 / GPIO15 RX and reserves UART2 for HMMD. On the CM5 host, `sudo pinctrl get 14-15` confirmed TXD0/RXD0; `/sys/class/tty/ttyAMA0/device/of_node` resolved to RP1 `serial@30000`. No UART console or other reader occupied the port. No boot configuration or GPIO was changed and no reboot was needed.
+
+Evidence: The existing launcher ran with ROS enabled. An independent subscriber received 26 real `/scan` messages in 5.10 seconds, each with 360 bins. The final observed message had 249 finite bins, 0.207–1.745 m returns, and a reported 0.1987 s scan period. HTTP `/status.json` reported `live`, `serial`, `/dev/ttyAMA0`, Camsense, about 5 Hz, and no receive error; ROS diagnostics had no publish error. Headless Chromium rendered the live polar canvas with no page errors. `/dev/ttyAMA0` had one reader.
+
+Practical consequence: Camsense is confirmed for this module. Remove the project Delta branch, inert motor adapter, protocol selector, and Delta tests; serial startup takes only `--device /dev/ttyAMA0`. Keep demo mode and fixed Camsense status reporting. The user's reported 3 V TX peak remains user evidence; voltage margins, supply wiring, motor circuit, physical angle zero, direction, and distance calibration were not independently verified. Earlier unverified-protocol/dual-driver notes below are historical.
+
 ## TX peak clarification, 2026-10-14
 
 Observation: The user reports LiDAR TX at 3 V peak. The earlier 1.8 V DMM reading is retained as a separate measurement.

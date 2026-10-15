@@ -10,7 +10,7 @@ The HMMD ROS 2 workspace is under `src/ros2_pc/ros2/`.
 
 ## LDS08RR LiDAR
 
-The `lds08rr_lidar` package uses `lds2d[viz]==0.7.0` for the LDS08RR protocol drivers and polar plot. The local launcher adds an operational status page at `http://127.0.0.1:8081/lidar`. It works in demo mode without a serial device or ROS. When ROS 2 is available, the same reader publishes `/scan` and `/lidar/status`.
+The `lds08rr_lidar` package uses `lds2d[viz]==0.7.0` for the confirmed LDS08RR Camsense driver and polar plot. The local launcher adds an operational status page at `http://127.0.0.1:8081/lidar`. It works in demo mode without a serial device or ROS. When ROS 2 is available, the same reader publishes `/scan` and `/lidar/status`.
 
 Create a Python environment that can import the ROS 2 system packages. Run these commands from the project root. The example uses ROS 2 Jazzy and Python 3.12.
 
@@ -34,15 +34,39 @@ python3 scripts/start_lidar.py --demo
 
 The page labels generated data as `DEMO DATA`. To run the page without ROS, add `--ros off`. The default `--ros auto` starts ROS when its Python modules are available and keeps the HTTP page up when they are not.
 
-The live serial command requires confirmed signal levels, UART2 pin mux, and a raw capture that identifies the protocol. The initial device path is provisional.
+LiDAR TX uses UART0 RX on J8 pin 10 / GPIO15, received as `/dev/ttyAMA0`. Leave LiDAR RX disconnected; J8 pin 8 / GPIO14 is host TX. A 15 October 2026 capture confirmed Camsense at 115200 baud, 8N1. Live browser scans and ROS `/scan` were verified at about 5 Hz. Verify electrical conditions before changing wiring and ensure no other process owns the UART.
 
 ```bash
-python3 scripts/start_lidar.py --device /dev/ttyAMA2 --protocol camsense
+python3 scripts/start_lidar.py --device /dev/ttyAMA0
 ```
 
-Choose `delta` or `camsense` explicitly. The launcher does not detect a protocol from arbitrary bytes. Use `--host 0.0.0.0` to accept browser connections from the LAN. Use `--ssh user@host --remote-path /absolute/project/path` to run on the ros2_pc and forward port 8081 to local loopback. SSH mode runs `$HOME/.venvs/navbot-lidar/bin/python` on the remote host, so create that environment there with the commands above. Keep the SSH command open while you use the page. A port conflict exits with an error instead of starting a second reader.
+Camsense is the sole serial protocol; no selection flag is needed. Use `--host 0.0.0.0` to accept browser connections from the LAN. Use `--ssh user@host --remote-path /absolute/project/path` to run on the ros2_pc and forward port 8081 to local loopback. SSH mode runs `$HOME/.venvs/navbot-lidar/bin/python` on the remote host, so create that environment there with the commands above. Keep the SSH command open while you use the page. A port conflict exits with an error instead of starting a second reader.
 
-`/status.json` reports waiting, invalid bytes, live, stale, and error states. The browser hides the polar plot when serial data is stale or the status server is unavailable. The upstream plot remains at `/`, and its JSON feed remains at `/scan.json`.
+### Start LiDAR automatically at boot
+
+On the ros2_pc, stop any manually launched LiDAR process before setup so only one process owns the UART. This requires the existing ROS 2 Jazzy installation, `$HOME/.venvs/navbot-lidar/bin/python`, and access to `/dev/ttyAMA0` through the `dialout` group. From the repository root, run as your normal user. The installer uses this checkout and existing environment, runs the service as your user, and writes `/etc/systemd/system/navbot-lidar.service` from `config/systemd/navbot-lidar.service.in`. It starts at boot without an interactive login and restarts after process failures. Rerun the command after moving the checkout to update and restart the service.
+
+```bash
+python3 scripts/install_lidar_service.py
+```
+
+Open `http://<ros2_pc-host>:8081/lidar` from a browser on the LAN. Manage the service with:
+
+```bash
+sudo systemctl status navbot-lidar.service
+sudo journalctl -u navbot-lidar.service -f
+sudo systemctl restart navbot-lidar.service
+```
+
+To disable startup and remove the unit:
+
+```bash
+sudo systemctl disable --now navbot-lidar.service
+sudo rm /etc/systemd/system/navbot-lidar.service
+sudo systemctl daemon-reload
+```
+
+`/status.json` reports waiting, invalid bytes, live, stale, and error states. The browser hides the polar plot when serial data is stale or the status server is unavailable. The same responsive status page is available at `/` and `/lidar`, with its JSON scan feed at `/scan.json`.
 
 Run the protocol, runtime, ROS conversion, launcher, and optional Playwright browser checks with the development environment active.
 
@@ -52,4 +76,4 @@ python3 -m pytest -q src/ros2_pc/ros2/src/lds08rr_lidar/test scripts/test_start_
 
 Install `pytest` and `playwright` in that environment, then run `python -m playwright install chromium` to include the browser acceptance check. ROS checks require the Jazzy environment above. Serial tests use Linux pseudo-terminals and recorded or constructed packet bytes.
 
-The checks use synthetic protocol fixtures and do not prove a live sensor connection. The [LDS08RR hardware reference](../hardware/lds08rr-lidar.md) records the UART assignment, current host observations, electrical checks, ROS field limits, and remaining hardware acceptance.
+Automated checks use recorded and synthetic packets; live acceptance is recorded separately in the [LDS08RR hardware reference](../hardware/lds08rr-lidar.md), together with wiring, electrical limits, and remaining calibration checks.

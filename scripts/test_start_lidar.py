@@ -23,7 +23,7 @@ def test_help_is_available_without_ros_or_sensor():
     result = subprocess.run([sys.executable, str(SCRIPT), "--help"], text=True, capture_output=True, check=False)
     assert result.returncode == 0
     assert "--demo" in result.stdout
-    assert "--protocol" in result.stdout
+    assert "--protocol" not in result.stdout
     assert "--ssh HOST" in result.stdout
     assert "--remote-path" in result.stdout
 
@@ -127,11 +127,37 @@ def test_demo_browser_hides_stale_plot_and_reports_server_loss():
 
         with playwright.sync_playwright() as browser_driver:
             browser = browser_driver.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(f"{base}/lidar")
+            page = browser.new_page(
+                viewport={"width": 390, "height": 844},
+                device_scale_factor=3, is_mobile=True, has_touch=True,
+            )
+            page.goto(f"{base}/")
             page.get_by_text("DEMO DATA · synthetic scan").wait_for(timeout=5000)
             page.locator("#plot").wait_for(state="visible", timeout=5000)
-            page.set_viewport_size({"width": 390, "height": 844})
+            assert page.locator("#autoZoom").is_checked()
+            for name in ("Zoom out", "Zoom in"):
+                button = page.get_by_role("button", name=name)
+                assert button.is_visible()
+                bounds = button.bounding_box()
+                assert bounds["width"] >= 44 and bounds["height"] >= 44
+            page.wait_for_function("""() => {
+                const plot = document.querySelector('#plot');
+                const rect = plot.getBoundingClientRect();
+                return Math.abs(rect.width - rect.height) <= 1 &&
+                    Math.abs(plot.width - rect.width * devicePixelRatio) <= 1 &&
+                    Math.abs(plot.height - rect.height * devicePixelRatio) <= 1;
+            }""")
+            page.locator("#autoZoom").uncheck()
+            radius = page.locator("#rangeLabel").inner_text().split(' · ')[0]
+            page.get_by_role("button", name="Zoom in").click()
+            assert page.locator("#rangeLabel").inner_text().split(' · ')[0] != radius
+            page.get_by_role("button", name="Zoom out").click()
+            assert page.locator("#rangeLabel").inner_text().split(' · ')[0] == radius
+            page.locator("#autoZoom").check()
+            assert page.locator("#autoZoom").is_checked()
+            for field in ("state", "protocol", "device", "bytes", "scans", "age", "rate", "points", "error"):
+                assert page.locator(f"#{field}").is_visible()
+            assert int(page.locator("#points").inner_text()) > 0
             page.locator("summary").click()
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             page.locator("summary").click()
@@ -139,7 +165,7 @@ def test_demo_browser_hides_stale_plot_and_reports_server_loss():
                 status=200,
                 content_type="application/json",
                 body=json.dumps({
-                    "state": "stale", "mode": "serial", "device": "/dev/ttyAMA2",
+                    "state": "stale", "mode": "serial", "device": "/dev/ttyAMA0",
                     "protocol": "camsense", "bytes_received": 60, "scans_received": 1,
                     "last_scan_age_sec": 3.0, "scan_rate_hz": 5.0,
                     "valid_points": 0, "last_error": None,
@@ -176,7 +202,7 @@ def test_missing_serial_device_keeps_status_page_available():
     base = f"http://127.0.0.1:{port}"
     process = subprocess.Popen(
         [sys.executable, str(SCRIPT), "--device", "/dev/navbot-lidar-not-present",
-         "--protocol", "camsense", "--ros", "off", "--port", str(port)],
+         "--ros", "off", "--port", str(port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,

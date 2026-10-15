@@ -10,12 +10,12 @@ Vor Abschluss sind der aktuelle ROS-2-Build auf dem ros2_pc, die physische UART-
 
 ## 2. Roborock-LiDAR in ROS 2 integrieren
 
-Status: Software implementiert; Live-Abnahme steht noch aus. Zweiter ROS-2-Meilenstein.
+Status: Echte Browser-Scans und ROS-2-Topic `/scan` am 15.10.2026 bestätigt; RViz, Kalibrierung und Bag-Wiedergabe noch offen. Zweiter ROS-2-Meilenstein.
 
 Das `lds08rr_lidar`-Paket bietet eine Demo ohne Radar, einen unabhängigen Browserstatus
-und einen ROS-2-Adapter. Es verwendet `lds2d[viz]==0.7.0`, lässt den Protokolltyp
-explizit wählen und veröffentlicht vollständige Scans auf `/scan` sowie den Status
-auf `/lidar/status`. Ein Host-PWM-Ausgang bleibt inert. Die Hardware- und
+und einen ROS-2-Adapter. Es verwendet den bestätigten Camsense-Treiber aus
+`lds2d[viz]==0.7.0` und veröffentlicht vollständige Scans auf `/scan` sowie den Status
+auf `/lidar/status`. Kein Host-PWM-Ausgang wird aktiviert. Die Hardware- und
 Protokollgrenzen stehen in der [LDS08RR-Hardwaredokumentation](hardware/lds08rr-lidar.md).
 Die [Softwareanleitung](software/README.md#lds08rr-lidar) enthält Build-, Demo- und
 Startbefehle.
@@ -26,15 +26,13 @@ Wiring noch Sensorprotokoll, Orientierung, Reichweite oder Scanrate.
 
 ### Grundlage und offene Fragen
 
-Das Modul ist als LDS08RR identifiziert. Vor dem Anschluss müssen Pinbelegung,
-Signalpegel, UART2-Mapping, Motoransteuerung und Datenprotokoll dieses Moduls
-geklärt werden. Der Upstream-Treiber ist ausgewählt. Die konkrete Protokollvariante
-bleibt bis zu einem Rohdatenmitschnitt offen.
+Der TX-Mitschnitt `acq0003.csv` bestätigt das LDS08RR-Camsense-Format bei 115200 Baud,
+8N1. Ein direkter Mitschnitt auf `/dev/ttyAMA0` lieferte 450 gültige Pakete ohne
+Prüfsummenfehler; Browser und ROS empfangen echte Scans bei etwa 5 Hz. Winkelnullpunkt,
+Drehrichtung, Messgenauigkeit und elektrische Abnahme bleiben offen.
 
-- [ ] TODO: Nach einem Rohdatenmitschnitt dieses Moduls und gültigen Scans mit dem
-  bestätigten Treiber die unbenutzte Protokollvariante aus der Projektauswahl,
-  Treiberanbindung, den Tests und der Dokumentation entfernen. Delta und Camsense
-  bleiben bis dahin gemäß Nutzerauftrag beide implementiert.
+- [x] Nach Protokollbestätigung und gültigen Scans die unbenutzte Delta-Anbindung,
+  Protokollauswahl und zugehörigen Tests und Anleitungen entfernt.
 
 ### Geplanter Umfang
 

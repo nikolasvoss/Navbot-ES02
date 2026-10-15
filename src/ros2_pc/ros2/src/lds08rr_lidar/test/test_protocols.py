@@ -50,40 +50,18 @@ def camsense_packet(start_deg, distances, corrupt=False):
     return bytes(packet)
 
 
-def delta_packet(start_angle, distances, corrupt=False):
-    body = bytearray([0xAA, 0, 0, 0x01, 0x61, 0xAD])
-    body.extend((5 + 3 * len(distances)).to_bytes(2, "big"))
-    body.extend([120, 0, 0])
-    body.extend(round(start_angle * 100).to_bytes(2, "big"))
-    for distance in distances:
-        body.extend([200])
-        body.extend(round(distance * 4).to_bytes(2, "big"))
-    body[1:3] = len(body).to_bytes(2, "big")
-    checksum = (sum(body) & 0xFFFF) ^ (1 if corrupt else 0)
-    body.extend(checksum.to_bytes(2, "big"))
-    return bytes(body)
-
-
-@pytest.mark.parametrize(
-    ("protocol", "model", "data", "expected"),
-    [
-        ("camsense", "3IROBOTIX-LDS08RR-CAMSENSE",
-         b"noise" + camsense_packet(20, [700] * 12) + camsense_packet(32, [701] * 12), 24),
-        ("delta", "3IROBOTIX-LDS08RR",
-         b"garbage" + delta_packet(20, [800, 801, 802, 803]), 4),
-    ],
-)
-def test_public_upstream_drivers_decode_fragmented_protocol_bytes(monkeypatch, protocol, model, data, expected):
+def test_upstream_camsense_decodes_fragmented_protocol_bytes(monkeypatch):
+    data = b"noise" + camsense_packet(20, [700] * 12) + camsense_packet(32, [701] * 12)
     serial_port = FixtureSerial(data)
     monkeypatch.setattr("serial.Serial", lambda **kwargs: serial_port)
-    config = SourceConfig(mode="serial", device=Path("fixture"), protocol=protocol)
+    config = SourceConfig(mode="serial", device=Path("fixture"))
     driver = open_driver(config, ByteActivity(), Event())
     try:
-        points = list(islice(driver.points(), expected))
+        points = list(islice(driver.points(), 24))
     finally:
         driver.close()
-    assert len(points) == expected
-    assert points[0].dist_mm > 0
+    assert len(points) == 24
+    assert points[0].dist_mm == 700
     assert points[0].angle_deg == pytest.approx(20.0)
     assert serial_port.closed
 
@@ -91,7 +69,7 @@ def test_public_upstream_drivers_decode_fragmented_protocol_bytes(monkeypatch, p
 def test_corrupt_camsense_packet_is_skipped_before_valid_packet(monkeypatch):
     serial_port = FixtureSerial(camsense_packet(4, [400] * 12, corrupt=True) + camsense_packet(20, [900] * 12))
     monkeypatch.setattr("serial.Serial", lambda **kwargs: serial_port)
-    config = SourceConfig(mode="serial", device=Path("fixture"), protocol="camsense")
+    config = SourceConfig(mode="serial", device=Path("fixture"))
     driver = open_driver(config, ByteActivity(), Event())
     try:
         point = next(driver.points())
@@ -99,31 +77,6 @@ def test_corrupt_camsense_packet_is_skipped_before_valid_packet(monkeypatch):
         driver.close()
     assert point.angle_deg == pytest.approx(20)
     assert point.dist_mm == 900
-
-
-def test_corrupt_delta_packet_is_skipped_before_valid_packet(monkeypatch):
-    serial_port = FixtureSerial(delta_packet(4, [400] * 4, corrupt=True) + delta_packet(20, [900] * 4))
-    monkeypatch.setattr("serial.Serial", lambda **kwargs: serial_port)
-    config = SourceConfig(mode="serial", device=Path("fixture"), protocol="delta")
-    driver = open_driver(config, ByteActivity(), Event())
-    try:
-        point = next(driver.points())
-    finally:
-        driver.close()
-    assert point.dist_mm == 900
-    assert point.angle_deg == pytest.approx(20)
-
-
-def test_delta_motor_adapter_is_injected_and_inert(monkeypatch):
-    serial_port = FixtureSerial(delta_packet(0, [500] * 4))
-    monkeypatch.setattr("serial.Serial", lambda **kwargs: serial_port)
-    config = SourceConfig(mode="serial", device=Path("fixture"), protocol="delta")
-    driver = open_driver(config, ByteActivity(), Event())
-    try:
-        next(driver.points())
-    finally:
-        driver.close()
-    assert serial_port.closed
 
 
 class RuntimeDriver:
@@ -155,7 +108,7 @@ def test_runtime_discards_first_partial_rotation_and_hides_stale_plot():
         Scan([ScanPoint(0, 777, 80)], 5.0),
     ])
     driver = RuntimeDriver(rotations)
-    config = SourceConfig(mode="serial", device=Path("fixture"), protocol="delta")
+    config = SourceConfig(mode="serial", device=Path("fixture"))
     runtime = LidarRuntime(config, driver_factory=lambda *_: driver)
     runtime.start()
     try:
@@ -179,7 +132,7 @@ def test_runtime_discards_first_partial_rotation_and_hides_stale_plot():
 
 
 def test_runtime_reports_no_bytes_invalid_bytes_and_missing_uart():
-    config = SourceConfig(mode="serial", device=Path("fixture"), protocol="camsense")
+    config = SourceConfig(mode="serial", device=Path("fixture"))
     driver = RuntimeDriver([])
     opened = Event()
 
@@ -223,7 +176,7 @@ def test_reopened_serial_session_waits_for_its_first_complete_scan():
         return first if calls == 1 else second
 
     runtime = LidarRuntime(
-        SourceConfig(mode="serial", device=Path("fixture"), protocol="delta"),
+        SourceConfig(mode="serial", device=Path("fixture")),
         driver_factory=reopen,
     )
     runtime.start()
@@ -262,36 +215,32 @@ def test_ros_scan_conversion_uses_fixed_bins_metres_and_infinity():
     assert message.ranges[2] == float("inf")
 
 
-def test_recorded_camsense_frame_decodes_literal_measurements(monkeypatch):
+def test_module_tx_capture_decodes_literal_measurements(monkeypatch):
     captured = bytes.fromhex(
-        "55AA070C874B3FC24F050F006805030040050100710212006D021E00"
-        "6802210064022100620222005E0221005B02210059022100560222"
-        "0004C5D61A"
+        "55AA070C344BD5CBC1001000CB000A00DA000900FA00030003012200"
+        "FE003C0002013500090138000F013900140144001701350020010200"
+        "90CEBF5F"
     )
     port = FixtureSerial(captured)
     monkeypatch.setattr("serial.Serial", lambda **kwargs: port)
-    config = SourceConfig(mode="serial", device=Path("fixture"), protocol="camsense")
+    config = SourceConfig(mode="serial", device=Path("fixture"))
     driver = open_driver(config, ByteActivity(), Event())
     try:
         point = next(driver.points())
-        assert point.dist_mm == 1359
-        assert point.quality == 15
-        assert point.angle_deg == pytest.approx(136.984375)
+        assert point.dist_mm == 193
+        assert point.quality == 16
+        assert point.angle_deg == pytest.approx(175.328125)
     finally:
         driver.close()
 
 
-@pytest.mark.parametrize("protocol", ["camsense", "delta"])
-def test_real_serial_transport_reconnects_and_stops_without_bytes(tmp_path, protocol):
+def test_real_serial_transport_reconnects_and_stops_without_bytes(tmp_path):
     first_master, first_slave = pty.openpty()
     second_master, second_slave = pty.openpty()
     device = tmp_path / "lidar-uart"
     device.symlink_to(os.ttyname(first_slave))
-    if protocol == "camsense":
-        rotation = b"".join(camsense_packet(k * 12, [1000] * 12) for k in range(30))
-    else:
-        rotation = b"".join(delta_packet(k * 22.5, [1000] * 24) for k in range(16))
-    runtime = LidarRuntime(SourceConfig(mode="serial", device=device, protocol=protocol))
+    rotation = b"".join(camsense_packet(k * 12, [1000] * 12) for k in range(30))
+    runtime = LidarRuntime(SourceConfig(mode="serial", device=device))
     runtime.start()
     try:
         wait_until(lambda: runtime._opened_at is not None)

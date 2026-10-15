@@ -8,7 +8,6 @@ from typing import Literal
 
 from lds2d import Lidar
 
-Protocol = Literal["camsense", "delta"]
 Mode = Literal["demo", "serial"]
 
 
@@ -16,14 +15,13 @@ Mode = Literal["demo", "serial"]
 class SourceConfig:
     mode: Mode = "demo"
     device: Path | None = None
-    protocol: Protocol | None = None
     baud: int = 115200
 
     def __post_init__(self) -> None:
-        if self.mode == "demo" and (self.device is not None or self.protocol is not None):
-            raise ValueError("demo mode does not take a device or protocol")
-        if self.mode == "serial" and (self.device is None or self.protocol is None):
-            raise ValueError("serial mode requires both a device and a protocol")
+        if self.mode == "demo" and self.device is not None:
+            raise ValueError("demo mode does not take a device")
+        if self.mode == "serial" and self.device is None:
+            raise ValueError("serial mode requires a device")
 
 
 class ByteActivity:
@@ -70,16 +68,6 @@ class ObservedTransport:
         self._transport.close()
 
 
-class NoMotorOutput:
-    """Satisfy lds2d's injected motor contract without touching GPIO or PWM."""
-
-    def set_duty(self, duty: float) -> None:
-        return None
-
-    def close(self) -> None:
-        return None
-
-
 def open_driver(config: SourceConfig, activity: ByteActivity, stop: Event):
     if config.mode == "demo":
         from lds2d.demo import DemoLidar
@@ -88,19 +76,12 @@ def open_driver(config: SourceConfig, activity: ByteActivity, stop: Event):
 
     import serial
 
-    model = {
-        "delta": "3IROBOTIX-LDS08RR",
-        "camsense": "3IROBOTIX-LDS08RR-CAMSENSE",
-    }[config.protocol]
     port = serial.Serial(
         port=str(config.device), baudrate=config.baud, timeout=0.2, exclusive=True
     )
     transport = ObservedTransport(port, activity, stop)
-    kwargs = {"transport": transport}
-    if config.protocol == "delta":
-        kwargs["motor"] = NoMotorOutput()
     try:
-        return Lidar.open(model, **kwargs)
+        return Lidar.open("3IROBOTIX-LDS08RR-CAMSENSE", transport=transport)
     except Exception:
         transport.close()
         raise

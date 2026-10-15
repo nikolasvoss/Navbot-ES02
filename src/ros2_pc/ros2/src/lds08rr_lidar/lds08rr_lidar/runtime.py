@@ -105,7 +105,7 @@ class LidarRuntime:
             state=state,
             mode=self.config.mode,
             device=None if self.config.device is None else str(self.config.device),
-            protocol=self.config.protocol,
+            protocol="camsense" if self.config.mode == "serial" else None,
             bytes_received=byte_count,
             scans_received=count,
             last_scan_age_sec=age,
