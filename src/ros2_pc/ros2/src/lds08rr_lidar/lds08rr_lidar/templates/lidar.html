@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Navbot LDS08RR</title>
+  <style>
+    :root { color-scheme: dark; font: 15px system-ui, sans-serif; background: #101820; color: #edf3f7; }
+    * { box-sizing: border-box; }
+    body { height: 100dvh; margin: 0; padding: .75rem; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: .55rem; overflow: hidden; }
+    h1 { margin: 0; font-size: 1.35rem; }
+    h2 { margin: .2rem 0 .65rem; font-size: 1rem; }
+    a { color: #7dd3fc; }
+    .top, .plotTools { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+    .badge { border: 1px solid #64748b; border-radius: 999px; padding: .3rem .65rem; font-weight: 700; }
+    .demo { border-color: #f59e0b; color: #fbbf24; }
+    .error { color: #fca5a5; }
+    #summary { margin: 0; min-height: 1.4em; color: #cbd5e1; }
+    [hidden] { display: none !important; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: .65rem; min-height: 0; }
+    section { min-width: 0; min-height: 0; background: #18232d; border: 1px solid #354552; border-radius: .6rem; padding: .7rem; }
+    .scan { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: .35rem; }
+    .sidebar { overflow-y: auto; }
+    .plotTools { justify-content: flex-end; flex-wrap: wrap; }
+    .autoZoom { display: flex; align-items: center; gap: .35rem; white-space: nowrap; }
+    #rangeLabel { margin-right: auto; color: #cbd5e1; font-variant-numeric: tabular-nums; }
+    button { width: 2.4rem; height: 2.1rem; border: 1px solid #637887; border-radius: .35rem; background: #263744; color: white; font-size: 1.25rem; cursor: pointer; }
+    button:disabled { opacity: .45; cursor: default; }
+    #plot, #plotState { width: 100%; height: 100%; min-height: 0; border-radius: .35rem; }
+    #plot { display: block; background: #111c25; }
+    #plotState { display: grid; place-items: center; color: #cbd5e1; text-align: center; }
+    dl { display: grid; grid-template-columns: 1fr auto; gap: .38rem .65rem; margin: 0; }
+    dt { color: #9fb0bd; }
+    dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+    .error-row { grid-column: 1 / -1; text-align: left; }
+    .error-row dt { margin-top: .2rem; }
+    details { margin-top: .8rem; border-top: 1px solid #354552; padding-top: .65rem; }
+    summary { cursor: pointer; color: #cbd5e1; }
+    details p { line-height: 1.4; }
+    pre { overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #101820; padding: .6rem; border-radius: .3rem; }
+    @media (max-width: 760px) {
+      body { height: auto; min-height: 100dvh; grid-template-rows: auto auto auto; overflow: auto; }
+      .grid { grid-template-columns: minmax(0, 1fr); }
+      .scan { height: auto; min-height: 0; grid-template-rows: auto auto; }
+      #plot, #plotState { width: 100%; height: auto; aspect-ratio: 1; }
+      .plotTools { display: grid; grid-template-columns: minmax(0, 1fr) 48px 48px; }
+      #rangeLabel { grid-column: 1 / -1; }
+      .autoZoom { min-height: 44px; }
+      .autoZoom input { width: 22px; height: 22px; }
+      button { width: 48px; height: 48px; }
+      .sidebar { min-height: 0; overflow: visible; }
+      dl { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>Navbot LDS08RR</h1>
+    <span id="modeBadge" class="badge">Connecting</span>
+  </header>
+  <p id="summary" role="status">Loading LiDAR status…</p>
+  <main class="grid">
+    <section class="scan" aria-label="LiDAR scan">
+      <div class="plotTools">
+        <span id="rangeLabel">View radius: waiting</span>
+        <label class="autoZoom"><input id="autoZoom" type="checkbox" checked> Auto zoom</label>
+        <button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+        <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+      </div>
+      <div id="plotState">Waiting for a complete scan.</div>
+      <canvas id="plot" aria-label="Live LiDAR scan" hidden></canvas>
+    </section>
+    <section class="sidebar" aria-label="Connection and hardware status">
+      <h2>Connection</h2>
+      <dl>
+        <dt>State</dt><dd id="state">Unknown</dd>
+        <dt>Protocol</dt><dd id="protocol">Not selected</dd>
+        <dt>Device</dt><dd id="device">Not selected</dd>
+        <dt>Received bytes</dt><dd id="bytes">0</dd>
+        <dt>Complete scans</dt><dd id="scans">0</dd>
+        <dt>Last scan age</dt><dd id="age">No scan</dd>
+        <dt>Scan rate</dt><dd id="rate">Unknown</dd>
+        <dt>Valid points</dt><dd id="points">0</dd>
+        <dt class="error-row">Last error</dt><dd id="error" class="error-row">None</dd>
+      </dl>
+      <details>
+        <summary>Hardware and setup notes</summary>
+        <p>UART0 uses J8 pin 8 (GPIO14 TX) and pin 10 (GPIO15 RX). LiDAR TX is received on <code>/dev/ttyAMA0</code>; leave LiDAR RX disconnected.</p>
+        <p>Use J8 pin 4 for 5 V and pin 6 for ground only after supply and current checks. No motor GPIO or PWM output is enabled.</p>
+        <p>M− is reported at 5 V idle and needs an external transistor sink. TX is reported at 3 V peak; the earlier DMM reading was 1.8 V. The 15 October 2026 capture and live UART scans confirm Camsense at 115200 baud, 8N1. Voltage levels were not independently measured.</p>
+        <p>Angle zero and direction are native and uncalibrated. See <code>docs/ros2_pc/hardware/lds08rr-lidar.md</code> for setup and evidence.</p>
+        <p>Software uses the LDS08RR Camsense driver from <code>lds2d[viz]==0.7.0</code>.</p>
+        <p>On the robot, install ROS 2 Jazzy and create the documented Python environment:</p>
+        <pre>python3 -m venv --system-site-packages "$HOME/.venvs/navbot-lidar"
+source "$HOME/.venvs/navbot-lidar/bin/activate"
+python -m pip install 'lds2d[viz]==0.7.0'</pre>
+        <p>Run these commands from the project checkout. Use <code>--demo</code> to check the page without hardware:</p>
+        <pre>python scripts/start_lidar.py --demo --host 0.0.0.0</pre>
+        <p>Replace <code>--demo</code> with <code>--device /dev/ttyAMA0</code> for live scans. Source <code>/opt/ros/jazzy/setup.bash</code> to enable ROS output.</p>
+        <p>Confirm that no console or other process owns <code>/dev/ttyAMA0</code>, and verify supply, ground, connector mapping, and signal voltage before wiring. UART2 and its overlay are reserved for the HMMD radar.</p>
+      </details>
+    </section>
+  </main>
+  <script>
+    const canvas = document.querySelector('#plot');
+    const context = canvas.getContext('2d');
+    const plotState = document.querySelector('#plotState');
+    const rangeLabel = document.querySelector('#rangeLabel');
+    const zoomIn = document.querySelector('#zoomIn');
+    const zoomOut = document.querySelector('#zoomOut');
+    const autoZoom = document.querySelector('#autoZoom');
+    const minZoom = 0.5;
+    const maxZoom = 8;
+    let latestScan = null;
+    let autoRangeMm = 1000;
+    let targetRangeMm = 1000;
+    let zoom = 1;
+    let visible = false;
+
+    function setVisible(show, message) {
+      visible = show;
+      canvas.hidden = !show;
+      plotState.hidden = show;
+      plotState.textContent = message;
+      if (!show) {
+        latestScan = null;
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        rangeLabel.textContent = 'View radius: waiting';
+      }
+    }
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.round(rect.width * ratio);
+      const height = Math.round(rect.height * ratio);
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      draw();
+    }
+    function draw() {
+      if (!visible || !latestScan) return;
+      const ratio = window.devicePixelRatio || 1;
+      const width = canvas.width / ratio;
+      const height = canvas.height / ratio;
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const radius = Math.max(1, Math.min(width, height) * .46);
+      const range = autoRangeMm / zoom;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.clearRect(0, 0, width, height);
+      context.strokeStyle = '#354653';
+      context.lineWidth = 1;
+      context.fillStyle = '#9fb0bd';
+      context.font = '12px system-ui, sans-serif';
+      for (let ring = 1; ring <= 4; ring++) {
+        const r = radius * ring / 4;
+        context.beginPath();
+        context.arc(centerX, centerY, r, 0, Math.PI * 2);
+        context.stroke();
+        context.fillText(`${(range * ring / 4 / 1000).toFixed(1)} m`, centerX + 5, centerY - r - 4);
+      }
+      context.beginPath();
+      for (let degrees = 30; degrees < 360; degrees += 30) {
+        if (degrees % 90 === 0) continue;
+        const angle = degrees * Math.PI / 180;
+        context.moveTo(centerX, centerY);
+        context.lineTo(centerX + Math.sin(angle) * radius, centerY - Math.cos(angle) * radius);
+      }
+      context.stroke();
+      context.strokeStyle = '#718c9c';
+      context.beginPath();
+      context.moveTo(centerX - radius, centerY);
+      context.lineTo(centerX + radius, centerY);
+      context.moveTo(centerX, centerY - radius);
+      context.lineTo(centerX, centerY + radius);
+      context.stroke();
+      context.fillStyle = '#70ffd0';
+      for (const point of latestScan.points) {
+        const angle = Number(point.angle) * Math.PI / 180;
+        const distance = Number(point.dist);
+        if (!Number.isFinite(angle) || !Number.isFinite(distance) || distance <= 0 || distance > range) continue;
+        const x = centerX + Math.sin(angle) * distance / range * radius;
+        const y = centerY - Math.cos(angle) * distance / range * radius;
+        context.globalAlpha = .72 + .28 * Math.min(1, Math.max(0, Number(point.quality) || 0) / 255);
+        context.beginPath();
+        context.arc(x, y, 2.2, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.globalAlpha = 1;
+      context.fillStyle = '#fff';
+      context.beginPath();
+      context.arc(centerX, centerY, 4, 0, Math.PI * 2);
+      context.fill();
+      context.save();
+      context.fillStyle = '#9fb0bd';
+      context.textBaseline = 'middle';
+      const directions = [
+        ['0°', centerX, centerY - radius + 16, 'center'],
+        ['90°', centerX + radius - 6, centerY - 12, 'right'],
+        ['180°', centerX, centerY + radius - 12, 'center'],
+        ['270°', centerX - radius + 6, centerY - 12, 'left'],
+      ];
+      for (const [label, x, y, align] of directions) {
+        context.textAlign = align;
+        context.fillText(label, x, y);
+      }
+      context.restore();
+      rangeLabel.textContent = `View radius: ${(range / 1000).toFixed(2)} m · ${latestScan.n} points · ${Number(latestScan.freq_hz).toFixed(1)} Hz`;
+      zoomIn.disabled = zoom >= maxZoom;
+      zoomOut.disabled = zoom <= minZoom;
+    }
+    async function fetchJson(path, timeoutMs) {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(path, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    }
+    async function refresh() {
+      try {
+        const data = await fetchJson('/status.json', 2500);
+        const demo = data.mode === 'demo';
+        const badge = document.querySelector('#modeBadge');
+        badge.textContent = demo ? 'DEMO DATA · synthetic scan' : data.state.toUpperCase();
+        badge.className = `badge${demo ? ' demo' : ''}`;
+        document.querySelector('#summary').textContent = demo && data.state === 'demo'
+          ? 'This animated scan is generated in software. It does not come from the LiDAR.'
+          : demo
+            ? `DEMO ${data.state.toUpperCase()} · synthetic scan is not currently fresh.`
+            : `${data.state.toUpperCase()} · ${data.device || 'No serial device configured'}`;
+        document.querySelector('#state').textContent = data.state;
+        document.querySelector('#protocol').textContent = data.protocol || 'Demo';
+        document.querySelector('#device').textContent = data.device || 'None';
+        document.querySelector('#bytes').textContent = data.bytes_received;
+        document.querySelector('#scans').textContent = data.scans_received;
+        document.querySelector('#age').textContent = data.last_scan_age_sec == null ? 'No scan' : `${data.last_scan_age_sec.toFixed(1)} s`;
+        document.querySelector('#rate').textContent = data.scan_rate_hz == null ? 'Unknown' : `${data.scan_rate_hz.toFixed(2)} Hz`;
+        document.querySelector('#points').textContent = data.valid_points;
+        const error = document.querySelector('#error');
+        error.textContent = data.last_error || 'None';
+        error.className = data.last_error ? 'error error-row' : 'error-row';
+        const canShow = data.scans_received > 0 && (data.state === 'live' || data.state === 'demo');
+        if (!canShow) {
+          setVisible(false, data.state === 'live' ? 'Waiting for a complete scan.' : `${data.state.toUpperCase()}. The scan plot is hidden until data is fresh.`);
+          return;
+        }
+        const becameVisible = !visible;
+        if (becameVisible) {
+          setVisible(true, '');
+        }
+      } catch (error) {
+        document.querySelector('#modeBadge').textContent = 'SERVER UNAVAILABLE';
+        document.querySelector('#modeBadge').className = 'badge error';
+        document.querySelector('#summary').textContent = `Status request failed: ${error.message}`;
+        document.querySelector('#error').textContent = error.message;
+        setVisible(false, 'LiDAR status server unavailable.');
+      } finally {
+        window.setTimeout(refresh, 1000);
+      }
+    }
+    async function pollScan() {
+      if (!visible) { window.setTimeout(pollScan, 120); return; }
+      try {
+        const scan = await fetchJson('/scan.json', 1100);
+        if (!visible || !Array.isArray(scan.points)) return;
+        const firstScan = latestScan === null;
+        latestScan = scan;
+        const distances = scan.points.map(point => Number(point.dist)).filter(distance => Number.isFinite(distance) && distance > 0).sort((a, b) => a - b);
+        if (autoZoom.checked && distances.length) {
+          const index = distances.length > 20 ? Math.ceil(distances.length * .95) - 1 : distances.length - 1;
+          targetRangeMm = distances[index] * 1.1;
+          if (firstScan || targetRangeMm > autoRangeMm) autoRangeMm = targetRangeMm;
+          else autoRangeMm += (targetRangeMm - autoRangeMm) * .18;
+        }
+        draw();
+      } catch (error) {
+        document.querySelector('#error').textContent = error.message;
+        setVisible(false, 'LiDAR scan request failed.');
+      } finally {
+        window.setTimeout(pollScan, 120);
+      }
+    }
+    zoomIn.addEventListener('click', () => { zoom = Math.min(maxZoom, zoom * 1.25); draw(); });
+    zoomOut.addEventListener('click', () => { zoom = Math.max(minZoom, zoom / 1.25); draw(); });
+    window.addEventListener('resize', resizeCanvas);
+    new ResizeObserver(resizeCanvas).observe(canvas);
+    refresh();
+    pollScan();
+  </script>
+</body>
+</html>

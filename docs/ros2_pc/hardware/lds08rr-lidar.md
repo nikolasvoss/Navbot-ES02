@@ -2,11 +2,11 @@
 
 ## Scope and status
 
-The LDS08RR is the module named for the planned ros2_pc LiDAR integration. User-supplied photographs received on 13 October 2026 confirm the model marking and the PCB markings below. They do not confirm an installed connection, electrical measurements, or a working ROS 2 driver. Integration remains planned in the [ros2_pc roadmap](../ROS_ROADMAP.md#2-roborock-lidar-in-ros-2-integrieren).
+LDS08RR is the selected ros2_pc LiDAR. User photographs from 13 October 2026 confirm its label and PCB markings. Live Camsense reception, browser scans, and ROS `/scan` were verified on 15 October 2026. Electrical acceptance and orientation calibration remain open. See the [software steps](../software/README.md#lds08rr-lidar) and [roadmap](../ROS_ROADMAP.md#2-roborock-lidar-in-ros-2-integrieren).
 
 ## Module label
 
-The [label photograph](images/lds08rr-label.jpg) shows these markings on this module:
+The [label photograph](images/lds08rr-label.jpg) shows:
 
 | Item | Printed marking |
 | --- | --- |
@@ -16,77 +16,112 @@ The [label photograph](images/lds08rr-label.jpg) shows these markings on this mo
 | Compliance statement | `IEC 60825-1:2014` and `EN 60825-1:2014+A11:2021` |
 | Separate identification label | `HHCD2SAA1204104` |
 
-The rated power divided by the rated voltage gives 0.30 A. This is a calculation from the label, not a measurement or a startup, stall, or peak-current limit. The laser classification and compliance statement are label claims, not independent certification checks.
+Dividing the labelled power by voltage gives 0.30 A, not a measured startup, stall, or peak limit. Laser classification and compliance are unverified label claims.
 
 ![LDS08RR model, voltage, power, and laser label](images/lds08rr-label.jpg)
 
 ## Connector and PCB markings
 
-The [PCB photograph](images/lds08rr-pcb.jpg) shows a six-contact connector at the top of the image. In that exact view, with the silkscreen text upright and the contacts below the connector body, the printed labels run left to right as follows. The numbers below describe photo positions only; they are not manufacturer pin numbers.
+In the [PCB photograph](images/lds08rr-pcb.jpg), the six-contact connector is at the top, with upright silkscreen and contacts below its body. Positions below run left to right in that view; they are not manufacturer pin numbers.
 
-| Photo position | Silkscreen | Verification status |
+| Photo position | Silkscreen | Status |
 | ---: | --- | --- |
-| 1, leftmost | `NC` | Marking only; internal connection unverified |
-| 2 | `M−` | Active low; user reports 1 mA when pulled to GND on 14 October 2026 |
-| 3 | `RX` | Likely module receive signal by naming; direction and voltage unmeasured |
-| 4 | `TX` | Likely module transmit signal by naming; direction and voltage unmeasured |
-| 5 | `GND` | Lidar Ground |
-| 6, rightmost | `VIN` | Supply input, 500mA max., 230mA measured with Motor ON. |
+| 1, leftmost | `NC` | Internal connection unverified; not an available GPIO |
+| 2 | `M−` | User reports active low, 1 mA when grounded, and 5 V idle on 14 October 2026 |
+| 3 | `RX` | Likely module receive signal; direction and voltage unmeasured |
+| 4 | `TX` | User reports 3 V peak on 14 October 2026; earlier DMM reading 1.8 V. 115200 baud, 8N1 confirmed; low voltage level unmeasured |
+| 5 | `GND` | LiDAR ground |
+| 6, rightmost | `VIN` | Supply input; recorded maximum 500 mA, measured 230 mA with motor on |
 
-A mating plug viewed from its cable side reverses the apparent order. Connector series, pitch, and pin-1 convention are not established by the photograph. `NC` is not an available GPIO assignment. `M−` does not by itself establish a PWM input or a motor-power connection.
+A mating plug viewed from the cable side reverses this order. Connector series, pitch, and pin-1 convention remain unknown. `M−` alone does not identify a PWM input or motor-power connection.
 
-The board also has `PWM`, `M−`, `M−CT`, `VCC`, `VIN`, `PGND`, and `TX` markings. A separate two-contact connector carries red and black wires near the motor. Neither wire colour nor these markings establish a complete circuit or wiring diagram. The photo shows four outer mounting ears and a circular PCB. Hole spacing and side-view dimensions come from a user sketch, recorded in the [mechanical dimensions section](#mechanical-dimensions), and are not independently measured. Screw sizes and scan-plane height remain unknown.
+Other PCB markings are `PWM`, `M−`, `M−CT`, `VCC`, `VIN`, `PGND`, and `TX`. A separate two-contact connector has red and black wires near the motor; these do not establish a circuit diagram. The photo shows four mounting ears and a circular PCB. [Mechanical dimensions](#mechanical-dimensions) come from user sketches; screw sizes and scan-plane height remain unknown.
 
 ![LDS08RR PCB and six-contact connector markings](images/lds08rr-pcb.jpg)
 
 ## Mechanical dimensions
 
-The [dimension record](mechanics/lds08rr-dimensions.json) and [mounting-hole drawing](mechanics/lds08rr-lochbild.svg) transcribe user-supplied dimensioned sketches received on 13 October 2026: the [mounting sketch](images/lds08rr-mounting-sketch.jpg), the [side-view sketch](images/lds08rr-side-sketch.jpg), and a later [combined side and top-view sketch](images/lds08rr-dimension-sketch.jpg) with follow-up answers from the user. The values are not independently measured.
+The [dimension record](mechanics/lds08rr-dimensions.json) and [mounting-hole drawing](mechanics/lds08rr-lochbild.svg) transcribe user sketches received on 13 October 2026 and later follow-up answers: [mounting](images/lds08rr-mounting-sketch.jpg), [side view](images/lds08rr-side-sketch.jpg), and [combined views](images/lds08rr-dimension-sketch.jpg). Dimensions are not independently measured.
 
-- Four Ø 3.1 mm mounting holes form a rectangle with 54.0 mm horizontal and 44.0 mm vertical centre spacing, as read from the mounting sketch. The sketch gives a 69.4 mm diagonal; a 54 × 44 mm rectangle implies 69.66 mm. Rectangularity is not measured.
-- The rotor centre coincides with the centre of the hole pattern, as confirmed by the user.
-- Heights from the bottom of the lower round housing: 17.8 mm to the underside of the plastic plate and 28.0 mm to its top, which carries the PCB. The plate is therefore 10.2 mm thick. The overall height to the top of the motor is 38.0 mm.
-- The mounting ears are 4.3 mm thick, with their top flush with the plate top.
-- Widths: lower housing 59.0 mm, plate Ø 59.6 mm (top view), and motor 24.5 mm. The outer edge of the motor is 50.0 mm from the rotor centre, and the overall length is 80.9 mm.
+- Four Ø 3.1 mm holes have 54.0 mm horizontal and 44.0 mm vertical centre spacing. The sketch gives a 69.4 mm diagonal; a rectangle implies 69.66 mm. Rectangularity is unmeasured.
+- The rotor is centred on the hole pattern, per user confirmation.
+- From the lower housing bottom, the plastic plate spans 17.8–28.0 mm, giving 10.2 mm thickness. Overall height to the motor top is 38.0 mm.
+- Mounting ears are 4.3 mm thick and flush with the plate top.
+- Widths are 59.0 mm for the lower housing, Ø 59.6 mm for the plate, and 24.5 mm for the motor. The motor's outer edge is 50.0 mm from the rotor centre; overall length is 80.9 mm.
 
-Coordinates use the hole-pattern centre as origin, viewed from the PCB side with the motor on the left. Tolerances, hole depth, fastener type, optical-axis offset, and scan-plane height remain unspecified.
+Coordinates originate at the hole-pattern centre, viewed from the PCB side with the motor left. Tolerances, hole depth, fasteners, optical-axis offset, and scan-plane height are unspecified.
 
 ### Simplified 3D model
 
-[lds08rr-simple.step](mechanics/lds08rr-simple.step) is a simplified envelope of the module for measurements, such as bracket design and clearance checks. The build123d source is [lds08rr_simple.py](mechanics/lds08rr_simple.py). To regenerate the STEP file, run the script from the `mechanics/` folder.
+[lds08rr-simple.step](mechanics/lds08rr-simple.step) provides an envelope for bracket and clearance checks. Regenerate it by running [lds08rr_simple.py](mechanics/lds08rr_simple.py) from `mechanics/`.
 
-The model origin is the rotor centre. z = 0 is the bottom of the lower housing, and +z points toward the PCB and motor. It models the housing (Ø 59.0 mm, z 0 to 17.8 mm), the plate (Ø 59.6 mm plus the area under the motor, z 17.8 to 28.0 mm), the ears (z 23.7 to 28.0 mm), and the motor (Ø 24.5 mm, axis at x = −37.75 mm, z 28.0 to 38.0 mm). The connector, PCB components, and true ear outline are not modelled; the 7 mm ear width is assumed. The housing is modelled concentric with the rotor. As a result, the model is 80.5 mm long instead of the sketched 80.9 mm. The sketched 59.0 mm housing width, combined with the 80.9 mm overall length, would put the housing centre about 1.4 mm off the rotor axis.
+The origin is the rotor centre; z = 0 is the housing bottom, with +z toward the PCB and motor.
 
-## Upstream protocol variants
+| Part | Model geometry |
+| --- | --- |
+| Housing | Ø 59.0 mm, z 0–17.8 mm |
+| Plate | Ø 59.6 mm plus area under motor, z 17.8–28.0 mm |
+| Ears | z 23.7–28.0 mm; assumed width 7 mm |
+| Motor | Ø 24.5 mm, axis x = −37.75 mm, z 28.0–38.0 mm |
 
-The [kaiaai LDS library](https://github.com/kaiaai/LDS) identifies LDS08RR as Revo LDS used in Roborock and the 3irobotix CRL-200S platform. Its documentation distinguishes Delta framing from a Camsense-family revision. That identification does not prove which revision is shown in this project's photographs.
+The model omits the connector, PCB components, and true ear outline. Its concentric housing gives 80.5 mm overall length versus the sketched 80.9 mm. Matching the sketched length and 59.0 mm housing width would offset the housing centre about 1.4 mm from the rotor.
 
-The [lds2d model table](https://github.com/kaiaai/lds2d#supported-models) gives the following software-reference configurations. Both LDS08RR entries are marked as ports not yet confirmed on physical hardware by that project.
+## Confirmed data format
 
-| Upstream variant | Arduino LDS identifier | lds2d identifier | UART baud rate | Framing | Upstream motor classification |
-| --- | --- | --- | ---: | --- | --- |
-| Delta | `LDS_LDS08RR` | `3IROBOTIX-LDS08RR` | 115200 | `0xAA` | Host PWM |
-| Camsense family | `LDS_LDS08RR_CAMSENSE` | `LDS08RR-CAMSENSE` | 115200 | `0x55 0xAA` | Onboard |
+The module uses the LDS08RR Camsense variant at **115200 baud, 8N1, non-inverted**. The user's `acq0003.csv` logic capture contains three complete checksum-valid packets. A direct UART0 capture on 15 October 2026 contains 450 valid packets in 3.01 seconds, with no failed checksum candidates.
 
-Sources for the identifiers and framing are the [LDS README](https://github.com/kaiaai/LDS#experimental-needs-testing). Baud rates and motor classifications come from the [lds2d README](https://github.com/kaiaai/lds2d#supported-models). These are driver assumptions, not verified electrical specifications for this module.
+| Field | Encoding |
+| --- | --- |
+| Packet | 60 bytes, starts with `55 AA 07 0C` |
+| Speed | Little-endian uint16, divided by 3840 for Hz |
+| Start and end angles | Little-endian uint16, `(raw − 0xA000) / 64` degrees |
+| Samples | 12 × 4 bytes: signed int16 distance in mm, uint8 quality, reserved byte |
+| Missing return | `0x8000` distance observed in the capture |
+| Checksum | Trailing little-endian 15-bit checksum, validated by the driver |
 
-The Camsense support derives from a user's capture in [LDS issue 17](https://github.com/kaiaai/LDS/issues/17) and remains experimental in the LDS library. That capture belongs to another device. A capture from this module is still needed to establish its protocol. LDS01RR, LDS02RR, and LDROBOT LD08 specifications are not interchangeable with LDS08RR specifications.
+The first logic-capture packet covers 175.33°–186.25°, with 193–288 mm returns. The driver reports about 5 Hz / 300 RPM. These units follow the confirmed decoder; distance accuracy and physical angles remain uncalibrated.
+
+The integration uses `3IROBOTIX-LDS08RR-CAMSENSE` from `lds2d[viz]==0.7.0`, matching [the upstream decoder](https://github.com/kaiaai/LDS/blob/main/src/LDS_LDS08RR_CAMSENSE.h). The [LDS library](https://github.com/kaiaai/LDS) identifies this module family as Revo LDS used in Roborock and the 3irobotix CRL-200S platform. Its experimental Camsense support originated in [LDS issue 17](https://github.com/kaiaai/LDS/issues/17); this module is now independently confirmed by capture and live decoding. No other protocol is selected or auto-detected.
 
 ## Pending electrical and mechanical verification
 
-The ros2_pc connection is not assigned. A UART or USB-to-UART adapter choice depends on confirmed connector mapping and signal voltages. The labelled 5 V supply rating does not establish 5 V UART logic. A connection requires verified ground continuity and a supply arrangement that avoids backfeeding another source.
+Before wiring, verify connector mapping, ground continuity, UART voltages, and a supply path that prevents backfeeding. The 5 V supply rating does not establish UART logic levels.
 
-If this module requires external motor power control, it needs a suitable motor power stage; a GPIO cannot supply motor current. Motor voltage, motor current, PWM frequency, and the internal role of `M−` remain unknown. The connector's `M−` active-low polarity and 1 mA current when pulled to GND are user-reported measurements above. The upstream onboard-motor classification for one variant does not resolve the remaining questions from a photo.
+The Camsense driver has no host motor output; reception does not establish the module's motor circuit. `M−` needs an external transistor sink, such as open collector or open drain, to isolate its reported 5 V idle level from GPIO. Logic thresholds, waveform, motor voltage, and total motor current remain unverified.
 
-The remaining hardware record needs:
+The reported 3 V TX peak and earlier 1.8 V DMM reading are separate measurements. Peak-measurement equipment and conditions were unspecified; no independent measurement was made. TX low voltage level remains unmeasured; digital timing and protocol are confirmed by the capture. Voltage measurement establishes the electrical interface; a UART capture establishes framing.
 
-- Connector identification, continuity checks, UART logic levels, and any required input signals.
-- Operating, startup, and stall current, plus the actual motor-control circuit.
-- A raw serial capture identifying framing, scan rate, distance units, and invalid measurements.
-- Range, accuracy, optical clearance, independently measured dimensions and mounting-hole spacing, and scan-plane alignment for this module.
+Remaining checks:
 
-The future ROS 2 integration can publish `sensor_msgs/msg/LaserScan` as described in the roadmap. No driver, GPIO allocation, motor-control implementation, or sensor transform has been selected by this hardware reference.
+- Connector identification, continuity, UART levels, and required input signals.
+- Operating, startup, and stall current, and the motor-control circuit.
+- Range, accuracy, optical clearance, measured dimensions and hole spacing, and scan-plane alignment.
+
+The software publishes `sensor_msgs/msg/LaserScan` on `/scan` and diagnostics on `/lidar/status`. Each of 360 one-degree bins holds the nearest valid return in metres, or positive infinity when missing. The 0.01–30 m limits are provisional software bounds. Angle zero and rotation direction follow the driver and remain uncalibrated. Scan start is estimated as host receive completion minus one reported rotation period.
+
+## ros2_pc connection
+
+LiDAR data is received through UART0 on the Compute Module 5 J8 header. The user confirmed connection on 15 October 2026; software verified reception on `/dev/ttyAMA0`, not the physical supply wiring or voltage margins. Confirm the electrical checks above before changing wiring.
+
+| LiDAR signal | J8 physical pin | CM5 signal | Connection condition |
+| --- | ---: | --- | --- |
+| `VIN` | 4 | 5 V | Verify carrier supply path and current budget |
+| `GND` | 6 | Ground | Verify ground continuity |
+| `TX` | 10 | GPIO15 / UART0 RX | Verify signal voltage before connecting |
+| `RX` | 8, reserved | GPIO14 / UART0 TX | Leave disconnected unless a capture proves commands are required |
+| `M−` | 11, reserved | GPIO17 | Through a verified external sink only; never connect directly to the 5 V idle signal |
+| `NC` | None | None | Leave unconnected |
+
+GPIO17 is reserved only; no overlay, GPIO output, or motor-control code activates it. Select and verify the sink circuit and drive requirements first. Raspberry Pi's [GPIO guidance](https://pip-assets.raspberrypi.com/categories/685-whitepapers-app-notes/documents/RP-006553-WP/A-history-of-GPIO-usage-on-Raspberry-Pi-devices-and-current-best-practices) specifies a maximum 3.3 V GPIO input.
+
+On 15 October 2026, the host identified as `Raspberry Pi Compute Module 5 Rev 1.0` on Ubuntu 24.04.5. GPIO14/15 were `TXD0`/`RXD0`; `/dev/ttyAMA0` mapped to RP1 `serial@30000`. No serial console or competing reader owned that port. No boot change or reboot was needed.
+
+The live launcher uses one reader for the browser and ROS. Five seconds of observation received 26 `/scan` messages with 360 bins and fresh `/lidar/status`, without receive or ROS publish errors. The browser rendered the live polar plot. Angle zero and direction remain native and uncalibrated.
+
+UART2 on GPIO4/5 and `dtoverlay=uart2-pi5` remain assigned to the HMMD radar; this LiDAR setup did not enable or change them. GPIO17 remains inactive.
+
+The unused protocol integration and selection flag were removed after capture and live-scan confirmation. See the completed [roadmap item](../ROS_ROADMAP.md#grundlage-und-offene-fragen).
 
 ## Evidence
 
-The two original user photographs above are the local evidence for the label, connector markings, and visible layout. Upstream driver documentation was checked on 13 October 2026. No LDS08RR manufacturer pinout or mechanical drawing was verified during this documentation task.
+The original photographs document the label, connector markings, and visible layout. The user TX capture and direct UART capture establish the protocol; [agent observations](../../../agent_notes/ros2_pc/sensors/lds08rr/observations.md) link the raw UART record. Upstream decoder definitions were checked on 15 October 2026. No manufacturer pinout or mechanical drawing was verified.

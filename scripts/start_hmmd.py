@@ -221,7 +221,7 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ssh", metavar="USER@HOST", help="SSH-Ziel; ohne diese Option lokal auf dem ros2_pc starten")
     parser.add_argument("--workspace", help="Projektpfad; lokal standardmäßig der Checkout, remote ~/Navbot-ES02-ros2_pc-hmmd")
-    parser.add_argument("--device", default="/dev/ttyAMA0", help="HMMD-UART auf dem Zielsystem")
+    parser.add_argument("--device", default="/dev/ttyAMA2", help="HMMD-UART auf dem Zielsystem")
     parser.add_argument("--baud-rate", type=int, default=115200, help="UART-Baudrate")
     parser.add_argument("--startup-timeout", type=int, default=30, help="Wartezeit pro Dienst in Sekunden")
     parser.add_argument("--no-browser", action="store_true", help="keinen Browser öffnen")

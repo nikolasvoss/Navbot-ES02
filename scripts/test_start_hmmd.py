@@ -41,6 +41,8 @@ class StartHmmdTests(unittest.TestCase):
     def test_workspace_defaults_by_execution_target(self):
         local = start_hmmd.parse_args([])
         remote = start_hmmd.parse_args(["--ssh", "ros2_pc"])
+        self.assertEqual(local.device, "/dev/ttyAMA2")
+        self.assertEqual(remote.device, "/dev/ttyAMA2")
         self.assertEqual(start_hmmd.workspace_for(local), str(Path(start_hmmd.__file__).resolve().parent.parent))
         self.assertEqual(start_hmmd.workspace_for(remote), "")
         self.assertIn('"$HOME/Navbot-ES02-ros2_pc-hmmd"', start_hmmd.STARTUP_BASH)
