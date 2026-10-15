@@ -6,11 +6,11 @@ The software has a sensor node on the ros2_pc, a loopback-only rosbridge server,
 
 ## Check the sensor connection
 
-The documented default uses UART0 on physical ros2_pc carrier J8 pins 8 and 10. Those are GPIO14/TX and GPIO15/RX. The module TX connects to J8 pin 10, and module RX connects to J8 pin 8. Connect ground to pin 6 and 3.3 V to pin 1 or 17.
+The planned HMMD radar assignment uses UART2 on physical ros2_pc carrier J8 pins 7 and 29. Those are GPIO4/TX and GPIO5/RX. Radar TX connects to J8 pin 29, and radar RX connects to J8 pin 7. Connect ground to pin 6 and 3.3 V to pin 1 or 17. The physical board and wiring have not been verified. Earlier software checks documented the previous UART0 assignment; UART0 is now reserved for the LiDAR.
 
-Use the pin 1 marker to identify the header orientation. The HMMD vendor documents a 3.0–3.6 V supply and 0–3.3 V UART signals. Check the actual module, carrier, wiring, supply, and GPIO reference voltage before applying power. Do not connect the module to 5 V. The project has software evidence for UART0, but the physical board and current wiring have not been verified. See the [ros2_pc carrier pin reference](../hardware/ros2-pc-carrier-board.md) and [HMMD observations](../../../agent_notes/ros2_pc/sensors/hmmd/observations.md).
+Use the pin 1 marker to identify the header orientation. The HMMD vendor documents a 3.0–3.6 V supply and 0–3.3 V UART signals. Check the actual module, carrier, wiring, supply, and GPIO reference voltage before applying power. Do not connect the module to 5 V. See the [ros2_pc carrier pin reference](../hardware/ros2-pc-carrier-board.md) and [HMMD observations](../../../agent_notes/ros2_pc/sensors/hmmd/observations.md).
 
-Do not infer a UART from a device name alone. The J8 UART device exists whether or not the sensor is connected. For UART0, check `/dev/ttyAMA0`, pin functions, permissions, and console ownership. If you use another UART or a USB adapter, confirm its wiring and device path before starting the node. The sensor node must be the only reader of its UART.
+Do not infer the UART device from its UART number. Enable UART2 with `dtoverlay=uart2-pi5` in `/boot/firmware/config.txt`, reboot, check GPIO4/5 pin functions, and identify the resulting `/dev/ttyAMA*` path. `/dev/ttyAMA2` is the provisional launcher default and must be confirmed on the target image before startup. Check permissions and ensure the sensor node is the only reader. UART0 on GPIO14/15 is assigned to the LiDAR.
 
 ## Build and check the workspace
 
@@ -50,7 +50,7 @@ From a PC, run the same script with an SSH alias or `user@host`:
 python3 scripts/start_hmmd.py --ssh ros2_pc
 ```
 
-The remote default workspace is `$HOME/Navbot-ES02-ros2_pc-hmmd`. The local default is the checkout containing the script. Use `--workspace PATH` for another workspace. Use `--device PATH` for a confirmed UART path, `--baud-rate N` for another baud rate, or `--startup-timeout N` to change the service wait. The defaults are `/dev/ttyAMA0`, `115200`, and `30` seconds.
+The remote default workspace is `$HOME/Navbot-ES02-ros2_pc-hmmd`. The local default is the checkout containing the script. Use `--workspace PATH` for another workspace. Use `--device PATH` for a confirmed UART path, `--baud-rate N` for another baud rate, or `--startup-timeout N` to change the service wait. The defaults are `/dev/ttyAMA2` (provisional until mapped on the target image), `115200`, and `30` seconds.
 
 The launcher starts or reuses the sensor node, rosbridge, and static web server. It refuses an unknown UART owner or a service with the wrong identity or configuration. It does not stop existing processes. Do not start a second `hmmd_sensor` manually.
 
@@ -61,7 +61,7 @@ Newly started service logs are `/tmp/navbot-hmmd-sensor.log`, `/tmp/navbot-hmmd-
 For manual diagnosis, first check that no process owns the sensor UART. With ROS and the workspace sourced, run:
 
 ```bash
-ros2 run hmmd_radar hmmd_sensor --ros-args -p port:=/dev/ttyAMA0 -p baud_rate:=115200
+ros2 run hmmd_radar hmmd_sensor --ros-args -p port:=/dev/ttyAMA2 -p baud_rate:=115200
 ```
 
 In another terminal, inspect status and map rate:
