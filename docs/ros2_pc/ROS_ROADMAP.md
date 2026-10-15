@@ -104,5 +104,6 @@ enthalten Messwerte und Grenzen der Abnahme.
 - [ ] Speichern, SLAM-Neustart und Laden zur Fortsetzung ohne angeschlossenen
   Radar prüfen. Ohne Speichern geht die aktuelle Karte beim SLAM-Ende verloren.
 
-Kein neues Web-Framework, keine Radodometrie und keine systemd-Unit für SLAM.
-Radar-Seite und Radar-Launcher bleiben unverändert.
+Kein neues Web-Framework und keine Radodometrie. Ein systemd-Dienst für den
+SLAM-Autostart ist jetzt vorgesehen; Installation und Laufzeit auf dem CM5
+stehen noch aus. Radar-Seite und Radar-Launcher bleiben unverändert.

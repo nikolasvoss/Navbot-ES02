@@ -22,6 +22,30 @@ The launch file fixes `odom` to the `lds08rr` frame because the robot has no whe
 
 The ROS adapter negates native LiDAR bearings before binning them into CCW-positive LaserScan angles. This corrects the sign mismatch behind the reported reversed SLAM heading. The user confirmed correct clockwise and counterclockwise pose-arrow rotation after the fix. Left/right and angle-zero calibration are tracked in the [roadmap](../ROS_ROADMAP.md#3-lidar-only-slam-im-web-hub). Start a fresh SLAM map after changing angle conventions; do not combine scans from the previous convention.
 
+### Start SLAM automatically at boot
+
+Each SLAM start creates a fresh in-memory map; saved maps are not loaded. Stop the manually launched SLAM process before setup so the service does not start a second mapper. Install `ros-jazzy-slam-toolbox` and build the workspace. From the repository root, run the installer as your normal user. The installer checks the Jazzy and workspace setup files, installed launch and config files, and `slam_toolbox` launch file before writing the unit. It runs SLAM as your user and enables it after the LiDAR service. Service runtime verification on the CM5 is pending.
+
+```bash
+python3 scripts/install_slam_service.py
+```
+
+Manage and inspect the service and its logs with:
+
+```bash
+sudo systemctl status navbot-slam.service
+sudo systemctl restart navbot-slam.service
+sudo journalctl -u navbot-slam.service -f
+```
+
+Open `http://<ros2_pc-host>:8081/slam`. To disable startup and remove the unit:
+
+```bash
+sudo systemctl disable --now navbot-slam.service
+sudo rm /etc/systemd/system/navbot-slam.service
+sudo systemctl daemon-reload
+```
+
 ## LDS08RR LiDAR
 
 The `lds08rr_lidar` package uses `lds2d[viz]==0.7.0` for the confirmed LDS08RR Camsense driver and polar plot. The local launcher adds an operational status page at `http://127.0.0.1:8081/lidar`. It works in demo mode without a serial device or ROS. When ROS 2 is available, the same reader publishes `/scan` and `/lidar/status`.

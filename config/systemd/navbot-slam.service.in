@@ -1,0 +1,18 @@
+[Unit]
+Description=Navbot LDS08RR SLAM service
+Wants=navbot-lidar.service
+After=network.target navbot-lidar.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=@UID@
+Group=@GID@
+ExecStart=@EXEC_START@
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
