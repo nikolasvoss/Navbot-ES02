@@ -211,8 +211,8 @@ def test_ros_scan_conversion_uses_fixed_bins_metres_and_infinity():
     assert message.header.stamp.sec == 12
     assert message.ranges[0] == pytest.approx(0.8)
     assert message.intensities[0] == 20.0
-    assert message.ranges[1] == pytest.approx(0.5)
-    assert message.ranges[2] == float("inf")
+    assert message.ranges[359] == pytest.approx(0.5)
+    assert message.ranges[358] == float("inf")
 
 
 @pytest.mark.parametrize("native_angle, ros_bin", [

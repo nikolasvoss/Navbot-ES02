@@ -1,5 +1,21 @@
 # LDS08RR photo evidence, 2026-10-13
 
+## ROS scan handedness correction, 2026-10-15
+
+Observation: Following the user's request to fix the reversed blue pose arrow, `to_laserscan` now negates native bearings before assigning the CCW-positive ROS bins. The previous conversion copied the native angle sign unchanged. Native UART decoding, scan assembly, sensor-relative LiDAR rendering, and SLAM rendering remain unchanged. This fixes the angular convention at the ROS boundary rather than compensating in TF or the display.
+
+Evidence: Four signed-bearing regression cases for native +90°, -90°, +361°, and -361° failed before the correction with `Obtained: inf; Expected: 1.2` at the required ROS bin. They pass after correction, as do fixed-bin conversion and nearest-return/intensity pairing across the 0° wrap. The selected package rebuilt successfully; the requested full suite passed 24 tests in 18.13 s on isolated ROS domain 83. A focused rerun after adding the same optional-ROS import skips as the existing test passed all six conversion cases.
+
+Runtime: LiDAR and SLAM were restarted with the corrected conversion and a fresh map. An initial relaunch overlapped the old background SLAM process because it ignored SIGINT; both launch instances were explicitly terminated and a single fresh instance activated successfully. A later CM5 reboot stopped manual SLAM again; after manual relaunch, lifecycle state was `active [3]`, `/map.json` reported `mapping` with fresh pose, and Chromium showed Mapping with a 106 × 174-cell map. This does not add automatic SLAM startup. After relaunch, the user slowly turned the sensor in both directions and answered "Both directions correct" to the explicit blue-arrow check. This is user-assisted live confirmation that the reversed heading is corrected. An independent left/right landmark check, physical angle-zero calibration and surveyed trajectory accuracy remain pending.
+
+## User-reported reversed SLAM heading, 2026-10-15
+
+Observation: After the motion check, the user reported that clockwise LiDAR rotation produces opposite rotation in the display, with the same reversal in the other direction, and described the SLAM map as inverted. Asked to distinguish the SLAM pose arrow from sensor-relative wall motion, the user answered "Blue pose arrow turns opposite". This is user evidence of a heading-direction defect. The earlier live check established changing pose and map growth, not physically correct heading or handedness.
+
+Evidence: Source inspection at the time of the report showed the LiDAR canvas uses `x = centerX + sin(angle) * radius` and `y = centerY - cos(angle) * radius`, so increasing native angles appear clockwise from the top. The pre-fix `ros_node.to_laserscan` placed the same native `point.angle_deg` into increasing, CCW-positive ROS bins without a handedness conversion. The SLAM canvas uses `ctx.rotate(-pose.yaw)` to account for screen coordinates. These are code observations; the native packet angles' physical direction has not yet been independently calibrated.
+
+Practical consequence: Prioritize a controlled physical rotation and left/right landmark check against native scan angles, `/scan`, TF yaw and both browser views before changing angle conversion. Opposite movement of stationary walls in a sensor-fixed plot is expected, but a SLAM pose arrow turning opposite to the sensor is not. A missing native-to-ROS handedness conversion is a hypothesis, not a verified fix. The roadmap records this bug and persistence work. At the time of this report no runtime correction had been applied. The subsequent correction is recorded above; maps from before that correction should not be treated as orientation-validated.
+
 ## Live lidar-only SLAM verification, 2026-10-15
 
 Observation: On the CM5 running ROS 2 Jazzy, `feat/slam` at `d8226de` built successfully with the `navbot-lidar` venv Python and `colcon --packages-select lds08rr_lidar`. The installed package contains `share/lds08rr_lidar/launch/slam.launch.py` and `config/slam_toolbox.yaml`. Apt upgraded `ros-jazzy-slam-toolbox` to `2.8.5-1noble.20260916.104732` and `ros-jazzy-tf2-ros` to `0.36.23-1noble.20260916.080959`.

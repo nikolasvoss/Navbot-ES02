@@ -20,6 +20,8 @@ ros2 launch lds08rr_lidar slam.launch.py
 
 The launch file fixes `odom` to the `lds08rr` frame because the robot has no wheel odometry yet. Scan matching alone tracks motion, so move the sensor slowly (well under 0.5 m between scans). Parameters are in `config/slam_toolbox.yaml`. The `/slam` tab shows `/map`, the pose from TF `map` → `lds08rr`, and the LiDAR state. On the CM5, live UART0 scans, automatic lifecycle activation, `/map`, TF, map growth during sensor movement, and the browser's Mapping state and pose arrow were verified on 15 October 2026. Quantitative trajectory accuracy, complete room coverage, and physical scan handedness still require verification. Measurements and limitations are in the [hardware observations](../../../agent_notes/ros2_pc/sensors/lds08rr/observations.md).
 
+The ROS adapter negates native LiDAR bearings before binning them into CCW-positive LaserScan angles. This corrects the sign mismatch behind the reported reversed SLAM heading. The user confirmed correct clockwise and counterclockwise pose-arrow rotation after the fix. Left/right and angle-zero calibration are tracked in the [roadmap](../ROS_ROADMAP.md#3-lidar-only-slam-im-web-hub). Start a fresh SLAM map after changing angle conventions; do not combine scans from the previous convention.
+
 ## LDS08RR LiDAR
 
 The `lds08rr_lidar` package uses `lds2d[viz]==0.7.0` for the confirmed LDS08RR Camsense driver and polar plot. The local launcher adds an operational status page at `http://127.0.0.1:8081/lidar`. It works in demo mode without a serial device or ROS. When ROS 2 is available, the same reader publishes `/scan` and `/lidar/status`.

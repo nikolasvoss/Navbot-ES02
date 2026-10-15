@@ -33,7 +33,7 @@ def to_laserscan(scan, stamp) -> LaserScan:
             continue
         if not RANGE_MIN_M <= distance <= RANGE_MAX_M:
             continue
-        index = int(round(point.angle_deg % 360.0)) % BIN_COUNT
+        index = int(round(-point.angle_deg % 360.0)) % BIN_COUNT
         if distance < ranges[index]:
             ranges[index] = distance
             intensities[index] = float(point.quality)

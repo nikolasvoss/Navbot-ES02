@@ -61,3 +61,48 @@ Drehrichtung, Messgenauigkeit und elektrische Abnahme bleiben offen.
 Vor dem Einsatz während der Fahrt werden die Auswirkungen von Neigung,
 Balancebewegungen, zusätzlichem Gewicht und Strombedarf geprüft.
 SLAM und autonome Navigation sind nachfolgende Projekte.
+
+## 3. LiDAR-only SLAM im Web-Hub
+
+Status: Live-Mapping mit `slam_toolbox` auf dem CM5 bestätigt; Winkelvorzeichen im ROS-Adapter korrigiert und getestet; physische Drehrichtung vom Nutzer bestätigt; weitere Kalibrierung und dauerhafte Speicherung offen.
+
+Der bestehende Web-Hub zeigt unter `/slam` die Belegungskarte, Sensorpose und den
+Mapping-Status. Beim Live-Test am 15.10.2026 kamen Scans mit etwa 5 Hz an; Karte
+und Pose reagierten auf Sensorbewegung. Die [Hardwarebeobachtungen](../../agent_notes/ros2_pc/sensors/lds08rr/observations.md)
+enthalten Messwerte und Grenzen der Abnahme.
+
+### Priorität: Drehrichtung und Spiegelung prüfen
+
+- [x] Nutzerbericht vom 15.10.2026 erfasst: Der blaue SLAM-Posepfeil dreht
+  entgegen der physischen Sensordrehung, in beiden Drehrichtungen. Der Nutzer
+  beschreibt außerdem die SLAM-Karte als invertiert. Die Live-Abnahme bestätigt
+  deshalb noch keine korrekte Orientierung.
+- [ ] Eine bekannte physische Drehung von oben betrachtet und einen eindeutig
+  links oder rechts platzierten Gegenstand mit nativen Scanwinkeln, ROS `/scan`,
+  TF-Gierwinkel und beiden Browseranzeigen vergleichen. Gegenläufige Bewegung
+  ruhender Wände im sensorfesten LiDAR-Plot ist dabei normal; ein gegenläufiger
+  SLAM-Posepfeil ist es nicht.
+- [x] Fehlende Winkelumrechnung im ROS-Adapter korrigiert: Native Winkel werden
+  vor der Zuordnung zu CCW-positiven LaserScan-Bins negiert. Die unveränderte
+  sensorfeste LiDAR-Anzeige verwendet weiterhin native Winkel im Uhrzeigersinn.
+  Regressionstests prüfen beide Vorzeichen, Winkelumlauf sowie die Zuordnung
+  von Entfernung und Intensität. Der vollständige Testlauf besteht mit 24 Tests.
+- [x] Beide physischen Drehrichtungen auf einer frischen SLAM-Karte geprüft.
+  Nutzerbestätigung: Der blaue Posepfeil folgt nun beiden Drehrichtungen korrekt.
+- [ ] Bekannte Links-/Rechts-Positionen und den physischen Winkelnullpunkt prüfen.
+
+### Geplant: Karten speichern und laden
+
+- [ ] Im vorhandenen SLAM-Tab benannte Karten speichern und laden. Dafür die
+  vorhandenen `slam_toolbox`-Dienste zur Serialisierung und Deserialisierung des
+  Posegraphen verwenden, damit Mapping später fortgesetzt werden kann.
+- [ ] Karten in einem dauerhaften Datenverzeichnis außerhalb des Build- und
+  Installationsverzeichnisses speichern; vorhandene Karten anzeigen und Erfolg
+  oder Fehler des Speicherns beziehungsweise Ladens im Web-Tab bestätigen.
+- [ ] Optional Belegungskarte als Bild und YAML über den vorhandenen SaveMap-Dienst
+  exportieren. Dieser Export allein ersetzt keinen fortsetzbaren Posegraphen.
+- [ ] Speichern, SLAM-Neustart und Laden zur Fortsetzung ohne angeschlossenen
+  Radar prüfen. Ohne Speichern geht die aktuelle Karte beim SLAM-Ende verloren.
+
+Kein neues Web-Framework, keine Radodometrie und keine systemd-Unit für SLAM.
+Radar-Seite und Radar-Launcher bleiben unverändert.
