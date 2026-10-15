@@ -1,5 +1,13 @@
 # LDS08RR photo evidence, 2026-10-13
 
+## SLAM systemd autostart, 2026-10-15
+
+Observation: The user explicitly requested SLAM autostart like LiDAR, superseding the earlier exclusion of a SLAM systemd unit. `scripts/install_slam_service.py` installed and enabled `/etc/systemd/system/navbot-slam.service` for UID 1000 and GID 1003. It sources Jazzy and this checkout's built workspace and launches the existing `lds08rr_lidar slam.launch.py`. The unit wants and starts after `navbot-lidar.service`, with failure restart after three seconds and normal cgroup ownership of the launch children. The existing LiDAR unit was not modified. Manual SLAM leftovers were stopped during handover so only one mapper remained.
+
+Evidence: `systemd-analyze verify` accepted the installed unit. Both LiDAR and SLAM report enabled; the SLAM symlink exists under `multi-user.target.wants`. A clean `systemctl restart navbot-slam.service` returned to lifecycle `active`; a separate ROS subscriber received 40 scans at 5.012 Hz during an eight-second window, plus a current `/map` and a resolved `map` to `lds08rr` transform. Killing only the service's main process with SIGKILL changed MainPID from 5844 to 6172, incremented NRestarts from 0 to 1, and automatically restored active mapping. A second independent subscriber again received 40 real scans at 5.012 Hz with map and TF. The requested existing pytest suite passed all 24 tests in 15.25 s on isolated domain 83.
+
+Practical consequence: SLAM now starts through systemd when this host boots and can be managed with `systemctl` and `journalctl` using `navbot-slam.service`. Boot enablement and runtime restart/recovery were checked without rebooting the CM5. Each service start still creates a fresh in-memory map; this task adds neither map persistence nor automatic map loading. Stop the service before starting a manual mapper.
+
 ## ROS scan handedness correction, 2026-10-15
 
 Observation: Following the user's request to fix the reversed blue pose arrow, `to_laserscan` now negates native bearings before assigning the CCW-positive ROS bins. The previous conversion copied the native angle sign unchanged. Native UART decoding, scan assembly, sensor-relative LiDAR rendering, and SLAM rendering remain unchanged. This fixes the angular convention at the ROS boundary rather than compensating in TF or the display.

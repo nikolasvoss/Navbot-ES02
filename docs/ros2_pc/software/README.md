@@ -24,7 +24,7 @@ The ROS adapter negates native LiDAR bearings before binning them into CCW-posit
 
 ### Start SLAM automatically at boot
 
-Each SLAM start creates a fresh in-memory map; saved maps are not loaded. Stop the manually launched SLAM process before setup so the service does not start a second mapper. Install `ros-jazzy-slam-toolbox` and build the workspace. From the repository root, run the installer as your normal user. The installer checks the Jazzy and workspace setup files, installed launch and config files, and `slam_toolbox` launch file before writing the unit. It runs SLAM as your user and enables it after the LiDAR service. Service runtime verification on the CM5 is pending.
+Each SLAM start creates a fresh in-memory map; saved maps are not loaded. Stop the manually launched SLAM process before setup so the service does not start a second mapper. Install `ros-jazzy-slam-toolbox` and build the workspace. From the repository root, run the installer as your normal user. The installer checks the Jazzy and workspace setup files, installed launch and config files, and `slam_toolbox` launch file before writing the unit. It runs SLAM as your user and enables it after the LiDAR service. On 15 October 2026, CM5 checks confirmed unit validation, boot enablement, clean restart, and automatic recovery after a main-process failure, with live mapping restored. A reboot was not performed for this check.
 
 ```bash
 python3 scripts/install_slam_service.py
