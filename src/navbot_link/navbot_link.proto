@@ -1,0 +1,54 @@
+// NavBot link: ESP32 <-> ROS2 PC over UART.
+// Wire format: see docs/robot/software/interfaces/ros2-uart-protocol.md
+syntax = "proto3";
+package navbot.link.v1;
+
+// One frame carries exactly one Message. Add fields; never reuse numbers.
+message Message {
+  uint32 seq = 1;         // per-sender counter, wraps; gaps reveal lost frames
+  uint32 t_ms = 2;        // sender millis(), monotonic
+  oneof body {
+    Imu imu = 10;
+    Battery battery = 11;
+    Status status = 12;
+    Log log = 13;         // errors, warnings, info
+    Command command = 20; // PC -> robot
+    Ack ack = 21;
+  }
+}
+
+// Sensor data. SI units; the field name carries the unit where it is not SI.
+message Imu {
+  float ax = 2; float ay = 3; float az = 4;     // m/s^2
+  float gx = 5; float gy = 6; float gz = 7;     // rad/s
+  float roll_rad = 8; float pitch_rad = 9; float yaw_rad = 10;
+}
+
+message Battery {
+  float voltage_v = 1;
+}
+
+message Status {
+  enum Mode { MODE_UNSPECIFIED = 0; IDLE = 1; DIAGNOSTIC = 2; BALANCE = 3; FALLEN = 4; }
+  Mode mode = 1;
+  bool motors_enabled = 2;
+  uint32 dropped_frames = 3; // TX frames the robot dropped (queue full)
+}
+
+message Log {
+  enum Level { LEVEL_UNSPECIFIED = 0; DEBUG = 1; INFO = 2; WARN = 3; ERROR = 4; FATAL = 5; }
+  Level level = 1;
+  uint32 code = 2;   // stable numeric error code, documented in the spec
+  string text = 3;   // short, <= 96 bytes
+}
+
+message Command {
+  uint32 id = 1;         // echoed in Ack
+  float speed_mps = 2;
+  float turn_rad_s = 3;
+}
+
+message Ack {
+  uint32 command_id = 1;
+  bool accepted = 2;
+}
