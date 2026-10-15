@@ -34,3 +34,11 @@ Die tatsächliche IMU-Aktualisierungsrate im normalen Regelbetrieb messen und di
 ## Fahrstabilität bei hoher Geschwindigkeit
 
 Beim schnellen Fahren kippt der Roboter weiterhin um. Das Fehlerbild in einem sicheren, reproduzierbaren Fahrtest mit Rollwinkel, Soll- und Ist-Raddrehzahl, effektivem Geschwindigkeitssollwert und Balance-Reglerausgang erfassen. Prüfen, ob die vorhandene Neigungs-Reduktion im beobachteten Fall greift und früh genug einsetzt. Schwellenwerte und Reglerabstimmung erst nach dieser Auswertung ändern.
+
+## Lidar bei einem Sturz abschalten
+
+Den M-Pin des Lidars (Lidar Enable) voraussichtlich zum Roboter-PCB führen und so ansteuern, dass das Lidar bei einem Sturz abgeschaltet wird.
+
+## Kommunikation zwischen ROS2-PC und ESP32
+
+UART als Kommunikationsschnittstelle zwischen ROS2-PC und ESP32 vorsehen, da auf dem Roboter-PCB bereits ein Stecker am ESP32 vorhanden ist.
