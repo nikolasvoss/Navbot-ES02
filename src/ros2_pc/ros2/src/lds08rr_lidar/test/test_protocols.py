@@ -215,6 +215,40 @@ def test_ros_scan_conversion_uses_fixed_bins_metres_and_infinity():
     assert message.ranges[2] == float("inf")
 
 
+@pytest.mark.parametrize("native_angle, ros_bin", [
+    (90.0, 270), (-90.0, 90), (361.0, 359), (-361.0, 1),
+])
+def test_ros_scan_converts_clockwise_native_bearings(native_angle, ros_bin):
+    pytest.importorskip("rclpy")
+    pytest.importorskip("diagnostic_msgs.msg")
+    pytest.importorskip("sensor_msgs.msg")
+    from builtin_interfaces.msg import Time
+    from lds08rr_lidar.ros_node import to_laserscan
+
+    message = to_laserscan(Scan([ScanPoint(native_angle, 1200, 37)], 5.0), Time())
+    assert message.ranges[ros_bin] == pytest.approx(1.2)
+    assert message.intensities[ros_bin] == 37.0
+    assert message.ranges[360 - ros_bin] == float("inf")
+
+
+def test_ros_scan_wraparound_keeps_nearest_return_and_its_intensity():
+    pytest.importorskip("rclpy")
+    pytest.importorskip("diagnostic_msgs.msg")
+    pytest.importorskip("sensor_msgs.msg")
+    from builtin_interfaces.msg import Time
+    from lds08rr_lidar.ros_node import to_laserscan
+
+    scan = Scan([
+        ScanPoint(359.8, 900, 30),
+        ScanPoint(-0.1, 800, 20),
+        ScanPoint(360.2, 1000, 70),
+    ], 5.0)
+    message = to_laserscan(scan, Time())
+    assert message.ranges[0] == pytest.approx(0.8)
+    assert message.intensities[0] == 20.0
+    assert sum(value != float("inf") for value in message.ranges) == 1
+
+
 def test_module_tx_capture_decodes_literal_measurements(monkeypatch):
     captured = bytes.fromhex(
         "55AA070C344BD5CBC1001000CB000A00DA000900FA00030003012200"
