@@ -163,6 +163,15 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
         context.fillText(`${(range * ring / 4 / 1000).toFixed(1)} m`, centerX + 5, centerY - r - 4);
       }
       context.beginPath();
+      for (let degrees = 30; degrees < 360; degrees += 30) {
+        if (degrees % 90 === 0) continue;
+        const angle = degrees * Math.PI / 180;
+        context.moveTo(centerX, centerY);
+        context.lineTo(centerX + Math.sin(angle) * radius, centerY - Math.cos(angle) * radius);
+      }
+      context.stroke();
+      context.strokeStyle = '#718c9c';
+      context.beginPath();
       context.moveTo(centerX - radius, centerY);
       context.lineTo(centerX + radius, centerY);
       context.moveTo(centerX, centerY - radius);
@@ -185,6 +194,20 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
       context.beginPath();
       context.arc(centerX, centerY, 4, 0, Math.PI * 2);
       context.fill();
+      context.save();
+      context.fillStyle = '#9fb0bd';
+      context.textBaseline = 'middle';
+      const directions = [
+        ['0°', centerX, centerY - radius + 16, 'center'],
+        ['90°', centerX + radius - 6, centerY - 12, 'right'],
+        ['180°', centerX, centerY + radius - 12, 'center'],
+        ['270°', centerX - radius + 6, centerY - 12, 'left'],
+      ];
+      for (const [label, x, y, align] of directions) {
+        context.textAlign = align;
+        context.fillText(label, x, y);
+      }
+      context.restore();
       rangeLabel.textContent = `View radius: ${(range / 1000).toFixed(2)} m · ${latestScan.n} points · ${Number(latestScan.freq_hz).toFixed(1)} Hz`;
       zoomIn.disabled = zoom >= maxZoom;
       zoomOut.disabled = zoom <= minZoom;
