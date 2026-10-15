@@ -19,7 +19,6 @@ flowchart LR
     CMD --> CTRL[Zweiradregelung]
     MAH --> CTRL
     VEL --> CTRL
-    TOUCH[Touchfläche<br/>falls angeschlossen] --> CTRL
     CTRL -->|2 Sollgeschwindigkeiten| FOC[2 × SimpleFOC<br/>Geschwindigkeitsregelung + FOC]
     ENC --> FOC
     FOC --> DRV[2 × MP6536<br/>Radmotoren]
@@ -40,8 +39,8 @@ Die IMU sitzt laut PCB-Entwurf auf dem MAIN-Board. Jeder Radmotor hat einen AS56
 | **Neigung / Balance** | `angleError = rollBiasCorrected + BodyPitchingFiltered` | `Angle_Pid` liefert den gemeinsamen Anteil beider Rad-Sollgeschwindigkeiten. `rollBiasCorrected` heißt im Code „roll“, ist hier der für Vor-/Zurückkippen verwendete Lagewinkel in Grad. |
 | **Gieren / Lenken** | `yawError = attitude.gyro.z - BodyTurn` | `Yaw_Pid` liefert einen differentiellen Anteil: Rad 1 bekommt `−yawOutput`, Rad 2 `+yawOutput`. Der Gyro-Z-Wert und der Drehbefehl sind in rad/s. |
 | **Fahren / Raddrehzahl** | `speedError = (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec)/2 - MovementSpeed` | `Speed_Pid` erzeugt `BodyX`; damit verschiebt die Beinkinematik die Servo-Sollpositionen. **Dieser Ausgang wird im aktiven Pfad nicht vom Neigungssollwert der Radmotoren abgezogen.** |
-| **Seitliche Haltung** | `RollError` aus `pitchBiasCorrected`, Roll-Sollwert und Touch-Y | Bei CH7/AUTO erzeugt `Roll_Pid` eine Höhenkorrektur zwischen den Beinen. Bei MANUAL ist sein Ausgang null. |
-| **Touch-/Ball-Pose** | Touch-X/Y und CH9/10 | Verändert `BodyPitching`, einen seitlichen Touch-Anteil und damit mittelbar Rad- bzw. Servo-Vorgaben; siehe unten. |
+| **Seitliche Haltung** | `RollError` aus `pitchBiasCorrected`, Roll-Sollwert und CH10-Ballversatz | Bei CH7/AUTO erzeugt `Roll_Pid` eine Höhenkorrektur zwischen den Beinen. Bei MANUAL ist sein Ausgang null. |
+| **Ball-Pose** | CH9/10 | Verändert `BodyPitching`, einen seitlichen Rollversatz und damit mittelbar Rad- bzw. Servo-Vorgaben; siehe unten. |
 
 Radmotoren im Kern: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`; danach werden beide auf ±88 begrenzt. Die Vorzeichen sind Softwarekonventionen und ersetzen keinen Test der mechanischen Wirkrichtung. `PIDcontroller_posture()` ist der aktive Zweiradpfad. Die ungenutzte ältere Funktion `PIDcontroller_angle()` wurde am 01.10.2026 beim Aufräumen entfernt. Sie enthielt die klassische Kaskade „Geschwindigkeit → Neigung → Radmotor“, wurde von `loop()` aber nicht aufgerufen. Der Kommentar über `PIDcontroller_posture()` nennt ebenfalls eine Kaskade und ist an dieser Stelle irreführend.
 
@@ -67,11 +66,11 @@ Das Verhalten ist durch die Mechanik gekoppelt: Eine Servo-Bewegung ändert die 
 | **CH4** | Drehwunsch `BodyTurn`, Bereich ungefähr ±11 rad/s nach Vorzeichenumkehr im Code. |
 | **CH5** | 0: Rad-Sollwerte null, PID-Integratoren zurückgesetzt. 1 und 2: beide aktivieren denselben Zweirad-Regelpfad. Ohne Diagnoseüberschreibung wählen 1/2 verschiedene Gain-Sätze. |
 | **CH6** | Posture: inverse Beinkinematik; Mark: Montage-/Kalibrierstellung der Servos. |
-| **CH7** | MANUAL/AUTO für seitliche Ausregelung. AUTO aktiviert zusätzlich den `BodyPitching`-Pfad aus Touch-X und CH9. |
-| **CH8** | Standard, Pitching Adjust, Ball Pose. Ball Pose aktiviert ebenfalls `BodyPitching` aus Touch-X und CH9. |
-| **CH9/CH10** | Ball-Sollwerte `top_ball_x/y` von ungefähr ±5. CH9 kann die Neigungsvorgabe beeinflussen, auch wenn kein Touchscreen angeschlossen ist. |
+| **CH7** | MANUAL/AUTO für seitliche Ausregelung. AUTO aktiviert zusätzlich den `BodyPitching`-Pfad aus CH9. |
+| **CH8** | Standard, Pitching Adjust, Ball Pose. Ball Pose aktiviert ebenfalls `BodyPitching` aus CH9. |
+| **CH9/CH10** | Ball-Sollwerte `top_ball_x/y` von ungefähr ±5. CH9 kann die Neigungsvorgabe beeinflussen. |
 
-**Wichtig für Vergleiche:** `BodyPitching` wird in Standardhaltung nicht überall explizit auf null gesetzt. Nach einem Moduswechsel kann ein vorheriger Wert im RAM weiterwirken, bis er überschrieben oder im CH5-aus-Pfad für `BodyPitchingFiltered` zurückgesetzt wird. `Touch.XPdatF` ist ohne angeschlossenen Touchscreen nicht als gemessene Null belegt. Für einen Versuch CH7/CH8/CH9 und den Touch-Wert gemeinsam protokollieren.
+**Wichtig für Vergleiche:** `BodyPitching` wird in Standardhaltung nicht überall explizit auf null gesetzt. Nach einem Moduswechsel kann ein vorheriger Wert im RAM weiterwirken, bis er überschrieben oder im CH5-aus-Pfad für `BodyPitchingFiltered` zurückgesetzt wird. Für einen Versuch CH7/CH8/CH9 gemeinsam protokollieren.
 
 BLE hat eine eigene Abbildung der Steuerkanäle. `loop()` ruft nach `CtrlInput()` zusätzlich `RXsbus()` auf. Kommt während einer BLE-Verbindung ein SBUS-Frame an, kann es damit die eben gesetzten BLE-Sollwerte überschreiben. Für Aussagen über die wirksame Befehlsquelle den tatsächlichen Eingangsverlauf messen.
 
@@ -88,7 +87,7 @@ BLE hat eine eigene Abbildung der Steuerkanäle. `loop()` ruft nach `CtrlInput()
 
 Im normalen Modus ruft `loop()` `ImuUpdate()` bei jedem Durchlauf auf. `imuSampleRateHz` startet bei 1000 und bestimmt nur die IMU-Filterkoeffizienten. Der Wert taktet keine Messung. `MahonyFilter::update()` erhält die gefilterten Gyro- und Beschleunigungswerte sowie das gemessene `IMUtime_dt`. Bei `imuSampleRateHz` = 1000 Hz liefert die korrigierte Rechnung dieselben Koeffizienten wie zuvor. Andere `imuSampleRateHz`-Werte haben nun die beabsichtigte Bedeutung in Hz. Der Quellcode belegt keine feste IMU-Abtastrate und keinen genauen Frequenzgang unter Last. Die Firmware berechnet die Koeffizienten bei Parameteränderungen neu, nicht bei jedem Sample.
 
-Akku-, Fernsteuerungs-, Touch- und PID-Ausgangsfilter laufen im normalen Modus im äußeren Regelblock, sobald `controlTimestepSec` mindestens 1 ms beträgt. Ihre Abtastrate von 1000 Hz ist ein nominaler Auslegungswert. Die Sperre garantiert keine feste Rate von 1 kHz. Ein vorhandener Stillstands-Trace maß einen Median von etwa 1,66 ms pro Tick. Andere Last kann diesen Wert ändern.
+Akku-, Fernsteuerungs- und PID-Ausgangsfilter laufen im normalen Modus im äußeren Regelblock, sobald `controlTimestepSec` mindestens 1 ms beträgt. Ihre Abtastrate von 1000 Hz ist ein nominaler Auslegungswert. Die Sperre garantiert keine feste Rate von 1 kHz. Ein vorhandener Stillstands-Trace maß einen Median von etwa 1,66 ms pro Tick. Andere Last kann diesen Wert ändern.
 
 Der Akku-Filter im normalen Modus verwendet jetzt eine Grenzfrequenz von 50 Hz und eine nominale Abtastrate von 1000 Hz. Im Diagnosemodus verwendet er 20 Hz und 100 Hz; die Messung läuft dort alle 10 ms. Die korrigierten Koeffizienten lassen den Akku-Filter in beiden Modi schneller auf Spannungsänderungen reagieren als zuvor. Die Diagnose-Mahony-Fusion erhält die vorgesehenen 20-Hz-IMU-Filter statt eines effektiven Grenzwerts um 0,2 Hz. Die Koeffizienten des normalen IMU-Filters bleiben bei den Startwerten 50 Hz und 1000 Hz gleich. Die tatsächliche IMU-Abtastrate ist jedoch nicht gemessen.
 
@@ -100,7 +99,7 @@ Diese Aufzeichnung belegt den Diagnose-Telemetrietakt und stationäre Glättung.
 
 `DIAGNOSTIC_LIVE_TUNING_DEFAULTS=1` ist derzeit im lokalen Sketch gesetzt. Beim Start lädt die Firmware den sanfteren CH5=2-Satz, überschreibt Teile davon und lässt Live-Tuning eingeschaltet. Das gilt auch beim kurzen Durchschalten von CH5=1. Der Startsatz entspricht den am 01.10.2026 zurückgelesenen Live-Werten, mit denen der Nutzer kein Vibrieren mehr meldete. Spätere serielle Änderungen bleiben bis zum Neustart gültig und ändern diesen Startsatz nicht.
 
-| Größe | Aktueller Diagnose-Startwert | CH5=1 ohne Touch | CH5=2 mit Touch |
+| Größe | Aktueller Diagnose-Startwert | CH5=1 Satz 1 | CH5=2 Satz 2 |
 | --- | ---: | ---: | ---: |
 | Balance P / I / D | 5 / 200 / 0,11 | 5 / 200 / 0,11 | 5 / 200 / 0,11 |
 | Balance Integralzustand-Grenze | ±0,1 | ±0,1 | ±0,1 |

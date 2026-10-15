@@ -8,7 +8,7 @@ Die Fernsteuerung ist über den Empfänger per **SBUS** mit dem NavBot verbunden
 | CH2 | Beinlänge; im Modus „Pitching Adjust“ stattdessen Nickwinkel |
 | CH3 | Fahrgeschwindigkeit vor/zurück |
 | CH4 | Drehung / Lenken |
-| CH5 | PID-Regelung: aus, ein ohne Touchscreen, ein mit Touchscreen (3 Stufen) |
+| CH5 | PID-Regelung: aus, Satz 1, Satz 2 (3 Stufen) |
 | CH6 | Haltungsmodus oder Markiermodus (2 Stufen) |
 | CH7 | Rollregelung manuell oder automatisch (2 Stufen) |
 | CH8 | Fahr-/Haltungsmodus: Standard, Pitching Adjust oder Ball-Balance (3 Stufen) |

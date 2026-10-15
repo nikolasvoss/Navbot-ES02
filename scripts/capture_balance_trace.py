@@ -50,7 +50,7 @@ def main():
             elif args.trace_mode == 57:
                 log.write("# BAL,time_ms,ch5_mode,voltage_min_raw_v,roll_deg,angle_error_deg,angle_out_p,angle_out_i,angle_out_d,body_x,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures\n")
             else:
-                log.write("# DRIVE,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,ch3_target,effective_speed_target,motor1_velocity_f,motor2_velocity_f,tick_dt_s,speed_error,speed_out_p,speed_out_i,speed_out_d,speed_output,speed_body_x_raw,body_x,body_pitching_f,roll_ok,angle_output,angle_out_p,angle_out_i,angle_out_d,wheel_speed_feedback,motor1_target,motor2_target,top_ball_x,touch_x,body_pitching,max_servo_range_deg,sequence,logger_dropped,uart_write_failures\n")
+                log.write("# DRIVE,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,ch3_target,effective_speed_target,motor1_velocity_f,motor2_velocity_f,tick_dt_s,speed_error,speed_out_p,speed_out_i,speed_out_d,speed_output,speed_body_x_raw,body_x,body_pitching_f,roll_ok,angle_output,angle_out_p,angle_out_i,angle_out_d,wheel_speed_feedback,motor1_target,motor2_target,top_ball_x,body_pitching,max_servo_range_deg,sequence,logger_dropped,uart_write_failures\n")
             print(f"Waiting for firmware startup on {args.port}...", flush=True)
             startup_deadline = time.monotonic() + 12
             while time.monotonic() < startup_deadline:

@@ -3,10 +3,8 @@
 
 #include <Arduino.h>
 #include "filter.h"
-#include "touchscreen.h"
 
 #define ADJUSTMENT_PARAM_BALANCE_SPEED_YAW_ROLL 0
-#define ADJUSTMENT_PARAM_BALL_PUSHING 1 // For tuning main balance and movement PID loops
 
 #define COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE 0 // Two-wheel balance mode
 #define COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO 1          // SimpleFOC Studio host computer
@@ -16,8 +14,8 @@
 #define ROBOT_TUMBLING 1 // Robot is tumbling
 
 #define REMOTE_CONTROL_PID_GAINS_MODE_OFF 0
-#define REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH 1
-#define REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH 2
+#define REMOTE_CONTROL_PID_GAINS_MODE_ON_SET_1 1
+#define REMOTE_CONTROL_PID_GAINS_MODE_ON_SET_2 2
 
 #define REMOTE_CONTROL_PM_POSTURE_MODE 0 // Posture control mode
 #define REMOTE_CONTROL_PM_MARK_MODE 1    // Mark control mode

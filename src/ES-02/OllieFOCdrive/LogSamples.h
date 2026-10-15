@@ -146,7 +146,6 @@ struct DriveSample {
   float leftMotorTarget;
   float rightMotorTarget;
   float ballX;
-  float touchXFiltered;
   float bodyPitch;
   int32_t maxServoRange;
 };
@@ -154,9 +153,11 @@ struct DriveSample {
 enum class DebugSelector : uint8_t {
   K1 = 1, K2, K3, K4, K5, K6, K7, K8, K9, K10,
   K11, K12, K13, K14, K15, K16, K17, K18, K19, K20,
-  K21, K22, K23, K24, K25, K26, K27, K28, K29, K30,
-  K31, K32, K33, K34, K35, K36, K37, K38, K39, K40,
-  K41, K42, K43, K44, K45,
+  K21, K22, K23, K24, K25,
+  K28 = 28,
+  K31 = 31, K32, K33,
+  K37 = 37, K38,
+  K41 = 41, K42, K43, K44, K45,
   K46 = 46,
   K60 = 60, K61, K62, K63, K64, K65, K66, K67,
   K68, K69, K70, K71, K72, K73, K74, K75
@@ -177,10 +178,6 @@ struct BalanceGeometry { float bodyX; float bodyRoll; float bodyHeightM; };
 struct BalanceState { float rollOk; float bodyPitch; };
 struct PidState { float error; float integralLimit; float integral; float integralOutput; float output; };
 struct PidCoefficients { float kp; float ki; float kd; };
-struct TouchPoint { int32_t state; int32_t x; int32_t y; };
-struct TouchFilteredPoint { int32_t x; int32_t y; float xFiltered; float yFiltered; };
-struct PidDerivative { float derivative; };
-struct TouchState { int32_t state; int32_t start; };
 struct BallPosition { float x; float xFiltered; float y; float yFiltered; };
 struct BalanceOutputPair { float bodyPitch; float controllerOutput; };
 struct RollOutputState { float rollOk; float bodyPitch; float output; };
@@ -234,10 +231,6 @@ union DebugPayload {
   BalanceState balanceState;
   PidState pidState;
   PidCoefficients pidCoefficients;
-  TouchPoint touchPoint;
-  TouchFilteredPoint touchFilteredPoint;
-  PidDerivative pidDerivative;
-  TouchState touchState;
   BallPosition ballPosition;
   BalanceOutputPair balanceOutputPair;
   RollOutputState rollOutput;

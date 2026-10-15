@@ -13,7 +13,6 @@ Full tutorial: [Frank Fu’s Build Guide](https://frankfu.blog/embodied-ai-robot
 
 -  **Self-balancing** using MPU6050 and PID control
 -  **Legged motion** using 270° digital servos
--  **Touchscreen interface** for motion control to achieve  ball-balancing
 -  **Radiolink T12D RC System** for real-time operation switching via PWM/SBUS.
 -  **Modular Arduino-based firmware** for easy customization
 
@@ -27,7 +26,6 @@ Full tutorial: [Frank Fu’s Build Guide](https://frankfu.blog/embodied-ai-robot
 | **Motors**     |  2208 90KV 3mm Shaft Gimbal Brushless Motors            |
 | **IMU**        |  ICM42688 a 3-axis gyroscope and a 3-axis accelerometer            |
 | **Servos**     | Pro-Tronik PTK 7452 MG-D 2.8kg/0.11s 12.3g Micro Digital Servo     |
-| **HMI**        | 2.8" resistive/capacitive touchscreen         |
 | **Battery**    | 2Pcs 18650 Battery Charger Pack              |
 | **Controller**    | Radiolink T12D 12CH 2.4G RC Transmitter R12F Receiver                     |
 
@@ -40,7 +38,6 @@ Full tutorial: [Frank Fu’s Build Guide](https://frankfu.blog/embodied-ai-robot
 ```
 Navbot-ES02/
 ├── OllieFOCdrive/     # Motor & balance control
-├── TouchUI/           # Touchscreen-based user interface
 ├── WiFiControl/       # Optional WebSocket/HTML control panel
 ├── partitions.csv     # Flash partition layout
 └── lib/               # Required Arduino libraries
@@ -48,7 +45,7 @@ Navbot-ES02/
 
 ---
 
-The current firmware supports the two-wheel balancing robot only. Legacy four-wheel gait control and master/slave communication have been removed. UART1 remains available for the touchscreen, and UART2 handles SBUS.
+The current firmware supports the two-wheel balancing robot only. Legacy four-wheel gait control and master/slave communication have been removed. UART1 (500000 baud) is the link to the ros2_pc, and UART2 handles SBUS.
 
 ## Project documentation
 
@@ -101,7 +98,7 @@ After uploading firmware built from the current source, add `--trace-mode 56` an
 
 For controller decomposition, `--trace-mode 57` records `BAL` rows: `time_ms,ch5_mode,voltage_min_raw_v,roll_deg,angle_error_deg,angle_out_p,angle_out_i,angle_out_d,body_x,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures`. Its shorter lines use the same asynchronous sender and 576000 baud stream. Give each run a unique output filename.
 
-For forward/reverse motion and stopping behavior, `--trace-mode 58` records `DRIVE` rows: `time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,ch3_target,effective_speed_target,motor1_velocity_f,motor2_velocity_f,tick_dt_s,speed_error,speed_out_p,speed_out_i,speed_out_d,speed_output,speed_body_x_raw,body_x,body_pitching_f,roll_ok,angle_output,angle_out_p,angle_out_i,angle_out_d,wheel_speed_feedback,motor1_target,motor2_target,top_ball_x,touch_x,body_pitching,max_servo_range_deg,sequence,logger_dropped,uart_write_failures`. Use this only after confirming the trace output with CH5 off; each run should have a new filename. The logger samples nominally at 142.9 Hz without changing controller gains or the control-gate cadence. Nyquist is about 71.4 Hz; signals above that can alias, and the configured 50 Hz IMU low-pass cutoff is based on nominal 1 kHz sampling rather than a measured runtime cadence. No active-balance hardware measurement has established control-cycle timing or UART integrity under transmission load.
+For forward/reverse motion and stopping behavior, `--trace-mode 58` records `DRIVE` rows: `time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,ch3_target,effective_speed_target,motor1_velocity_f,motor2_velocity_f,tick_dt_s,speed_error,speed_out_p,speed_out_i,speed_out_d,speed_output,speed_body_x_raw,body_x,body_pitching_f,roll_ok,angle_output,angle_out_p,angle_out_i,angle_out_d,wheel_speed_feedback,motor1_target,motor2_target,top_ball_x,body_pitching,max_servo_range_deg,sequence,logger_dropped,uart_write_failures`. Use this only after confirming the trace output with CH5 off; each run should have a new filename. The logger samples nominally at 142.9 Hz without changing controller gains or the control-gate cadence. Nyquist is about 71.4 Hz; signals above that can alias, and the configured 50 Hz IMU low-pass cutoff is based on nominal 1 kHz sampling rather than a measured runtime cadence. No active-balance hardware measurement has established control-cycle timing or UART integrity under transmission load.
 
 The current `DIAGNOSTIC_LIVE_TUNING_DEFAULTS=1` build starts with angle P/I/D=5/200/0.11 and integral limit 0.1, speed P/I/D=0.045/0.005/0 and integral limit 50, yaw P/I/D=4/0/0, and direct wheel-speed feedback `V=0`. Live tuning starts enabled (`U1`), and these gains also apply when the physical CH5 switch passes briefly through mode 1. Keep CH9 and CH10 centered during driving. The startup speed integral is `SI0.005`, matching the live settings the user reported as free of vibration on 2026-10-01. This observation tested the complete gain set, not the speed integral in isolation. The direct wheel-speed feedback contributes only when the driver requests less speed in the current direction or commands a reversal, including after CH3 returns to neutral, and is limited to ±8 motor-target units. `V0` disables it. `V` reads the current value. The speed-loop BodyX term is limited to ±10 mm and its unsaturated value appears as `speed_body_x_raw` in the DRIVE trace. When absolute `roll_ok` exceeds 5°, further acceleration demand is reduced progressively; by 10° the speed-loop acceleration request is zero. These two angles are initial tuning values. Braking requests and the inner balance output remain available. Compare `ch3_target` with `effective_speed_target` to see the reduction. `W` reads the tilt-reduction strength (default 1), and `W0` disables this new reduction immediately for comparison; `W1` restores it. Live tuning remains enabled, but no USB connection is needed to run the robot after flashing. The wheel speed estimate uses the measured control tick. The SBUS CH3 command is multiplied by 2.0; `ch3_target` shows the scaled target. `SP0.04` changes speed P live; `SP` reads it back. `PL0.05` changes the angle integral limit live; `PL` reads it back. `PP`, `PI`, `PD`, and `YP` read the other relevant gains. `U0` restores this build's tuned startup defaults at the next active control step; `U1` keeps live tuning. Live changes are not stored in flash and reset to these startup values after reboot. The CH3 scaling is fixed in this build and cannot be tuned through serial commands.
 
@@ -144,7 +141,7 @@ The channels of the joystick are generally defaulted to ch1-4. Besides, six auxi
 are needed to switch on some functions. Each remote control is different, and they should be set
 according to personal habits. The corresponding functions of ch6-10 can be referred to as follows:
 
-- CH5 : 3-section switch, 0:stop, 1:start, 2:start and touch tablet enable. 
+- CH5 : 3-section switch, 0:stop, 1:start, 2:start (second PID gain set). 
 - CH6 : 2-section switch, 0:posture mode, 1:mark mode. 
 - CH7 : 2-section switch, manual or auto roll, 0:manual , 1:auto . 
 - CH8 : 3-section switch, 0:default, 1:pitching adjust, 2:ball poise. 

@@ -21,7 +21,7 @@ frame = COBS( payload || crc16_le(payload) ) || 0x00
 payload = serialized navbot.link.v1.Message   (<= 252 bytes)
 ```
 
-Both directions use the same format. The baud rate is not fixed yet; use 8N1 and pick it together with the UART choice. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), and PC→robot `Command` with `Ack`.
+Both directions use the same format. Transport: ESP32 UART1 (the former touchscreen port, now removed), **500000 baud, 8N1**, RX = GPIO20, TX = GPIO19 in the firmware (`link_uart.h`). The firmware opens the port at startup; no frames are sent yet. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), and PC→robot `Command` with `Ack`.
 
 ## Rules
 
@@ -37,6 +37,6 @@ Both directions use the same format. The baud rate is not fixed yet; use 8N1 and
 
 ## Next steps
 
-1. Pick the ESP32 UART and baud rate from the existing connector; verify pins and levels on the board before wiring.
+1. Verify pins, 3.3 V levels and the 500 kBd link on the physical board before wiring the ros2_pc.
 2. Generate the C code with nanopb and add the encoder plus a non-blocking TX queue to the firmware.
 3. Add the ROS 2 bridge node mapping `Imu`, `Battery`, `Status` and `Log` to `sensor_msgs/Imu`, `BatteryState`, `diagnostic_msgs` and `/rosout`.

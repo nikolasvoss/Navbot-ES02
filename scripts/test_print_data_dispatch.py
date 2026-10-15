@@ -42,8 +42,6 @@ def make_trace_harness(function: str) -> str:
 #include <cstdint>
 
 struct PidState { float error = 0, output = 0, outP = 0, outI = 0, outD = 0; };
-struct TouchState { float XPdatF = 0; };
-TouchState Touch;
 PidState Angle_Pid, Yaw_Pid, Speed_Pid;
 namespace Logging {
 int traceSubmits = 0, controlSubmits = 0, balanceSubmits = 0, driveSubmits = 0;

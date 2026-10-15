@@ -11,7 +11,7 @@
 #include <cstdlib>
 #include "OllieFOCdrive.h"
 #include "filter.h"
-#include "touchscreen.h"
+#include "link_uart.h"
 #include "ble.h"
 #include "robot.h"
 #include "Logging.h"
@@ -55,47 +55,39 @@ CalibrationStore calibrationStore;
 // Set to 0 to restore the repository's mode-dependent defaults.
 #define DIAGNOSTIC_LIVE_TUNING_DEFAULTS 1
 
-#define AdjusParameter ADJUST_BALANCE_SPEED_YAW_ROLL        // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
+#define AdjusParameter ADJUST_BALANCE_SPEED_YAW_ROLL        // 0: balance, speed, yaw, roll parameter tuning
 
-//      Two-Wheel PID Gains for Remote Control Mode (Without Touchscreen)
-#define PID_ROLL_P_NO_TOUCH 0.06
-#define PID_ROLL_I_NO_TOUCH 0.0
-#define PID_ROLL_D_NO_TOUCH 0.0
-#define PID_ROLL_LIMIT_NO_TOUCH 2
-#define PID_SPEED_P_NO_TOUCH 0.045
-#define PID_SPEED_I_NO_TOUCH 0.005
-#define PID_SPEED_D_NO_TOUCH 0
-#define PID_SPEED_LIMIT_NO_TOUCH 50
-#define PID_ANGLE_P_NO_TOUCH 5
-#define PID_ANGLE_I_NO_TOUCH 200
-#define PID_ANGLE_D_NO_TOUCH 0.11
-#define PID_ANGLE_LIMIT_NO_TOUCH 0.1
+//      Two-Wheel PID Gains for Remote Control Mode (Set 1)
+#define PID_ROLL_P_SET_1 0.06
+#define PID_ROLL_I_SET_1 0.0
+#define PID_ROLL_D_SET_1 0.0
+#define PID_ROLL_LIMIT_SET_1 2
+#define PID_SPEED_P_SET_1 0.045
+#define PID_SPEED_I_SET_1 0.005
+#define PID_SPEED_D_SET_1 0
+#define PID_SPEED_LIMIT_SET_1 50
+#define PID_ANGLE_P_SET_1 5
+#define PID_ANGLE_I_SET_1 200
+#define PID_ANGLE_D_SET_1 0.11
+#define PID_ANGLE_LIMIT_SET_1 0.1
 
-//      Two-Wheel PID Gains for Remote Control Mode (With Touchscreen)
-#define PID_ROLL_P_WITH_TOUCH 0.08
-#define PID_ROLL_I_WITH_TOUCH 1.5
-#define PID_ROLL_D_WITH_TOUCH 0.005
-#define PID_ROLL_LIMIT_WITH_TOUCH 2
-#define PID_SPEED_P_WITH_TOUCH 0.045
-#define PID_SPEED_I_WITH_TOUCH 0.005
-#define PID_SPEED_D_WITH_TOUCH 0
-#define PID_SPEED_LIMIT_WITH_TOUCH 50
-#define PID_ANGLE_P_WITH_TOUCH 5
-#define PID_ANGLE_I_WITH_TOUCH 200
-#define PID_ANGLE_D_WITH_TOUCH 0.11
-#define PID_ANGLE_LIMIT_WITH_TOUCH 0.1
+//      Two-Wheel PID Gains for Remote Control Mode (Set 2)
+#define PID_ROLL_P_SET_2 0.08
+#define PID_ROLL_I_SET_2 1.5
+#define PID_ROLL_D_SET_2 0.005
+#define PID_ROLL_LIMIT_SET_2 2
+#define PID_SPEED_P_SET_2 0.045
+#define PID_SPEED_I_SET_2 0.005
+#define PID_SPEED_D_SET_2 0
+#define PID_SPEED_LIMIT_SET_2 50
+#define PID_ANGLE_P_SET_2 5
+#define PID_ANGLE_I_SET_2 200
+#define PID_ANGLE_D_SET_2 0.11
+#define PID_ANGLE_LIMIT_SET_2 0.1
 #define PID_YAW_P_DEFAULT 4
 #define PID_YAW_I_DEFAULT 0
 #define PID_YAW_D_DEFAULT 0
 #define PID_YAW_LIMIT_DEFAULT 0
-#define TOUCH_X_PID_P_DEFAULT 0.2
-#define TOUCH_X_PID_I_DEFAULT 0
-#define TOUCH_X_PID_D_DEFAULT 0.04
-#define TOUCH_X_PID_LIMIT_DEFAULT 0
-#define TOUCH_Y_PID_P_DEFAULT 0.2
-#define TOUCH_Y_PID_I_DEFAULT 170
-#define TOUCH_Y_PID_D_DEFAULT 0.08
-#define TOUCH_Y_PID_LIMIT_DEFAULT 0
 
 #define BOARD_PIN_LED 35        // LED IO
 #define BOARD_PIN_BATTERY_VOLTAGE_ADC 17  // Battery voltage IO
@@ -147,9 +139,9 @@ float BodyHeightCommandFilteredM = BODY_HEIGHT_DEFAULT_M;
 float BodyPitchingFiltered = 0;      // Pitch
 float BodyRollFiltered = 0;          // Roll
 float SlideStepFiltered = 0;         // Slide step
-biquadFilter_t BodyCommandFilterLPF[12];  // Second-order low-pass filter
-float TouchYPidOutputFiltered = 0;
-float TouchXPidOutputFiltered = 0;
+biquadFilter_t BodyCommandFilterLPF[11];  // Second-order low-pass filter
+float BallRollOffset = 0;          // Remote-control ball-pose roll offset
+float BallRollOffsetFiltered = 0;
 
 float bodyCommandFilterCutoffHz = 200; // Low-pass cutoff frequency (Hz) for remote-control body command filtering.
 float bodyCommandFilteringEnabled = 1;
@@ -228,7 +220,7 @@ void zeroBias_servo4(char *cmd) {
 }
 
 bool pid_gains_mode_is_enabled(int mode) {
-  return (mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH || mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH);
+  return (mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_SET_1 || mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_SET_2);
 }
 
 //  Create ServoControl object
@@ -254,21 +246,17 @@ float CalibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Ca
 
 float PidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
 
-PIDController anglePidSettings(PID_ANGLE_P_WITH_TOUCH, PID_ANGLE_I_WITH_TOUCH,
-                               PID_ANGLE_D_WITH_TOUCH, 0, PID_ANGLE_LIMIT_WITH_TOUCH);
-PIDController speedPidSettings(PID_SPEED_P_WITH_TOUCH, PID_SPEED_I_WITH_TOUCH,
-                               PID_SPEED_D_WITH_TOUCH, 0, PID_SPEED_LIMIT_WITH_TOUCH);
+PIDController anglePidSettings(PID_ANGLE_P_SET_2, PID_ANGLE_I_SET_2,
+                               PID_ANGLE_D_SET_2, 0, PID_ANGLE_LIMIT_SET_2);
+PIDController speedPidSettings(PID_SPEED_P_SET_2, PID_SPEED_I_SET_2,
+                               PID_SPEED_D_SET_2, 0, PID_SPEED_LIMIT_SET_2);
 PIDController yawPidSettings(PID_YAW_P_DEFAULT, PID_YAW_I_DEFAULT, PID_YAW_D_DEFAULT,
                              0, PID_YAW_LIMIT_DEFAULT);
 PIDController rollPidSettings(
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_P_WITH_TOUCH : 0.06,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_I_WITH_TOUCH : 1.5,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_D_WITH_TOUCH : 0.003, 0,
-    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_LIMIT_WITH_TOUCH : 2);
-PIDController touchXPidSettings(TOUCH_X_PID_P_DEFAULT, TOUCH_X_PID_I_DEFAULT,
-                               TOUCH_X_PID_D_DEFAULT, 0, TOUCH_X_PID_LIMIT_DEFAULT);
-PIDController touchYPidSettings(TOUCH_Y_PID_P_DEFAULT, TOUCH_Y_PID_I_DEFAULT,
-                               TOUCH_Y_PID_D_DEFAULT, 0, TOUCH_Y_PID_LIMIT_DEFAULT);
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_P_SET_2 : 0.06,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_I_SET_2 : 1.5,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_D_SET_2 : 0.003, 0,
+    DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? PID_ROLL_LIMIT_SET_2 : 2);
 
 float control_torque_compensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
@@ -284,8 +272,6 @@ MyPIDController Speed_Pid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 MyPIDController Yaw_Pid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 MyPIDController Roll_Pid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 
-MyPIDController TouchX_Pid(0, 0, 0, 0, 10, pidTimestepSec, 0, 0);
-MyPIDController TouchY_Pid(0, 0, 0, 0, 8, pidTimestepSec, 0, 0);
 bool balancePidNeedsPriming = true; // what does this mean? 
 
 void ControlTorqueCompensation(char *cmd) {
@@ -349,16 +335,6 @@ void CbYawPid(char *cmd) {
 
 void CbRollPid(char *cmd) {
   command.pid(&rollPidSettings, cmd);
-}
-
-#elif AdjusParameter == ADJUST_BALL_PUSHING
-
-void CbTouchXPid(char *cmd) {
-  command.pid(&touchXPidSettings, cmd);
-}
-
-void CbTouchYPid(char *cmd) {
-  command.pid(&touchYPidSettings, cmd);
 }
 #endif
 
@@ -515,10 +491,8 @@ void setup() {
   biquadFilterInitLPF(&BodyCommandFilterLPF[8], 50, 1000);
   biquadFilterInitLPF(&BodyCommandFilterLPF[9], 50, 1000);
   biquadFilterInitLPF(&BodyCommandFilterLPF[10], 200, 1000);
-  biquadFilterInitLPF(&BodyCommandFilterLPF[11], 200, 1000);
 
-  // use monitoring with serial
-  TouchscreenInit(1000);
+  LinkUartInit();
   // enable more verbose output for debugging
   // comment out if not needed
   SimpleFOCDebug::enable(&Serial); // TODO a more centralized way to enable debug sections would be nice
@@ -636,10 +610,6 @@ void setup() {
   command.add('Y', CbYawPid, "yawPidSettings");
   command.add('R', CbRollPid, "rollPidSettings");
   command.add('O', Target_Body_Height, "my Target_Body_Height");
-#elif AdjusParameter == ADJUST_BALL_PUSHING
-  command.add('L', CbTouchXPid, "touchXPidSettings");
-  command.add('N', CbTouchYPid, "touchYPidSettings");
-  command.add('G', ControlTorqueCompensation, "my ControlTorqueCompensation");
 #endif
 
   command.add('U', User_command, "my User_command");
@@ -889,26 +859,9 @@ void print_data(void) {
     case 25:
       sample.payload.bodyPitchState = {BodyPitchingFiltered, BodyPitching};
       break;
-    case 26:
-      if (Touch.state == 1) {
-        sample.payload.touchPoint = {Touch.state, Touch.XPdat, Touch.YPdat};
-      } else if (Touch.state == 0) {
-        sample.payload.touchPoint = {Touch.state, Touch.XLdat, Touch.YLdat};
-      } else return;
-      break;
-    case 27:
-      sample.payload.touchFilteredPoint = {Touch.XPdat, Touch.YPdat, Touch.XPdatF, Touch.YPdatF};
-      break;
     case 28:
       sample.payload.filteredGeometry = {BodyPitchingFiltered, BodyRollFiltered, BodyHeightCommandFilteredM, SlideStepFiltered,
                                          top_ball_x, top_ball_y};
-      break;
-    case 29:
-      sample.payload.pidTuningState = {TouchY_Pid.Kp, TouchY_Pid.Ki, TouchY_Pid.Kd,
-                                       TouchY_Pid.deriv, TouchY_Pid.output};
-      break;
-    case 30:
-      sample.payload.pidDerivative = {TouchY_Pid.deriv};
       break;
     case 31:
       sample.payload.pidState = {Roll_Pid.error, Roll_Pid.iLimit, Roll_Pid.integral,
@@ -921,33 +874,12 @@ void print_data(void) {
       sample.payload.pidIntegralOutputState = {Yaw_Pid.iLimit, Yaw_Pid.integral,
                                                Yaw_Pid.outI, BodyPitchingFiltered, Yaw_Pid.output};
       break;
-    case 34:
-      sample.payload.pidTuningState = {TouchX_Pid.Kp, TouchX_Pid.Ki, TouchX_Pid.Kd,
-                                       TouchX_Pid.deriv, TouchX_Pid.output};
-      break;
-    case 35:
-      sample.payload.pidDerivative = {TouchX_Pid.deriv};
-      break;
-    case 36:
-      sample.payload.touchState = {Touch.state, Touch.start};
-      break;
     case 37:
       sample.payload.ballPosition = {top_ball_x, sbus_top_ball_x_smoothed,
                                      top_ball_y, sbus_top_ball_y_smoothed};
       break;
     case 38:
-      sample.payload.balanceOutputPair = {BodyPitching, TouchY_Pid.output};
-      break;
-    case 39:
-      sample.payload.pidIntegralState = {TouchY_Pid.iLimit, TouchY_Pid.integral,
-                                         TouchY_Pid.outI, TouchY_Pid.output};
-      break;
-    case 40:
-      if (Touch.state == 1) {
-        sample.payload.touchPoint = {Touch.state, Touch.XPressDat, Touch.YPressDat};
-      } else if (Touch.state == 0) {
-        sample.payload.touchPoint = {Touch.state, Touch.XPressDat, Touch.YPressDat};
-      } else return;
+      sample.payload.balanceOutputPair = {BodyPitching, BallRollOffset};
       break;
     case 41:
       sample.payload.rollOutput = {sampleImu.correctedRollDegrees, BodyPitching, Speed_Pid.output};
@@ -1093,7 +1025,6 @@ void print_data(void) {
         sample.leftMotorTarget = motor1.target;
         sample.rightMotorTarget = motor2.target;
         sample.ballX = top_ball_x;
-        sample.touchXFiltered = Touch.XPdatF;
         sample.bodyPitch = BodyPitching;
         sample.maxServoRange = maxServoRange;
         Logging::submit(sample);
@@ -1128,71 +1059,58 @@ float BodyPitchingCorrect(float x)  // Pitch angle correction
  * @brief Sets the PID gains for the main controllers based on the S.BUS switch `pid_gains_mode`.
  *
  * This allows for switching between two sets of PID parameters on the fly using the
- * remote controller. One set is tuned for operation without the touchscreen, and
- * the other for operation with the touchscreen, which may change the robot's
- * weight distribution and dynamics.
+ * remote controller. Set 1 and set 2 are the two tuned gain sets.
  */
 void PidParameter(void) {
 #if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
-  const int gainMode = REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH;
+  const int gainMode = REMOTE_CONTROL_PID_GAINS_MODE_ON_SET_2;
 #else
   const int gainMode = pid_gains_mode;
 #endif
-  if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH)  // No touch screen
+  if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_SET_1)
   {
     // Roll
-    rollPidSettings.P = PID_ROLL_P_NO_TOUCH;
-    rollPidSettings.I = PID_ROLL_I_NO_TOUCH;
-    rollPidSettings.D = PID_ROLL_D_NO_TOUCH;
-    rollPidSettings.limit = PID_ROLL_LIMIT_NO_TOUCH;  // Integral limit
+    rollPidSettings.P = PID_ROLL_P_SET_1;
+    rollPidSettings.I = PID_ROLL_I_SET_1;
+    rollPidSettings.D = PID_ROLL_D_SET_1;
+    rollPidSettings.limit = PID_ROLL_LIMIT_SET_1;  // Integral limit
 
     // Speed loop
-    speedPidSettings.P = PID_SPEED_P_NO_TOUCH;
-    speedPidSettings.I = PID_SPEED_I_NO_TOUCH;
-    speedPidSettings.D = PID_SPEED_D_NO_TOUCH;
-    speedPidSettings.limit = PID_SPEED_LIMIT_NO_TOUCH;  // Integral limit
+    speedPidSettings.P = PID_SPEED_P_SET_1;
+    speedPidSettings.I = PID_SPEED_I_SET_1;
+    speedPidSettings.D = PID_SPEED_D_SET_1;
+    speedPidSettings.limit = PID_SPEED_LIMIT_SET_1;  // Integral limit
 
     // Balance loop
-    anglePidSettings.P = PID_ANGLE_P_NO_TOUCH;
-    anglePidSettings.I = PID_ANGLE_I_NO_TOUCH;
-    anglePidSettings.D = PID_ANGLE_D_NO_TOUCH;
-    anglePidSettings.limit = PID_ANGLE_LIMIT_NO_TOUCH;  // Integral limit
-  } else if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH)  // With touch screen
+    anglePidSettings.P = PID_ANGLE_P_SET_1;
+    anglePidSettings.I = PID_ANGLE_I_SET_1;
+    anglePidSettings.D = PID_ANGLE_D_SET_1;
+    anglePidSettings.limit = PID_ANGLE_LIMIT_SET_1;  // Integral limit
+  } else if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_SET_2)
   {
     // Roll
-    rollPidSettings.P = PID_ROLL_P_WITH_TOUCH;
-    rollPidSettings.I = PID_ROLL_I_WITH_TOUCH;
-    rollPidSettings.D = PID_ROLL_D_WITH_TOUCH;
-    rollPidSettings.limit = PID_ROLL_LIMIT_WITH_TOUCH;  // Integral limit
+    rollPidSettings.P = PID_ROLL_P_SET_2;
+    rollPidSettings.I = PID_ROLL_I_SET_2;
+    rollPidSettings.D = PID_ROLL_D_SET_2;
+    rollPidSettings.limit = PID_ROLL_LIMIT_SET_2;  // Integral limit
 
     // Speed loop
-    speedPidSettings.P = PID_SPEED_P_WITH_TOUCH;
-    speedPidSettings.I = PID_SPEED_I_WITH_TOUCH;
-    speedPidSettings.D = PID_SPEED_D_WITH_TOUCH;
-    speedPidSettings.limit = PID_SPEED_LIMIT_WITH_TOUCH;  // Integral limit
+    speedPidSettings.P = PID_SPEED_P_SET_2;
+    speedPidSettings.I = PID_SPEED_I_SET_2;
+    speedPidSettings.D = PID_SPEED_D_SET_2;
+    speedPidSettings.limit = PID_SPEED_LIMIT_SET_2;  // Integral limit
 
     // Balance loop
-    anglePidSettings.P = PID_ANGLE_P_WITH_TOUCH;
-    anglePidSettings.I = PID_ANGLE_I_WITH_TOUCH;
-    anglePidSettings.D = PID_ANGLE_D_WITH_TOUCH;
-    anglePidSettings.limit = PID_ANGLE_LIMIT_WITH_TOUCH;  // Integral limit
+    anglePidSettings.P = PID_ANGLE_P_SET_2;
+    anglePidSettings.I = PID_ANGLE_I_SET_2;
+    anglePidSettings.D = PID_ANGLE_D_SET_2;
+    anglePidSettings.limit = PID_ANGLE_LIMIT_SET_2;  // Integral limit
   }
 
   yawPidSettings.P = PID_YAW_P_DEFAULT;
   yawPidSettings.I = PID_YAW_I_DEFAULT;
   yawPidSettings.D = PID_YAW_D_DEFAULT;
   yawPidSettings.limit = PID_YAW_LIMIT_DEFAULT;
-
-  // Touch screen
-  touchXPidSettings.P = TOUCH_X_PID_P_DEFAULT;
-  touchXPidSettings.I = TOUCH_X_PID_I_DEFAULT;
-  touchXPidSettings.D = TOUCH_X_PID_D_DEFAULT;
-  touchXPidSettings.limit = TOUCH_X_PID_LIMIT_DEFAULT;  // Integral limit
-
-  touchYPidSettings.P = TOUCH_Y_PID_P_DEFAULT;
-  touchYPidSettings.I = TOUCH_Y_PID_I_DEFAULT;
-  touchYPidSettings.D = TOUCH_Y_PID_D_DEFAULT;
-  touchYPidSettings.limit = TOUCH_Y_PID_LIMIT_DEFAULT;  // Integral limit
 }
 
 /**
@@ -1200,7 +1118,7 @@ void PidParameter(void) {
  *
  * This is the core control function for the two-wheeled mode. It orchestrates
  * multiple PID controllers to achieve stable balancing and respond to commands.
- * - It runs PID loops for the touchscreen input to generate `BodyPitching` and roll commands.
+ * - It applies the remote-control ball-pose offsets to `BodyPitching` and the roll command.
  * - It runs a PID loop for roll stabilization.
  * - It runs a cascade PID for speed and balance control (Speed loop -> Angle loop).
  * - It runs a PID loop for yaw (turning) control.
@@ -1212,84 +1130,21 @@ void PIDcontroller_posture(float dt) {
   if ((int)PidParameterTuning == 0)
     PidParameter();
 
-  // Touch screen
-  TouchX_Pid.Kp = touchXPidSettings.P / 100;
-  TouchX_Pid.Ki = touchXPidSettings.I / 100;
-  TouchX_Pid.Kd = touchXPidSettings.D / 100;
-  TouchX_Pid.iLimit = touchXPidSettings.limit;  // Integral limit
-
-  TouchY_Pid.Kp = touchYPidSettings.P / 100;
-  TouchY_Pid.Ki = touchYPidSettings.I / 100;
-  TouchY_Pid.Kd = touchYPidSettings.D / 100;
-  TouchY_Pid.iLimit = touchYPidSettings.limit;  // Integral limit
-
-  float touchXError = Touch.XPdatF;
-  float touchYError = Touch.YPdatF;
-  static float TouchX_kd = 0;
-  static float TouchY_kd = 0;
-
-  TouchX_Pid.compute(touchXError, dt);
-  TouchY_Pid.compute(touchYError, dt);
-
-  TouchX_Pid.deriv = constrain(TouchX_Pid.deriv, -11000, 11000);
-  TouchX_Pid.outD = TouchX_kd * TouchX_Pid.deriv;
-
-  if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) || (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO))  // Top ball mode
-  {
-    BodyPitching = TouchX_Pid.outP + TouchX_Pid.outI + TouchX_Pid.outD + sbus_top_ball_x_smoothed;
-    BodyPitching = -BodyPitching;
+  // Remote-control ball-pose offsets
+  const bool ballPoseRollAuto = (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) && (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO);
+  if ((attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) || (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)) {
+    BodyPitching = -sbus_top_ball_x_smoothed;
   }
 
-  TouchY_Pid.deriv = constrain(TouchY_Pid.deriv, -11000, 11000);
-  TouchY_Pid.outD = TouchY_kd * TouchY_Pid.deriv;
-  TouchY_Pid.output = TouchY_Pid.outP + TouchY_Pid.outI + TouchY_Pid.outD + sbus_top_ball_y_smoothed;
+  BallRollOffset = sbus_top_ball_y_smoothed;
   if ((int)bodyCommandFilteringEnabled == 1) {
-    TouchYPidOutputFiltered = biquadFilterApply(&BodyCommandFilterLPF[10], TouchY_Pid.output);
-    TouchXPidOutputFiltered = biquadFilterApply(&BodyCommandFilterLPF[11], TouchX_Pid.output);
+    BallRollOffsetFiltered = biquadFilterApply(&BodyCommandFilterLPF[10], BallRollOffset);
   } else {
-    TouchYPidOutputFiltered = TouchY_Pid.output;
-    TouchXPidOutputFiltered = TouchX_Pid.output;
+    BallRollOffsetFiltered = BallRollOffset;
   }
-
-  if ((Touch.state == 1) && (Touch.P_count < 4)) {
-    Touch.P_count++;
-    TouchX_Pid.integral = 0;
-    TouchY_Pid.integral = 0;
-  }
-
-  if (Touch.P_count >= 4) {
-    if (TouchX_kd < TouchX_Pid.Kd) {
-      TouchX_kd = TouchX_kd + (TouchX_Pid.Kd / 22);
-    }
-    if (TouchY_kd < TouchY_Pid.Kd) {
-      TouchY_kd = TouchY_kd + (TouchY_Pid.Kd / 22);
-    }
-    Touch.start = 2;
-  }
-
-  if ((Touch.state == 0) && (Touch.L_count < 44))
-    Touch.L_count++;
-  else
-    Touch.L_count = 0;
-
-  if (Touch.L_count >= 44) {
-    TouchX_Pid.integral = 0;
-    TouchY_Pid.integral = 0;
-    Touch.P_count = 0;
-    TouchX_kd = 0;
-    TouchY_kd = 0;
-    Touch.start = -2;
-  }
-
-  if ((attitude_mode != REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) || (roll_mode != REMOTE_CONTROL_ROLL_MODE_AUTO))  // Non-top ball mode
-  {
-    TouchX_Pid.integral = 0;
-    TouchX_Pid.output = 0;
-    TouchY_Pid.integral = 0;
-    TouchY_Pid.output = 0;
-    TouchYPidOutputFiltered = 0;
-    TouchX_kd = 0;
-    TouchY_kd = 0;
+  if (!ballPoseRollAuto) {
+    BallRollOffset = 0;
+    BallRollOffsetFiltered = 0;
   }
 
   // Roll
@@ -1301,7 +1156,7 @@ void PIDcontroller_posture(float dt) {
   float TargetBodyRoll = BodyRollFiltered * 777;                            // Roll
   if (attitude_mode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball禁止手动横滚
     TargetBodyRoll = 0;
-  float RollError = (-imu::latest().correctedPitchDegrees) - (-TargetBodyRoll) - (-TouchYPidOutputFiltered);
+  float RollError = (-imu::latest().correctedPitchDegrees) - (-TargetBodyRoll) - (-BallRollOffsetFiltered);
   if (roll_mode == REMOTE_CONTROL_ROLL_MODE_AUTO)  // Roll leveling
   {
     Roll_Pid.compute(RollError, dt);
@@ -1557,7 +1412,7 @@ void DiagnosticLoop(void) {
  * of the robot's operation, responsible for:
  * 1. Calling the SimpleFOC `move()` and `loopFOC()` methods to update motor states.
  * 2. Handling serial communication for commands and telemetry.
- * 3. Reading sensors (IMU, RC, Touchscreen).
+ * 3. Reading sensors (IMU, RC).
  * 4. Running posture control for two-wheel balancing.
  * 5. Calculating inverse kinematics to determine servo angles.
  * 6. Sending final commands to the servos.
@@ -1597,13 +1452,9 @@ void loop() {
   CtrlInput();  // BLE or remote control input
   RXsbus();
 
-  ReadTouchDat();
-
   controlTimestepSec = (loopTimeUs - previousControlTimeUs) / 1000000.0f;
   if (controlTimestepSec >= 0.001f) {   //1kHz
     controlGateSequence++;
-    TouchBiquadFilter();  // Touch screen filter
-
     RemoteControlFiltering();  // Remote control signal filtering
     ReadVoltage();             // Battery
     print_data();              // Serial port data printing

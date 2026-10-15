@@ -45,7 +45,7 @@ void verifyFormatters(const char *fixturePath) {
       value.replace(position, 2, "\n");
     fixtures[line.substr(0, separator)] = value;
   }
-  require(fixtures.size() == 66, "format fixture does not cover every active selector and profile");
+  require(fixtures.size() == 57, "format fixture does not cover every active selector and profile");
 
   const LoggingInternal::RecordKind kinds[] = {
       LoggingInternal::RecordKind::Diagnostic, LoggingInternal::RecordKind::Trace,
@@ -58,6 +58,9 @@ void verifyFormatters(const char *fixturePath) {
   }
 
   for (int selector = 1; selector <= 45; ++selector) {
+    if (selector == 26 || selector == 27 || selector == 29 || selector == 30 || selector == 34 ||
+        selector == 35 || selector == 36 || selector == 39 || selector == 40)
+      continue;  // touch selectors removed
     LoggingInternal::Record record{};
     record.kind = LoggingInternal::RecordKind::Debug;
     record.payload.debug.selector = static_cast<Logging::DebugSelector>(selector);

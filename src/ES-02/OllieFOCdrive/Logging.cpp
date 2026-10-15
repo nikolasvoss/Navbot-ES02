@@ -63,7 +63,9 @@ void latchIncomplete(Logging::IncompleteReason reason) {
 
 bool isValidDebugSelector(Logging::DebugSelector selector) {
   const uint8_t value = static_cast<uint8_t>(selector);
-  return (value >= 1 && value <= 46) || (value >= 60 && value <= 75);
+  const bool removed = value == 26 || value == 27 || value == 29 || value == 30 || value == 34 ||
+                       value == 35 || value == 36 || value == 39 || value == 40;
+  return !removed && ((value >= 1 && value <= 46) || (value >= 60 && value <= 75));
 }
 
 Logging::Result enqueue(LoggingInternal::Record &record) {
@@ -275,9 +277,6 @@ Result submit(const DriveSample &sample) {
 
 Result submit(const DebugSample &sample) {
   if (!isValidDebugSelector(sample.selector)) return Result::Invalid;
-  if ((sample.selector == DebugSelector::K26 || sample.selector == DebugSelector::K40) &&
-      sample.payload.touchPoint.state != 0 && sample.payload.touchPoint.state != 1)
-    return Result::Invalid;
 
   const ProfileSnapshot profile = snapshotProfile();
   if (profile.profile != Profile::SelectedDebug) {
