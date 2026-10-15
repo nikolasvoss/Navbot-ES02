@@ -1,0 +1,22 @@
+# slam_toolbox online async mapping from /scan only (no wheel odometry).
+slam_toolbox:
+  ros__parameters:
+    odom_frame: odom
+    map_frame: map
+    base_frame: lds08rr
+    scan_topic: /scan
+    mode: mapping
+    use_scan_matching: true
+    use_scan_barycenter: true
+    resolution: 0.05
+    max_laser_range: 8.0          # provisional; the LDS08RR range is not yet measured
+    map_update_interval: 2.0
+    # Odometry is static, so "movement" is never detected from odom. Process scans by time instead.
+    minimum_time_interval: 0.5
+    minimum_travel_distance: 0.0
+    minimum_travel_heading: 0.0
+    throttle_scans: 1
+    transform_publish_period: 0.05
+    tf_buffer_duration: 30.0
+    do_loop_closing: true
+    debug_logging: false

@@ -80,7 +80,7 @@ def run(argv=None) -> int:
 
         runtime = LidarRuntime(config)
     try:
-        server = make_server(args.host, args.port, make_lidar_app(runtime), threaded=True)
+        server = make_server(args.host, args.port, make_lidar_app(runtime, slam=getattr(node, "slam", None)), threaded=True)
     except Exception:
         if node is not None:
             node.destroy_node()

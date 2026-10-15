@@ -8,6 +8,18 @@ The [ROS 2 roadmap](../ROS_ROADMAP.md) tracks future work and live acceptance st
 
 The HMMD ROS 2 workspace is under `src/ros2_pc/ros2/`.
 
+## Web hub and SLAM
+
+The LiDAR service on port 8081 is the single browser entry point with three tabs: `/lidar`, `/slam`, and `/radar/`. The radar tab serves the unchanged `hmmd_radar/web` page from the same server. It still needs the HMMD launcher's rosbridge on `ws://127.0.0.1:9090` and shows a connecting state while no radar is installed. Radar and SLAM stay optional; the LiDAR page works without them.
+
+SLAM uses the apt package `slam_toolbox` (online async, lidar-only). Install it with `sudo apt install ros-jazzy-slam-toolbox ros-jazzy-tf2-ros`, rebuild the workspace, then run the LiDAR service and, in a second terminal with the workspace sourced:
+
+```bash
+ros2 launch lds08rr_lidar slam.launch.py
+```
+
+The launch file fixes `odom` to the `lds08rr` frame because the robot has no wheel odometry yet. Scan matching alone tracks motion, so move the sensor slowly (well under 0.5 m between scans). Parameters are in `config/slam_toolbox.yaml`. The `/slam` tab shows `/map`, the pose from TF `map` → `lds08rr`, and the LiDAR state. Dev-PC tests cover the web hub and map packing only; `slam_toolbox` itself has not been run against the real sensor.
+
 ## LDS08RR LiDAR
 
 The `lds08rr_lidar` package uses `lds2d[viz]==0.7.0` for the confirmed LDS08RR Camsense driver and polar plot. The local launcher adds an operational status page at `http://127.0.0.1:8081/lidar`. It works in demo mode without a serial device or ROS. When ROS 2 is available, the same reader publishes `/scan` and `/lidar/status`.

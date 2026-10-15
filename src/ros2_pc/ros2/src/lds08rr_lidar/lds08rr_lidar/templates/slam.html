@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Navbot SLAM</title>
+  <style>
+    :root { color-scheme: dark; font: 15px system-ui, sans-serif; background: #101820; color: #edf3f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: .75rem; display: grid; gap: .6rem; }
+    h1 { margin: 0; font-size: 1.35rem; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+    .badge { border: 1px solid #64748b; border-radius: 999px; padding: .3rem .65rem; font-weight: 700; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: .65rem; }
+    section { min-width: 0; background: #18232d; border: 1px solid #354552; border-radius: .6rem; padding: .7rem; }
+    #map { width: 100%; aspect-ratio: 1; display: block; background: #111c25; border-radius: .35rem; }
+    dl { display: grid; grid-template-columns: 1fr auto; gap: .38rem .65rem; margin: 0; }
+    dt { color: #9fb0bd; }
+    dd { margin: 0; text-align: right; }
+    .note { color: #cbd5e1; line-height: 1.4; }
+    @media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  </style>
+</head>
+<body>
+  {% include "_nav.html" %}
+  <header class="top">
+    <h1>Navbot SLAM</h1>
+    <span id="stateBadge" class="badge">Connecting</span>
+  </header>
+  <main class="grid">
+    <section aria-label="SLAM map">
+      <canvas id="map" width="800" height="800" aria-label="Occupancy grid map"></canvas>
+    </section>
+    <section aria-label="SLAM status">
+      <dl>
+        <dt>SLAM</dt><dd id="slamState">–</dd>
+        <dt>LiDAR</dt><dd id="lidarState">–</dd>
+        <dt>Map size</dt><dd id="mapSize">–</dd>
+        <dt>Resolution</dt><dd id="mapRes">–</dd>
+        <dt>Pose x, y</dt><dd id="poseXY">–</dd>
+        <dt>Heading</dt><dd id="poseYaw">–</dd>
+        <dt>Map update age</dt><dd id="mapAge">–</dd>
+      </dl>
+      <p class="note">Mapping runs <code>slam_toolbox</code> on LiDAR scans only; there is no wheel odometry, so move the sensor slowly. Map and pose come from ROS topics <code>/map</code> and TF <code>map</code> → <code>lds08rr</code>. Angle zero and rotation direction of the LiDAR are uncalibrated, so the map may be mirrored or rotated.</p>
+    </section>
+  </main>
+  <script>
+    const canvas = document.querySelector('#map');
+    const ctx = canvas.getContext('2d');
+    const $ = (id) => document.getElementById(id);
+    const LABELS = { waiting: 'Waiting for map', no_pose: 'Map, no pose', mapping: 'Mapping' };
+
+    async function getJson(path) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2500);
+      try {
+        const response = await fetch(path, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(path + ' ' + response.status);
+        return await response.json();
+      } finally { clearTimeout(timer); }
+    }
+
+    function drawMap(map, pose) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!map) return;
+      const bytes = Uint8Array.from(atob(map.data), (c) => c.charCodeAt(0));
+      const image = ctx.createImageData(map.width, map.height);
+      for (let y = 0; y < map.height; y++) {
+        for (let x = 0; x < map.width; x++) {
+          const v = bytes[y * map.width + x];
+          const signed = v > 127 ? v - 256 : v;          // -1 unknown, 0..100 occupancy
+          const shade = signed < 0 ? 40 : 235 - Math.round(signed * 2.2);
+          const o = ((map.height - 1 - y) * map.width + x) * 4; // row 0 is the bottom
+          image.data[o] = image.data[o + 1] = image.data[o + 2] = shade;
+          image.data[o + 3] = 255;
+        }
+      }
+      const off = document.createElement('canvas');
+      off.width = map.width; off.height = map.height;
+      off.getContext('2d').putImageData(image, 0, 0);
+      const scale = Math.min(canvas.width / map.width, canvas.height / map.height);
+      const w = map.width * scale, h = map.height * scale;
+      const left = (canvas.width - w) / 2, top = (canvas.height - h) / 2;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(off, left, top, w, h);
+      if (pose) {
+        const px = left + ((pose.x - map.origin_x) / map.resolution) * scale;
+        const py = top + h - ((pose.y - map.origin_y) / map.resolution) * scale;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(-pose.yaw);
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-9, 8); ctx.lineTo(-9, -8); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    async function refresh() {
+      try {
+        const [slam, lidar] = await Promise.all([getJson('/map.json'), getJson('/status.json')]);
+        $('stateBadge').textContent = LABELS[slam.state] || slam.state;
+        $('slamState').textContent = LABELS[slam.state] || slam.state;
+        $('lidarState').textContent = lidar.state;
+        const m = slam.map;
+        $('mapSize').textContent = m ? `${m.width} × ${m.height} cells (${(m.width * m.resolution).toFixed(1)} × ${(m.height * m.resolution).toFixed(1)} m)` : '–';
+        $('mapRes').textContent = m ? `${(m.resolution * 100).toFixed(0)} cm/cell` : '–';
+        const p = slam.pose;
+        $('poseXY').textContent = p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)} m` : '–';
+        $('poseYaw').textContent = p ? `${(p.yaw * 180 / Math.PI).toFixed(0)}°` : '–';
+        $('mapAge').textContent = slam.map_age_sec == null ? '–' : slam.map_age_sec.toFixed(0) + ' s';
+        drawMap(m, p);
+      } catch (error) {
+        $('stateBadge').textContent = 'Server unavailable';
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>

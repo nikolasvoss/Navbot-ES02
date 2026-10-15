@@ -2,14 +2,22 @@ from __future__ import annotations
 
 import math
 
+import rclpy.time
+
 from builtin_interfaces.msg import Time
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from nav_msgs.msg import OccupancyGrid
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
+from tf2_ros import Buffer, TransformException, TransformListener
 
 from .runtime import LidarRuntime
+from .slam import SlamState, grid_to_dict
 from .source import SourceConfig
+
+MAP_FRAME = "map"
+SENSOR_FRAME = "lds08rr"
 
 BIN_COUNT = 360
 RANGE_MIN_M = 0.01
@@ -59,6 +67,35 @@ class LidarNode(Node):
         self.runtime = LidarRuntime(config, on_scan=self.publish_scan)
         self._ros_publish_error: str | None = None
         self.create_timer(1.0, self.publish_status)
+
+        # slam_toolbox publishes /map transient-local; the web page reads it from here.
+        self.slam = SlamState()
+        map_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.create_subscription(OccupancyGrid, "/map", self.on_map, map_qos)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.create_timer(0.5, self.update_pose)
+
+    def on_map(self, message: OccupancyGrid) -> None:
+        info = message.info
+        self.slam.set_grid(grid_to_dict(
+            info.width, info.height, info.resolution,
+            info.origin.position.x, info.origin.position.y, message.data,
+        ))
+
+    def update_pose(self) -> None:
+        try:
+            transform = self.tf_buffer.lookup_transform(MAP_FRAME, SENSOR_FRAME, rclpy.time.Time())
+        except TransformException:
+            return
+        t, q = transform.transform.translation, transform.transform.rotation
+        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        self.slam.set_pose(t.x, t.y, yaw)
 
     def publish_scan(self, scan, completed_at: float) -> None:
         stamp = self.get_clock().now()

@@ -269,3 +269,45 @@ def test_real_serial_transport_reconnects_and_stops_without_bytes(tmp_path):
         for descriptor in (first_master, first_slave, second_master, second_slave):
             if descriptor is not None:
                 os.close(descriptor)
+
+
+def test_hub_serves_tabs_slam_map_and_radar_without_hardware(tmp_path):
+    import base64
+
+    from lds08rr_lidar.slam import SlamState, grid_to_dict
+
+    radar = tmp_path / "web"
+    radar.mkdir()
+    (radar / "index.html").write_text("<html><body><h1>HMMD radar data</h1></body></html>")
+    (radar / "style.css").write_text("body{}")
+    runtime = LidarRuntime(SourceConfig(mode="demo"), driver_factory=lambda *_: None)
+    slam = SlamState()
+    client = make_lidar_app(runtime, slam=slam, radar_web=radar).test_client()
+
+    for path in ("/lidar", "/slam"):
+        page = client.get(path).get_data(as_text=True)
+        assert 'href="/slam"' in page and 'href="/radar/"' in page and 'href="/lidar"' in page
+
+    radar_page = client.get("/radar/").get_data(as_text=True)
+    assert "HMMD radar data" in radar_page and 'href="/slam"' in radar_page
+    assert client.get("/radar/style.css").status_code == 200
+    assert client.get("/radar/../index.html").status_code == 404
+
+    empty = client.get("/map.json").get_json()
+    assert empty["state"] == "waiting" and empty["map"] is None
+
+    slam.set_grid(grid_to_dict(2, 1, 0.05, -1.0, -0.5, [-1, 100]))
+    assert client.get("/map.json").get_json()["state"] == "no_pose"
+    slam.set_pose(0.5, 0.25, 1.0)
+    shown = client.get("/map.json").get_json()
+    assert shown["state"] == "mapping"
+    assert shown["pose"] == {"x": 0.5, "y": 0.25, "yaw": 1.0}
+    assert list(base64.b64decode(shown["map"]["data"])) == [255, 100]
+    assert shown["map"]["width"] == 2 and shown["map"]["origin_x"] == -1.0
+
+
+def test_radar_tab_is_absent_not_broken_when_radar_files_missing(tmp_path):
+    runtime = LidarRuntime(SourceConfig(mode="demo"), driver_factory=lambda *_: None)
+    client = make_lidar_app(runtime, radar_web=tmp_path / "missing").test_client()
+    assert client.get("/radar/").status_code == 404
+    assert client.get("/lidar").status_code == 200

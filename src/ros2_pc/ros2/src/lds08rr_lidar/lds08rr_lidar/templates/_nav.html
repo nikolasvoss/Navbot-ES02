@@ -1,0 +1,5 @@
+<nav style="display:flex;gap:.4rem;padding:.4rem .75rem;background:#0b1218;font:600 14px system-ui,sans-serif">
+  {% for key, href, label in (("lidar", "/lidar", "Lidar"), ("slam", "/slam", "SLAM"), ("radar", "/radar/", "Radar")) %}
+  <a href="{{ href }}" style="padding:.25rem .7rem;border-radius:.4rem;text-decoration:none;color:#edf3f7;{% if key == active %}background:#263744;border:1px solid #637887{% else %}border:1px solid transparent{% endif %}">{{ label }}</a>
+  {% endfor %}
+</nav>
