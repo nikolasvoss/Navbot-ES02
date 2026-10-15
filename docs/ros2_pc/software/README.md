@@ -18,7 +18,7 @@ SLAM uses the apt package `slam_toolbox` (online async, lidar-only). Install it 
 ros2 launch lds08rr_lidar slam.launch.py
 ```
 
-The launch file fixes `odom` to the `lds08rr` frame because the robot has no wheel odometry yet. Scan matching alone tracks motion, so move the sensor slowly (well under 0.5 m between scans). Parameters are in `config/slam_toolbox.yaml`. The `/slam` tab shows `/map`, the pose from TF `map` → `lds08rr`, and the LiDAR state. Dev-PC tests cover the web hub and map packing only; `slam_toolbox` itself has not been run against the real sensor.
+The launch file fixes `odom` to the `lds08rr` frame because the robot has no wheel odometry yet. Scan matching alone tracks motion, so move the sensor slowly (well under 0.5 m between scans). Parameters are in `config/slam_toolbox.yaml`. The `/slam` tab shows `/map`, the pose from TF `map` → `lds08rr`, and the LiDAR state. On the CM5, live UART0 scans, automatic lifecycle activation, `/map`, TF, map growth during sensor movement, and the browser's Mapping state and pose arrow were verified on 15 October 2026. Quantitative trajectory accuracy, complete room coverage, and physical scan handedness still require verification. Measurements and limitations are in the [hardware observations](../../../agent_notes/ros2_pc/sensors/lds08rr/observations.md).
 
 ## LDS08RR LiDAR
 
@@ -85,6 +85,8 @@ Run the protocol, runtime, ROS conversion, launcher, and optional Playwright bro
 ```bash
 python3 -m pytest -q src/ros2_pc/ros2/src/lds08rr_lidar/test scripts/test_start_lidar.py
 ```
+
+The ROS acceptance test publishes demo scans on `/scan`. Stop live LiDAR and SLAM before running it, or prefix the command with an unused domain such as `ROS_DOMAIN_ID=83` to isolate the test from live mapping.
 
 Install `pytest` and `playwright` in that environment, then run `python -m playwright install chromium` to include the browser acceptance check. ROS checks require the Jazzy environment above. Serial tests use Linux pseudo-terminals and recorded or constructed packet bytes.
 
