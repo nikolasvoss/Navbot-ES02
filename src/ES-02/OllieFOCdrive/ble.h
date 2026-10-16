@@ -39,7 +39,7 @@ typedef struct CmdManeuverTypDef {
 } CmdManeuverTypDef;
 
 enum BLE_STATE { BLE_STATE_SEND_READY = 20, BLE_STATE_SEND_BEING = 21, BLE_STATE_SEND_FINISH = 22 };
-enum BLE_CMD { CMD_MANEUVER = 0x10, CMD_WIFI = 1, CMD_JSON = 2 };
+enum BLE_CMD { CMD_MANEUVER = 0x10, CMD_JSON = 2 };
 
 typedef struct BleDataTypDef {
   uint8_t frame[20];

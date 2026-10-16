@@ -41,7 +41,6 @@ Full tutorial: [Frank Fu’s Build Guide](https://frankfu.blog/embodied-ai-robot
 Navbot-ES02/
 ├── OllieFOCdrive/     # Motor & balance control
 ├── TouchUI/           # Touchscreen-based user interface
-├── WiFiControl/       # Optional WebSocket/HTML control panel
 ├── partitions.csv     # Flash partition layout
 └── lib/               # Required Arduino libraries
 ```

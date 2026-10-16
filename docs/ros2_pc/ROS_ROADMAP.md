@@ -61,3 +61,9 @@ Drehrichtung, Messgenauigkeit und elektrische Abnahme bleiben offen.
 Vor dem Einsatz während der Fahrt werden die Auswirkungen von Neigung,
 Balancebewegungen, zusätzlichem Gewicht und Strombedarf geprüft.
 SLAM und autonome Navigation sind nachfolgende Projekte.
+
+## 3. Telemetrie und Logging über den ros2_pc
+
+Status: Geplant, noch nicht begonnen.
+
+Hochratige Telemetrie und Aufzeichnungen des ESP32 laufen künftig über die UART-Verbindung zum ros2_pc und werden dort aufgezeichnet, zum Beispiel mit rosbag2. Der ESP32 betreibt keinen eigenen WLAN-Logging-Dienst; die früheren WLAN-Logging-Vorschläge sind entfernt. Format, Rate und Aufzeichnungsumfang sind noch festzulegen.

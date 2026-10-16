@@ -4,7 +4,7 @@ Diese Seite ergänzt die [Systemübersicht](../system-overview.md); alle Bauteil
 
 ## Stromversorgung
 
-**Bestückung laut Nutzer, 28.09.2026:** ESP32-S3-WROOM-1 ohne externen RAM; vorhandene Pinbelegung korrekt. Die N8R8-Angabe der Netzliste beschreibt nicht die bestätigte RAM-Ausstattung. Mit internem SRAM planen, PSRAM nicht aktivieren. Quellenabgrenzung und separate IMU-Interruptfrage: [wireless-logging constraints](../wireless-logging-constraints.md).
+**Bestückung laut Nutzer, 28.09.2026:** ESP32-S3-WROOM-1 ohne externen RAM; vorhandene Pinbelegung korrekt. Die N8R8-Angabe der Netzliste beschreibt nicht die bestätigte RAM-Ausstattung. Mit internem SRAM planen, PSRAM nicht aktivieren.
 
 | Stufe | Bauteile / Netze | Funktion und praktische Folge |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ Der [Startup-Mitschnitt nach dem Bibliothekswechsel](../../../../build/serial-st
 
 | Funktion | Chip / Signal | ESP32-S3 und Firmware |
 | --- | --- | --- |
-| IMU | `U5` ICM-42688P-HXY, SPI `SCLK/MOSI/MISO/CS1` | GPIO3/9/10/13; `ICM42688.cpp` verwendet SPI Mode 3, Beschleunigung ±8 g und Gyro ±2000 °/s bei 1 kHz. `INT1/INT2` sind im Design vorhanden; die gezeigte Firmware liest per SPI. |
+| IMU | `U5` ICM-42688P-HXY, SPI `SCLK/MOSI/MISO/CS1` | GPIO3/9/10/13; `ICM42688.cpp` verwendet SPI Mode 3, Beschleunigung ±8 g und Gyro ±2000 °/s bei 1 kHz. `INT1/INT2` sind im Design vorhanden, aber laut Netzliste nicht mit U4 verbunden (R28 zieht INT2 nach GND); die gezeigte Firmware liest per SPI ohne FIFO/Interrupt. Vor Interrupt-/FIFO-Erfassung die reale Platine prüfen. |
 | Vier Beinservos | `SERVO1/2/3/4` | GPIO11/12/21/14, 50-Hz-PWM in `ServoControl`; Servo 2/3 sind in der Standard-Ansteuerung invertiert. Die GPIO-Reihenfolge sagt noch nichts über links/rechts an der Mechanik. |
 | Betriebs-LEDs | `LED2/LED3` | GPIO35/36; `board::kStatusLedPin=35` und LOW schaltet die Firmware-LED ein. |
 | Ladesignal | `VSTA` | GPIO18; im Schaltplan an `M1`, ohne hier bestätigte Softwareauswertung. |
