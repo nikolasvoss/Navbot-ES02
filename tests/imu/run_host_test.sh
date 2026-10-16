@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 build_dir="$(mktemp -d)"
 trap 'rm -rf "$build_dir"' EXIT
 
-c++ -std=c++17 -Wall -Wextra -Werror -Wno-error=reorder \
+c++ -std=c++17 -Wall -Wextra -Werror \
   -I"$repo_root/tests/imu/mocks" \
   -I"$repo_root/src/ES-02/OllieFOCdrive" \
   "$repo_root/src/ES-02/OllieFOCdrive/imu.cpp" \

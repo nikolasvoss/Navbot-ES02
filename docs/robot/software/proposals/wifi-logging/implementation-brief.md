@@ -38,10 +38,10 @@ Explain the chosen path in the implementation report. Missing Wi-Fi code is not 
 Sketch: `src/ES-02/OllieFOCdrive/OllieFOCdrive.ino`; also inspect `filter.*`, `ICM42688.*`, `FUTABA_SBUS.*`, `ble.*`, `robot.*`, and existing Python capture/analysis scripts.
 
 - `loop()` executes motor FOC and sensor work, then enters the balance-control section when `time_dt >= 0.001`. This is **not a fixed 1-kHz scheduler**. Prior observations around 1.664 ms are historical, not a promise of 600 Hz under new network load.
-- `print_data()` K58 currently emits a serial DRIVE row approximately every 50 ms. Its position precedes later controller calculations; do not reuse it as the high-rate snapshot point.
+- `DebugTelemetry::submit()` K58 currently emits a serial DRIVE row approximately every 50 ms. Its position precedes later controller calculations; do not reuse it as the high-rate snapshot point.
 - At the end of the timed control section, after regulator/tumble/servo handling and before `now_us1 = now_us`, take one coherent snapshot. Read existing values only; no extra SPI, I²C, ADC or servo operations for logging.
 - `ImuUpdate()` polls an IMU configured for 1-kHz ODR, with software filters and attitude estimation. Timestamp **MCU read completion** for age information without changing filters, reads or ODR. Do not label this as sensor conversion time or proof of fresh samples.
-- `AnglePid`/`SpeedPid` etc. are configuration objects; `Angle_Pid`/`Speed_Pid` etc. are runtime states with potentially scaled/effective gains. Record that distinction. `PidParameterTuning==0` can replace configured gains automatically.
+- `anglePidSettings`/`speedPidSettings` etc. are configuration objects; `anglePid`/`speedPid` etc. are runtime states with potentially scaled/effective gains. Record that distinction. `PidParameterTuning==0` can replace configured gains automatically.
 - Preserve current `V`/`wheelSpeedFeedbackGain`, `wheelSpeedFeedbackOutput`, `balancePidNeedsPriming`, actual-dt wheel estimation, CH3 scaling, gains and all motor/fall logic. Re-read names if later code moved them.
 - A BLE connection currently affects the driving input path. WLAN recording must not set `rp.ble_connected` or impersonate BLE driving. Reuse the tuning build's BLE policy if present; otherwise skip BLE init/task only in the explicitly enabled WLAN build. Default legacy build remains unchanged.
 
@@ -80,24 +80,24 @@ Header (24 bytes):
 Then 26 float32 values, in this exact order (104 bytes):
 
 1. `roll_ok`
-2. `BodyPitchingFiltered` (stored variable, not silently sign-inverted into the angle setpoint)
+2. `bodyPitchingFiltered` (stored variable, not silently sign-inverted into the angle setpoint)
 3–5. `attitude.gyrof.x`, `.y`, `.z`
-6–7. `MovementSpeed`, `BodyTurn`
+6–7. `movementSpeed`, `bodyTurn`
 8–9. `Motor1_Velocity_f`, `Motor2_Velocity_f`
-10–14. `Speed_Pid.error`, `.outP`, `.outI`, `.outD`, `.output`
-15–19. `Angle_Pid.error`, `.outP`, `.outI`, `.outD`, `.output`
-20. `Yaw_Pid.output`
-21. `BodyX`
+10–14. `speedPid.error`, `.outP`, `.outI`, `.outD`, `.output`
+15–19. `anglePid.error`, `.outP`, `.outI`, `.outD`, `.output`
+20. `yawPid.output`
+21. `bodyX`
 22–23. `motor1.target`, `motor2.target`
 24. `wheelSpeedFeedbackOutput`
 25. `Voltage`
 26. `wheelSpeedFeedbackGain`
 
-Flags: bits 0–1 = current `pid_gains_mode` (0/1/2); bit 2 = tumble; bit 3 = regulator calculated this tick; bit 4 = RC valid/fresh if reliably available; bit 5 = IMU read timestamp available; bit 6 = numeric fault in expected-valid data; bits 7–8 = `roll_mode`, bits 9–10 = `attitude_mode`, bits 11–12 = `posture_or_mark_mode`; remaining bits zero. Validate current mode enum values fit; if not, change the schema version before implementation rather than truncating values. Track validity with actual branches, not just a guess based on CH5.
+Flags: bits 0–1 = current `pidGainsMode` (0/1/2); bit 2 = tumble; bit 3 = regulator calculated this tick; bit 4 = RC valid/fresh if reliably available; bit 5 = IMU read timestamp available; bit 6 = numeric fault in expected-valid data; bits 7–8 = `rollMode`, bits 9–10 = `attitudeMode`, bits 11–12 = `postureOrMarkMode`; remaining bits zero. Validate current mode enum values fit; if not, change the schema version before implementation rather than truncating values. Track validity with actual branches, not just a guess based on CH5.
 
 When no regulator calculation ran, encode runtime PID fields 10–20 as canonical quiet NaN and clear bit 3, instead of presenting stale values as current. Other fields reflect the actual snapshot. Nonfinite expected-valid values set bit 6, remain visible, and make the quality report flag sensor/controller invalidity; do not silently drop those records or confuse them with transport failure.
 
-Record units and sign conventions in metadata, traced to current calculations. Gyro is filtered rad/s, voltage is the existing battery estimate, motor targets are commands rather than measured currents. Do not assume wheel units or the sign of `BodyPitchingFiltered`; document actual code semantics. No extra unmeasured “voltage minimum” field invented to satisfy old analysis code.
+Record units and sign conventions in metadata, traced to current calculations. Gyro is filtered rad/s, voltage is the existing battery estimate, motor targets are commands rather than measured currents. Do not assume wheel units or the sign of `bodyPitchingFiltered`; document actual code semantics. No extra unmeasured “voltage minimum” field invented to satisfy old analysis code.
 
 Use `esp_timer_get_time()` or an equivalent monotonic 64-bit device clock for timestamps; avoid rollover-prone 32-bit absolute `micros()`. Arrival time at the PC is not measurement time. Records may have irregular spacing; report actual rate/jitter. Neither µs timestamps nor 1-kHz IMU ODR imply µs accuracy or independent 1-kHz samples.
 

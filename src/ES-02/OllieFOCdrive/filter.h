@@ -3,46 +3,45 @@
 
 #include <Arduino.h>
 
-#define M_PIf       3.14159265358979323846f
-
+#include "MathConstants.h"
 
 typedef struct pt1Filter_s {
-    float state;
-    float k;
+  float state;
+  float k;
 } pt1Filter_t;
 
 typedef enum {
-    FILTER_LPF,    // 2nd order Butterworth section
-    FILTER_NOTCH,
-    FILTER_BPF,
+  FILTER_LPF,  // 2nd order Butterworth section
+  FILTER_NOTCH,
+  FILTER_BPF,
 } biquadFilterType_e;
 
 /* this holds the data required to update samples thru a filter */
 typedef struct biquadFilter_s {
-    float b0, b1, b2, a1, a2;
-    float x1, x2, y1, y2;
+  float b0, b1, b2, a1, a2;
+  float x1, x2, y1, y2;
 } biquadFilter_t;
 
-
 float filterGetNotchQ(float centerFreq, float cutoffFreq);
-//二阶滤波器初始化
-void biquadFilterUpdate(biquadFilter_t *filter, unsigned int cutoffHz, unsigned int samplingRateHz, float Q, biquadFilterType_e filterType);
-//二阶陷波器初始化
-void biquadFilterInitNotch(biquadFilter_t *filter, unsigned int samplingRateHz, unsigned int centerFrequencyHz, unsigned int cutoffHz);
-//二阶低通滤波器初始化
+// 2nd-order filter init
+void biquadFilterUpdate(biquadFilter_t *filter, unsigned int cutoffHz, unsigned int samplingRateHz, float Q,
+                        biquadFilterType_e filterType);
+// 2nd-order notch filter init
+void biquadFilterInitNotch(biquadFilter_t *filter, unsigned int samplingRateHz, unsigned int centerFrequencyHz,
+                           unsigned int cutoffHz);
+// 2nd-order low-pass filter init
 void biquadFilterInitLPF(biquadFilter_t *filter, unsigned int cutoffHz, unsigned int samplingRateHz);
 // Computes a biquad_t filter on a sample
 float biquadFilterApply(biquadFilter_t *filter, float input);
-void biquadFilterInit(biquadFilter_t *filter, float cutoffHz, unsigned int samplingRateHz, float Q, biquadFilterType_e filterType);
-//pt1获取滤波增益(截止频率 采样时间)
+void biquadFilterInit(biquadFilter_t *filter, float cutoffHz, unsigned int samplingRateHz, float Q,
+                      biquadFilterType_e filterType);
+// pt1 filter gain (cutoff frequency, sample time)
 float pt1FilterGain(float f_cut, float dT);
-//pt1初始化低通滤波器
+// pt1 low-pass filter init
 void pt1FilterInit(pt1Filter_t *filter, float k);
-//更新滤波增益
+// Update filter gain
 void pt1FilterUpdateCutoff(pt1Filter_t *filter, float k);
-//pt1低通滤波器应用
+// pt1 low-pass filter apply
 float pt1FilterApply(pt1Filter_t *filter, float input);
 
-
-
-#endif //__FILTER_H
+#endif  //__FILTER_H

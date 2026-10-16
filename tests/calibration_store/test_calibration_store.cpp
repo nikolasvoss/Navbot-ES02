@@ -1,3 +1,4 @@
+#include "Calibration.h"
 #include "CalibrationStore.h"
 
 #include <Preferences.h>
@@ -119,10 +120,52 @@ void testChangedServoSubsetAndZeroChanges() {
   requireSessionClosed();
 
   Preferences::reset();
-  CalibrationStore().saveChangedServos(
+  const ServoTrimsDegrees untouched = CalibrationStore().saveChangedServos(
       {1.0f, 2.0f, 3.0f, 4.0f}, {false, false, false, false});
+  require(untouched.servo1Degrees == 1.0f && untouched.servo2Degrees == 2.0f &&
+              untouched.servo3Degrees == 3.0f && untouched.servo4Degrees == 4.0f,
+          "no changed servo returns the requested values");
+  require(Preferences::beginCount == 0 && Preferences::endCount == 0,
+          "no changed servo never opens the preferences namespace");
   require(Preferences::writeKeys.empty() && Preferences::readKeys.empty(),
           "no changed servo causes no key reads or writes");
+}
+
+void noopGyro(GyroBiasRawCountRefs) {}
+
+void testServoCalibrationOpensStoreOnlyOnChange() {
+  Preferences::reset();
+  Calibration calibration;
+  CalibrationStore store;
+  float roll = 0.0f, pitch = 0.0f;
+  float gyroX = 0.0f, gyroY = 0.0f, gyroZ = 0.0f;
+  float servo1 = 1.0f, servo2 = 2.0f, servo3 = 3.0f, servo4 = 4.0f;
+  const auto tick = [&]() {
+    return calibration.update(3, {0.0f, 0.0f}, store, {roll, pitch},
+                              {gyroX, gyroY, gyroZ},
+                              {servo1, servo2, servo3, servo4}, noopGyro);
+  };
+
+  for (int call = 0; call < 5; ++call) {
+    tick();
+  }
+  require(Preferences::beginCount == 0,
+          "unchanged servo calibration ticks never open the namespace");
+
+  servo2 = 22.0f;
+  const CalibrationResult changed = tick();
+  require(changed.changedServos.servo2Changed && Preferences::beginCount == 1 &&
+              Preferences::writeKeys ==
+                  std::vector<std::string>({"servoAngle2"}) &&
+              Preferences::values.at("servoAngle2") == 22.0f,
+          "a changed trim opens the namespace once and persists that channel");
+  requireSessionClosed();
+
+  for (int call = 0; call < 5; ++call) {
+    tick();
+  }
+  require(Preferences::beginCount == 1,
+          "repeated ticks after a save never reopen the namespace");
   requireSessionClosed();
 }
 
@@ -166,6 +209,7 @@ int main() {
   testLoadPopulatedAndMissing();
   testAttitudeAndGyroSubsets();
   testChangedServoSubsetAndZeroChanges();
+  testServoCalibrationOpensStoreOnlyOnChange();
   testFailedOpenWriteAndRead();
   std::cout << "calibration store host checks passed\n";
 }

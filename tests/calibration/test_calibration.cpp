@@ -147,13 +147,20 @@ void servoBaselineStartsOnFirstCallAndOnlyChangedChannelsAreReported() {
 
   result = update(calibration, 3, 0.0f, 0.0f, store, roll, pitch,
       gyroX, gyroY, gyroZ, servo1, servo2, servo3, servo4);
-  require(fixture.servoSaves == 2 && !result.changedServos.servo1Changed &&
+  require(fixture.servoSaves == 1 && !result.changedServos.servo1Changed &&
           !result.changedServos.servo3Changed,
-          "unchanged servo trims were marked for persistence");
+          "unchanged servo trims reached the store");
+
+  for (int call = 0; call < 10; ++call) {
+    update(calibration, 3, 0.0f, 0.0f, store, roll, pitch,
+           gyroX, gyroY, gyroZ, servo1, servo2, servo3, servo4);
+  }
+  require(fixture.servoSaves == 1,
+          "repeated unchanged servo updates reached the store");
 
   update(calibration, 0, 0.0f, 0.0f, store, roll, pitch,
          gyroX, gyroY, gyroZ, servo1, servo2, servo3, servo4);
-  require(fixture.servoSaves == 2, "mode zero performed servo persistence");
+  require(fixture.servoSaves == 1, "mode zero performed servo persistence");
 }
 }
 

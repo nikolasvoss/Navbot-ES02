@@ -22,14 +22,22 @@ std::string serialBytes;
 size_t serialLineCount = 0;
 uint32_t serialBaud = 0;
 std::chrono::steady_clock::time_point nextWriteAvailable{};
+bool microsPinned = false;
+uint32_t pinnedMicros = 0;
 const auto clockOrigin = std::chrono::steady_clock::now();
 }
 
 HostSerial Serial;
 
 uint32_t micros() {
+  if (microsPinned) return pinnedMicros;
   return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(
       std::chrono::steady_clock::now() - clockOrigin).count());
+}
+
+void setMicrosForTest(uint32_t value) {
+  microsPinned = true;
+  pinnedMicros = value;
 }
 
 void limitSerialBaud(uint32_t baud) {

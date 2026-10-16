@@ -24,13 +24,13 @@ Annahme: Firmwareupdates bleiben zunächst über USB; kabellose Updates wurden n
 | IMU | ICM42688 per SPI, 1-kHz-ODR, ±8 g/±2000 °/s, direkter Registerabruf | Keine FIFO-Nutzung und kein Nachweis lückenloser 1-kHz-Erfassung |
 | PC | Capture-, Versuchslauf- und Analyseskripte für Serial vorhanden | WLAN-Transport, Binärdecoder, Prüfung der Analyse auf höhere/variable Raten |
 
-Quellen: [Hauptsketch](../../../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), Funktionen `setup`, `CtrlInput`, `ImuUpdate`, `FlashInit`, `print_data`/58 und `loop`; [ble.cpp](../../../../../src/ES-02/OllieFOCdrive/ble.cpp), [robot.cpp](../../../../../src/ES-02/OllieFOCdrive/robot.cpp), [ICM42688.cpp](../../../../../src/ES-02/OllieFOCdrive/ICM42688.cpp), [run_drive_trial.py](../../../../../scripts/run_drive_trial.py), [analyze_drive_trace.py](../../../../../scripts/analyze_drive_trace.py).
+Quellen: [Hauptsketch](../../../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), Funktionen `setup`, `readControlInput`, `DebugTelemetry::submit`/58 und `loop`; [imu.cpp](../../../../../src/ES-02/OllieFOCdrive/imu.cpp), Funktion `imu::service`; [ble.cpp](../../../../../src/ES-02/OllieFOCdrive/ble.cpp), [robot.cpp](../../../../../src/ES-02/OllieFOCdrive/robot.cpp), [ICM42688.cpp](../../../../../src/ES-02/OllieFOCdrive/ICM42688.cpp), [run_drive_trial.py](../../../../../scripts/run_drive_trial.py), [analyze_drive_trace.py](../../../../../scripts/analyze_drive_trace.py).
 
 Relevante Fallstricke im Bestand:
 
 - Bei BLE-Verbindung wählt `CtrlInput()` die BLE-Fahrbefehle; anschließend ruft `loop()` zusätzlich `RXsbus()` auf. Diagnoseverbindung und Fahrquelle sind nicht sauber getrennt. Ein BLE-Tuningclient wäre daher keine harmlose Serial-Brücke.
 - `time_dt >= 0.001` garantiert keinen 1-kHz-Regeltakt. Frühere Versuche dokumentieren etwa 1,664 ms, entsprechend ungefähr 601 Hz; dies ist kein Benchmark des künftigen WLAN-Builds.
-- `print_data()` läuft vor späteren Reglerberechnungen. Ein neuer Recorder muss einen definierten Snapshot nach einem vollständigen Reglerzyklus erstellen und berechnete Motorziele von bereits angewandten Ausgaben unterscheiden.
+- `DebugTelemetry::submit()` läuft vor späteren Reglerberechnungen. Ein neuer Recorder muss einen definierten Snapshot nach einem vollständigen Reglerzyklus erstellen und berechnete Motorziele von bereits angewandten Ausgaben unterscheiden.
 - Der BLE-Task auf Core 0 wartet aktiv in einer Schleife. Netzwerkverarbeitung braucht blockierendes Warten und begrenzte Arbeit; gemeinsame Daten dürfen nicht ungeschützt geändert werden.
 
 ## Speicherfrage: zuerst klären
@@ -98,7 +98,7 @@ Die RC-Steuerung bleibt vom Datenkanal unabhängig. Ein Funk-Start hat variable 
 
 ## Welche Daten und welche Genauigkeit?
 
-Erstversion zeichnet jeden tatsächlichen Reglerzyklus auf: Tick-ID, 64-Bit-Gerätezeit in µs, dt, Sollgeschwindigkeit/Lenkung/RC-Modus, Radwinkel und -geschwindigkeiten, Neigung und Sollneigung, relevante Gyrowerte, Speed-/Angle-PID-Anteile, optional Yaw, BodyX, Motorziele, Begrenzungs-/Fallflags und Akkuspannung. Kanalprofil und endgültige Recordgröße gemeinsam festlegen. Möglichst vorhandene Daten übernehmen, keine zusätzlichen Encoder-/ADC-Lesezugriffe pro Logsample.
+Erstversion zeichnet jeden tatsächlichen Reglerzyklus auf: Tick-ID, 64-Bit-Gerätezeit in µs, dt, Sollgeschwindigkeit/Lenkung/RC-Modus, Radwinkel und -geschwindigkeiten, Neigung und Sollneigung, relevante Gyrowerte, Speed-/Angle-PID-Anteile, optional Yaw, bodyX, Motorziele, Begrenzungs-/Fallflags und Akkuspannung. Kanalprofil und endgültige Recordgröße gemeinsam festlegen. Möglichst vorhandene Daten übernehmen, keine zusätzlichen Encoder-/ADC-Lesezugriffe pro Logsample.
 
 Zeitliche Konsistenz: Snapshot nach abgeschlossener Berechnung, Sensorzeitpunkte bzw. Datenalter mitführen. Die Encoder werden nacheinander gelesen; keine Gleichzeitigkeit zur IMU behaupten. Motorziele sind keine gemessenen Ströme, Servo-Sollwerte keine gemessenen Positionen. Akku-ADC ist kein Sensor für die 3,3-V-Schiene. Rohdaten vor Softwarefilterung sind für Vibrationsanalyse wertvoll; Einheiten, Kalibrierung und Filterparameter gehören zur Datei.
 

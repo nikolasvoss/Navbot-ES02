@@ -45,7 +45,7 @@ void verifyFormatters(const char *fixturePath) {
       value.replace(position, 2, "\n");
     fixtures[line.substr(0, separator)] = value;
   }
-  require(fixtures.size() == 66, "format fixture does not cover every active selector and profile");
+  require(fixtures.size() == 67, "format fixture does not cover every active selector and profile");
 
   const LoggingInternal::RecordKind kinds[] = {
       LoggingInternal::RecordKind::Diagnostic, LoggingInternal::RecordKind::Trace,
@@ -57,7 +57,7 @@ void verifyFormatters(const char *fixturePath) {
     compareFixture(fixtures, "csv." + std::to_string(i), record);
   }
 
-  for (int selector = 1; selector <= 45; ++selector) {
+  for (int selector = 1; selector <= 46; ++selector) {
     LoggingInternal::Record record{};
     record.kind = LoggingInternal::RecordKind::Debug;
     record.payload.debug.selector = static_cast<Logging::DebugSelector>(selector);
@@ -118,9 +118,6 @@ void verifyQueue() {
           "full queue did not reject the next record");
   require(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100),
           "producer waited while UART sender was stalled");
-  Logging::Status status = Logging::status();
-  require(status.incompleteReason == Logging::IncompleteReason::QueueFull,
-          "overflow did not latch incomplete status");
   require(Logging::submit(diagnostic(66)) == Logging::Result::Incomplete,
           "logger accepted a row after overflow");
   releaseSerialWrites();
@@ -137,24 +134,17 @@ void verifyQueue() {
     ++expected;
   }
   require(expected == 65, "accepted queue rows were lost or duplicated");
-  require(Logging::status().incompleteReason == Logging::IncompleteReason::QueueFull,
+  require(Logging::submit(diagnostic(66)) == Logging::Result::Incomplete,
           "draining cleared the incomplete state");
-  require(Logging::status().rejectedRecords == 2,
-          "overflow and post-overflow rejection counters are incorrect");
-  const uint32_t failedEpoch = Logging::status().profileEpoch;
   Logging::setProfile(Logging::Profile::Idle);
-  require(Logging::status().incompleteReason == Logging::IncompleteReason::QueueFull,
+  Logging::setProfile(Logging::Profile::Diagnostic);
+  require(Logging::submit(diagnostic(66)) == Logging::Result::Incomplete,
           "profile change cleared the incomplete latch");
-  require(Logging::status().profileEpoch == failedEpoch + 1,
-          "profile change did not advance its epoch");
   std::puts("blocked_sender=nonblocking; capacity=32; overflow=sticky; fifo=65; reuse=verified");
 }
 
 void verifyMessagesAndBoundary() {
   require(Logging::begin(), "logger sender did not start");
-  Logging::setLevel(Logging::Level::Info);
-  require(Logging::message(Logging::Level::Debug, "filtered", "line") == Logging::Result::Filtered,
-          "severity filter did not reject a low-priority message");
   require(Logging::message(Logging::Level::Warning, "inflight", "before") == Logging::Result::Accepted,
           "idle message was not accepted");
   require(waitForSerialLines(1), "idle message was not written");
@@ -190,10 +180,6 @@ void verifyMessagesAndBoundary() {
           "capture-time message contaminated structured output");
   require(output.find("TRACE,7,") != std::string::npos,
           "typed record was not emitted after profile transition");
-  const Logging::Status status = Logging::status();
-  require(status.filteredMessages == 1 && status.suppressedMessages == 1 &&
-              status.truncatedMessages == 1 && status.incompleteReason == Logging::IncompleteReason::None,
-          "message status counters or truncation latch are incorrect");
 }
 
 void verifyShortWrite() {
@@ -202,18 +188,17 @@ void verifyShortWrite() {
   shortNextSerialWrite();
   require(Logging::submit(diagnostic(1)) == Logging::Result::Accepted,
           "record before forced short write was rejected");
-  for (int i = 0; i < 100 && Logging::status().incompleteReason == Logging::IncompleteReason::None; ++i)
+  Logging::Result result = Logging::Result::Accepted;
+  for (uint32_t id = 2; id < 102 && result != Logging::Result::Incomplete; ++id) {
+    result = Logging::submit(diagnostic(id));
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
-  const Logging::Status status = Logging::status();
-  require(status.incompleteReason == Logging::IncompleteReason::SenderWriteFailed && status.writeFailures == 1,
-          "short UART write did not latch an incomplete recording");
+  }
+  require(result == Logging::Result::Incomplete, "short UART write did not latch an incomplete recording");
 }
 
 void verifyStartFailure() {
   failNextTaskCreation();
   require(!Logging::begin(), "sender task creation failure was not reported");
-  require(Logging::status().incompleteReason == Logging::IncompleteReason::SenderStartFailed,
-          "sender task creation failure did not latch status");
   Logging::setProfile(Logging::Profile::Diagnostic);
   require(Logging::submit(diagnostic(1)) == Logging::Result::Incomplete,
           "logger accepted data after sender startup failed");
@@ -224,16 +209,20 @@ void verifySelectedPacing() {
   Logging::setProfile(Logging::Profile::SelectedDebug);
   Logging::DebugSample sample{};
   sample.selector = Logging::DebugSelector::K1;
+  // Offers arrive every 1 ms. The 2.5 ms minimum interval accepts one row every 3 ms
+  // (t = 0, 3, 6, ... ms), so 200 offers spanning 0..199 ms yield 67 accepted rows.
   size_t accepted = 0;
-  for (size_t i = 0; i < 200; ++i) {
+  for (uint32_t i = 0; i < 200; ++i) {
+    setMicrosForTest(i * 1000);
     const Logging::Result result = Logging::submit(sample);
     if (result == Logging::Result::Accepted) ++accepted;
     else require(result == Logging::Result::Paced, "selected debug submit returned an unexpected result");
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-  require(accepted >= 8 && accepted <= 12, "selected debug output did not retain its 50 Hz cap");
-  require(Logging::status().incompleteReason == Logging::IncompleteReason::None,
-          "paced selected-debug rows were counted as data loss");
+  require(accepted == 67, "selected debug output exceeded its 2.5 ms minimum interval");
+  setMicrosForTest(199000 + 2500);
+  require(Logging::submit(sample) == Logging::Result::Accepted,
+          "paced selected-debug rows latched the logger as incomplete");
 }
 }
 

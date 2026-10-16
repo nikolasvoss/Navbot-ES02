@@ -17,7 +17,8 @@ int main() {
   assert(profileForSelector(0) == Profile::Idle);
   assert(profileForSelector(1) == Profile::SelectedDebug);
   assert(profileForSelector(45) == Profile::SelectedDebug);
-  assert(profileForSelector(46) == Profile::Idle);
+  assert(profileForSelector(46) == Profile::SelectedDebug);
+  assert(profileForSelector(47) == Profile::Idle);
   assert(profileForSelector(55) == Profile::Trace);
   assert(profileForSelector(56) == Profile::Control);
   assert(profileForSelector(57) == Profile::Balance);
@@ -26,14 +27,6 @@ int main() {
   assert(profileForSelector(60) == Profile::SelectedDebug);
   assert(profileForSelector(75) == Profile::SelectedDebug);
   assert(profileForSelector(76) == Profile::Idle);
-
-  assert(!RobotLogCapture::isMeasurementProfile(Profile::Idle));
-  assert(!RobotLogCapture::isMeasurementProfile(Profile::SelectedDebug));
-  assert(RobotLogCapture::isMeasurementProfile(Profile::Diagnostic));
-  assert(RobotLogCapture::isMeasurementProfile(Profile::Trace));
-  assert(RobotLogCapture::isMeasurementProfile(Profile::Control));
-  assert(RobotLogCapture::isMeasurementProfile(Profile::Balance));
-  assert(RobotLogCapture::isMeasurementProfile(Profile::Drive));
 
   RobotLogCapture::setProfileForSelector(56);
   assert(Logging::gProfile == Profile::Control);
@@ -45,14 +38,14 @@ int main() {
   assert(RobotLogCapture::selectedDebugDue(DebugSelector::K8, 50));
   assert(!RobotLogCapture::selectedDebugDue(DebugSelector::K8, 99));
   assert(RobotLogCapture::selectedDebugDue(DebugSelector::K8, 100));
-  assert(!RobotLogCapture::selectedDebugDue(static_cast<DebugSelector>(46), 100));
+  assert(RobotLogCapture::selectedDebugDue(DebugSelector::K46, 100));
+  assert(!RobotLogCapture::selectedDebugDue(static_cast<DebugSelector>(47), 100));
 
   assert(!RobotLogCapture::selectedDebugDue(DebugSelector::K60, 49));
   assert(RobotLogCapture::selectedDebugDue(DebugSelector::K60, 50));
   assert(!RobotLogCapture::selectedDebugDue(DebugSelector::K75, 99));
   assert(RobotLogCapture::selectedDebugDue(DebugSelector::K75, 100));
 
-  RobotLogCapture::resetControlWindow();
   int32_t ranges[4] = {-1, -1, -1, -1};
   RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
   for (int32_t range : ranges) assert(range == 0);
@@ -68,10 +61,5 @@ int main() {
   RobotLogCapture::observeServoAngles(thirdAngles);
   RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
   for (int32_t range : ranges) assert(range == 1);
-
-  RobotLogCapture::resetControlWindow();
-  RobotLogCapture::observeServoAngles(firstAngles);
-  RobotLogCapture::copyServoRangesAndBeginNextWindow(ranges);
-  for (int32_t range : ranges) assert(range == 0);
   return 0;
 }

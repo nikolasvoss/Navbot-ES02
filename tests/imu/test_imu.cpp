@@ -6,15 +6,22 @@
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <deque>
 
 HostSerial Serial;
-namespace Logging { Profile profile() { return Profile::Idle; } }
 namespace {
 uint32_t nowUs = 0;
 bool sampleReady = false;
 ICM42688RawSample nextSample{};
 uint16_t initializedRate = 0;
 bool driverInitializationSucceeds = true;
+std::deque<ICM42688RawSample> scriptedSamples;
+bool streamSample = false;
+}
+namespace Logging {
+Profile profile() { return Profile::Idle; }
+Result message(Level, const char*, const char*, ...) { return Result::Accepted; }
 }
 
 uint32_t micros() { return nowUs; }
@@ -24,6 +31,15 @@ bool initICM42688(uint16_t sampleRateHz) {
   return driverInitializationSucceeds;
 }
 bool readIMUDataIfReady(ICM42688RawSample& sample) {
+  if (!scriptedSamples.empty()) {
+    sample = scriptedSamples.front();
+    scriptedSamples.pop_front();
+    return true;
+  }
+  if (streamSample) {
+    sample = nextSample;
+    return true;
+  }
   if (!sampleReady) return false;
   sampleReady = false;
   sample = nextSample;
@@ -109,6 +125,58 @@ void verifySetCalibrationRefreshesPublishedCorrectedAngles() {
   assert(std::fabs(after.correctedPitchDegrees - 5.0f) < 1e-5f);
 }
 
+void calibrateWith(ICM42688RawSample steady) {
+  nextSample = steady;
+  streamSample = true;
+  imu::calibrateGyroBiasBlocking();
+  streamSample = false;
+}
+
+void verifyGyroCalibrationAveragesLargeConstantOffset() {
+  assert(imu::begin(imu::Settings{}, {}));
+  calibrateWith({0, 0, 0, 40, -45, 49, 0});
+  const imu::CalibrationValues result = imu::calibration();
+  assert(result.gyro.xRawCounts == 40.0f);
+  assert(result.gyro.yRawCounts == -45.0f);
+  assert(result.gyro.zRawCounts == 49.0f);
+}
+
+void verifyGyroCalibrationRestartsAfterMotion() {
+  assert(imu::begin(imu::Settings{}, {}));
+  const ICM42688RawSample still{0, 0, 0, 0, 0, 0, 0};
+  const ICM42688RawSample moved{0, 0, 0, 500, 0, 0, 0};
+  for (int index = 0; index < 3; ++index) scriptedSamples.push_back(still);
+  for (int index = 0; index < 4; ++index) scriptedSamples.push_back(moved);
+  for (int index = 0; index < 2; ++index) scriptedSamples.push_back(still);
+  scriptedSamples.push_back(moved);
+  calibrateWith({0, 0, 0, 2, -2, 2, 0});
+  const imu::CalibrationValues result = imu::calibration();
+  assert(result.gyro.xRawCounts == 2.0f);
+  assert(result.gyro.yRawCounts == -2.0f);
+  assert(result.gyro.zRawCounts == 2.0f);
+}
+
+float gyroRateAfterBias(int16_t rawCount, float bias) {
+  imu::CalibrationValues calibration{};
+  calibration.gyro = {bias, 0.0f, 0.0f};
+  assert(imu::begin(imu::Settings{}, calibration));
+  acceptSample(1000U, {0, 0, 0, rawCount, 0, 0, 0});
+  return imu::latest().angularVelocityRadPerSec.x;
+}
+
+void verifyBiasCorrectionKeepsFractionAndSaturates() {
+  const float tolerance = 1e-6f;
+  // 1000 - 40 = 960 counts * 2000 / 32768 dps, in rad/s.
+  assert(std::fabs(gyroRateAfterBias(1000, 40.0f) - 1.0226538586f) < tolerance);
+  assert(std::fabs(gyroRateAfterBias(1000, -40.0f) - 1.1078750135f) < tolerance);
+  assert(std::fabs(gyroRateAfterBias(1000, 0.0f) - 1.0652644360f) < tolerance);
+  // 100 - 2.7 = 97.3 rounds to 97 counts; truncating the bias would give 98.
+  assert(std::fabs(gyroRateAfterBias(100, 2.7f) - 0.1033306503f) < tolerance);
+  // Full scale saturates instead of wrapping to the opposite sign.
+  assert(std::fabs(gyroRateAfterBias(-32768, 10.0f) - (-34.9065850399f)) < 1e-4f);
+  assert(std::fabs(gyroRateAfterBias(32767, -10.0f) - 34.9055197755f) < 1e-4f);
+}
+
 int main() {
   imu::Settings settings{};
   imu::CalibrationValues calibration{};
@@ -176,5 +244,8 @@ int main() {
   verifyOnlyChangedCutoffResetsItsFilter();
   verifySetCalibrationRefreshesPublishedCorrectedAngles();
   verifyFailedBeginStopsAndClearsPreviousInstance();
+  verifyGyroCalibrationAveragesLargeConstantOffset();
+  verifyGyroCalibrationRestartsAfterMotion();
+  verifyBiasCorrectionKeepsFractionAndSaturates();
   return 0;
 }

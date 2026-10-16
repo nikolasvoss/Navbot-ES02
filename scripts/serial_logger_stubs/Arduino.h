@@ -11,6 +11,7 @@ class HostSerial {
 
 extern HostSerial Serial;
 uint32_t micros();
+void setMicrosForTest(uint32_t value);
 void limitSerialBaud(uint32_t baud);
 void blockSerialWrites();
 bool waitForSerialWriteBlocked();

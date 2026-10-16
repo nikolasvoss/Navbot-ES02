@@ -14,7 +14,7 @@ Diese Seite ergänzt die [Systemübersicht](../system-overview.md); alle Bauteil
 | 5 V | `U1` RT8289GSP, `L1` FXL0630-100-M, Eingangsnetz `VIN`, Ausgang `+5V` | Schaltregler für 5-V-Verbraucher/Anschlüsse. |
 | 3,3 V | `U2` XC6210B332MR von `+5V` nach `+3.3V` | Versorgt ESP32, IMU, Encoder und Logik; nicht die Servolast. |
 | Servo-Versorgung | `H11`: 1 `+5V`, 2 Servo-Versorgungsnetz, 3 `VIN`; dasselbe Netz an `H9/H10` Pins 3/4 | Dreipolige Auswahl: Brücke 1–2 = 5 V, 2–3 = VIN. Welche Brücke physisch steckt, ist nicht aus dem PCB-Projekt ableitbar. Vor 2S-VIN an Servos deren Zulässigkeit prüfen. |
-| Batteriespannung | `R1` 10 kΩ von `VIN` nach `ADC`, `R2` 1 kΩ nach GND, `C1` 100 nF; `ADC` → ESP32 `GPIO17` | Spannungsteiler ca. 1:11. `ReadVoltage()` nutzt eine lokale Kalibrierung `7.77 / 813.43 × ADC`; dieser Schätzwert ist kein direkter 3,3-V- oder Zell-Einzelwert. |
+| Batteriespannung | `R1` 10 kΩ von `VIN` nach `ADC`, `R2` 1 kΩ nach GND, `C1` 100 nF; `ADC` → ESP32 `GPIO17` | Spannungsteiler ca. 1:11. `readBatteryVoltage()` nutzt eine lokale Kalibrierung `7.77 / 813.43 × ADC`; dieser Schätzwert ist kein direkter 3,3-V- oder Zell-Einzelwert. |
 
 **Prüfpunkt 5-V-Regler:** Im PCB-Netzlistenexport ist Pin 5 (`EN`) des RT8289 `U1` als unverbunden markiert. Die Netzliste allein klärt nicht, ob ein interner Default, eine abweichende reale Bestückung oder ein Designfehler vorliegt. Bei fehlenden 5 V zuerst diesen Punkt am realen Board und mit dem Bauteildatenblatt prüfen; aus der vorhandenen Board-Beobachtung folgt keine Pin-5-Messung.
 
@@ -24,8 +24,8 @@ Diese Seite ergänzt die [Systemübersicht](../system-overview.md); alle Bauteil
 | --- | --- | --- |
 | A / `motor1` | `U6` MP6536; `PWM1_A/2_A/3_A` = GPIO15/7/6, `EN_A` = GPIO16; `H7` Pins 1/2/3 = `U_A/V_A/W_A` | Dreiphasiger Radmotor; Firmware `BLDCDriver3PWM(15, 7, 6, 16)`. |
 | B / `motor2` | `U7` MP6536; `PWM1_B/2_B/3_B` = GPIO40/39/38, `EN_B` = GPIO37; `H8` Pins 1/2/3 = `U_B/V_B/W_B` | Zweiter dreiphasiger Radmotor; Firmware `BLDCDriver3PWM(40, 39, 38, 37)`. |
-| Encoder A | `H5` Pins 1 SDA = GPIO4, 2 SCL = GPIO5, 3 GND, 4 +3,3 V; 5/6 GND laut PCB-Pads | `I2Cone.begin(4, 5, 400000)` und `sensor1` AS5600. Pins 5/6 gehören nicht zum vieradrigen Kabel. |
-| Encoder B | `H6` Pins 1 SDA = GPIO41, 2 SCL = GPIO42, 3 GND, 4 +3,3 V; 5/6 GND laut PCB-Pads | `I2Ctwo.begin(41, 42, 400000)` und `sensor2` AS5600. Pins 5/6 gehören nicht zum vieradrigen Kabel. |
+| Encoder A | `H5` Pins 1 SDA = GPIO4, 2 SCL = GPIO5, 3 GND, 4 +3,3 V; 5/6 GND laut PCB-Pads | `i2cOne.begin(4, 5, 400000)` und `sensor1` AS5600. Pins 5/6 gehören nicht zum vieradrigen Kabel. |
+| Encoder B | `H6` Pins 1 SDA = GPIO41, 2 SCL = GPIO42, 3 GND, 4 +3,3 V; 5/6 GND laut PCB-Pads | `i2cTwo.begin(41, 42, 400000)` und `sensor2` AS5600. Pins 5/6 gehören nicht zum vieradrigen Kabel. |
 
 Die kleine **CODER**-Platine enthält `U1` AS5600-ASOM, lokale 3,3-V-Abblockung und 10-kΩ-Pull-ups für SDA/SCL. Deren `H1` hat dieselbe logische Reihenfolge: 1 SDA, 2 SCL, 3 GND, 4 3,3 V; weitere Footprint-Pads 5/6 liegen an GND und sind keine zusätzlichen Kabeladern. Der MAIN-Pull-up ist je I²C-Leitung 3,3 kΩ. Die BOM nennt zwei AS5600-Module, zwei 2208-90-kV-Motoren und zwei radiale 6 × 1,5-mm-Magnete. Magnetposition und elektrischer Nullwinkel müssen mechanisch/mit SimpleFOC kalibriert werden; sie folgen nicht aus der Netzliste.
 
@@ -39,7 +39,7 @@ Der [Startup-Mitschnitt nach dem Bibliothekswechsel](../../../../build/serial-st
 | --- | --- | --- |
 | IMU | `U5` ICM-42688P-HXY, SPI `SCLK/MOSI/MISO/CS1` | GPIO3/9/10/13; `ICM42688.cpp` verwendet SPI Mode 3, Beschleunigung ±8 g und Gyro ±2000 °/s bei 1 kHz. `INT1/INT2` sind im Design vorhanden; die gezeigte Firmware liest per SPI. |
 | Vier Beinservos | `SERVO1/2/3/4` | GPIO11/12/21/14, 50-Hz-PWM in `ServoControl`; Servo 2/3 sind in der Standard-Ansteuerung invertiert. Die GPIO-Reihenfolge sagt noch nichts über links/rechts an der Mechanik. |
-| Betriebs-LEDs | `LED2/LED3` | GPIO35/36; `BOARD_PIN_LED=35` und LOW schaltet die Firmware-LED ein. |
+| Betriebs-LEDs | `LED2/LED3` | GPIO35/36; `board::kStatusLedPin=35` und LOW schaltet die Firmware-LED ein. |
 | Ladesignal | `VSTA` | GPIO18; im Schaltplan an `M1`, ohne hier bestätigte Softwareauswertung. |
 | Versionskennung | `VERSION_ADC` | GPIO8, Teiler 180 kΩ/100 kΩ; im Design vorhanden, Nutzung der aktuellen Firmware nicht belegt. |
 
