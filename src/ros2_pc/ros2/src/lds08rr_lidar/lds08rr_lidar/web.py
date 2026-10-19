@@ -59,6 +59,7 @@ def make_lidar_app(runtime, slam: SlamState | None = None, control=None, radar_w
         if control is None:
             return jsonify(ok=False, error="SLAM is not running on this service"), 409
         control.delete()
+        slam.clear()
         return jsonify(ok=True)
 
     @app.get("/radar/")

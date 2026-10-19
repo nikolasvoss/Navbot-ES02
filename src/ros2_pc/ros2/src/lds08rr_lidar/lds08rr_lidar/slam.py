@@ -48,6 +48,10 @@ class SlamState:
         with self._lock:
             self._pose, self._pose_at = {"x": x, "y": y, "yaw": yaw}, self._clock() - age_sec
 
+    def clear(self) -> None:
+        with self._lock:
+            self._grid = self._grid_at = self._pose = self._pose_at = None
+
     def snapshot(self) -> dict:
         now = self._clock()
         with self._lock:

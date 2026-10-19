@@ -201,6 +201,8 @@ def test_web_save_and_delete_drive_the_control(tmp_path):
     assert response.status_code == 500
     assert response.get_json() == {"ok": False, "error": "boom"}
 
+    assert base64.b64decode(client.get("/map.json").get_json()["map"]["data"]) == b"\xff\x64"
     assert client.post("/slam/delete").get_json() == {"ok": True}
     assert control.deleted == 1
-    assert base64.b64decode(client.get("/map.json").get_json()["map"]["data"]) == b"\xff\x64"
+    cleared = client.get("/map.json").get_json()
+    assert cleared["state"] == "waiting" and cleared["map"] is None

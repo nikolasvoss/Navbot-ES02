@@ -39,3 +39,6 @@ Expected area: `src/ros2_pc/ros2/src/lds08rr_lidar/**`, `scripts/start_lidar.py`
 ## Amendments
 
 (none yet)
+- 2026-10-19, lead: `/slam/delete` also clears the in-memory map and pose, so the deleted map disappears from the tab at once instead of staying drawn until slam_toolbox republishes. Files: web.py, slam.py, test_slam.py. Within AC "deletes the saved map and restarts SLAM with an empty map".
+- 2026-10-19, lead: `geometry_msgs` exec_depend added; ros_node.py imports `TransformStamped` for the static odom TF. File: package.xml.
+- 2026-10-19, lead: the old `config/` dir and `launch/slam.launch.py` are removed as planned (step 5); the yaml now lives in the Python package.
