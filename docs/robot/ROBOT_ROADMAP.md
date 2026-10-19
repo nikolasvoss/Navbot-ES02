@@ -43,11 +43,11 @@ Den M-Pin des Lidars (Lidar Enable) voraussichtlich zum Roboter-PCB führen und 
 
 UART als Kommunikationsschnittstelle zwischen ROS2-PC und ESP32 vorsehen, da auf dem Roboter-PCB bereits ein Stecker am ESP32 vorhanden ist.
 
-Stand: Protokoll (COBS, CRC-16, Protobuf) und Firmware-Sender für `WheelOdometry` und `Imu` mit 50 Hz sind umgesetzt. Die ROS-2-Brücke `navbot_link_bridge` liegt auf dem Branch `feature/ros2-odometry-bridge` und wurde auf dem ros2_pc nur mit simulierten Frames über ein Pseudo-Terminal geprüft. Details: [UART-Protokoll](software/interfaces/ros2-uart-protocol.md).
+Stand: Protokoll (COBS, CRC-16, Protobuf) und Firmware-Sender für `WheelOdometry` und `Imu` mit 50 Hz sind umgesetzt. Die ROS-2-Brücke `navbot_link_bridge` ist umgesetzt und wurde auf dem ros2_pc nur mit simulierten Frames über ein Pseudo-Terminal geprüft. Details: [UART-Protokoll](software/interfaces/ros2-uart-protocol.md).
 
 ### Offene Punkte vor dem Merge nach `main`
 
-- [ ] `feature/ros2-odometry-bridge` in `feature/esp32-ros2-uart-interface` mergen.
+- [x] `feature/ros2-odometry-bridge` in `feature/esp32-ros2-uart-interface` mergen.
 - [ ] UART des ros2_pc für die ESP32-Verbindung festlegen, Pins und 3,3-V-Pegel am Board prüfen und verdrahten. Danach den Platzhalter für `port` in der [ros2_pc-Softwareanleitung](../ros2_pc/software/README.md#navbot-link-odometry-bridge) ersetzen.
 - [ ] Firmware flashen und die 500-kBd-Verbindung am echten Roboter prüfen: `/odom` und `/imu/data` mit 50 Hz, keine `bad_frames` oder `lost_frames` im Log der Brücke.
 - [ ] Radradius und Spurbreite messen und als Parameter `wheel_radius_m` und `wheel_separation_m` dokumentieren. Die Brücke hat dafür keine Standardwerte.
