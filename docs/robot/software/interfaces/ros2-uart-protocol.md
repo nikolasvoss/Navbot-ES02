@@ -1,6 +1,6 @@
 # ESP32 ↔ ros2_pc UART protocol (NavBot link v1)
 
-Status: **specification, PC-side framing library, and firmware sender for `WheelOdometry` and `Imu` (50 Hz each).** The firmware sender is untested on hardware, and the ROS 2 bridge node is not done.
+Status: **specification, firmware sender for `WheelOdometry` and `Imu` (50 Hz each), and ROS 2 bridge `navbot_link_bridge` for both.** The firmware sender and the bridge are untested on hardware.
 
 ## Design
 
@@ -42,14 +42,16 @@ Normal mode sends one `WheelOdometry` and one `Imu` every 20 ms (50 Hz each, fro
 
 ## Code
 
-- [generate_link_proto.sh](../../../../scripts/generate_link_proto.sh): regenerates the nanopb C code in `src/ES-02/OllieFOCdrive/src/navbot_link/` from the schema. It needs `nanopb_generator` 0.4.9.1 and `protoc` on `PATH`. Run it after every schema change.
+- [generate_link_proto.sh](../../../../scripts/generate_link_proto.sh): regenerates the nanopb C code in `src/ES-02/OllieFOCdrive/src/navbot_link/` and the Python protobuf module in `src/ros2_pc/ros2/src/navbot_link_bridge/navbot_link_bridge/`. It needs `nanopb_generator` 0.4.9.1 and `protoc` 3.21.x on `PATH`; the script refuses other versions. Run it after every schema change.
 - The nanopb 0.4.9.1 encode runtime is vendored in the same folder. Do not edit the generated `navbot_link.pb.*` files.
 - Firmware: `link_frame` (pure C++, frames one `Message`) and `link_uart` (UART1 init, sequence and time stamps, non-blocking send, odometry and IMU publish).
 - [framing.py](../../../../src/ros2_pc/ros2/src/navbot_link_bridge/navbot_link_bridge/framing.py): `encode_frame`, `FrameDecoder` (stdlib only).
-- Tests: `PYTHONPATH=src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test/test_framing.py` (CRC check value `0x29B1`, COBS vectors, resync after garbage and a corrupted frame).
+- ROS 2 bridge: [navbot_link_bridge](../../../../src/ros2_pc/ros2/src/navbot_link_bridge/) (`bridge.py` decodes frames, `odometry.py` integrates wheel angles, `node.py` is the rclpy node). Build and run steps: [ros2_pc software](../../../ros2_pc/software/README.md#navbot-link-odometry-bridge).
+- Tests: `PYTHONPATH=src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test` (framing: CRC check value `0x29B1`, COBS vectors, resync after garbage; bridge: the firmware literal frames, seq gaps and restarts; odometry: straight line, spin, `micros()` wrap).
 - Host test: `bash tests/link/run_host_test.sh` encodes an odometry and an IMU `Message` with the firmware encoder and compares the frame bytes to literal vectors.
 
 ## Next steps
 
 1. Verify pins, 3.3 V levels and the 500 kBd link on the physical board before wiring the ros2_pc.
-2. Add the ROS 2 bridge node mapping `WheelOdometry` to `nav_msgs/Odometry` (and `odom`→`base_link` TF), and `Imu`, `Battery`, `Status` and `Log` to `sensor_msgs/Imu`, `BatteryState`, `diagnostic_msgs` and `/rosout`.
+2. Measure the real wheel radius and track width, and verify the forward direction and left/right signs by rolling the robot forward. The bridge takes both geometry values as required parameters; the signs are unverified.
+3. Map `Battery`, `Status` and `Log` in the ROS 2 bridge to `sensor_msgs/BatteryState`, `diagnostic_msgs` and `/rosout`.

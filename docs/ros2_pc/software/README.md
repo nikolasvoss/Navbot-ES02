@@ -77,3 +77,37 @@ python3 -m pytest -q src/ros2_pc/ros2/src/lds08rr_lidar/test scripts/test_start_
 Install `pytest` and `playwright` in that environment, then run `python -m playwright install chromium` to include the browser acceptance check. ROS checks require the Jazzy environment above. Serial tests use Linux pseudo-terminals and recorded or constructed packet bytes.
 
 Automated checks use recorded and synthetic packets; live acceptance is recorded separately in the [LDS08RR hardware reference](../hardware/lds08rr-lidar.md), together with wiring, electrical limits, and remaining calibration checks.
+
+## NavBot link odometry bridge
+
+The `navbot_link_bridge` package reads the ESP32 link ([protocol](../../robot/software/interfaces/ros2-uart-protocol.md)) from a serial port. It publishes `nav_msgs/Odometry` on `/odom`, the `odom` to `base_link` TF (unless `publish_tf` is false), and `sensor_msgs/Imu` on `/imu/data`. The ros2_pc UART for the ESP32 link is not chosen or wired yet, so the port below is a placeholder. The bridge is implemented and not tested on hardware.
+
+Build with the system ROS 2 Jazzy install. The package needs `python3-serial` and `python3-protobuf` 3.21 from apt, which the generated `navbot_link_pb2.py` requires.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+rosdep install --from-paths src/ros2_pc/ros2/src/navbot_link_bridge --ignore-src -r -y --skip-keys=ament_python
+colcon --log-base src/ros2_pc/ros2/log build --base-paths src/ros2_pc/ros2/src --packages-select navbot_link_bridge --build-base src/ros2_pc/ros2/build --install-base src/ros2_pc/ros2/install
+source src/ros2_pc/ros2/install/setup.bash
+```
+
+Run it with the serial port and the measured wheel geometry. `port`, `wheel_radius_m` and `wheel_separation_m` have no usable default, and the node refuses to start without `port`. Odometry needs both radius and separation above zero.
+
+```bash
+ros2 run navbot_link_bridge navbot_link_bridge --ros-args -p port:=<serial-port> -p wheel_radius_m:=<measured-radius-m> -p wheel_separation_m:=<measured-separation-m>
+```
+
+Optional parameters: `baud` (500000), `odom_frame` (`odom`), `base_frame` (`base_link`), `imu_frame` (`imu_link`), `publish_tf` (`true`). The node reopens the port every second after an error, so a power-cycled robot reconnects.
+
+Unverified, before relying on the output:
+
+- Wheel radius and track width are unknown. Measure them; the bridge does not guess.
+- The forward direction and the left/right mapping of the wheel angles are unverified. Roll the robot forward and check the signs of the `/odom` twist.
+- The IMU frame `imu_link` has no `base_link` to `imu_link` TF yet.
+- Stamps are the ROS receive time, not the robot's sample time. Covariances are zero.
+
+Test the framing, decoding and odometry logic without ROS. The tests need `pytest` and `protobuf`.
+
+```bash
+PYTHONPATH=src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test
+```
