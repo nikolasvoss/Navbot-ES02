@@ -80,7 +80,7 @@ Automated checks use recorded and synthetic packets; live acceptance is recorded
 
 ## NavBot link odometry bridge
 
-The `navbot_link_bridge` package reads the ESP32 link ([protocol](../../robot/software/interfaces/ros2-uart-protocol.md)) from a serial port. It publishes `nav_msgs/Odometry` on `/odom`, the `odom` to `base_link` TF (unless `publish_tf` is false), and `sensor_msgs/Imu` on `/imu/data`. The ros2_pc UART for the ESP32 link is not chosen or wired yet, so the port below is a placeholder. The bridge is implemented and not tested on hardware.
+The `navbot_link_bridge` package reads the ESP32 link ([protocol](../../robot/software/interfaces/ros2-uart-protocol.md)) from a serial port. It publishes `nav_msgs/Odometry` on `/odom`, the `odom` to `base_link` TF (unless `publish_tf` is false), and `sensor_msgs/Imu` on `/imu/data`. The ros2_pc UART for the ESP32 link is not chosen or wired yet, so the port below is a placeholder. On 19 October 2026 the bridge was built on the ros2_pc and fed firmware-format frames through a pseudo-terminal: `/odom` arrived at 50 Hz with the expected pose, and the TF and `/imu/data` were published. It has not run against the robot.
 
 Build with the system ROS 2 Jazzy install. The package needs `python3-serial` and `python3-protobuf` 3.21 from apt, which the generated `navbot_link_pb2.py` requires.
 
