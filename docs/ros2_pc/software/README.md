@@ -24,7 +24,7 @@ The ROS adapter negates native LiDAR bearings before binning them into CCW-posit
 
 On 15 October 2026, the CM5 verified live UART0 scans, automatic `slam_toolbox` lifecycle activation, `/map`, TF, map growth during sensor movement, and the browser's Mapping state and pose arrow. That check used the former `slam.launch.py` and a separate `navbot-slam.service`; both are replaced by the supervised start inside the LiDAR service. Measurements and limitations are in the [hardware observations](../../../agent_notes/ros2_pc/sensors/lds08rr/observations.md).
 
-Unverified: the supervised start, map save, load and delete, and the map-serialize path have not run on the ros2_pc with the real sensor. Dev-PC tests cover the map store, the process supervisor, the web endpoints, and the tunnel command without ROS. Quantitative trajectory accuracy, complete room coverage, and physical scan handedness also still require verification.
+On 19 October 2026, the CM5 verified the supervised start, map save, loading the saved map on restart, map delete with a fresh start, map growth while the sensor moves, restart after the SLAM node is killed, the stale state of a hung node, and a clean stop with no leftover processes ([observations](../../../agent_notes/ros2_pc/slam/observations.md)). A hung node shows as "SLAM not updating" but is not restarted. Quantitative trajectory accuracy, complete room coverage, and physical scan handedness also still require verification.
 
 ## LDS08RR LiDAR
 
