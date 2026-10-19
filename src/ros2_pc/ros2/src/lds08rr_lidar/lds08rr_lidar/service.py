@@ -41,10 +41,27 @@ def page_host(bind_host: str) -> str:
         return "127.0.0.1"
 
 
+def build_slam_control(node):
+    from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
+
+    from .slam import BASE_PARAMS, DEFAULT_SLAM_DIR, MapStore, SlamControl, SlamProcess, slam_command
+
+    try:
+        get_package_share_directory("slam_toolbox")
+    except PackageNotFoundError:
+        print("slam_toolbox not installed; SLAM disabled", file=sys.stderr)
+        return None
+    store = MapStore(DEFAULT_SLAM_DIR)
+    base = BASE_PARAMS.read_text(encoding="utf-8")
+    process = SlamProcess(lambda: slam_command(store.params_file(base)), DEFAULT_SLAM_DIR / "slam.log")
+    return SlamControl(store, process, node.serialize_map)
+
+
 def run(argv=None) -> int:
     args = parse_args(argv)
     from werkzeug.serving import make_server
 
+    from .slam import DEFAULT_SLAM_DIR
     from .source import SourceConfig
     from .web import make_lidar_app
 
@@ -55,6 +72,7 @@ def run(argv=None) -> int:
     )
     runtime = None
     node = None
+    control = None
     rclpy = None
     shutdown_exceptions = (KeyboardInterrupt,)
     ros_requested = args.ros == "on"
@@ -75,18 +93,23 @@ def run(argv=None) -> int:
             rclpy.init()
             node = LidarNode(config)
             runtime = node.runtime
+            control = build_slam_control(node)
     if runtime is None:
         from .runtime import LidarRuntime
 
         runtime = LidarRuntime(config)
     try:
-        server = make_server(args.host, args.port, make_lidar_app(runtime, slam=getattr(node, "slam", None)), threaded=True)
+        app = make_lidar_app(runtime, slam=getattr(node, "slam", None), control=control)
+        server = make_server(args.host, args.port, app, threaded=True)
     except Exception:
         if node is not None:
             node.destroy_node()
             rclpy.try_shutdown()
         raise
     runtime.start()
+    if control is not None:
+        control.start()
+        print(f"SLAM: slam_toolbox started, map dir {DEFAULT_SLAM_DIR}", flush=True)
     thread = threading.Thread(target=server.serve_forever, name="lds08rr-http", daemon=True)
     thread.start()
     url_host = page_host(args.host)
@@ -101,6 +124,8 @@ def run(argv=None) -> int:
     except shutdown_exceptions:
         pass
     finally:
+        if control is not None:
+            control.stop()
         runtime.stop()
         server.shutdown()
         server.server_close()

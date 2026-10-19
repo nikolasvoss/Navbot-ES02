@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import math
+import threading
 
 import rclpy.time
 
 from builtin_interfaces.msg import Time
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import OccupancyGrid
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
-from tf2_ros import Buffer, TransformException, TransformListener
+from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
 
 from .runtime import LidarRuntime
 from .slam import SlamState, grid_to_dict
@@ -79,7 +81,16 @@ class LidarNode(Node):
         self.create_subscription(OccupancyGrid, "/map", self.on_map, map_qos)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+        # No wheel odometry yet: odom is fixed to the sensor and scan matching does the tracking.
+        self.static_tf = StaticTransformBroadcaster(self)
+        identity = TransformStamped()
+        identity.header.stamp = self.get_clock().now().to_msg()
+        identity.header.frame_id = "odom"
+        identity.child_frame_id = SENSOR_FRAME
+        identity.transform.rotation.w = 1.0
+        self.static_tf.sendTransform(identity)
         self.create_timer(0.5, self.update_pose)
+        self._serialize_client = None
 
     def on_map(self, message: OccupancyGrid) -> None:
         info = message.info
@@ -95,7 +106,32 @@ class LidarNode(Node):
             return
         t, q = transform.transform.translation, transform.transform.rotation
         yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
-        self.slam.set_pose(t.x, t.y, yaw)
+        age = (self.get_clock().now() - rclpy.time.Time.from_msg(transform.header.stamp)).nanoseconds / 1e9
+        self.slam.set_pose(t.x, t.y, yaw, age_sec=max(age, 0.0))
+
+    def serialize_map(self, filename: str, timeout: float = 15.0) -> str | None:
+        try:
+            from slam_toolbox.srv import SerializePoseGraph
+        except ImportError as exc:
+            return f"slam_toolbox is unavailable: {exc}"
+        if self._serialize_client is None:
+            self._serialize_client = self.create_client(SerializePoseGraph, "/slam_toolbox/serialize_map")
+        if not self._serialize_client.wait_for_service(timeout_sec=2.0):
+            return "slam_toolbox serialize service unavailable"
+        request = SerializePoseGraph.Request()
+        request.filename = filename
+        # Called from the HTTP thread while the main thread spins the node.
+        finished = threading.Event()
+        future = self._serialize_client.call_async(request)
+        future.add_done_callback(lambda _: finished.set())
+        if not finished.wait(timeout):
+            return "serialize_map timed out"
+        if future.exception() is not None:
+            return f"serialize_map failed: {future.exception()}"
+        result = future.result().result
+        if result != 0:
+            return f"serialize_map failed with result {result}"
+        return None
 
     def publish_scan(self, scan, completed_at: float) -> None:
         stamp = self.get_clock().now()
