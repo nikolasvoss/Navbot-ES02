@@ -12,6 +12,7 @@ message Message {
     Battery battery = 11;
     Status status = 12;
     Log log = 13;         // errors, warnings, info
+    WheelOdometry odom = 14;
     Command command = 20; // PC -> robot
     Ack ack = 21;
   }
@@ -22,6 +23,14 @@ message Imu {
   float ax = 1; float ay = 2; float az = 3;     // m/s^2
   float gx = 4; float gy = 5; float gz = 6;     // rad/s
   float roll_rad = 7; float pitch_rad = 8; float yaw_rad = 9;
+}
+
+// Cumulative wheel angle, same sign convention as the controller wheel
+// velocity. The PC owns wheel radius and track width.
+message WheelOdometry {
+  uint32 t_us = 1;             // micros() at sampling
+  double left_angle_rad = 2;
+  double right_angle_rad = 3;
 }
 
 message Battery {
