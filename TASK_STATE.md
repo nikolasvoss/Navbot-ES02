@@ -7,4 +7,4 @@ Test venv (dev PC): scratchpad venv with pytest, flask, lds2d[viz]==0.7.0; basel
 
 Progress: done. Implemented, 26 passed / 3 skipped, demo service probed live, final scope check OK.
 Open: first run on the ros2_pc with ROS + slam_toolbox (serialize result field, map_file_name loading, TF pose age, supervisor shutdown are unverified).
-Next step: install ros-jazzy-slam-toolbox on the ros2_pc, restart navbot-lidar.service, check /slam.
+Next step: ros2_pc agent follows dev_notes/handoff-slam-ros2_pc.md.
