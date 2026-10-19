@@ -17,7 +17,7 @@
 void LinkUartInit();
 
 // Sends WheelOdometry, then Imu if the snapshot is valid. Never blocks; a frame that does not fit is dropped.
-void LinkPublishOdometry(uint32_t sampleTimeUs, double leftWheelAngleRad, double rightWheelAngleRad, const imu::Snapshot& imu);
+void LinkPublishOdometry(uint32_t sampleTimeUs, double leftWheelAngleRad, double rightWheelAngleRad, const imu::Snapshot& imuSnapshot);
 
 uint32_t LinkDroppedFrames();
 

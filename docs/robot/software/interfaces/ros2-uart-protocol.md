@@ -52,4 +52,4 @@ Normal mode sends one `WheelOdometry` and one `Imu` every 20 ms (50 Hz each, fro
 ## Next steps
 
 1. Verify pins, 3.3 V levels and the 500 kBd link on the physical board before wiring the ros2_pc.
-2. Add the ROS 2 bridge node mapping `Imu`, `Battery`, `Status` and `Log` to `sensor_msgs/Imu`, `BatteryState`, `diagnostic_msgs` and `/rosout`.
+2. Add the ROS 2 bridge node mapping `WheelOdometry` to `nav_msgs/Odometry` (and `odom`→`base_link` TF), and `Imu`, `Battery`, `Status` and `Log` to `sensor_msgs/Imu`, `BatteryState`, `diagnostic_msgs` and `/rosout`.
