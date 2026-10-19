@@ -45,8 +45,8 @@ Normal mode sends one `WheelOdometry` and one `Imu` every 20 ms (50 Hz each, fro
 - [generate_link_proto.sh](../../../../scripts/generate_link_proto.sh): regenerates the nanopb C code in `src/ES-02/OllieFOCdrive/src/navbot_link/` from the schema. It needs `nanopb_generator` 0.4.9.1 and `protoc` on `PATH`. Run it after every schema change.
 - The nanopb 0.4.9.1 encode runtime is vendored in the same folder. Do not edit the generated `navbot_link.pb.*` files.
 - Firmware: `link_frame` (pure C++, frames one `Message`) and `link_uart` (UART1 init, sequence and time stamps, non-blocking send, odometry and IMU publish).
-- [framing.py](../../../../src/navbot_link/framing.py): `encode_frame`, `FrameDecoder` (stdlib only).
-- Tests: `python3 src/navbot_link/test_framing.py` (CRC check value `0x29B1`, COBS vectors, resync after garbage and a corrupted frame).
+- [framing.py](../../../../src/ros2_pc/ros2/src/navbot_link_bridge/navbot_link_bridge/framing.py): `encode_frame`, `FrameDecoder` (stdlib only).
+- Tests: `PYTHONPATH=src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test/test_framing.py` (CRC check value `0x29B1`, COBS vectors, resync after garbage and a corrupted frame).
 - Host test: `bash tests/link/run_host_test.sh` encodes an odometry and an IMU `Message` with the firmware encoder and compares the frame bytes to literal vectors.
 
 ## Next steps

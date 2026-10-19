@@ -4,8 +4,8 @@
 #include <cstring>
 
 // Expected frames were derived independently: protobuf (python) serializes the
-// same Message, src/navbot_link/framing.encode_frame frames it, and
-// framing.FrameDecoder decodes the result back to the same payload.
+// same Message, navbot_link_bridge.framing.encode_frame frames it, and
+// navbot_link_bridge.framing.FrameDecoder decodes the result back to the same payload.
 namespace {
 
 const uint8_t kOdometryFrame[] = {
