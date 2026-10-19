@@ -188,18 +188,21 @@
       const metres = [1, 2, 5, 10].map((f) => f * power).filter((d) => d <= target).pop() || power;
       const length = metres * v.scale;
       const text = metres >= 1 ? `${+metres.toFixed(1)} m` : `${Math.round(metres * 100)} cm`;
-      const x = 12, y = v.height - 14;
+      const x = (v.width - length) / 2, y = v.height - 14;
       ctx.font = '600 13px system-ui, sans-serif';
       const textWidth = ctx.measureText(text).width;
+      const boxWidth = Math.max(length, textWidth) + 12;
       ctx.fillStyle = 'rgba(16, 24, 32, .78)';
-      ctx.fillRect(x - 6, y - 26, Math.max(length, textWidth) + 12, 34);
+      ctx.fillRect((v.width - boxWidth) / 2, y - 26, boxWidth, 34);
       ctx.strokeStyle = ctx.fillStyle = '#edf3f7';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(x, y - 6); ctx.lineTo(x, y); ctx.lineTo(x + length, y); ctx.lineTo(x + length, y - 6);
       ctx.stroke();
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(text, x, y - 10);
+      ctx.textAlign = 'center';
+      ctx.fillText(text, v.width / 2, y - 10);
+      ctx.textAlign = 'start';
     }
 
     function setZoom(factor) {
