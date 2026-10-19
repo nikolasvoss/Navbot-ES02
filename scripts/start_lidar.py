@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import shlex
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -12,8 +13,21 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 
 from lds08rr_lidar.service import build_parser, parse_args, run
 
+RADAR_BRIDGE_PORT = 9090
 
-def ssh_invocation(host: str, remote_path: str, service_args: list[str]) -> tuple[list[str], str]:
+
+def local_port_free(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def ssh_invocation(
+    host: str, remote_path: str, service_args: list[str], forward_radar: bool = False
+) -> tuple[list[str], str]:
     args = parse_args(service_args)
     if args.host not in ("127.0.0.1", "localhost"):
         raise ValueError("SSH mode binds the remote service to loopback for the SSH tunnel")
@@ -32,7 +46,11 @@ def ssh_invocation(host: str, remote_path: str, service_args: list[str]) -> tupl
         f"&& exec {remote_python} {shlex.join(['scripts/start_lidar.py', *remote_args])}"
     )
     command = f"bash -lc {shlex.quote(remote_shell)}"
-    ssh = ["ssh", "-o", "ExitOnForwardFailure=yes", "-L", f"{args.port}:127.0.0.1:{args.port}", "--", host, command]
+    ssh = ["ssh", "-o", "ExitOnForwardFailure=yes", "-L", f"{args.port}:127.0.0.1:{args.port}"]
+    if forward_radar:
+        # The radar tab connects the browser to rosbridge on 127.0.0.1:9090 of this machine.
+        ssh.extend(["-L", f"{RADAR_BRIDGE_PORT}:127.0.0.1:{RADAR_BRIDGE_PORT}"])
+    ssh.extend(["--", host, command])
     return ssh, f"http://127.0.0.1:{args.port}/lidar"
 
 
@@ -56,7 +74,11 @@ def main(argv=None) -> int:
     if not options.remote_path:
         parser.error("--ssh requires --remote-path")
     try:
-        command, url = ssh_invocation(options.ssh, options.remote_path, service_args)
+        # An HMMD tunnel may already forward the bridge port; then the forward is skipped.
+        command, url = ssh_invocation(
+            options.ssh, options.remote_path, service_args,
+            forward_radar=local_port_free(RADAR_BRIDGE_PORT),
+        )
     except ValueError as exc:
         parser.error(str(exc))
     print(f"LiDAR page through SSH tunnel: {url}", flush=True)
