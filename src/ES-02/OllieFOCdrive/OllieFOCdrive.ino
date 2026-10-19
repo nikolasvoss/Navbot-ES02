@@ -1526,6 +1526,10 @@ void loop() {
     m2FilteredVelocityRadPerSec = m2VelocityFilter(m2VelocityRadPerSec);
     m2PrevEncoderAngleRad = sensor2.getAngle();
 
+    if (controlGateSequence % LINK_ODOMETRY_DIVIDER == 0) {
+      LinkPublishOdometry(loopTimeUs, sensor1.getPreciseAngle(), -sensor2.getPreciseAngle(), imu::latest());
+    }
+
     float bodyH = BODY_HEIGHT_DEFAULT_M;
     float bodyRoll = BodyRollFiltered;
 

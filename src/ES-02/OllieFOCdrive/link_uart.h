@@ -2,6 +2,7 @@
 #define LINK_UART_H
 
 #include <Arduino.h>
+#include "imu.h"
 
 // UART1 connects the ESP32 to the ros2_pc (NavBot link, see
 // docs/robot/software/interfaces/ros2-uart-protocol.md).
@@ -10,8 +11,14 @@
 #define LINK_UART_TX_PIN 19
 #define LINK_UART_BAUD 500000
 
-inline void LinkUartInit() {
-  Serial1.begin(LINK_UART_BAUD, SERIAL_8N1, LINK_UART_RX_PIN, LINK_UART_TX_PIN);
-}
+// 1 kHz / 20 = 50 Hz
+#define LINK_ODOMETRY_DIVIDER 20
+
+void LinkUartInit();
+
+// Sends WheelOdometry, then Imu if the snapshot is valid. Never blocks; a frame that does not fit is dropped.
+void LinkPublishOdometry(uint32_t sampleTimeUs, double leftWheelAngleRad, double rightWheelAngleRad, const imu::Snapshot& imu);
+
+uint32_t LinkDroppedFrames();
 
 #endif
