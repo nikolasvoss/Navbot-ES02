@@ -1,10 +1,10 @@
-# Task state: commit open firmware changes
+# Task state: SLAM map persistence and autostart
 
-Goal: commit every open change separately into usable commits.
-Contract: dev_notes/scope-commit-open-changes.md.
-Decisions: group calibration-offset naming, debug-selector naming, existing comment edits and PID startup cleanup into four commits. Include related task notes with each change. Stage exact cumulative snapshots without changing the working sketch.
-Progress: all four firmware snapshots compiled successfully with scripts/build_firmware.py. Each committed sketch is checked against its compiled snapshot. The final source equals the original open sketch.
-PID verification: startup and automatic gains matched the pre-cleanup baseline for both diagnostic flag values. The prior independent correctness and scope reviews passed.
-Verification records: /tmp/navbot-commit-split/build-stage1.log through build-stage4.log and commits.txt. Final scope verdict: /tmp/navbot-commit-split/scope-verdict.txt.
-Hardware: no flash or drive test performed.
-Next: final independent scope check and report the commit hashes.
+Goal: points 1 to 4 from the SLAM branch review (single saved map loaded at start, save/delete from the web, SLAM autostart with the LiDAR service, stale detection, radar port over SSH).
+Contract and plan: dev_notes/scope-slam-map-autostart.md.
+Baseline: feat/slam d8226de.
+Test venv (dev PC): scratchpad venv with pytest, flask, lds2d[viz]==0.7.0; baseline 16 passed, 3 skipped.
+
+Progress: contract written; implementation delegated.
+Open: implementation, verification, final scope check, commit.
+Next step: review the delegate diff.
