@@ -10,11 +10,9 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
-        ("share/" + package_name + "/launch", ["launch/slam.launch.py"]),
-        ("share/" + package_name + "/config", ["config/slam_toolbox.yaml"]),
     ],
     install_requires=["setuptools", "pyserial", "lds2d[viz]==0.7.0"],
-    package_data={package_name: ["templates/*.html"]},
+    package_data={package_name: ["templates/*.html", "*.yaml"]},
     zip_safe=True,
     entry_points={"console_scripts": ["lds08rr_lidar = lds08rr_lidar.service:main"]},
 )

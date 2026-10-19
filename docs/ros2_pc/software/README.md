@@ -12,39 +12,19 @@ The HMMD ROS 2 workspace is under `src/ros2_pc/ros2/`.
 
 The LiDAR service on port 8081 is the single browser entry point with three tabs: `/lidar`, `/slam`, and `/radar/`. The radar tab serves the unchanged `hmmd_radar/web` page from the same server. It still needs the HMMD launcher's rosbridge on `ws://127.0.0.1:9090` and shows a connecting state while no radar is installed. Radar and SLAM stay optional; the LiDAR page works without them.
 
-SLAM uses the apt package `slam_toolbox` (online async, lidar-only). Install it with `sudo apt install ros-jazzy-slam-toolbox ros-jazzy-tf2-ros`, rebuild the workspace, then run the LiDAR service and, in a second terminal with the workspace sourced:
+SLAM starts with the LiDAR service when ROS 2 is active and `slam_toolbox` is installed (`sudo apt install ros-jazzy-slam-toolbox`). No second terminal is needed. The service supervises `slam_toolbox`, restarts it when it exits, and shows SLAM as unavailable when the package is missing. Parameters are in `src/ros2_pc/ros2/src/lds08rr_lidar/lds08rr_lidar/slam_toolbox.yaml`.
 
-```bash
-ros2 launch lds08rr_lidar slam.launch.py
-```
+The service keeps one map in `~/.local/share/navbot/slam/` (`map.posegraph` and `map.data`). Every start loads that map when it exists and mapping continues on it, assuming the robot starts where the saved map began. On the `/slam` tab, **Save map** overwrites the saved map with the current one. **Delete map and start over** asks for confirmation, removes the saved map, and restarts mapping from an empty map. The SLAM log is `~/.local/share/navbot/slam/slam.log`.
 
-The launch file fixes `odom` to the `lds08rr` frame because the robot has no wheel odometry yet. Scan matching alone tracks motion, so move the sensor slowly (well under 0.5 m between scans). Parameters are in `config/slam_toolbox.yaml`. The `/slam` tab shows `/map`, the pose from TF `map` → `lds08rr`, and the LiDAR state. On the CM5, live UART0 scans, automatic lifecycle activation, `/map`, TF, map growth during sensor movement, and the browser's Mapping state and pose arrow were verified on 15 October 2026. Quantitative trajectory accuracy, complete room coverage, and physical scan handedness still require verification. Measurements and limitations are in the [hardware observations](../../../agent_notes/ros2_pc/sensors/lds08rr/observations.md).
+The `odom` frame is fixed to the `lds08rr` sensor frame because the robot has no wheel odometry yet. Scan matching alone tracks motion, so move the sensor slowly (well under 0.5 m between scans). The `/slam` tab shows `/map`, the pose from TF `map` → `lds08rr`, the process state, and the saved map. It reports "SLAM not updating" when the map is older than 10 s.
 
 The ROS adapter negates native LiDAR bearings before binning them into CCW-positive LaserScan angles. This corrects the sign mismatch behind the reported reversed SLAM heading. The user confirmed correct clockwise and counterclockwise pose-arrow rotation after the fix. Left/right and angle-zero calibration are tracked in the [roadmap](../ROS_ROADMAP.md#3-lidar-only-slam-im-web-hub). Start a fresh SLAM map after changing angle conventions; do not combine scans from the previous convention.
 
-### Start SLAM automatically at boot
+`start_lidar.py --ssh` also forwards port 9090 for the radar tab when that local port is free. If it is taken, for example by an HMMD tunnel, the forward is skipped. Over plain LAN the radar tab still needs rosbridge reachable, but the HMMD launcher keeps rosbridge bound to 127.0.0.1.
 
-Each SLAM start creates a fresh in-memory map; saved maps are not loaded. Stop the manually launched SLAM process before setup so the service does not start a second mapper. Install `ros-jazzy-slam-toolbox` and build the workspace. From the repository root, run the installer as your normal user. The installer checks the Jazzy and workspace setup files, installed launch and config files, and `slam_toolbox` launch file before writing the unit. It runs SLAM as your user and enables it after the LiDAR service. On 15 October 2026, CM5 checks confirmed unit validation, boot enablement, clean restart, and automatic recovery after a main-process failure, with live mapping restored. A reboot was not performed for this check.
+On 15 October 2026, the CM5 verified live UART0 scans, automatic `slam_toolbox` lifecycle activation, `/map`, TF, map growth during sensor movement, and the browser's Mapping state and pose arrow. That check used the former `slam.launch.py` and a separate `navbot-slam.service`; both are replaced by the supervised start inside the LiDAR service. Measurements and limitations are in the [hardware observations](../../../agent_notes/ros2_pc/sensors/lds08rr/observations.md).
 
-```bash
-python3 scripts/install_slam_service.py
-```
-
-Manage and inspect the service and its logs with:
-
-```bash
-sudo systemctl status navbot-slam.service
-sudo systemctl restart navbot-slam.service
-sudo journalctl -u navbot-slam.service -f
-```
-
-Open `http://<ros2_pc-host>:8081/slam`. To disable startup and remove the unit:
-
-```bash
-sudo systemctl disable --now navbot-slam.service
-sudo rm /etc/systemd/system/navbot-slam.service
-sudo systemctl daemon-reload
-```
+Unverified: the supervised start, map save, load and delete, and the map-serialize path have not run on the ros2_pc with the real sensor. Dev-PC tests cover the map store, the process supervisor, the web endpoints, and the tunnel command without ROS. Quantitative trajectory accuracy, complete room coverage, and physical scan handedness also still require verification.
 
 ## LDS08RR LiDAR
 

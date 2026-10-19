@@ -18,6 +18,9 @@
     dt { color: #9fb0bd; }
     dd { margin: 0; text-align: right; }
     .note { color: #cbd5e1; line-height: 1.4; }
+    .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
+    button { font: inherit; color: #edf3f7; background: #243442; border: 1px solid #64748b; border-radius: .4rem; padding: .5rem .8rem; }
+    button:disabled { opacity: .5; }
     @media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr); } }
   </style>
 </head>
@@ -40,15 +43,50 @@
         <dt>Pose x, y</dt><dd id="poseXY">–</dd>
         <dt>Heading</dt><dd id="poseYaw">–</dd>
         <dt>Map update age</dt><dd id="mapAge">–</dd>
+        <dt>SLAM process</dt><dd id="slamProcess">–</dd>
+        <dt>Saved map</dt><dd id="savedMap">–</dd>
       </dl>
-      <p class="note">Mapping runs <code>slam_toolbox</code> on LiDAR scans only; there is no wheel odometry, so move the sensor slowly. Map and pose come from ROS topics <code>/map</code> and TF <code>map</code> → <code>lds08rr</code>. Angle zero and rotation direction of the LiDAR are uncalibrated, so the map may be mirrored or rotated.</p>
+      <div class="actions">
+        <button id="saveMap" type="button" disabled>Save map</button>
+        <button id="deleteMap" type="button" disabled>Delete map and start over</button>
+      </div>
+      <p id="actionResult" class="note" role="status"></p>
+      <p class="note">SLAM starts with the LiDAR service. The saved map loads on every start, which assumes the robot starts where that map began. Mapping runs <code>slam_toolbox</code> on LiDAR scans only; there is no wheel odometry, so move the sensor slowly. Map and pose come from ROS topics <code>/map</code> and TF <code>map</code> → <code>lds08rr</code>. Angle zero and rotation direction of the LiDAR are uncalibrated, so the map may be mirrored or rotated.</p>
     </section>
   </main>
   <script>
     const canvas = document.querySelector('#map');
     const ctx = canvas.getContext('2d');
     const $ = (id) => document.getElementById(id);
-    const LABELS = { waiting: 'Waiting for map', no_pose: 'Map, no pose', mapping: 'Mapping' };
+    const LABELS = { waiting: 'Waiting for map', stale: 'SLAM not updating', no_pose: 'Map, no pose', mapping: 'Mapping' };
+    let serverHasControl = false;
+    let actionRunning = false;
+
+    function syncButtons() {
+      for (const id of ['saveMap', 'deleteMap']) $(id).disabled = actionRunning || !serverHasControl;
+    }
+
+    async function runAction(path, doneText) {
+      actionRunning = true;
+      syncButtons();
+      try {
+        const response = await fetch(path, { method: 'POST' });
+        const body = await response.json();
+        $('actionResult').textContent = body.ok ? doneText : (body.error || 'HTTP ' + response.status);
+      } catch (error) {
+        $('actionResult').textContent = 'Request failed: ' + error.message;
+      } finally {
+        actionRunning = false;
+        syncButtons();
+      }
+    }
+
+    $('saveMap').addEventListener('click', () => runAction('/slam/save', 'Map saved.'));
+    $('deleteMap').addEventListener('click', () => {
+      if (confirm('Delete the saved map and restart mapping from scratch?')) {
+        runAction('/slam/delete', 'Map deleted; mapping restarts from scratch.');
+      }
+    });
 
     async function getJson(path) {
       const controller = new AbortController();
@@ -108,9 +146,19 @@
         $('poseXY').textContent = p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)} m` : '–';
         $('poseYaw').textContent = p ? `${(p.yaw * 180 / Math.PI).toFixed(0)}°` : '–';
         $('mapAge').textContent = slam.map_age_sec == null ? '–' : slam.map_age_sec.toFixed(0) + ' s';
+        const control = slam.control;
+        const saved = control && control.saved_map;
+        $('slamProcess').textContent = control
+          ? control.process.state + (control.process.restarts > 0 ? ` (restarts ${control.process.restarts})` : '')
+          : 'unavailable';
+        $('savedMap').textContent = saved && saved.exists ? new Date(saved.saved_at * 1000).toLocaleString() : (control ? 'none' : '–');
+        serverHasControl = Boolean(control);
+        syncButtons();
         drawMap(m, p);
       } catch (error) {
         $('stateBadge').textContent = 'Server unavailable';
+        serverHasControl = false;
+        syncButtons();
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
     }

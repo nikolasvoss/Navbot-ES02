@@ -22,7 +22,7 @@ class FreshScanBuffer:
         return self.buffer.latest()
 
 
-def make_lidar_app(runtime, slam: SlamState | None = None, radar_web: Path | None = DEFAULT_RADAR_WEB):
+def make_lidar_app(runtime, slam: SlamState | None = None, control=None, radar_web: Path | None = DEFAULT_RADAR_WEB):
     from flask import Flask, abort, jsonify, render_template, send_from_directory
 
     app = Flask(__name__)
@@ -41,7 +41,26 @@ def make_lidar_app(runtime, slam: SlamState | None = None, radar_web: Path | Non
 
     @app.get("/map.json")
     def map_json():
-        return jsonify(slam.snapshot())
+        return jsonify({**slam.snapshot(), "control": control.status() if control is not None else None})
+
+    @app.post("/slam/save")
+    def slam_save():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        if slam.snapshot()["map"] is None:
+            return jsonify(ok=False, error="No map to save yet"), 409
+        error = control.save()
+        if error is not None:
+            return jsonify(ok=False, error=error), 500
+        return jsonify(ok=True)
+
+    @app.post("/slam/delete")
+    def slam_delete():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        control.delete()
+        slam.clear()
+        return jsonify(ok=True)
 
     @app.get("/radar/")
     def radar_page():

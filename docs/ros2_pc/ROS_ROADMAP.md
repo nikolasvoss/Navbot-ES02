@@ -104,10 +104,9 @@ enthalten Messwerte und Grenzen der Abnahme.
 - [ ] Speichern, SLAM-Neustart und Laden zur Fortsetzung ohne angeschlossenen
   Radar prüfen. Ohne Speichern geht die aktuelle Karte beim SLAM-Ende verloren.
 
-Kein neues Web-Framework und keine Radodometrie. `navbot-slam.service` ist auf
-dem CM5 installiert, aktiv und für den Bootstart aktiviert. Neustart und
-Wiederanlauf nach Ausfall des Hauptprozesses mit Live-Mapping wurden am
-15.10.2026 geprüft; ein Neustart des CM5 wurde dafür nicht durchgeführt.
-Installation und Verwaltung stehen in der [Softwareanleitung](software/README.md#start-slam-automatically-at-boot).
-Karten bleiben bis zur Umsetzung der Speicherung flüchtig. Radar-Seite und
+Kein neues Web-Framework und keine Radodometrie. SLAM startet jetzt überwacht
+innerhalb von `navbot-lidar.service`; der frühere separate `navbot-slam.service`
+entfällt. Eine Karte wird in `~/.local/share/navbot/slam/` gespeichert und beim
+Start geladen (siehe [Softwareanleitung](software/README.md)). Speichern, Laden
+und Löschen sind auf dem CM5 noch nicht geprüft. Radar-Seite und
 Radar-Launcher bleiben unverändert.
