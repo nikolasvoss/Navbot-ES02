@@ -51,7 +51,3 @@ void LinkPublishOdometry(uint32_t sampleTimeUs, double leftWheelAngleRad, double
   sample.body.imu.yaw_rad = imuSnapshot.attitudeDegrees.yaw * DEG_TO_RAD;
   LinkSend(sample);
 }
-
-uint32_t LinkDroppedFrames() {
-  return linkDroppedFrames;
-}
