@@ -5,6 +5,6 @@ Contract and plan: dev_notes/scope-slam-map-autostart.md.
 Baseline: feat/slam d8226de.
 Test venv (dev PC): scratchpad venv with pytest, flask, lds2d[viz]==0.7.0; baseline 16 passed, 3 skipped.
 
-Progress: contract written; implementation delegated.
-Open: implementation, verification, final scope check, commit.
-Next step: review the delegate diff.
+Progress: done. Implemented, 26 passed / 3 skipped, demo service probed live, final scope check OK.
+Open: first run on the ros2_pc with ROS + slam_toolbox (serialize result field, map_file_name loading, TF pose age, supervisor shutdown are unverified).
+Next step: install ros-jazzy-slam-toolbox on the ros2_pc, restart navbot-lidar.service, check /slam.
