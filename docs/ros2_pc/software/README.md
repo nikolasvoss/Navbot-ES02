@@ -12,13 +12,15 @@ The HMMD ROS 2 workspace is under `src/ros2_pc/ros2/`.
 
 The LiDAR service on port 8081 is the single browser entry point with three tabs: `/lidar`, `/slam`, and `/radar/`. The radar tab serves the unchanged `hmmd_radar/web` page from the same server. It still needs the HMMD launcher's rosbridge on `ws://127.0.0.1:9090` and shows a connecting state while no radar is installed. Radar and SLAM stay optional; the LiDAR page works without them.
 
-SLAM uses the apt package `slam_toolbox` (online async, lidar-only). Install it with `sudo apt install ros-jazzy-slam-toolbox ros-jazzy-tf2-ros`, rebuild the workspace, then run the LiDAR service and, in a second terminal with the workspace sourced:
+SLAM starts with the LiDAR service when ROS 2 is active and `slam_toolbox` is installed (`sudo apt install ros-jazzy-slam-toolbox`). No second terminal is needed. The service supervises `slam_toolbox`, restarts it when it exits, and shows SLAM as unavailable when the package is missing. Parameters are in `src/ros2_pc/ros2/src/lds08rr_lidar/lds08rr_lidar/slam_toolbox.yaml`.
 
-```bash
-ros2 launch lds08rr_lidar slam.launch.py
-```
+The service keeps one map in `~/.local/share/navbot/slam/` (`map.posegraph` and `map.data`). Every start loads that map when it exists and mapping continues on it, assuming the robot starts where the saved map began. On the `/slam` tab, **Save map** overwrites the saved map with the current one. **Delete map and start over** asks for confirmation, removes the saved map, and restarts mapping from an empty map. The SLAM log is `~/.local/share/navbot/slam/slam.log`.
 
-The launch file fixes `odom` to the `lds08rr` frame because the robot has no wheel odometry yet. Scan matching alone tracks motion, so move the sensor slowly (well under 0.5 m between scans). Parameters are in `config/slam_toolbox.yaml`. The `/slam` tab shows `/map`, the pose from TF `map` → `lds08rr`, and the LiDAR state. Dev-PC tests cover the web hub and map packing only; `slam_toolbox` itself has not been run against the real sensor.
+The `odom` frame is fixed to the `lds08rr` sensor frame because the robot has no wheel odometry yet. Scan matching alone tracks motion, so move the sensor slowly (well under 0.5 m between scans). The `/slam` tab shows `/map`, the pose from TF `map` → `lds08rr`, the process state, and the saved map. It reports "SLAM not updating" when the map is older than 10 s.
+
+`start_lidar.py --ssh` also forwards port 9090 for the radar tab when that local port is free. If it is taken, for example by an HMMD tunnel, the forward is skipped. Over plain LAN the radar tab still needs rosbridge reachable, but the HMMD launcher keeps rosbridge bound to 127.0.0.1.
+
+Unverified: `slam_toolbox`, the TF and map-serialize paths in the ROS node, and autostart have not run on the ros2_pc or with the real sensor. Dev-PC tests cover the map store, the process supervisor, the web endpoints, and the tunnel command without ROS.
 
 ## LDS08RR LiDAR
 
