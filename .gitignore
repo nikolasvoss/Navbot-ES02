@@ -10,3 +10,6 @@ src/ES-02/OllieFOCdrive/build/
 __pycache__/
 *.py[cod]
 ./TASK_STATE.md
+# Local task files (see AGENTS.md, "Where files go")
+/work/
+/TASK_STATE.md
