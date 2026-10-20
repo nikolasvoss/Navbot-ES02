@@ -10,4 +10,4 @@ Evidence: User report in chat on 2026-10-15:
 
 No independent measurement was performed by the agent. Supply voltage, measurement point, instrument, measurement duration, and CM5 workload were not reported. Startup current was not specified.
 
-Practical consequence: Use these values as an observed combined operating load when assessing the power supply. They do not establish the worst-case current or confirm sufficient reserve on the Navbot 5 V rail. Canonical record: [ros2_pc hardware](../../docs/ros2_pc/hardware/README.md#measured-current-with-lidar).
+Practical consequence: Use these values as an observed combined operating load when assessing the power supply. They do not establish the worst-case current or confirm sufficient reserve on the Navbot 5 V rail. Canonical record: [ros2_pc hardware](../../docs/ros2_pc/hardware/system-overview.md#measured-current-with-lidar).
