@@ -1,7 +1,7 @@
 
 # Navbot-ES02 - Open Source Desktop Dual-Wheel Legged Robot
 
-![robot](docs/robot/media/photo1.JPG)
+![robot](docs/robot/assets/robot-photo.jpg)
 
 **Navbot-ES02** is a compact, open-source desktop robot that combines self-balancing wheels with articulated legs. It’s an experimental platform for exploring locomotion, balance, and user interaction — ideal for makers, educators, and robotics enthusiasts.
 
@@ -53,8 +53,8 @@ The current firmware supports the two-wheel balancing robot only. Legacy four-wh
 
 The canonical hardware and software documentation follows the two target trees:
 
-- [Robot and ESP32 hardware](docs/robot/hardware/system-overview.md), [robot software/control](docs/robot/software/control/control-flow.md), and the [BLE communication protocol](docs/robot/software/interfaces/NavBot-ES02-BLE-communication-protocol-V1.2.pdf).
-- [ros2_pc hardware and attached peripherals](docs/ros2_pc/hardware/README.md) and [ros2_pc software/roadmap](docs/ros2_pc/software/README.md). ros2_pc details remain pending until hardware is selected and verified.
+- [Robot and ESP32 hardware](docs/robot/hardware/system-overview.md), [robot software/control](docs/robot/software/control-flow.md), and the [BLE communication protocol](docs/robot/assets/ble-communication-protocol-v1.2.pdf).
+- [ros2_pc hardware and attached peripherals](docs/ros2_pc/hardware/system-overview.md) and [ros2_pc software/roadmap](docs/ros2_pc/software/lds08rr-lidar.md). ros2_pc details remain pending until hardware is selected and verified.
 
 ## Getting Started
 
@@ -78,13 +78,13 @@ cd Navbot-ES02
 python3 scripts/build_firmware.py
 ```
 
-The command builds the NavBot sketch into `build/flash`. Run `python3 scripts/build_firmware.py --help` to choose another sketch, board, output directory, or build properties. To flash a compiled build, use the configured `navbot_flash` MCP tool `flash_firmware` with the absolute build directory from the active worktree. Check the serial MCP `list_ports` before reporting that the board is disconnected, close the serial MCP connection before flashing, and keep balance disabled with motor outputs safe. See the [canonical USB/serial documentation](docs/robot/software/development/usb-serial-flashing.md) for board settings and verified connection details.
+The command builds the NavBot sketch into `build/flash`. Run `python3 scripts/build_firmware.py --help` to choose another sketch, board, output directory, or build properties. To flash a compiled build, use the configured `navbot_flash` MCP tool `flash_firmware` with the absolute build directory from the active worktree. Check the serial MCP `list_ports` before reporting that the board is disconnected, close the serial MCP connection before flashing, and keep balance disabled with motor outputs safe. See the [canonical USB/serial documentation](docs/robot/software/usb-serial-flashing.md) for board settings and verified connection details.
 
 ### Safe sensor diagnostics
 
-The full, current procedure is in the [sensor diagnostic guide](docs/robot/software/diagnostics/sensor-diagnostic-mode.md), including safe motor outputs, build and flash steps, SerialPlot settings, the 17-column channel map, and reset troubleshooting. The source currently sets `SENSOR_DIAGNOSTIC_MODE=0`, which builds normal motor-control firmware. Set it to `1` and rebuild for sensor diagnostics. Diagnostic mode skips motor and servo initialization and holds the wheel-driver enable pins low. Support the robot mechanically because the legs are not driven. The diagnostic stream currently uses 576000 baud through the CH340 UART at the user's direction. The hardware UART rate at 576000 has not yet been measured, and this setting is not hardware-accepted.
+The full, current procedure is in the [sensor diagnostic guide](docs/robot/software/sensor-diagnostic-mode.md), including safe motor outputs, build and flash steps, SerialPlot settings, the 17-column channel map, and reset troubleshooting. The source currently sets `SENSOR_DIAGNOSTIC_MODE=0`, which builds normal motor-control firmware. Set it to `1` and rebuild for sensor diagnostics. Diagnostic mode skips motor and servo initialization and holds the wheel-driver enable pins low. Support the robot mechanically because the legs are not driven. The diagnostic stream currently uses 576000 baud through the CH340 UART at the user's direction. The hardware UART rate at 576000 has not yet been measured, and this setting is not hardware-accepted.
 
-With the normal image, SerialPlot can log one raw SBUS receiver channel while the robot runs. Use `K60` for CH1 through `K75` for CH16. Each row contains firmware uptime in seconds and the selected channel value. Send `K0` to stop logging. The [sensor diagnostic guide](docs/robot/software/diagnostics/sensor-diagnostic-mode.md) has the SerialPlot setup steps.
+With the normal image, SerialPlot can log one raw SBUS receiver channel while the robot runs. Use `K60` for CH1 through `K75` for CH16. Each row contains firmware uptime in seconds and the selected channel value. Send `K0` to stop logging. The [sensor diagnostic guide](docs/robot/software/sensor-diagnostic-mode.md) has the SerialPlot setup steps.
 
 ### Capture a balance shutdown
 
@@ -132,12 +132,12 @@ python3 scripts/analyze_drive_trace.py drive-test-01.log drive-test-02.log --req
 ### 3. Connect the model remote control
 ES02 has 3 lines, namely GND, 5V, and sbus.
 
-<img src="docs/robot/hardware/connectors/ES02-SBUS-wire.png" height="350"/>
+<img src="docs/robot/assets/es02-sbus-wire.png" height="350"/>
 
 The remote control receiver may have multiple interfaces. It is necessary to confirm the sbus
 output port by yourself. The following picture shows the wiring ports of the RadioLink receiver.
 
-<img src="docs/robot/hardware/connectors/RadioLink-connector.png" height="350"/>
+<img src="docs/robot/assets/radiolink-connector.png" height="350"/>
 
 The channels of the joystick are generally defaulted to ch1-4. Besides, six auxiliary channels
 are needed to switch on some functions. Each remote control is different, and they should be set
@@ -168,7 +168,7 @@ according to personal habits. The corresponding functions of ch6-10 can be refer
 ## Discord link
 | Link: [https://discord.gg/syywQ2CKN3](https://discord.gg/syywQ2CKN3)        |
 | :------------: |
-| <img src="docs/robot/media/discord-link.png" height="200"/> |
+| <img src="docs/robot/assets/discord-link.png" height="200"/> |
 
 ---
 

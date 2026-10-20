@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "component": "LDS08RR",
+  "feature": "mounting_hole_pattern_and_side_view_dimensions",
+  "units": "mm",
+  "source": {
+    "type": "user_supplied_dimensioned_sketch",
+    "date": "2026-10-13",
+    "image": "../images/lds08rr-mounting-sketch.jpg",
+    "verification": "transcribed_from_user_sketch_not_independently_measured"
+  },
+  "coordinate_system": {
+    "view": "pcb_underside",
+    "motor_position_in_view": "left",
+    "origin": "center_of_mounting_hole_rectangle",
+    "x_positive": "right_in_view",
+    "y_positive": "up_in_view",
+    "z": "0 at bottom of lower round housing, positive toward PCB and motor side (used by the simplified STEP model)",
+    "note": "Origin is the hole-pattern center. The user confirmed on 2026-10-13 that the rotor center coincides with it; alignment with the optical axis is not established."
+  },
+  "pattern": {
+    "shape": "rectangle",
+    "horizontal_center_spacing": 54.0,
+    "vertical_center_spacing": 44.0,
+    "hole_count": 4,
+    "hole_diameter": 3.1,
+    "holes": [
+      {
+        "id": "upper_left",
+        "x": -27.0,
+        "y": 22.0
+      },
+      {
+        "id": "upper_right",
+        "x": 27.0,
+        "y": 22.0
+      },
+      {
+        "id": "lower_left",
+        "x": -27.0,
+        "y": -22.0
+      },
+      {
+        "id": "lower_right",
+        "x": 27.0,
+        "y": -22.0
+      }
+    ],
+    "interpretation": "All four outer mounting holes interpreted as a rectangle from the user sketch; rectangularity has not been independently measured."
+  },
+  "unspecified": [
+    "dimensional_tolerances",
+    "hole_depth",
+    "fastener_type",
+    "optical_axis_offset_from_pattern_center",
+    "remaining_housing_dimensions",
+    "remaining_motor_dimensions"
+  ],
+  "drawing": "../../docs/ros2_pc/assets/lds08rr-hole-pattern.svg",
+  "side_view": {
+    "source": {
+      "type": "user_supplied_dimensioned_sketch",
+      "date": "2026-10-13",
+      "image": "../images/lds08rr-side-sketch.jpg",
+      "verification": "transcribed_from_user_sketch_not_independently_measured",
+      "update": {
+        "date": "2026-10-13",
+        "image": "../images/lds08rr-dimension-sketch.jpg",
+        "note": "Second user sketch with side and top views plus user answers in chat; not independently measured."
+      }
+    },
+    "units": "mm",
+    "dimensions": [
+      {
+        "id": "overall_height",
+        "value": 38.0,
+        "sketch_reference": "bottom_of_lower_housing_to_top_of_motor",
+        "interpretation_status": "interpreted_from_dimension_line"
+      },
+      {
+        "id": "lower_housing_width",
+        "value": 59.0,
+        "sketch_reference": "horizontal_width_of_lower_round_housing",
+        "interpretation_status": "diameter_inferred_from_round_housing"
+      },
+      {
+        "id": "motor_width",
+        "value": 24.5,
+        "sketch_reference": "horizontal_width_of_motor_in_side_view",
+        "interpretation_status": "diameter_inferred_from_round_motor"
+      },
+      {
+        "id": "housing_bottom_to_plate_underside",
+        "value": 17.8,
+        "sketch_reference": "bottom_of_lower_housing_to_underside_of_plastic_plate",
+        "interpretation_status": "confirmed_by_user"
+      },
+      {
+        "id": "housing_bottom_to_plate_top",
+        "value": 28.0,
+        "sketch_reference": "bottom_of_lower_housing_to_top_of_plastic_plate_carrying_pcb",
+        "interpretation_status": "confirmed_by_user"
+      },
+      {
+        "id": "plate_thickness",
+        "value": 10.2,
+        "sketch_reference": "28.0_minus_17.8",
+        "interpretation_status": "derived_from_confirmed_references"
+      },
+      {
+        "id": "plate_diameter",
+        "value": 59.6,
+        "sketch_reference": "top_view_circle_diameter",
+        "interpretation_status": "interpreted_from_dimension_line"
+      },
+      {
+        "id": "motor_outer_edge_to_rotor_center",
+        "value": 50.0,
+        "sketch_reference": "side_view_motor_left_edge_to_center",
+        "interpretation_status": "interpreted_from_dimension_line"
+      },
+      {
+        "id": "overall_length",
+        "value": 80.9,
+        "sketch_reference": "motor_left_edge_to_lower_housing_right_edge",
+        "interpretation_status": "interpreted_from_dimension_line"
+      },
+      {
+        "id": "mounting_ear_thickness",
+        "value": 4.3,
+        "sketch_reference": "user_answer_ears_flush_with_plate_top",
+        "interpretation_status": "confirmed_by_user"
+      },
+      {
+        "id": "hole_pattern_diagonal",
+        "value": 69.4,
+        "sketch_reference": "top_view_diagonal_between_hole_centers",
+        "interpretation_status": "interpreted_from_dimension_line; 54x44 rectangle implies 69.66"
+      }
+    ],
+    "limitations": [
+      "Motor width is not motor height; the simplified model places the motor between plate top and overall height (10 mm).",
+      "Mounting ears are 4.3 mm thick with their top flush with the plate top (z 23.7 to 28.0).",
+      "The 59.0 mm housing width and 80.9 mm overall length place the housing center about 1.4 mm right of the 50 mm rotor-center reference; the model keeps the housing concentric and is 80.5 mm long.",
+      "No Z coordinate assigned to the optical axis or scan plane."
+    ]
+  },
+  "model": {
+    "step": "lds08rr-simple.step",
+    "source": "lds08rr_simple.py",
+    "purpose": "simplified envelope for measurement only; connector, PCB components, and ear outline are not modeled"
+  }
+}

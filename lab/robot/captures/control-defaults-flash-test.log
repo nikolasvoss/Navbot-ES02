@@ -1,0 +1,169 @@
+# BOOT CHECK 1
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x1 (POWERON),boot:0x29 (SPI_FAST_FLASH_BOOT)
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30b0
+entry 0x403c88b8
+Roll Zero Bias: 0.30  Pitch Zero Bias: -1.01
+gyroBiasX:16.36  gyroBiasY:-12.85  gyroBiasZ:24.18
+servo1:-1.00  servo2:0.00  servo3:3.00  servo4:-2.00
+system run.
+Waiting a client connection to notify...
+ICM42688 initialized successfully!
+ESP32-DRV: Configuring 3PWM in group: 0 on timer: 0
+ESP32-DRV: Configuring 2 operators.
+ESP32-DRV: Configuring 3 comparators.
+ESP32-DRV: Configuring 3 generators.
+ESP32-DRV: Configuring center-aligned pwm.
+ESP32-DRV: Enabling timer: 0
+ESP32-DRV: MCPWM configured!
+ESP32-DRV: Configuring 3PWM in group: 1 on timer: 0
+ESP32-DRV: Configuring 2 operators.
+ESP32-DRV: Configuring 3 comparators.
+ESP32-DRV: Configuring 3 generators.
+ESP32-DRV: Configuring center-aligned pwm.
+ESP32-DRV: Enabling timer: 0
+ESP32-DRV: MCPWM configured!
+MOT: Init
+MOT: Enable driver.
+MOT: Init
+MOT: Enable driver.
+MOT: Align sensor.
+MOT: sensor_direction==CCW
+MOT: PP check: fail - estimated pp: 8.26
+MOT: Zero elec. angle: 6.22
+MOT: No current sense.
+MOT: Ready.
+MOT: Align sensor.
+MOT: sensor_direction==CW
+MOT: PP check: OK!
+MOT: Zero elec. angle: 3.67
+MOT: No current sense.
+MOT: Ready.
+MOT: Monitor enabled!
+Motor ready.
+Voltage:0.04471
+Voltage:0.24114
+Voltage:0.55829
+Voltage:0.93288
+Voltage:1.35576
+Voltage:1.83137
+Voltage:2.33864
+Voltage:2.75633
+Voltage:3.38667
+Voltage:3.90201
+Voltage:4.39847
+Voltage:4.86926
+Voltage:5.30909
+Voltage:5.71461
+Voltage:6.08373
+Voltage:6.41538
+Voltage:6.70965
+Voltage:6.96752
+Voltage:7.19058
+Voltage:7.38080
+0.000
+# QUERY U PP PI PD PL SP SI SD SL YP YI YD YL V
+1.000
+P: 5.000
+I: 200.000
+D: 0.110
+limit: 0.100
+P: 0.045
+I: 0.005
+D: 0.000
+limit: 50.000
+P: 4.000
+I: 0.000
+D: 0.000
+limit: 0.000
+0.000
+# BOOT CHECK 2
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0x1 (POWERON),boot:0x2b (SPI_FAST_FLASH_BOOT)
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30b0
+entry 0x403c88b8
+Roll Zero Bias: 0.30  Pitch Zero Bias: -1.01
+gyroBiasX:16.36  gyroBiasY:-12.85  gyroBiasZ:24.18
+servo1:-1.00  servo2:0.00  servo3:3.00  servo4:-2.00
+system run.
+Waiting a client connection to notify...
+ICM42688 initialized successfully!
+ESP32-DRV: Configuring 3PWM in group: 0 on timer: 0
+ESP32-DRV: Configuring 2 operators.
+ESP32-DRV: Configuring 3 comparators.
+ESP32-DRV: Configuring 3 generators.
+ESP32-DRV: Configuring center-aligned pwm.
+ESP32-DRV: Enabling timer: 0
+ESP32-DRV: MCPWM configured!
+ESP32-DRV: Configuring 3PWM in group: 1 on timer: 0
+ESP32-DRV: Configuring 2 operators.
+ESP32-DRV: Configuring 3 comparators.
+ESP32-DRV: Configuring 3 generators.
+ESP32-DRV: Configuring center-aligned pwm.
+ESP32-DRV: Enabling timer: 0
+ESP32-DRV: MCPWM configured!
+MOT: Init
+MOT: Enable driver.
+MOT: Init
+MOT: Enable driver.
+MOT: Align sensor.
+MOT: sensor_direction==CCW
+MOT: PP check: fail - estimated pp: 8.22
+MOT: Zero elec. angle: 6.21
+MOT: No current sense.
+MOT: Ready.
+MOT: Align sensor.
+MOT: sensor_direction==CW
+MOT: PP check: OK!
+MOT: Zero elec. angle: 3.67
+MOT: No current sense.
+MOT: Ready.
+MOT: Monitor enabled!
+Motor ready.
+Voltage:0.00000
+Voltage:0.02346
+Voltage:0.18986
+Voltage:0.48614
+Voltage:0.85107
+Voltage:1.26389
+Voltage:1.73031
+Voltage:2.23202
+Voltage:2.75212
+Voltage:3.27739
+Voltage:3.79549
+Voltage:4.29657
+Voltage:4.77315
+Voltage:5.21979
+Voltage:5.63257
+Voltage:6.00917
+Voltage:6.34827
+Voltage:6.65008
+Voltage:6.91538
+Voltage:7.14537
+Voltage:7.34175
+0.000
+# QUERY U PP PI PD PL SP SI SD SL YP YI YD YL V
+1.000
+P: 5.000
+I: 200.000
+D: 0.110
+limit: 0.100
+P: 0.045
+I: 0.005
+D: 0.000
+limit: 50.000
+P: 4.000
+I: 0.000
+D: 0.000
+limit: 0.000
+0.000
