@@ -48,6 +48,7 @@ Stand: Protokoll (COBS, CRC-16, Protobuf) und Firmware-Sender für `WheelOdometr
 ### Offene Punkte vor dem Merge nach `main`
 
 - [x] `feature/ros2-odometry-bridge` in `feature/esp32-ros2-uart-interface` mergen.
+- [ ] Vor dem Merge nach `main` den aktuellen Stand von `main` in `feature/esp32-ros2-uart-interface` mergen und alle Konflikte in diesem Branch lösen, nicht auf `main`. Enthält `main` bereits die neue Ordnerstruktur (`docs/repo-layout`), die Doku-Änderungen dieses Branches in die neuen Pfade übertragen, bis `python3 tests/layout/test_repo_layout.py` besteht.
 - [ ] UART des ros2_pc für die ESP32-Verbindung festlegen, Pins und 3,3-V-Pegel am Board prüfen und verdrahten. Danach den Platzhalter für `port` in der [ros2_pc-Softwareanleitung](../ros2_pc/software/README.md#navbot-link-odometry-bridge) ersetzen.
 - [ ] Firmware flashen und die 500-kBd-Verbindung am echten Roboter prüfen: `/odom` und `/imu/data` mit 50 Hz, keine `bad_frames` oder `lost_frames` im Log der Brücke.
 - [ ] Radradius und Spurbreite messen und als Parameter `wheel_radius_m` und `wheel_separation_m` dokumentieren. Die Brücke hat dafür keine Standardwerte.
