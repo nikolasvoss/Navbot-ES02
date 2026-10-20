@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE = REPO_ROOT / "config/systemd/navbot-lidar.service.in"
+TEMPLATE = REPO_ROOT / "src/ros2_pc/systemd/navbot-lidar.service.in"
 UNIT_PATH = "/etc/systemd/system/navbot-lidar.service"
 ROS_SETUP = Path("/opt/ros/jazzy/setup.bash")
 

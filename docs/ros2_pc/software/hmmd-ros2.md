@@ -8,7 +8,7 @@ The software has a sensor node on the ros2_pc, a loopback-only rosbridge server,
 
 The planned HMMD radar assignment uses UART2 on physical ros2_pc carrier J8 pins 7 and 29. Those are GPIO4/TX and GPIO5/RX. Radar TX connects to J8 pin 29, and radar RX connects to J8 pin 7. Connect ground to pin 6 and 3.3 V to pin 1 or 17. The physical board and wiring have not been verified. Earlier software checks documented the previous UART0 assignment; UART0 is now reserved for the LiDAR.
 
-Use the pin 1 marker to identify the header orientation. The HMMD vendor documents a 3.0–3.6 V supply and 0–3.3 V UART signals. Check the actual module, carrier, wiring, supply, and GPIO reference voltage before applying power. Do not connect the module to 5 V. See the [ros2_pc carrier pin reference](../hardware/ros2-pc-carrier-board.md) and [HMMD observations](../../../agent_notes/ros2_pc/sensors/hmmd/observations.md).
+Use the pin 1 marker to identify the header orientation. The HMMD vendor documents a 3.0–3.6 V supply and 0–3.3 V UART signals. Check the actual module, carrier, wiring, supply, and GPIO reference voltage before applying power. Do not connect the module to 5 V. See the [ros2_pc carrier pin reference](../hardware/ros2-pc-carrier-board.md) and [HMMD observations](../../../lab/ros2_pc/2026-10-04-hmmd-observations.md).
 
 Do not infer the UART device from its UART number. Enable UART2 with `dtoverlay=uart2-pi5` in `/boot/firmware/config.txt`, reboot, check GPIO4/5 pin functions, and identify the resulting `/dev/ttyAMA*` path. `/dev/ttyAMA2` is the provisional launcher default and must be confirmed on the target image before startup. Check permissions and ensure the sensor node is the only reader. UART0 on GPIO14/15 is assigned to the LiDAR.
 
@@ -30,7 +30,7 @@ Run the software checks from the project root with the ROS environment active:
 
 ```bash
 PYTHONPATH="src/ros2_pc/ros2/src/hmmd_radar${PYTHONPATH:+:$PYTHONPATH}" python3 -m unittest discover -s src/ros2_pc/ros2/src/hmmd_radar/test -v
-python3 scripts/test_start_hmmd.py -v
+python3 tests/scripts/test_start_hmmd.py -v
 node --test src/ros2_pc/ros2/src/hmmd_radar/test/web/client.test.mjs
 ```
 
@@ -130,7 +130,7 @@ Synthetic `/demo/*` endpoints exist only in the test fixture and are not part of
 
 The setting selector is closed to maximum distance gate (0–15) and target disappearance delay (0–65535 seconds). The node rejects invalid selectors and values before UART I/O. It serializes settings operations with map polling through the existing `SerialSession`; complete interleaved map frames are retained in a bounded queue and published when the service returns. Replies do not echo the parameter ID, so each value is associated only with the one outstanding request in the serialized transaction. A late command reply is discarded rather than assigned to a later step.
 
-The installed HMMD firmware v1.6.1 was checked without changing either value. Maximum gate 12 and target disappearance delay 30 seconds each received a write ACK, matching readback, and config-mode exit/save ACK. Reads of parameter IDs 1 and 4 returned 12 and 30 respectively. The sequence and captured frames are recorded in the [HMMD protocol notes](../../../agent_notes/ros2_pc/sensors/hmmd/protocol.md). This does not verify persistence after a power cycle.
+The installed HMMD firmware v1.6.1 was checked without changing either value. Maximum gate 12 and target disappearance delay 30 seconds each received a write ACK, matching readback, and config-mode exit/save ACK. Reads of parameter IDs 1 and 4 returned 12 and 30 respectively. The sequence and captured frames are recorded in the [HMMD protocol notes](../hardware/hmmd-radar.md). This does not verify persistence after a power cycle.
 
 For comparable future changes, record endpoint names, ROS types, service timeout, response stages, and hardware evidence. Demonstrate successful and failed operations in the synthetic fixture, and keep the map/status path covered.
 
@@ -199,7 +199,7 @@ Record the three planned scenes while the sensor node is running: an empty scene
 ros2 bag record -o hmmd-empty /hmmd/rdmap /hmmd/status
 ```
 
-Stop the recorder with Ctrl+C. Use `hmmd-stationary` and `hmmd-moving` for the other two bags. Check each bag with `ros2 bag info` and confirm that it contains map messages. Add the setup, position, duration, rate, and observations to [HMMD observations](../../../agent_notes/ros2_pc/sensors/hmmd/observations.md).
+Stop the recorder with Ctrl+C. Use `hmmd-stationary` and `hmmd-moving` for the other two bags. Check each bag with `ros2 bag info` and confirm that it contains map messages. Add the setup, position, duration, rate, and observations to [HMMD observations](../../../lab/ros2_pc/2026-10-04-hmmd-observations.md).
 
 For replay, stop the live sensor node first. In one sourced terminal on the ros2_pc, start rosbridge with the same loopback address and topic limits as the managed launcher:
 
@@ -235,6 +235,6 @@ Open the browser through the SSH tunnel. Pause playback and let it end to check 
 
 ## Current status and remaining checks
 
-The ROS packages, parser, browser, and unified launcher are implemented. The local checks use synthetic serial data. The existing evidence records a real HMMD stream and browser access on the ros2_pc, but the current worktree's ROS build and the planned three-scene bag recording and replay have not been verified here. The physical carrier, wiring, supply voltage, and sensor firmware remain unconfirmed. See the [dated observations and test evidence](../../../agent_notes/ros2_pc/sensors/hmmd/observations.md).
+The ROS packages, parser, browser, and unified launcher are implemented. The local checks use synthetic serial data. The existing evidence records a real HMMD stream and browser access on the ros2_pc, but the current worktree's ROS build and the planned three-scene bag recording and replay have not been verified here. The physical carrier, wiring, supply voltage, and sensor firmware remain unconfirmed. See the [dated observations and test evidence](../../../lab/ros2_pc/2026-10-04-hmmd-observations.md).
 
 Before treating the roadmap milestone as complete, verify the current ros2_pc checkout and build, confirm the physical UART and voltage, record and compare all three scenes, and replay a bag without the live sensor. Keep the heatmap axes in bin indices until physical scaling and orientation have evidence.

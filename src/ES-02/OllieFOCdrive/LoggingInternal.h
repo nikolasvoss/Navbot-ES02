@@ -1,20 +1,12 @@
 #pragma once
 
-#include "LogSamples.h"
-
 #include <stddef.h>
+
+#include "LogSamples.h"
 
 namespace LoggingInternal {
 
-enum class RecordKind : uint8_t {
-  Message,
-  Diagnostic,
-  Trace,
-  Control,
-  Balance,
-  Drive,
-  Debug
-};
+enum class RecordKind : uint8_t { Message, Diagnostic, Trace, Control, Balance, Drive, Debug };
 
 struct MessageRecord {
   Logging::Level level;
@@ -43,7 +35,6 @@ struct Record {
 
 static_assert(sizeof(Record) <= 168, "logging queue slot exceeds the 168-byte budget");
 
-int formatRecord(const Record &record, char *buffer, size_t capacity,
-                 uint32_t droppedRecords, uint32_t writeFailures);
+int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t droppedRecords, uint32_t writeFailures);
 
-}
+}  // namespace LoggingInternal

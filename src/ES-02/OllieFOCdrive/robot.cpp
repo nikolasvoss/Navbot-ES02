@@ -1,27 +1,17 @@
 
 #include "robot.h"
-#include "Logging.h"
-#include <ArduinoJson.h>
-#include <vector>
-#include <esp_mac.h>
+
 #include <Arduino.h>
-#include "filter.h"
+#include <ArduinoJson.h>
+#include <esp_mac.h>
+
+#include "BoardConfig.h"
+#include "Logging.h"
 #include "ble.h"
 
 const Message_TypeDef MESSAGE_TYPE;
 
-
 RobotProtocol rp;
-
-
-
-
-RobotProtocol::RobotProtocol() {
-}
-
-RobotProtocol::~RobotProtocol() {
-}
-
 
 void RobotProtocol::build_dev_name(char dev_name[]) {
   char basc[] = "navbot_es02-";
@@ -30,12 +20,14 @@ void RobotProtocol::build_dev_name(char dev_name[]) {
   mac[6] = 0;
   char i;
 
-  for (i = 0; i < 6; i++)  //Convert the mac address to contain only 0-9/a-z
+  for (i = 0; i < 6; i++)  // Convert the mac address to contain only 0-9/a-z
   {
     mac[i] = mac[i] % 36;  // 10+26=36
 
-    if (mac[i] <= 9) mac[i] = mac[i] + '0';             //0-9
-    else if (mac[i] <= 35) mac[i] = mac[i] - 10 + 'a';  //a-z
+    if (mac[i] <= 9)
+      mac[i] = mac[i] + '0';  // 0-9
+    else if (mac[i] <= 35)
+      mac[i] = mac[i] - 10 + 'a';  // a-z
   }
   sprintf(dev_name, "%s%s", basc, mac);
 }
@@ -52,13 +44,12 @@ void RobotProtocol::parseJson(StaticJsonDocument<300> &doc) {
 void RobotProtocol::isSys(StaticJsonDocument<300> &doc) {
   String type = doc["type"];
   Logging::message(Logging::Level::Debug, "robot", "type:%s", type.c_str());
- if (type == MESSAGE_TYPE.GET_DEVICE_INFO) {
+  if (type == MESSAGE_TYPE.GET_DEVICE_INFO) {
     send_device_info();
   } else {
-    Logging::message(Logging::Level::Debug, "robot", "Invalid json keyworeds.");
+    Logging::message(Logging::Level::Debug, "robot", "Invalid json keywords.");
   }
 }
-
 
 // Send all information
 void RobotProtocol::send_device_info() {
@@ -77,27 +68,18 @@ String RobotProtocol::get_device_info() {
   // Create static JSON document (allocate memory pool size)
   StaticJsonDocument<1024> doc;
 
-  // Read voltage
-  double battery_voltage = rp.get_battery_voltage();
-  // Calculate battery level
-  double battery_percentage = rp.get_battery_level();
-  
-  // Format to retain two decimal places (rounded to 2 decimal places)
-  battery_voltage = round(battery_voltage * 100) / 100;
-  battery_percentage = round(battery_percentage) / 1;
+  double voltage = round(get_battery_voltage() * 100) / 100;
+  double level = round(get_battery_level());
 
-  // Add simple values
   doc["type"] = "get_device_info";
-  doc["battery_level"] = rp.battery_level;
-  doc["battery_voltage"] = rp.battery_voltage;
+  doc["battery_level"] = level;
+  doc["battery_voltage"] = voltage;
   serializeJson(doc, jsonStr);
   return jsonStr;
 }
 double RobotProtocol::get_battery_voltage() {
-  // static biquadFilter_t VoltageFilterLPF;
-  uint16_t VoltageADC = analogRead(17);
-  // float VoltageADCf = biquadFilterApply(&VoltageFilterLPF, VoltageADC);
-  battery_voltage = (float)7.77 / 813.43 * VoltageADC;
+  uint16_t VoltageADC = analogRead(board::kBatteryAdcPin);
+  battery_voltage = board::kBatteryVoltsPerAdcCount * VoltageADC;
   return battery_voltage;
 }
 
@@ -114,7 +96,8 @@ double RobotProtocol::get_battery_level() {
   // Calculate the percentage
   double battery_percentage = (currentVoltage - minVoltage) / (maxVoltage - minVoltage) * 100.0;
 
-  battery_percentage = round(battery_percentage) / 1;  // Format to retain two significant digits (rounded to 2 decimal places)
+  battery_percentage =
+      round(battery_percentage) / 1;  // Format to retain two significant digits (rounded to 2 decimal places)
 
   // Battery logic correction (prevent out-of-bounds and display of 0 data)
   if (battery_percentage > 100) {
@@ -136,6 +119,3 @@ void RobotProtocol::json_test(char *json_arr) {
     parseJson(doc);
   }
 }
-
-
-

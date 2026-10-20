@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <SPI.h>
 #include "ICM42688.h"
 #include "imu.h"
 

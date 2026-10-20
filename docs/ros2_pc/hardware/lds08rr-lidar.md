@@ -2,11 +2,11 @@
 
 ## Scope and status
 
-LDS08RR is the selected ros2_pc LiDAR. User photographs from 13 October 2026 confirm its label and PCB markings. Live Camsense reception, browser scans, and ROS `/scan` were verified on 15 October 2026. Electrical acceptance and orientation calibration remain open. See the [software steps](../software/README.md#lds08rr-lidar) and [roadmap](../ROS_ROADMAP.md#2-roborock-lidar-in-ros-2-integrieren).
+LDS08RR is the selected ros2_pc LiDAR. User photographs from 13 October 2026 confirm its label and PCB markings. Live Camsense reception, browser scans, and ROS `/scan` were verified on 15 October 2026. Electrical acceptance and orientation calibration remain open. See the [software steps](../software/lds08rr-lidar.md) and [roadmap](../plans/roadmap.md#2-integrate-roborock-lidar-in-ros-2).
 
 ## Module label
 
-The [label photograph](images/lds08rr-label.jpg) shows:
+The [label photograph](../assets/lds08rr-label.jpg) shows:
 
 | Item | Printed marking |
 | --- | --- |
@@ -18,11 +18,11 @@ The [label photograph](images/lds08rr-label.jpg) shows:
 
 Dividing the labelled power by voltage gives 0.30 A, not a measured startup, stall, or peak limit. Laser classification and compliance are unverified label claims.
 
-![LDS08RR model, voltage, power, and laser label](images/lds08rr-label.jpg)
+![LDS08RR model, voltage, power, and laser label](../assets/lds08rr-label.jpg)
 
 ## Connector and PCB markings
 
-In the [PCB photograph](images/lds08rr-pcb.jpg), the six-contact connector is at the top, with upright silkscreen and contacts below its body. Positions below run left to right in that view; they are not manufacturer pin numbers.
+In the [PCB photograph](../assets/lds08rr-pcb.jpg), the six-contact connector is at the top, with upright silkscreen and contacts below its body. Positions below run left to right in that view; they are not manufacturer pin numbers.
 
 | Photo position | Silkscreen | Status |
 | ---: | --- | --- |
@@ -37,11 +37,11 @@ A mating plug viewed from the cable side reverses this order. Connector series, 
 
 Other PCB markings are `PWM`, `M−`, `M−CT`, `VCC`, `VIN`, `PGND`, and `TX`. A separate two-contact connector has red and black wires near the motor; these do not establish a circuit diagram. The photo shows four mounting ears and a circular PCB. [Mechanical dimensions](#mechanical-dimensions) come from user sketches; screw sizes and scan-plane height remain unknown.
 
-![LDS08RR PCB and six-contact connector markings](images/lds08rr-pcb.jpg)
+![LDS08RR PCB and six-contact connector markings](../assets/lds08rr-pcb.jpg)
 
 ## Mechanical dimensions
 
-The [dimension record](mechanics/lds08rr-dimensions.json) and [mounting-hole drawing](mechanics/lds08rr-lochbild.svg) transcribe user sketches received on 13 October 2026 and later follow-up answers: [mounting](images/lds08rr-mounting-sketch.jpg), [side view](images/lds08rr-side-sketch.jpg), and [combined views](images/lds08rr-dimension-sketch.jpg). Dimensions are not independently measured.
+The [dimension record](../../../cad/ros2_pc/lds08rr-dimensions.json) and [mounting-hole drawing](../assets/lds08rr-hole-pattern.svg) transcribe user sketches received on 13 October 2026 and later follow-up answers: [mounting](../assets/lds08rr-mounting-sketch.jpg), [side view](../assets/lds08rr-side-sketch.jpg), and [combined views](../assets/lds08rr-dimension-sketch.jpg). Dimensions are not independently measured.
 
 - Four Ø 3.1 mm holes have 54.0 mm horizontal and 44.0 mm vertical centre spacing. The sketch gives a 69.4 mm diagonal; a rectangle implies 69.66 mm. Rectangularity is unmeasured.
 - The rotor is centred on the hole pattern, per user confirmation.
@@ -53,7 +53,7 @@ Coordinates originate at the hole-pattern centre, viewed from the PCB side with 
 
 ### Simplified 3D model
 
-[lds08rr-simple.step](mechanics/lds08rr-simple.step) provides an envelope for bracket and clearance checks. Regenerate it by running [lds08rr_simple.py](mechanics/lds08rr_simple.py) from `mechanics/`.
+[lds08rr-simple.step](../../../cad/ros2_pc/lds08rr-simple.step) provides an envelope for bracket and clearance checks. Regenerate it by running [lds08rr_simple.py](../../../cad/ros2_pc/lds08rr_simple.py) from `mechanics/`.
 
 The origin is the rotor centre; z = 0 is the housing bottom, with +z toward the PCB and motor.
 
@@ -120,8 +120,8 @@ The live launcher uses one reader for the browser and ROS. Five seconds of obser
 
 UART2 on GPIO4/5 and `dtoverlay=uart2-pi5` remain assigned to the HMMD radar; this LiDAR setup did not enable or change them. GPIO17 remains inactive.
 
-The unused protocol integration and selection flag were removed after capture and live-scan confirmation. See the completed [roadmap item](../ROS_ROADMAP.md#grundlage-und-offene-fragen).
+The unused protocol integration and selection flag were removed after capture and live-scan confirmation. See the completed [roadmap item](../plans/roadmap.md#basis-and-open-questions).
 
 ## Evidence
 
-The original photographs document the label, connector markings, and visible layout. The user TX capture and direct UART capture establish the protocol; [agent observations](../../../agent_notes/ros2_pc/sensors/lds08rr/observations.md) link the raw UART record. Upstream decoder definitions were checked on 15 October 2026. No manufacturer pinout or mechanical drawing was verified.
+The original photographs document the label, connector markings, and visible layout. The user TX capture and direct UART capture establish the protocol; [agent observations](../../../lab/ros2_pc/2026-10-13-lds08rr-observations.md) link the raw UART record. Upstream decoder definitions were checked on 15 October 2026. No manufacturer pinout or mechanical drawing was verified.
