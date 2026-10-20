@@ -1,5 +1,7 @@
 # Safe diagnostic mode: board observation, 2026-09-27
 
+Status: concluded
+
 ## Balance activation observation, 2026-09-27
 
 - The user reported that after the normal firmware was restored and calibration saved, moving RC channel 5 to position 1 made the servos vibrate briefly, then the radio signal indication fell to zero and the motors stopped.

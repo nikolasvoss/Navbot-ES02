@@ -1,5 +1,7 @@
 # Fehlersuche Navbot-ES02: getrennte Beobachtungen
 
+Status: open
+
 Stand: 2026-09-27. Die Kennungen unten bezeichnen **Symptome**, keine bewiesenen unabhängigen Defekte. Sie können zusammenhängen; die bisherigen Daten zeigen nicht, ob sie eine gemeinsame Ursache haben. Für Details und Einschränkungen die jeweilige Fallakte lesen.
 
 | Fall | Beobachtung | Bisherige Evidenz | Eigene offene Frage |
@@ -16,4 +18,4 @@ Stand: 2026-09-27. Die Kennungen unten bezeichnen **Symptome**, keine bewiesenen
 - Die Kalibrierwerte werden laut Code in ESP32-NVS (`Preferences`) gespeichert und einige Werte erschienen nach Neustart wieder. Serielle Live-PID-Gains werden nicht dauerhaft gespeichert. Für alte und neue Traces gelten verschiedene lokale Firmwarestände; deren Zuordnung steht in der Balance-Fallakte.
 - Die lokale Arbeitskopie ist verändert und nicht committed. Aktuell ist `DIAGNOSTIC_LIVE_TUNING_DEFAULTS=1`, womit die sanften Werte beim Start geladen werden; ursprüngliche GitHub-Gains und Live-Änderungen dürfen nicht verwechselt werden. Der tatsächlich geflashte Binärstand ist nicht per Hash ausgelesen.
 - Ein beobachteter Spannungseinbruch kann Folge hoher Aktuatoranforderung sein oder deren Verhalten beeinflussen. Die bisherigen Daten legen keine allgemeine Reihenfolge oder gemeinsame Ursache für A–E fest.
-- Hardwarehinweise und Messgrenzen stehen in [Hardwareübersicht](../../docs/robot/hardware/system-overview.md), [Sensor-Diagnoseanleitung](../../docs/robot/software/sensor-diagnostic-mode.md) und [USB/serial notes](../../agent_notes/robot/usb-serial.md). Neue Messungen mit eindeutigem Dateinamen und dokumentierten Schalterstellungen aufbewahren.
+- Hardwarehinweise und Messgrenzen stehen in [Hardwareübersicht](../../docs/robot/hardware/system-overview.md), [Sensor-Diagnoseanleitung](../../docs/robot/software/sensor-diagnostic-mode.md) und [USB/serial notes](../../docs/robot/software/usb-serial-flashing.md). Neue Messungen mit eindeutigem Dateinamen und dokumentierten Schalterstellungen aufbewahren.

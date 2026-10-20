@@ -1,14 +1,6 @@
-# ros2_pc-Software
+# LDS08RR LiDAR software
 
-This directory documents software that runs on the ros2_pc, including its operating system, ROS 2 packages, services, applications, and deployment steps.
-
-The [ROS 2 roadmap](../plans/roadmap.md) tracks future work and live acceptance status.
-
-- [HMMD ROS 2 developer guide](hmmd-ros2.md) for the current build, startup, browser, topic, and recording workflows.
-
-The HMMD ROS 2 workspace is under `src/ros2_pc/ros2/`.
-
-## LDS08RR LiDAR
+Software setup for the ros2_pc's 2D LiDAR. Wiring, electrical interface, and mechanics are in the [LDS08RR hardware page](../hardware/lds08rr-lidar.md). The ROS 2 workspace is under `src/ros2_pc/ros2/`.
 
 The `lds08rr_lidar` package uses `lds2d[viz]==0.7.0` for the confirmed LDS08RR Camsense driver and polar plot. The local launcher adds an operational status page at `http://127.0.0.1:8081/lidar`. It works in demo mode without a serial device or ROS. When ROS 2 is available, the same reader publishes `/scan` and `/lidar/status`.
 
@@ -42,7 +34,7 @@ python3 scripts/start_lidar.py --device /dev/ttyAMA0
 
 Camsense is the sole serial protocol; no selection flag is needed. Use `--host 0.0.0.0` to accept browser connections from the LAN. Use `--ssh user@host --remote-path /absolute/project/path` to run on the ros2_pc and forward port 8081 to local loopback. SSH mode runs `$HOME/.venvs/navbot-lidar/bin/python` on the remote host, so create that environment there with the commands above. Keep the SSH command open while you use the page. A port conflict exits with an error instead of starting a second reader.
 
-### Start LiDAR automatically at boot
+## Start LiDAR automatically at boot
 
 On the ros2_pc, stop any manually launched LiDAR process before setup so only one process owns the UART. This requires the existing ROS 2 Jazzy installation, `$HOME/.venvs/navbot-lidar/bin/python`, and access to `/dev/ttyAMA0` through the `dialout` group. From the repository root, run as your normal user. The installer uses this checkout and existing environment, runs the service as your user, and writes `/etc/systemd/system/navbot-lidar.service` from `src/ros2_pc/systemd/navbot-lidar.service.in`. It starts at boot without an interactive login and restarts after process failures. Rerun the command after moving the checkout to update and restart the service.
 

@@ -1,5 +1,7 @@
 # Touchscreen-Ständer: Lochbild aus Nutzerangabe, 2026-10-13
 
+Status: concluded
+
 ## Beobachtung
 
 Der Nutzer nennt für die Befestigungslöcher von `touchscreenstand.stl` ein rechteckiges Lochbild mit 96,4 mm × 72,9 mm, einen Lochdurchmesser von 2,2 mm und eine Senkung.

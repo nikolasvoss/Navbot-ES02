@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-LDS08RR is the selected ros2_pc LiDAR. User photographs from 13 October 2026 confirm its label and PCB markings. Live Camsense reception, browser scans, and ROS `/scan` were verified on 15 October 2026. Electrical acceptance and orientation calibration remain open. See the [software steps](../software/lds08rr-lidar.md#lds08rr-lidar) and [roadmap](../plans/roadmap.md#2-roborock-lidar-in-ros-2-integrieren).
+LDS08RR is the selected ros2_pc LiDAR. User photographs from 13 October 2026 confirm its label and PCB markings. Live Camsense reception, browser scans, and ROS `/scan` were verified on 15 October 2026. Electrical acceptance and orientation calibration remain open. See the [software steps](../software/lds08rr-lidar.md) and [roadmap](../plans/roadmap.md#2-roborock-lidar-in-ros-2-integrieren).
 
 ## Module label
 

@@ -1,5 +1,7 @@
 # Biquad filter live diagnostic capture
 
+Status: concluded
+
 Date: 2026-10-07
 
 ## Observation

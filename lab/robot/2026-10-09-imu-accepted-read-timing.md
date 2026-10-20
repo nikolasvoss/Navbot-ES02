@@ -1,5 +1,7 @@
 # IMU accepted-read timing in diagnostic mode
 
+Status: concluded
+
 Date: 2026-10-09
 
 ## Observation

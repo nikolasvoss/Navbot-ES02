@@ -1,5 +1,7 @@
 # Native USB CDC constraint, 2026-10-07
 
+Status: concluded
+
 ## Observation
 
 Native ESP32-S3 USB CDC is unavailable through the existing USB-C connector without hardware changes. This conclusion combines PCB routing, firmware pin use, and existing device observations. No new physical continuity measurement or wiring trial was performed.

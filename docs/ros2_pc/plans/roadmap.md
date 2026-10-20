@@ -17,7 +17,7 @@ und einen ROS-2-Adapter. Es verwendet den bestätigten Camsense-Treiber aus
 `lds2d[viz]==0.7.0` und veröffentlicht vollständige Scans auf `/scan` sowie den Status
 auf `/lidar/status`. Kein Host-PWM-Ausgang wird aktiviert. Die Hardware- und
 Protokollgrenzen stehen in der [LDS08RR-Hardwaredokumentation](../hardware/lds08rr-lidar.md).
-Die [Softwareanleitung](../software/lds08rr-lidar.md#lds08rr-lidar) enthält Build-, Demo- und
+Die [Softwareanleitung](../software/lds08rr-lidar.md) enthält Build-, Demo- und
 Startbefehle.
 
 Das erste sichtbare Hardwareergebnis soll ein Live-Laserscan in RViz sein. Der erste

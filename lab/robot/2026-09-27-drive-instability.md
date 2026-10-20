@@ -1,5 +1,7 @@
 # Fallakte C: Zunehmendes Kippen beim schnellen Fahren
 
+Status: open
+
 Stand: 2026-09-27. Diese Fallakte beschreibt **nur** das später berichtete Fahrverhalten. Die früheren Stand-Schwingungen und Spannungseinbrüche stehen in [Fall A/B](2026-09-27-balance-and-power.md); die Abgrenzung aller Beobachtungen steht in [problem map](2026-09-27-problem-map.md). Ein gemeinsamer technischer Auslöser ist möglich, aber nicht belegt.
 
 ## Gesicherte Angaben zum Versuch

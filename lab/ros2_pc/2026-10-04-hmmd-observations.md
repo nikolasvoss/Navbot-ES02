@@ -1,5 +1,7 @@
 # HMMD-Aufbau und Beobachtungen
 
+Status: open
+
 ## Belegter Stand
 
 | Datum | Beobachtung | Evidenz | Praktische Konsequenz |

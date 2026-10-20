@@ -1,5 +1,7 @@
 # LDS08RR photo evidence, 2026-10-13
 
+Status: open
+
 ## Capture and live UART confirmation, 2026-10-15
 
 Observation: The user supplied `acq0003.csv`, a 16,384-sample logic capture at 800 kHz. UART decoding at 115200 baud, 8N1, non-inverted gives three complete LDS08RR Camsense packets. All three 60-byte packets have header `55 AA 07 0C` and valid checksums (`0x5FBF`, `0x40B4`, `0x6D09`). The first spans 175.328125°–186.25°, with 193–288 mm returns and a reported 300.8125 RPM. `0x8000` occurs as the missing-return marker. The first packet is retained literally in `test_module_tx_capture_decodes_literal_measurements`.
