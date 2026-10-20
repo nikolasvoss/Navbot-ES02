@@ -1,12 +1,12 @@
-# Elektronik-Hardware: vollständige logische Bauteil-Netzliste
+# Electronics hardware: complete logical component netlist
 
-Diese gezielt durchsuchbare Momentaufnahme ergänzt [Einstieg](system-overview.md) und [technische Referenz](electronics-reference.md). Sie wurde aus den `PAD_NET`-Einträgen der beiden `.epcb` im [EasyEDA-Projekt](../../../cad/robot/ProPrj_NavBot-ES02.epro) abgeleitet. Angegeben sind **Bauteil-Designator, Bauteilwert/Typ, Padnummer und Netz**; wo vorhanden steht der Schaltplansymbol-Pinname in eckigen Klammern. Suche mit `rg "U6|\$1N13944|VIN" docs/robot/hardware/netlist.md`.
+This targeted, searchable snapshot complements the [overview](system-overview.md) and the [technical reference](electronics-reference.md). It was derived from the `PAD_NET` entries of the two `.epcb` files in the [EasyEDA project](../../../cad/robot/ProPrj_NavBot-ES02.epro). It lists **component designator, component value/type, pad number, and net**; where present, the schematic symbol pin name appears in square brackets. Search with `rg "U6|\$1N13944|VIN" docs/robot/hardware/netlist.md`.
 
-`$1N…` bezeichnet ein unbenanntes, aber elektrisch identisches Netz innerhalb **derselben** Platine. `∅` bezeichnet ein im PCB-Netzlistenexport unverbundenes nummeriertes Pad. Mechanische Board-Geometrie ist ausgelassen; bei mehrfachen Gehäusepads auf einem Netz wird jede eindeutige Padnummer einmal genannt. Die Netzliste beschreibt die **geplante logische Verbindung**, nicht Leiterbahnführung, Schicht, Massefläche, Bauteilplatzierung, Bestückung oder gemessene Funktion. Bei Layout-, SI-/EMV- und Reparaturfragen bleibt der PCB-Editor bzw. die reale Platine maßgeblich.
+`$1N…` denotes an unnamed but electrically identical net within **the same** board. `∅` denotes a numbered pad that is unconnected in the PCB netlist export. Mechanical board geometry is omitted; where a net has several housing pads, each unique pad number is listed once. The netlist describes the **planned logical connection**, not trace routing, layer, ground plane, component placement, assembly, or measured function. For layout, SI/EMC, and repair questions, the PCB editor or the physical board remains authoritative.
 
-## MAIN (116 Bauteile)
+## MAIN (116 components)
 
-| Ref | Wert / Typ | Pads → Netze |
+| Ref | Value / Type | Pads → Nets |
 | --- | --- | --- |
 | `C1` | 100nF | `1=GND, 2=ADC` |
 | `C2` | 22uF | `1=GND, 2=VIN` |
@@ -66,7 +66,7 @@ Diese gezielt durchsuchbare Momentaufnahme ergänzt [Einstieg](system-overview.m
 | `H10` | PH2.54-07-03PWS | `1=SERVO3, 2=SERVO4, 3=$1N10550, 4=$1N10550, 5=GND, 6=GND` |
 | `H11` | PZ254R-11-03P | `1=+5V, 2=$1N10550, 3=VIN` |
 | `H12` | HDR-F_2.54_1x8P | `1=+5V, 2=GND, 3=SCLK, 4=MOSI, 5=MISO, 6=CS1, 8=GND, 7=∅` |
-| `J1` | 0805短接点 | `1=+5V, 2=$1N30381` |
+| `J1` | 0805短接点 (jumper) | `1=+5V, 2=$1N30381` |
 | `L1` | 10uH | `1=$1N2414, 2=+5V` |
 | `LED1` | KT-0603R | `1[K]=GND, 2[A]=$1N3996` |
 | `LED2` | LED_0603-B | `1[C]=$1N5206, 2[A]=+3.3V` |
@@ -125,9 +125,9 @@ Diese gezielt durchsuchbare Momentaufnahme ergänzt [Einstieg](system-overview.m
 | `U8` | HY2120-LB | `1[OD]=$1N42515, 2[OC]=$1N42523, 3[CS]=CS, 4[VC]=$1N46092, 5[VDD]=$1N46033, 6[VSS]=B-` |
 | `USB1` | TYPE-C 16PIN 2MD(073) | `1=GND, 2[VBUS]=VBUS, 4[CC1]=$1N3041, 5[DN2]=D-, 6[DP1]=D+, 7[DN1]=D-, 8[DP2]=D+, 10[CC2]=$1N3025, 11[VBUS]=VBUS, 12=GND, 13[SHELL]=GND, 14[SHELL]=GND, 3=∅, 9=∅` |
 
-## CODER (8 Bauteile)
+## CODER (8 components)
 
-| Ref | Wert / Typ | Pads → Netze |
+| Ref | Value / Type | Pads → Nets |
 | --- | --- | --- |
 | `C1` | 10uF | `1=GND, 2=3.3V` |
 | `C2` | 100nF | `1=GND, 2=3.3V` |

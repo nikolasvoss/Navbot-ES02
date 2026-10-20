@@ -1,22 +1,22 @@
-# Touchscreen-Ständer
+# Touchscreen stand
 
-Die Datei [`touchscreenstand.stl`](../../../cad/robot/touchscreenstand.stl) enthält den 3D-gedruckten Ständer für den Touchscreen. Diese Seite beschreibt nur die Befestigungslöcher.
+The file [`touchscreenstand.stl`](../../../cad/robot/touchscreenstand.stl) contains the 3D-printed stand for the touchscreen. This page describes only the mounting holes.
 
-## Befestigungslöcher
+## Mounting holes
 
-| Merkmal | Angabe |
+| Feature | Value |
 | --- | --- |
-| Lochbild | Rechteck, 96,4 mm × 72,9 mm Mittenabstand |
-| Lochdurchmesser | 2,2 mm |
-| Senkung | Vorhanden; Maße nicht angegeben |
+| Hole pattern | Rectangle, 96.4 mm × 72.9 mm center spacing |
+| Hole diameter | 2.2 mm |
+| Countersink | Present; dimensions not specified |
 
-## Nicht angegeben
+## Not specified
 
-- Senkdurchmesser, Senktiefe, Senkwinkel und Senkseite.
-- Toleranzen der Lochmaße.
-- Lage der Löcher und Achsrichtung im Koordinatensystem der STL-Datei.
-- Schraubengröße. Sie ist nicht festgelegt.
+- Countersink diameter, countersink depth, countersink angle, and countersink side.
+- Tolerances of the hole dimensions.
+- Position of the holes and axis direction in the coordinate system of the STL file.
+- Screw size. It is not defined.
 
-## Quelle
+## Source
 
-Die Maße stammen aus einer Nutzerangabe vom 13.10.2026. Die Rechteckmaße werden als Abstände zwischen den Lochmittelpunkten verstanden. Eine unabhängige Vermessung der STL-Datei liegt für diese Angaben nicht vor.
+The dimensions come from information the user provided on 2026-10-13. The rectangle dimensions are understood as distances between hole centers. No independent measurement of the STL file exists for these values.

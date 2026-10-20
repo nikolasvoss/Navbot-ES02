@@ -1,84 +1,84 @@
-# HMMD-Protokollreferenz
+# HMMD protocol reference
 
-## Quelle und Geltung
+## Source and scope
 
-Quelle ist das [Waveshare HMMD-Wiki](https://www.waveshare.com/wiki/HMMD_mmWave_Sensor), am 04.10.2026 heruntergeladen. Eine [lokale Kopie](../assets/hmmd-waveshare-wiki.html) und [durchsuchbarer Text](../assets/hmmd-waveshare-wiki.txt) liegen vor. Die Herstellerwerte sind von Messungen am vorhandenen Modul getrennt. Die Herstellerseite nennt 115200 Baud, ein Stoppbit, keine Parität und Little-Endian-Daten. Die Parameterzugriffe unten wurden zusätzlich am vorhandenen Modul mit Firmware v1.6.1 geprüft.
+The source is the [Waveshare HMMD wiki](https://www.waveshare.com/wiki/HMMD_mmWave_Sensor), downloaded on 2026-10-04. A [local copy](../assets/hmmd-waveshare-wiki.html) and [searchable text](../assets/hmmd-waveshare-wiki.txt) are available. Vendor values are kept separate from measurements on the existing module. The vendor page lists 115200 baud, one stop bit, no parity, and little-endian data. The parameter accesses below were also verified on the existing module with firmware v1.6.1.
 
-## Debug-Datenframe
+## Debug data frame
 
-| Feld | Herstellerangabe |
+| Field | Vendor specification |
 | --- | --- |
 | Header | `AA BF 10 14` |
-| Matrix | 20 Doppler-Bins × 16 Entfernungszellen |
-| Wertbreite | 4 Bytes, Quadrat der Amplitude |
-| Nutzdaten | 1.280 Bytes |
+| Matrix | 20 Doppler bins × 16 range cells |
+| Value width | 4 bytes, square of the amplitude |
+| Payload | 1,280 bytes |
 | Footer | `FD FC FB FA` |
-| Abgeleitete Gesamtlänge | 1.288 Bytes einschließlich Header und Footer |
+| Derived total length | 1,288 bytes including header and footer |
 
-Die Herstellerbeschreibung nennt die Sendereihenfolge anhand von Chirps und jeweils 16 Entfernungszellen. Die erste Darstellung behält die vom Hersteller beschriebene Sensorreihenfolge bei. Die Implementierung verwendet Little-Endian-`uint32` gemäß Herstellerprotokoll. Laut Nutzerbeobachtung am 06.10.2026 liegt Stillstand typischerweise bei Doppler-Bin 10–11; Annäherung erscheint bei niedrigeren Bins (etwa 5), Entfernung bei höheren (etwa 15). Diese qualitative Zuordnung ist noch nicht mit einem Rohmitschnitt oder bekannten Geschwindigkeiten kalibriert; eine Umrechnung in m/s ist nicht belegt. Siehe [Beobachtungen](../../../lab/ros2_pc/2026-10-04-hmmd-observations.md).
+The vendor description gives the transmit order per chirp and 16 range cells each. The first representation keeps the sensor order described by the vendor. The implementation uses little-endian `uint32` according to the vendor protocol. According to user observation on 2026-10-06, standstill is typically at Doppler bin 10–11; approach appears at lower bins (around 5), distance at higher ones (around 15). This qualitative mapping is not yet calibrated against a raw capture or known speeds; a conversion to m/s is not established. See [observations](../../../lab/ros2_pc/2026-10-04-hmmd-observations.md).
 
-## Befehl für Debug-Modus
+## Command for debug mode
 
-Das Wiki zeigt diese Bytefolge für den Debug-Modus.
+The wiki shows this byte sequence for debug mode.
 
 ```text
 FD FC FB FA 08 00 12 00 00 00 00 00 00 00 04 03 02 01
 ```
 
-Die vollständige Konfigurationssequenz, erforderliche vorherige Befehle und ACK-Auswertung sind hier noch nicht bestätigt. Die Beispielbytes allein belegen keine betriebsfähige Initialisierung.
+The full configuration sequence, required preceding commands, and ACK evaluation are not yet confirmed here. The example bytes alone do not establish a working initialization.
 
-## Versorgung und UART
+## Power and UART
 
-Das Raspberry-Pi-Beispiel nennt `3V3`, `GND`, Sensor-TX an Host-RX und Sensor-RX an Host-TX. Diese Angabe ersetzt keine Prüfung des konkreten Moduls und des ros2_pc-Trägerboards. Steckerorientierung, Host-Pins und Portname sind nicht dokumentiert.
+The Raspberry Pi example lists `3V3`, `GND`, sensor TX to host RX, and sensor RX to host TX. This does not replace a check of the actual module and the ros2_pc carrier board. Connector orientation, host pins, and port name are not documented.
 
-## Grenzen der Aussage
+## Limits of the claims
 
-Es liegt keine belegte Sensorzeitbasis vor. Ein Empfangszeitstempel beschreibt den Empfang beim Host. Aus Header und Footer allein lässt sich nicht jede Verfälschung der Nutzdaten erkennen. Eine Prüfsumme ist in der hier belegten Debug-Framebeschreibung nicht angegeben. Bildrate, Entfernungsskalierung, Geschwindigkeitsskalierung und Vorzeichen sind noch offen.
+No verified sensor time base exists. A receive timestamp describes reception at the host. Header and footer alone cannot detect every corruption of the payload. The verified debug frame description does not specify a checksum. Frame rate, range scaling, speed scaling, and sign are still open.
 
-## HMMD-Konfiguration, am Modul geprüft
+## HMMD configuration, checked on the module
 
-Das Waveshare-Wiki beschreibt Parameter-ID 1 als Maximum Distance Gate mit Bereich 0–15 und die Target Disappearance Delay Time mit Bereich 0–65535 Sekunden. Am Modul war der aktuelle Delay-Wert unter Parameter-ID 4 lesbar. Die geprüften Antworten setzen das obere Byte des Antwortcodes auf `01` und liefern danach den Erfolgsstatus `00 00`. Parameter-Leseantworten enthalten den Antwortcode, den Status und den 32-Bit-Wert; sie enthalten keine Parameter-ID. Der Treiber ordnet deshalb nur eine Antwort dem jeweils einzigen laufenden Lesevorgang zu.
+The Waveshare wiki describes parameter ID 1 as Maximum Distance Gate with range 0–15, and the Target Disappearance Delay Time with range 0–65535 seconds. On the module, the current delay value was readable under parameter ID 4. The checked responses set the upper byte of the response code to `01` and then return success status `00 00`. Parameter read responses contain the response code, the status, and the 32-bit value; they do not contain a parameter ID. The driver therefore assigns a response only to the single read in progress.
 
-Config-Modus öffnen:
+Open config mode:
 
 ```text
 Anfrage: FD FC FB FA 02 00 FF 00 04 03 02 01
 ACK:     FD FC FB FA 08 00 FF 01 00 00 02 00 20 00 04 03 02 01
 ```
 
-Maximum Gate lesen (Parameter-ID 1), Antwortwert 12:
+Read Maximum Gate (parameter ID 1), response value 12:
 
 ```text
 Anfrage: FD FC FB FA 04 00 08 00 01 00 04 03 02 01
 Antwort: FD FC FB FA 08 00 08 01 00 00 0C 00 00 00 04 03 02 01
 ```
 
-Target Disappearance Delay lesen (Parameter-ID 4), Antwortwert 30 Sekunden:
+Read Target Disappearance Delay (parameter ID 4), response value 30 seconds:
 
 ```text
 Anfrage: FD FC FB FA 04 00 08 00 04 00 04 03 02 01
 Antwort: FD FC FB FA 08 00 08 01 00 00 1E 00 00 00 04 03 02 01
 ```
 
-Die folgenden unveränderten Schreibvorgänge wurden am Modul geprüft. Sie belegen die Protokollsequenz und ACKs für die aktuellen Werte, nicht das Verhalten beim Ändern auf andere Werte.
+The following writes of unchanged values were checked on the module. They establish the protocol sequence and ACKs for the current values, not the behavior when changing to other values.
 
 ```text
-Maximum Gate 12 schreiben:
+Write Maximum Gate 12:
 FD FC FB FA 08 00 07 00 01 00 0C 00 00 00 04 03 02 01
-Delay 30 Sekunden schreiben:
+Write delay 30 seconds:
 FD FC FB FA 08 00 07 00 04 00 1E 00 00 00 04 03 02 01
-Write ACK für beide:
+Write ACK for both:
 FD FC FB FA 04 00 07 01 00 00 04 03 02 01
 ```
 
-Config-Modus mit Save/Exit schließen:
+Close config mode with Save/Exit:
 
 ```text
 Anfrage: FD FC FB FA 02 00 FE 00 04 03 02 01
 ACK:     FD FC FB FA 04 00 FE 01 00 00 04 03 02 01
 ```
 
-Beim vollständigen Lesevorgang folgten auf das Öffnen die Lesevorgänge für ID 1 und ID 4 sowie ein bestätigter Save/Exit. Beim Schreibvorgang folgten auf die Öffnung ein einzelner Write, ein Readback derselben ID mit identischem Wert und ein bestätigter Save/Exit. Ein Save ACK bestätigt die Befehlsannahme. Eine Prüfung nach Aus- und Einschalten wurde nicht durchgeführt; Persistenz über einen Neustart ist daher nicht belegt.
+In the full read run, opening was followed by reads for ID 1 and ID 4, and a confirmed Save/Exit. In the write run, opening was followed by a single write, a readback of the same ID with an identical value, and a confirmed Save/Exit. A Save ACK confirms that the command was accepted. A check after power-off and power-on was not performed; persistence across a restart is therefore not established.
 
 ## Wiring and usage limits
 

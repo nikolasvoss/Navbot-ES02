@@ -1,69 +1,68 @@
 # Roadmap
 
-## 1. HMMD-Radar als 20 × 16 Range-Doppler-Map in ROS 2 anzeigen
+## 1. Show the HMMD radar as a 20 × 16 range-Doppler map in ROS 2
 
-Status: Software implementiert; Live-Abnahme noch offen.
+Status: Software implemented; live acceptance still open.
 
-Der ros2_pc-Sensorknoten, die ROS-Topics, die Browseranzeige und der gemeinsame lokale oder entfernte Start sind implementiert. Die vorhandene Evidenz umfasst echte HMMD-Frames und Browserzugriff auf dem ros2_pc. Die vollständige Abnahme steht noch aus.
+The ros2_pc sensor node, the ROS topics, the browser display, and the shared local or remote start are implemented. The available evidence includes real HMMD frames and browser access on the ros2_pc. Full acceptance is still pending.
 
-Vor Abschluss sind der aktuelle ROS-2-Build auf dem ros2_pc, die physische UART- und Spannungsprüfung, Aufzeichnungen eines leeren Messbereichs sowie einer ruhenden und einer bewegten Person und die Wiedergabe ohne Live-Sensor zu bestätigen. Die [HMMD ROS 2 developer guide](../software/hmmd-ros2.md) enthält die aktuellen Befehle und Grenzen.
+Before closing, confirm the current ROS 2 build on the ros2_pc, the physical UART and voltage check, recordings of an empty measurement area and of a still and a moving person, and playback without a live sensor. The [HMMD ROS 2 developer guide](../software/hmmd-ros2.md) contains the current commands and limits.
 
-## 2. Roborock-LiDAR in ROS 2 integrieren
+## 2. Integrate Roborock LiDAR in ROS 2
 
-Status: Echte Browser-Scans und ROS-2-Topic `/scan` am 15.10.2026 bestätigt; RViz, Kalibrierung und Bag-Wiedergabe noch offen. Zweiter ROS-2-Meilenstein.
+Status: Real browser scans and ROS 2 topic `/scan` confirmed on 2026-10-15; RViz, calibration, and bag playback still open. Second ROS 2 milestone.
 
-Das `lds08rr_lidar`-Paket bietet eine Demo ohne Radar, einen unabhängigen Browserstatus
-und einen ROS-2-Adapter. Es verwendet den bestätigten Camsense-Treiber aus
-`lds2d[viz]==0.7.0` und veröffentlicht vollständige Scans auf `/scan` sowie den Status
-auf `/lidar/status`. Kein Host-PWM-Ausgang wird aktiviert. Die Hardware- und
-Protokollgrenzen stehen in der [LDS08RR-Hardwaredokumentation](../hardware/lds08rr-lidar.md).
-Die [Softwareanleitung](../software/lds08rr-lidar.md) enthält Build-, Demo- und
-Startbefehle.
+The `lds08rr_lidar` package provides a demo without radar, an independent browser status
+page, and a ROS 2 adapter. It uses the confirmed Camsense driver from
+`lds2d[viz]==0.7.0` and publishes complete scans on `/scan` and the status on
+`/lidar/status`. No host PWM output is activated. The hardware and protocol limits are
+described in the [LDS08RR hardware documentation](../hardware/lds08rr-lidar.md).
+The [software guide](../software/lds08rr-lidar.md) contains build, demo, and start
+commands.
 
-Das erste sichtbare Hardwareergebnis soll ein Live-Laserscan in RViz sein. Der erste
-Test erfolgt stationär außerhalb des Navbot. Die Software allein bestätigt weder
-Wiring noch Sensorprotokoll, Orientierung, Reichweite oder Scanrate.
+The first visible hardware result should be a live laser scan in RViz. The first
+test is stationary, outside the Navbot. Software alone confirms neither wiring nor
+sensor protocol, orientation, range, or scan rate.
 
-### Grundlage und offene Fragen
+### Basis and open questions
 
-Der TX-Mitschnitt `acq0003.csv` bestätigt das LDS08RR-Camsense-Format bei 115200 Baud,
-8N1. Ein direkter Mitschnitt auf `/dev/ttyAMA0` lieferte 450 gültige Pakete ohne
-Prüfsummenfehler; Browser und ROS empfangen echte Scans bei etwa 5 Hz. Winkelnullpunkt,
-Drehrichtung, Messgenauigkeit und elektrische Abnahme bleiben offen.
+The TX capture `acq0003.csv` confirms the LDS08RR Camsense format at 115200 baud,
+8N1. A direct capture on `/dev/ttyAMA0` produced 450 valid packets without checksum
+errors; the browser and ROS receive real scans at about 5 Hz. Angle zero point,
+rotation direction, measurement accuracy, and electrical acceptance remain open.
 
-- [x] Nach Protokollbestätigung und gültigen Scans die unbenutzte Delta-Anbindung,
-  Protokollauswahl und zugehörigen Tests und Anleitungen entfernt.
+- [x] After protocol confirmation and valid scans, removed the unused Delta connection,
+  protocol selection, and the related tests and guides.
 
-### Geplanter Umfang
+### Planned scope
 
-- Identifikation des Moduls und Dokumentation der belegten Anschlussdaten.
-- Stationärer Betrieb mit geeigneter Versorgung und der erforderlichen Ansteuerung
-  des Scanmotors, sofern das Modul diese extern benötigt.
-- Anbindung an den ros2_pc und Veröffentlichung als `sensor_msgs/msg/LaserScan`
-  auf dem Topic `/scan`. Die Software verwendet einen festen Winkelraster und
-  positive Unendlichkeit für Messwerte ohne Rücklauf.
-- Dokumentation von Winkelrichtung, Winkelnullpunkt, Entfernungseinheiten,
-  Zeitstempeln und ungültigen Messwerten.
-- Darstellung in RViz mit einem eigenen Sensor-Koordinatensystem.
-- Aufzeichnung und Wiedergabe mit rosbag2 sowie Anzeige ausbleibender Scans.
-- Vorbereitung der Montage am Navbot einschließlich Gewicht, Versorgung,
-  freiem Sichtbereich und Transformation zum Roboter-Koordinatensystem.
+- Identify the module and document the connection data used.
+- Stationary operation with a suitable power supply and the required drive of the scan
+  motor, if the module needs it externally.
+- Connection to the ros2_pc and publication as `sensor_msgs/msg/LaserScan` on topic
+  `/scan`. The software uses a fixed angular grid and positive infinity for measurements
+  without a return.
+- Document angular direction, angular zero point, distance units, timestamps, and
+  invalid measurements.
+- Display in RViz with a separate sensor coordinate system.
+- Recording and playback with rosbag2, and display of missing scans.
+- Prepare mounting on the Navbot, including weight, power supply, a clear field of view,
+  and the transform to the robot coordinate system.
 
-### Fertig, wenn
+### Done when
 
-- Echte Scans erscheinen fortlaufend in RViz.
-- Abstände und Winkel stimmen bei mehreren bekannten Positionen im Testaufbau
-  innerhalb der für das identifizierte Modul festgelegten Toleranzen.
-- Eine Aufzeichnung lässt sich ohne angeschlossenen Sensor erneut anzeigen.
-- Eine unterbrochene Verbindung wird erkannt; alte Scans erscheinen nicht als aktuell.
-- Sensorbezeichnung, Anschlussdaten, Treiber und beobachtete Scanrate sind dokumentiert.
+- Real scans appear continuously in RViz.
+- Distances and angles match at several known positions in the test setup within the
+  tolerances defined for the identified module.
+- A recording can be displayed again without a connected sensor.
+- An interrupted connection is detected; old scans do not appear as current.
+- Sensor designation, connection data, driver, and observed scan rate are documented.
 
-Vor dem Einsatz während der Fahrt werden die Auswirkungen von Neigung,
-Balancebewegungen, zusätzlichem Gewicht und Strombedarf geprüft.
-SLAM und autonome Navigation sind nachfolgende Projekte.
+Before use while the robot is driving, check the effects of tilt, balance movements,
+additional weight, and power draw. SLAM and autonomous navigation are follow-on projects.
 
-## 3. Telemetrie und Logging über den ros2_pc
+## 3. Telemetry and logging via the ros2_pc
 
-Status: Geplant, noch nicht begonnen.
+Status: Planned, not started yet.
 
-Hochratige Telemetrie und Aufzeichnungen des ESP32 laufen künftig über die UART-Verbindung zum ros2_pc und werden dort aufgezeichnet, zum Beispiel mit rosbag2. Der ESP32 betreibt keinen eigenen WLAN-Logging-Dienst; die früheren WLAN-Logging-Vorschläge sind entfernt. Format, Rate und Aufzeichnungsumfang sind noch festzulegen.
+High-rate telemetry and recordings from the ESP32 will in future run over the UART connection to the ros2_pc and be recorded there, for example with rosbag2. The ESP32 does not run its own Wi-Fi logging service; the earlier Wi-Fi logging proposals have been removed. Format, rate, and recording scope are still to be defined.

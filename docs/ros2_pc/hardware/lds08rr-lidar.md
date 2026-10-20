@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-LDS08RR is the selected ros2_pc LiDAR. User photographs from 13 October 2026 confirm its label and PCB markings. Live Camsense reception, browser scans, and ROS `/scan` were verified on 15 October 2026. Electrical acceptance and orientation calibration remain open. See the [software steps](../software/lds08rr-lidar.md) and [roadmap](../plans/roadmap.md#2-roborock-lidar-in-ros-2-integrieren).
+LDS08RR is the selected ros2_pc LiDAR. User photographs from 13 October 2026 confirm its label and PCB markings. Live Camsense reception, browser scans, and ROS `/scan` were verified on 15 October 2026. Electrical acceptance and orientation calibration remain open. See the [software steps](../software/lds08rr-lidar.md) and [roadmap](../plans/roadmap.md#2-integrate-roborock-lidar-in-ros-2).
 
 ## Module label
 
@@ -120,7 +120,7 @@ The live launcher uses one reader for the browser and ROS. Five seconds of obser
 
 UART2 on GPIO4/5 and `dtoverlay=uart2-pi5` remain assigned to the HMMD radar; this LiDAR setup did not enable or change them. GPIO17 remains inactive.
 
-The unused protocol integration and selection flag were removed after capture and live-scan confirmation. See the completed [roadmap item](../plans/roadmap.md#grundlage-und-offene-fragen).
+The unused protocol integration and selection flag were removed after capture and live-scan confirmation. See the completed [roadmap item](../plans/roadmap.md#basis-and-open-questions).
 
 ## Evidence
 

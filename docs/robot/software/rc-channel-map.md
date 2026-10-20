@@ -1,20 +1,20 @@
-# HOTRC HT-10A – Fernsteuerung
+# RC channel map
 
-Die Fernsteuerung ist über den Empfänger per **SBUS** mit dem NavBot verbunden. Die Firmware wertet die Kanäle wie folgt aus (SBUS-Kanäle werden hier ab 1 gezählt):
+The remote control is connected to the NavBot through the receiver over **SBUS**. The firmware reads the channels as follows (SBUS channels are counted from 1 here):
 
-| Kanal | Funktion |
+| Channel | Function |
 | --- | --- |
-| CH1 | Körperrollen / seitliche Neigung |
-| CH2 | Beinlänge; im Modus „Pitching Adjust“ stattdessen Nickwinkel |
-| CH3 | Fahrgeschwindigkeit vor/zurück |
-| CH4 | Drehung / Lenken |
-| CH5 | PID-Regelung: aus, ein ohne Touchscreen, ein mit Touchscreen (3 Stufen) |
-| CH6 | Haltungsmodus oder Markiermodus (2 Stufen) |
-| CH7 | Rollregelung manuell oder automatisch (2 Stufen) |
-| CH8 | Fahr-/Haltungsmodus: Standard, Pitching Adjust oder Ball-Balance (3 Stufen) |
-| CH9 | X-Zielposition des Balls im Ball-Balance-Modus |
-| CH10 | Y-Zielposition des Balls im Ball-Balance-Modus |
+| CH1 | Body roll / lateral tilt |
+| CH2 | Leg length; in "Pitching Adjust" mode, pitch angle instead |
+| CH3 | Drive speed forward/backward |
+| CH4 | Rotation / steering |
+| CH5 | PID control: off, on without touchscreen, on with touchscreen (3 levels) |
+| CH6 | Posture mode or mark mode (2 levels) |
+| CH7 | Roll control manual or automatic (2 levels) |
+| CH8 | Drive/posture mode: standard, Pitching Adjust, or Ball Balance (3 levels) |
+| CH9 | X target position of the ball in Ball Balance mode |
+| CH10 | Y target position of the ball in Ball Balance mode |
 
-**Hinweis zur HT-10A:** Die Tabelle beschreibt die vom Roboter erwarteten SBUS-Kanäle, nicht die fest verdrahtete Position bestimmter HT-10A-Schalter. Welche Knüppel, Schalter oder Drehregler CH1–CH10 senden, hängt von der Senderkonfiguration ab. Bei Änderungen am Sender die Kanalzuordnung im Empfänger-/Servomonitor prüfen.
+**Note on the HT-10A:** The table describes the SBUS channels the robot expects, not the fixed wiring of particular HT-10A switches. Which sticks, switches, or dials send CH1–CH10 depends on the transmitter configuration. After any change to the transmitter, check the channel assignment in the receiver/servo monitor.
 
-Die Beschreibung entspricht der aktuellen SBUS-Auswertung in `src/ES-02/OllieFOCdrive/OllieFOCdrive.ino` und den Modus-Konstanten in `OllieFOCdrive.h`.
+This description matches the current SBUS handling in `src/ES-02/OllieFOCdrive/OllieFOCdrive.ino` and the mode constants in `OllieFOCdrive.h`.

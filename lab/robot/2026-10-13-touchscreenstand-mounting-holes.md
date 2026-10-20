@@ -1,17 +1,17 @@
-# Touchscreen-Ständer: Lochbild aus Nutzerangabe, 2026-10-13
+# Touchscreen stand: hole pattern from user report, 2026-10-13
 
 Status: concluded
 
-## Beobachtung
+## Observation
 
-Der Nutzer nennt für die Befestigungslöcher von `touchscreenstand.stl` ein rechteckiges Lochbild mit 96,4 mm × 72,9 mm, einen Lochdurchmesser von 2,2 mm und eine Senkung.
+The user gives a rectangular hole pattern of 96.4 mm × 72.9 mm for the mounting holes of `touchscreenstand.stl`, a hole diameter of 2.2 mm, and a countersink.
 
-## Evidenz
+## Evidence
 
-- Nutzernachricht vom 13.10.2026 ist die einzige Quelle der Maße. Wortlaut: „Die Maße der Mounting Holes von TouchscreenStand.stl sind die folgenden: rechteckig: 96,4mm x 72,9mm, lochdurchmesser 2,2mm mit senkung. dokumentiere das an passender stelle“
-- Die Datei [`cad/robot/touchscreenstand.stl`](../../cad/robot/touchscreenstand.stl) liegt im Repository. Für diese Notiz wurde sie nicht vermessen.
-- Die Angabe „96,4 mm × 72,9 mm“ wird als Mittenabstand gelesen.
+- The user message of 2026-10-13 is the only source of the dimensions. Wording (translated from German): "The dimensions of the Mounting Holes of TouchscreenStand.stl are the following: rectangular: 96.4mm x 72.9mm, hole diameter 2.2mm with countersink. document this at a suitable place"
+- The file [`cad/robot/touchscreenstand.stl`](../../cad/robot/touchscreenstand.stl) is in the repository. It was not measured for this note.
+- The figure "96.4 mm × 72.9 mm" is read as center-to-center spacing.
 
-## Praktische Konsequenz
+## Practical consequence
 
-Die Maße gelten als Nutzerangabe, nicht als geprüfte STL-Geometrie. Senkgeometrie, Toleranzen, Achsrichtung und Schraubengröße bleiben offen. Kanonische Referenz: [Touchscreen-Ständer](../../docs/robot/hardware/touchscreenstand.md).
+The dimensions are a user statement, not verified STL geometry. Countersink geometry, tolerances, axis direction, and screw size remain open. Canonical reference: [Touchscreen stand](../../docs/robot/hardware/touchscreenstand.md).

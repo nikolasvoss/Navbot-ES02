@@ -1,76 +1,76 @@
-# Elektronik-Hardware: technische Referenz
+# Electronics hardware: technical reference
 
-Diese Seite ergänzt die [Systemübersicht](system-overview.md); alle Bauteil-Pads und Netze stehen in der [Bauteil-Netzliste](netlist.md). **Pins sind physische Steckerkontakte laut EasyEDA-PCB-Netzliste**, GPIOs sind ESP32-S3-Nummern laut Schaltplansymbol und Firmware. Die Kontaktansicht und Kabelrichtung sind damit noch nicht festgelegt; vor dem Einstecken die Platinenbeschriftung prüfen. `MAIN` und `CODER` sind die zwei Boards in `project.json` des [EasyEDA-Projekts](../../../cad/robot/ProPrj_NavBot-ES02.epro).
+This page supplements the [system overview](system-overview.md). All component pads and nets are listed in the [component netlist](netlist.md). **Pins are physical connector contacts according to the EasyEDA PCB netlist.** GPIOs are ESP32-S3 numbers according to the schematic symbol and firmware. The contact view and cable direction are therefore not yet fixed. Check the board labeling before plugging anything in. `MAIN` and `CODER` are the two boards in `project.json` of the [EasyEDA project](../../../cad/robot/ProPrj_NavBot-ES02.epro).
 
-## Stromversorgung
+## Power supply
 
-**Bestückung laut Nutzer, 28.09.2026:** ESP32-S3-WROOM-1 ohne externen RAM; vorhandene Pinbelegung korrekt. Die N8R8-Angabe der Netzliste beschreibt nicht die bestätigte RAM-Ausstattung. Mit internem SRAM planen, PSRAM nicht aktivieren.
+**Assembly per user, 2026-09-28:** ESP32-S3-WROOM-1 without external RAM. The existing pin assignment is correct. The N8R8 entry in the netlist does not describe the confirmed RAM equipment. Plan for internal SRAM and do not enable PSRAM.
 
-| Stufe | Bauteile / Netze | Funktion und praktische Folge |
+| Stage | Components / nets | Function and practical consequence |
 | --- | --- | --- |
-| Akku | Externer 2S-18650-Halter → `CN2`: 1 `B2`, 2 `B1`, 3 `B-` | Mittelabgriff `B1`; nicht mit einer einfachen zweipoligen Akkuleitung verwechseln. BOM: ein 2S-Halter und zwei Zellen. |
-| Schutz und Ein/Aus | `U8` HY2120-LB, `Q2` WSD3056DN, `SW4`/`SW1`; `SW1` führt `B2` nach `VIN` | Zellschutz und geschaltete Hauptversorgung sind im Design vorhanden. `VIN` versorgt die Motortreiber direkt. Die tatsächliche Abschaltschwelle wurde hier nicht gemessen. |
-| Laden / USB | `M1` „2S充电模块“ mit `VBUS`, `B2`, `B1`, `GND`, `VSTA`; USB-C `USB1`; `D5`/`J1` im Pfad zu `+5V` | Laden und USB-Versorgung sind im Design vorgesehen. Kein Ladeverhalten oder gleichzeitiger Betrieb unter Last wurde verifiziert. `VSTA` geht zum ESP32 (`GPIO18`). |
-| 5 V | `U1` RT8289GSP, `L1` FXL0630-100-M, Eingangsnetz `VIN`, Ausgang `+5V` | Schaltregler für 5-V-Verbraucher/Anschlüsse. |
-| 3,3 V | `U2` XC6210B332MR von `+5V` nach `+3.3V` | Versorgt ESP32, IMU, Encoder und Logik; nicht die Servolast. |
-| Servo-Versorgung | `H11`: 1 `+5V`, 2 Servo-Versorgungsnetz, 3 `VIN`; dasselbe Netz an `H9/H10` Pins 3/4 | Dreipolige Auswahl: Brücke 1–2 = 5 V, 2–3 = VIN. Welche Brücke physisch steckt, ist nicht aus dem PCB-Projekt ableitbar. Vor 2S-VIN an Servos deren Zulässigkeit prüfen. |
-| Batteriespannung | `R1` 10 kΩ von `VIN` nach `ADC`, `R2` 1 kΩ nach GND, `C1` 100 nF; `ADC` → ESP32 `GPIO17` | Spannungsteiler ca. 1:11. `readBatteryVoltage()` nutzt eine lokale Kalibrierung `7.77 / 813.43 × ADC`; dieser Schätzwert ist kein direkter 3,3-V- oder Zell-Einzelwert. |
+| Battery | External 2S 18650 holder → `CN2`: 1 `B2`, 2 `B1`, 3 `B-` | Center tap `B1`. Do not confuse it with a simple two-pole battery lead. BOM: one 2S holder and two cells. |
+| Protection and on/off | `U8` HY2120-LB, `Q2` WSD3056DN, `SW4`/`SW1`; `SW1` routes `B2` to `VIN` | Cell protection and a switched main supply are present in the design. `VIN` supplies the motor drivers directly. The actual cutoff threshold was not measured here. |
+| Charging / USB | `M1` "2S充电模块" (2S charging module) with `VBUS`, `B2`, `B1`, `GND`, `VSTA`; USB-C `USB1`; `D5`/`J1` in the path to `+5V` | Charging and USB supply are intended in the design. No charging behavior or simultaneous operation under load has been verified. `VSTA` goes to the ESP32 (`GPIO18`). |
+| 5 V | `U1` RT8289GSP, `L1` FXL0630-100-M, input net `VIN`, output `+5V` | Switching regulator for 5 V loads and connectors. |
+| 3.3 V | `U2` XC6210B332MR from `+5V` to `+3.3V` | Supplies the ESP32, IMU, encoders, and logic. Does not supply the servo load. |
+| Servo supply | `H11`: 1 `+5V`, 2 servo supply net, 3 `VIN`; same net on `H9/H10` pins 3/4 | Three-pin select: jumper 1–2 = 5 V, 2–3 = VIN. The PCB project does not show which jumper position is fitted. Before connecting 2S VIN to the servos, check that they are rated for it. |
+| Battery voltage | `R1` 10 kΩ from `VIN` to `ADC`, `R2` 1 kΩ to GND, `C1` 100 nF; `ADC` → ESP32 `GPIO17` | Voltage divider of about 1:11. `readBatteryVoltage()` uses a local calibration `7.77 / 813.43 × ADC`. This estimate is not a direct 3.3 V or single-cell value. |
 
-**Prüfpunkt 5-V-Regler:** Im PCB-Netzlistenexport ist Pin 5 (`EN`) des RT8289 `U1` als unverbunden markiert. Die Netzliste allein klärt nicht, ob ein interner Default, eine abweichende reale Bestückung oder ein Designfehler vorliegt. Bei fehlenden 5 V zuerst diesen Punkt am realen Board und mit dem Bauteildatenblatt prüfen; aus der vorhandenen Board-Beobachtung folgt keine Pin-5-Messung.
+**Checkpoint for the 5 V regulator:** In the PCB netlist export, pin 5 (`EN`) of the RT8289 `U1` is marked as unconnected. The netlist alone does not establish whether this is an internal default, a different real assembly, or a design error. If 5 V is missing, first check this point on the real board and against the component datasheet. The existing board observation does not include a pin 5 measurement.
 
-## Motoren und Encoder
+## Motors and encoders
 
-| Kanal | MAIN-Netze / GPIO | Peripherie |
+| Channel | MAIN nets / GPIO | Peripherals |
 | --- | --- | --- |
-| A / `motor1` | `U6` MP6536; `PWM1_A/2_A/3_A` = GPIO15/7/6, `EN_A` = GPIO16; `H7` Pins 1/2/3 = `U_A/V_A/W_A` | Dreiphasiger Radmotor; Firmware `BLDCDriver3PWM(15, 7, 6, 16)`. |
-| B / `motor2` | `U7` MP6536; `PWM1_B/2_B/3_B` = GPIO40/39/38, `EN_B` = GPIO37; `H8` Pins 1/2/3 = `U_B/V_B/W_B` | Zweiter dreiphasiger Radmotor; Firmware `BLDCDriver3PWM(40, 39, 38, 37)`. |
-| Encoder A | `H5` Pins 1 SDA = GPIO4, 2 SCL = GPIO5, 3 GND, 4 +3,3 V; 5/6 GND laut PCB-Pads | `i2cOne.begin(4, 5, 400000)` und `sensor1` AS5600. Pins 5/6 gehören nicht zum vieradrigen Kabel. |
-| Encoder B | `H6` Pins 1 SDA = GPIO41, 2 SCL = GPIO42, 3 GND, 4 +3,3 V; 5/6 GND laut PCB-Pads | `i2cTwo.begin(41, 42, 400000)` und `sensor2` AS5600. Pins 5/6 gehören nicht zum vieradrigen Kabel. |
+| A / `motor1` | `U6` MP6536; `PWM1_A/2_A/3_A` = GPIO15/7/6, `EN_A` = GPIO16; `H7` pins 1/2/3 = `U_A/V_A/W_A` | Three-phase wheel motor; firmware `BLDCDriver3PWM(15, 7, 6, 16)`. |
+| B / `motor2` | `U7` MP6536; `PWM1_B/2_B/3_B` = GPIO40/39/38, `EN_B` = GPIO37; `H8` pins 1/2/3 = `U_B/V_B/W_B` | Second three-phase wheel motor; firmware `BLDCDriver3PWM(40, 39, 38, 37)`. |
+| Encoder A | `H5` pins 1 SDA = GPIO4, 2 SCL = GPIO5, 3 GND, 4 +3.3 V; 5/6 GND per PCB pads | `i2cOne.begin(4, 5, 400000)` and `sensor1` AS5600. Pins 5/6 are not part of the four-wire cable. |
+| Encoder B | `H6` pins 1 SDA = GPIO41, 2 SCL = GPIO42, 3 GND, 4 +3.3 V; 5/6 GND per PCB pads | `i2cTwo.begin(41, 42, 400000)` and `sensor2` AS5600. Pins 5/6 are not part of the four-wire cable. |
 
-Die kleine **CODER**-Platine enthält `U1` AS5600-ASOM, lokale 3,3-V-Abblockung und 10-kΩ-Pull-ups für SDA/SCL. Deren `H1` hat dieselbe logische Reihenfolge: 1 SDA, 2 SCL, 3 GND, 4 3,3 V; weitere Footprint-Pads 5/6 liegen an GND und sind keine zusätzlichen Kabeladern. Der MAIN-Pull-up ist je I²C-Leitung 3,3 kΩ. Die BOM nennt zwei AS5600-Module, zwei 2208-90-kV-Motoren und zwei radiale 6 × 1,5-mm-Magnete. Magnetposition und elektrischer Nullwinkel müssen mechanisch/mit SimpleFOC kalibriert werden; sie folgen nicht aus der Netzliste.
+The small **CODER** board contains `U1` AS5600-ASOM, local 3.3 V decoupling, and 10 kΩ pull-ups for SDA/SCL. Its `H1` has the same logical order: 1 SDA, 2 SCL, 3 GND, 4 3.3 V. Additional footprint pads 5/6 are connected to GND and are not extra cable wires. The MAIN pull-up is 3.3 kΩ per I²C line. The BOM lists two AS5600 modules, two 2208-90-kV motors, and two radial 6 × 1.5 mm magnets. The magnet position and electrical zero angle must be calibrated mechanically or with SimpleFOC. They do not follow from the netlist.
 
-**Polpaare, Recherche vom 01.10.2026:** Die [SimpleFOC-Motordokumentation](https://docs.simplefoc.com/bldc_motors) nennt für den 2208-90KV-Gimbalmotor `12N14P`: 12 Statornuten und 14 Rotorpole, also **7 Polpaare**. Das passt zur Modellangabe `2208-90kv` in `BOM.xlsx`, `Sheet1!D26`. Beide Firmware-Instanzen verwenden bereits fest `BLDCMotor(7)`. Die verbauten Einzelmotoren wurden nicht durch Magnetzählung oder eine unabhängige Messung bestätigt; die BOM beschreibt die vorgesehenen Kaufteile.
+**Pole pairs, research of 2026-10-01:** The [SimpleFOC motor documentation](https://docs.simplefoc.com/bldc_motors) lists `12N14P` for the 2208-90KV gimbal motor: 12 stator slots and 14 rotor poles, so **7 pole pairs**. This matches the model designation `2208-90kv` in `BOM.xlsx`, `Sheet1!D26`. Both firmware instances already use `BLDCMotor(7)` as a fixed value. The installed individual motors were not confirmed by magnet counting or an independent measurement. The BOM describes the intended purchased parts.
 
-Der [Startup-Mitschnitt nach dem Bibliothekswechsel](../../../lab/robot/captures/serial-startup-after-foc-update.txt) zeigt zwei erfolgreiche MCPWM-Initialisierungen und `Motor ready.`, aber Polpaar-Prüfschätzungen von 8,46 und 7,80. In der installierten SimpleFOC-Version 2.3.5 prüft `BLDCMotor::alignSensor()` den Winkelweg gegen den fest konfigurierten Wert und gibt bei Abweichung eine Schätzung aus; es überschreibt `pole_pairs` nicht. **Konsequenz:** 7 beibehalten und die Warnungen als offene Abweichung beim Abgleich behandeln. Aus diesem kurzen Abgleich allein weder 8 Polpaare ableiten noch die Warnung durch Überspringen der Kalibrierung unterdrücken. Eine Last, unvollständige Rotorbewegung oder ein Encoderfehler sind mögliche Ursachen, hier aber nicht nachgewiesen.
+The [startup capture after the library change](../../../lab/robot/captures/serial-startup-after-foc-update.txt) shows two successful MCPWM initializations and `Motor ready.`, but pole-pair check estimates of 8.46 and 7.80. In the installed SimpleFOC version 2.3.5, `BLDCMotor::alignSensor()` checks the angle travel against the configured value and prints an estimate on deviation. It does not overwrite `pole_pairs`. **Consequence:** keep 7 and treat the warnings as an open deviation to resolve during calibration. This short check alone does not justify deriving 8 pole pairs, and it does not justify suppressing the warning by skipping calibration. A load, incomplete rotor movement, or an encoder fault are possible causes, but none is established here.
 
-## Sensoren und Signale
+## Sensors and signals
 
-| Funktion | Chip / Signal | ESP32-S3 und Firmware |
+| Function | Chip / signal | ESP32-S3 and firmware |
 | --- | --- | --- |
-| IMU | `U5` ICM-42688P-HXY, SPI `SCLK/MOSI/MISO/CS1` | GPIO3/9/10/13; `ICM42688.cpp` verwendet SPI Mode 3, Beschleunigung ±8 g und Gyro ±2000 °/s bei 1 kHz. `INT1/INT2` sind im Design vorhanden, aber laut Netzliste nicht mit U4 verbunden (R28 zieht INT2 nach GND); die gezeigte Firmware liest per SPI ohne FIFO/Interrupt. Vor Interrupt-/FIFO-Erfassung die reale Platine prüfen. |
-| Vier Beinservos | `SERVO1/2/3/4` | GPIO11/12/21/14, 50-Hz-PWM in `ServoControl`; Servo 2/3 sind in der Standard-Ansteuerung invertiert. Die GPIO-Reihenfolge sagt noch nichts über links/rechts an der Mechanik. |
-| Betriebs-LEDs | `LED2/LED3` | GPIO35/36; `board::kStatusLedPin=35` und LOW schaltet die Firmware-LED ein. |
-| Ladesignal | `VSTA` | GPIO18; im Schaltplan an `M1`, ohne hier bestätigte Softwareauswertung. |
-| Versionskennung | `VERSION_ADC` | GPIO8, Teiler 180 kΩ/100 kΩ; im Design vorhanden, Nutzung der aktuellen Firmware nicht belegt. |
+| IMU | `U5` ICM-42688P-HXY, SPI `SCLK/MOSI/MISO/CS1` | GPIO3/9/10/13; `ICM42688.cpp` uses SPI mode 3, accelerometer ±8 g and gyro ±2000 °/s at 1 kHz. `INT1/INT2` are present in the design but, according to the netlist, not connected to U4 (R28 pulls INT2 to GND). The firmware shown reads over SPI without FIFO or interrupt. Check the real board before interrupt or FIFO capture. |
+| Four leg servos | `SERVO1/2/3/4` | GPIO11/12/21/14, 50 Hz PWM in `ServoControl`. Servos 2/3 are inverted in the standard drive. The GPIO order does not yet say anything about left/right on the mechanics. |
+| Operating LEDs | `LED2/LED3` | GPIO35/36. `board::kStatusLedPin=35`; LOW switches the firmware LED on. |
+| Charging signal | `VSTA` | GPIO18. In the schematic connected to `M1`; no software evaluation confirmed here. |
+| Version identifier | `VERSION_ADC` | GPIO8, divider 180 kΩ/100 kΩ. Present in the design; use by the current firmware not established. |
 
-## Anschlüsse
+## Connectors
 
-| Stecker | Physische Pins laut PCB | Zweck / Hinweis |
+| Connector | Physical pins per PCB | Purpose / note |
 | --- | --- | --- |
-| `CN2` | 1 `B2`, 2 `B1`, 3 `B-` | 2S-Akku mit Mittelabgriff. |
-| `H4` | 1 GND, 2 +5 V, 3 SBUS-Eingang über `R12/Q1` | Externer RC-Empfänger; siehe [SBUS-Anschlussblatt](../assets/es02-sbus-connect.pdf). |
-| `H5`, `H6` | 1 SDA, 2 SCL, 3 GND, 4 +3,3 V | AS5600 A/B; zusätzliche GND-Pads 5/6 erscheinen in der Footprint-Netzliste. |
-| `H7`, `H8` | 1 U, 2 V, 3 W | Dreiphasige Motoranschlüsse A/B. |
-| `H9` | 1 Servo 1, 2 Servo 2, 3/4 gemeinsame Servo-Versorgung, 5/6 GND | Beinservos 1/2. |
-| `H10` | 1 Servo 3, 2 Servo 4, 3/4 gemeinsame Servo-Versorgung, 5/6 GND | Beinservos 3/4. |
-| `H11` | 1 +5 V, 2 Servo-Versorgung, 3 VIN | Auswahl der Servo-Versorgung; tatsächliche Brücke vor Betrieb ansehen. |
-| `CN3` | 1–4 Servo 1–4, 5–7 GND | Signale/GND, keine Servo-Versorgung auf diesen Pins. |
-| `H12` | 1 +5 V, 2 GND, 3 SCLK, 4 MOSI, 5 MISO, 6 CS1, 7 unbelegt, 8 GND | Zusätzlicher SPI-Header; seine +5 V nicht mit 3,3-V-Logikpegeln gleichsetzen. |
+| `CN2` | 1 `B2`, 2 `B1`, 3 `B-` | 2S battery with center tap. |
+| `H4` | 1 GND, 2 +5 V, 3 SBUS input via `R12/Q1` | External RC receiver; see [SBUS connection sheet](../assets/es02-sbus-connect.pdf). |
+| `H5`, `H6` | 1 SDA, 2 SCL, 3 GND, 4 +3.3 V | AS5600 A/B. Additional GND pads 5/6 appear in the footprint netlist. |
+| `H7`, `H8` | 1 U, 2 V, 3 W | Three-phase motor connections A/B. |
+| `H9` | 1 servo 1, 2 servo 2, 3/4 shared servo supply, 5/6 GND | Leg servos 1/2. |
+| `H10` | 1 servo 3, 2 servo 4, 3/4 shared servo supply, 5/6 GND | Leg servos 3/4. |
+| `H11` | 1 +5 V, 2 servo supply, 3 VIN | Servo supply select. Check the actual jumper before operation. |
+| `CN3` | 1–4 servo 1–4, 5–7 GND | Signals/GND. No servo supply on these pins. |
+| `H12` | 1 +5 V, 2 GND, 3 SCLK, 4 MOSI, 5 MISO, 6 CS1, 7 unused, 8 GND | Additional SPI header. Do not equate its +5 V with 3.3 V logic levels. |
 
-## Serielle Schnittstellen
+## Serial interfaces
 
-**Natives USB CDC ist über den vorhandenen USB-C-Anschluss ohne Hardwareänderung nicht möglich.** Laut PCB-Netzliste verbinden `D+` und `D−` den Anschluss `USB1` mit CH340X `U3`. Die nativen USB-Pins des ESP32-S3, GPIO20 für D+ und GPIO19 für D−, liegen dagegen auf `TX1` und `RX1` für Touch-UART. Natives USB würde eine separate Verbindung zu diesen Pins und die Auflösung des Touch-UART-Konflikts erfordern. Die Firmwareoption „USB CDC On Boot“ ändert diese Verdrahtung nicht. Quellen: [PCB-Netzliste](netlist.md), [Espressif USB-Anschlussbelegung](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/usb-serial-jtag-console.html#hardware-requirements) und [Beobachtungen am vorhandenen Board](../software/usb-serial-flashing.md).
+**Native USB CDC is not possible through the existing USB-C connector without a hardware change.** According to the PCB netlist, `D+` and `D−` connect the `USB1` connector to CH340X `U3`. The native USB pins of the ESP32-S3, GPIO20 for D+ and GPIO19 for D−, are instead on `TX1` and `RX1` for the touch UART. Native USB would require a separate connection to these pins and resolution of the touch UART conflict. The firmware option "USB CDC On Boot" does not change this wiring. Sources: [PCB netlist](netlist.md), [Espressif USB hardware requirements](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/usb-serial-jtag-console.html#hardware-requirements), and [observations on the existing board](../software/usb-serial-flashing.md).
 
-| Pfad | Steck-/Netzseite | Firmware und Einschränkung |
+| Path | Connector / net side | Firmware and limitation |
 | --- | --- | --- |
-| USB/Debug | USB-C `USB1` → CH340X `U3` → `RX0/TX0`; `H1`: 1 +5 V, 2 GND, 3 RX0, 4 TX0 | Flash/`Serial`; am vorhandenen Board als CH340 `/dev/ttyUSB*` beobachtet. Normalmodus 2 Mbaud, Sensordiagnose 115200 Baud. [USB/serial guide](../software/usb-serial-flashing.md) vor Änderungen lesen. |
-| Touch / UART1 | `H2`: 1 +5 V, 2 GND, 3 RX1, 4 TX1; `CN4`: 2 +5 V, 3 GND, 4 RX1, 5 TX1 (1/7 GND) | **PCB-Netznamen:** RX1 an GPIO19, TX1 an GPIO20. **Firmware:** `RXD1=20`, `TXD1=19` – gegenläufig zu den Netznamen. Die Zweirad-Firmware liest die externe Touch-TTL-Platine mit 115200 Baud. Der frühere Vierbein-Master/Slave-Modus wurde am 01.10.2026 entfernt; UART1 bleibt für Touch verfügbar. Vor Verdrahtung physische Leitungsrichtung prüfen. |
-| SBUS / UART2 | `H3`: 1 +5 V, 2 GND, 3 RX2, 4 TX2; `H4`: 1 GND, 2 +5 V, 3 SBUS über `Q1` | `RX2/TX2` = GPIO1/2. `FUTABA_SBUS` startet UART2 mit 100000 Baud; der Transistor invertiert den SBUS-Eingang für `RX2`. |
+| USB/Debug | USB-C `USB1` → CH340X `U3` → `RX0/TX0`; `H1`: 1 +5 V, 2 GND, 3 RX0, 4 TX0 | Flash / `Serial`. Observed on the existing board as CH340 `/dev/ttyUSB*`. Normal mode 2 Mbaud, sensor diagnostics 115200 baud. Read the [USB/serial guide](../software/usb-serial-flashing.md) before making changes. |
+| Touch / UART1 | `H2`: 1 +5 V, 2 GND, 3 RX1, 4 TX1; `CN4`: 2 +5 V, 3 GND, 4 RX1, 5 TX1 (1/7 GND) | **PCB net names:** RX1 on GPIO19, TX1 on GPIO20. **Firmware:** `RXD1=20`, `TXD1=19`, which is reversed relative to the net names. The two-wheel firmware reads the external touch TTL board at 115200 baud. The earlier four-leg master/slave mode was removed on 2026-10-01; UART1 remains available for touch. Check the physical line direction before wiring. |
+| SBUS / UART2 | `H3`: 1 +5 V, 2 GND, 3 RX2, 4 TX2; `H4`: 1 GND, 2 +5 V, 3 SBUS via `Q1` | `RX2/TX2` = GPIO1/2. `FUTABA_SBUS` starts UART2 at 100000 baud. The transistor inverts the SBUS input for `RX2`. |
 
-`H1/H2/H3` besitzen laut PCB-Footprint zusätzliche GND-Pads 5/6, aber vier Kabeladern. Bei externen Kabeln die Kontakte 1–4 und die Platinenbeschriftung verwenden. Die BOM nennt drei SH1.0-Kabel mit 200 mm (zwei Encoder, Verbindung zweier Einheiten) und eines mit 100 mm (Touch); für den SBUS-Empfänger ein dreipoliges Kabel.
+`H1/H2/H3` have additional GND pads 5/6 per the PCB footprint, but only four cable wires. For external cables, use contacts 1–4 and the board labeling. The BOM lists three SH1.0 cables of 200 mm (two encoders, connection of two units) and one of 100 mm (touch). For the SBUS receiver, a three-pole cable.
 
-## Externe Geräte, Modi und Datenqualität
+## External devices, modes and data quality
 
-- Die RC-Bedienung ist im [README](../../../README.md) beschrieben: CH5 Stop/Start/Touch, CH6 Haltung/„Mark“, CH7 Roll manuell/auto, CH8 Standard/Pitch/Ball-Balance, CH9/10 Ballkoordinaten. Diese Zuordnung ist Firmware-/Fernsteuerungs-Konfiguration, keine Eigenschaft des Steckers.
-- `SENSOR_DIAGNOSTIC_MODE=1` setzt GPIO16/37 zunächst LOW, überspringt Motor-/Servo-Initialisierung und liefert IMU, Akku-ADC und RC-Zustand als CSV. Für das sichere Diagnoseverfahren und die beobachteten Spannungseinbrüche [sensor diagnostic guide](../software/sensor-diagnostic-mode.md) lesen.
-- Das README enthält ältere oder abweichende Hardware-Angaben (`MPU6050`, anderes Servo-Modell, unklare Touchgröße). Die **PCB-Netzliste** belegt die elektrischen Verbindungen; die **BOM** listet Kaufteile; die **Firmware** belegt gegenwärtig konfigurierte GPIOs und Betriebsarten. Bestückung, Kabelorientierung, Servospannungsbrücke und Spannungen unter Last müssen am realen Board geprüft werden.
+- The RC operation is described in the [README](../../../README.md): CH5 stop/start/touch, CH6 posture/"Mark", CH7 roll manual/auto, CH8 standard/pitch/ball balance, CH9/10 ball coordinates. This mapping is firmware and remote-control configuration, not a property of the connector.
+- `SENSOR_DIAGNOSTIC_MODE=1` first sets GPIO16/37 LOW, skips motor and servo initialization, and outputs IMU, battery ADC, and RC state as CSV. For the safe diagnostic procedure and the observed voltage dips, read the [sensor diagnostic guide](../software/sensor-diagnostic-mode.md).
+- The README contains older or differing hardware information (`MPU6050`, a different servo model, unclear touch size). The **PCB netlist** establishes the electrical connections. The **BOM** lists purchased parts. The **firmware** establishes the currently configured GPIOs and operating modes. Assembly, cable orientation, servo voltage jumper, and voltages under load must be checked on the real board.

@@ -1,57 +1,57 @@
-# Roboter mit ESP32: Elektronik-Hardware im Überblick
+# Robot with ESP32: Electronics Hardware Overview
 
-**Zweck:** Diese Seite in etwa einer Minute lesen. Für Pinbelegung, Strompfade und Quellen nur den benötigten Abschnitt in [hardware reference](electronics-reference.md) öffnen. Für einzelne Bauteile und unbenannte Netze gibt es zusätzlich die durchsuchbare [Bauteil-Netzliste](netlist.md). Die Angaben beziehen sich auf das eingecheckte EasyEDA-Projekt und die aktuelle Firmware, nicht auf eine Messung jeder Leiterbahn der aufgebauten Platine.
+**Purpose:** Read this page in about one minute. For pin assignments, power paths, and sources, open only the required section of the [hardware reference](electronics-reference.md). For individual components and unnamed nets, there is also the searchable [component netlist](netlist.md). The information refers to the checked-in EasyEDA project and the current firmware, not to a measurement of every trace on the assembled board.
 
-## System auf einen Blick
+## System at a glance
 
 ```text
-2 × 18650 in Serie ── Schutz / Schalter ── VIN (2S)
-                                         ├─ 2 × MP6536 → 2 × dreiphasiger 2208-Radmotor
-                                         ├─ RT8289 → +5 V → XC6210 → +3,3 V
-                                         └─ wählbare Servoversorgung (+5 V oder VIN)
+2 × 18650 in series ── protection / switch ── VIN (2S)
+                                            ├─ 2 × MP6536 → 2 × three-phase 2208 wheel motor
+                                            ├─ RT8289 → +5 V → XC6210 → +3.3 V
+                                            └─ selectable servo supply (+5 V or VIN)
 
 ESP32-S3-WROOM-1 (MAIN)
-  ├─ 2 getrennte I²C-Busse → je 1 AS5600-Platine (CODER), Radwinkel für SimpleFOC
-  ├─ SPI → ICM-42688P, Beschleunigung und Drehrate für Lage/Balanceregelung
-  ├─ 6 PWM + 2 Enable → 2 Motor-Endstufen; 4 PWM → Beinservos
-  ├─ UART2 → invertierter SBUS-Empfänger; UART1 → Touch-TTL
-  ├─ UART0 → CH340X → USB-C für Flash und Serial
-  ├─ GPIO17/ADC → 2S-Akkuspannung über 10-kΩ/1-kΩ-Teiler
-  └─ BLE → Steuerung ohne zusätzlichen Funkchip
+  ├─ 2 separate I²C buses → 1 AS5600 board each (CODER), wheel angle for SimpleFOC
+  ├─ SPI → ICM-42688P, acceleration and angular rate for attitude/balance control
+  ├─ 6 PWM + 2 enable → 2 motor power stages; 4 PWM → leg servos
+  ├─ UART2 → inverted SBUS receiver; UART1 → touch TTL
+  ├─ UART0 → CH340X → USB-C for flash and serial
+  ├─ GPIO17/ADC → 2S battery voltage via 10-kΩ/1-kΩ divider
+  └─ BLE → control without an additional radio chip
 ```
 
-Das EasyEDA-Projekt enthält **MAIN** (Steuerung, Versorgung, Motortreiber, Anschlüsse) und **CODER** (AS5600-Encoderplatine; zwei Exemplare laut BOM). Die Mechanik hat zwei bürstenlose Radmotoren und vier Beinservos. Die resistive Touchfläche wird laut BOM über eine separate TTL-Treiberplatine angebunden. RC-Steuerung erfolgt über einen externen Empfänger und dessen SBUS-Ausgang.
+The EasyEDA project contains **MAIN** (control, power, motor drivers, connectors) and **CODER** (AS5600 encoder board; two units according to the BOM). The mechanics have two brushless wheel motors and four leg servos. According to the BOM, the resistive touch surface is connected through a separate TTL driver board. RC control uses an external receiver and its SBUS output.
 
-## Schnelle Orientierung
+## Quick orientation
 
-| Aufgabe | Relevante Hardware | Direkt weiterlesen |
+| Task | Relevant hardware | Read next |
 | --- | --- | --- |
-| Radmotor dreht nicht / FOC | MP6536 `U6/U7`, drei Motorphasen je Rad, AS5600 `H5/H6` | [Motoren und Encoder](electronics-reference.md#motoren-und-encoder) |
-| Lage, Balance oder Fahrverhalten prüfen | ICM-42688P `U5` an SPI, Akku-ADC `GPIO17` | [Regelungsablauf](../software/control-flow.md#noch-nicht-geklärt), [Sensoren](electronics-reference.md#sensoren-und-signale) |
-| Servo, Versorgungseinbruch | Vier Servoausgänge `H9/H10`, Versorgungsauswahl `H11`, `VIN` aus 2S-Akku | [Stromversorgung](electronics-reference.md#stromversorgung) und [Anschlüsse](electronics-reference.md#anschlüsse) |
-| Fernsteuerung | `H4`: GND, +5 V, SBUS; Inverter `Q1`; ESP32 `GPIO1` | [Anschlüsse](electronics-reference.md#anschlüsse) |
-| Touch oder UART | `H2`/`CN4`: UART1; `H3`: UART2; `H1`: UART0 | [Serielle Schnittstellen](electronics-reference.md#serielle-schnittstellen) |
-| Einzelner Widerstand, IC-Pin oder unbenanntes Netz | Alle elektrisch verbundenen Pads beider PCBs | [Bauteil-Netzliste](netlist.md) |
-| Touchscreen-Ständer: Befestigungslöcher | `touchscreenstand.stl`: Rechteck 96,4 × 72,9 mm, Ø 2,2 mm mit Senkung; Maße aus Nutzerangabe | [Touchscreen-Ständer](touchscreenstand.md) |
-| Flash / USB-Diagnose | USB-C → CH340X → UART0; nicht als natives USB-CDC voraussetzen | [USB/serial guide](../software/usb-serial-flashing.md) |
+| Wheel motor does not turn / FOC | MP6536 `U6/U7`, three motor phases per wheel, AS5600 `H5/H6` | [Motors and encoders](electronics-reference.md#motors-and-encoders) |
+| Check attitude, balance, or driving behavior | ICM-42688P `U5` on SPI, battery ADC `GPIO17` | [Control flow](../software/control-flow.md#not-yet-resolved), [Sensors](electronics-reference.md#sensors-and-signals) |
+| Servo, supply dip | Four servo outputs `H9/H10`, supply selection `H11`, `VIN` from 2S battery | [Power supply](electronics-reference.md#power-supply) and [Connectors](electronics-reference.md#connectors) |
+| Remote control | `H4`: GND, +5 V, SBUS; inverter `Q1`; ESP32 `GPIO1` | [Connectors](electronics-reference.md#connectors) |
+| Touch or UART | `H2`/`CN4`: UART1; `H3`: UART2; `H1`: UART0 | [Serial interfaces](electronics-reference.md#serial-interfaces) |
+| Single resistor, IC pin, or unnamed net | All electrically connected pads on both PCBs | [Component netlist](netlist.md) |
+| Touchscreen stand: mounting holes | `touchscreenstand.stl`: rectangle 96.4 × 72.9 mm, Ø 2.2 mm with countersink; dimensions according to the user | [Touchscreen stand](touchscreenstand.md) |
+| Flash / USB diagnostics | USB-C → CH340X → UART0; do not assume native USB CDC | [USB/serial guide](../software/usb-serial-flashing.md) |
 
-## Wichtige Feststellungen und Konsequenzen
+## Key findings and consequences
 
-- **Natives USB CDC erfordert eine Hardwareänderung:** Im PCB-Netzplan führt USB-C zu CH340X, nicht zu den nativen USB-Pins des ESP32-S3. GPIO19/20 sind für Touch-UART belegt. Natives USB CDC ist daher über den vorhandenen USB-C-Anschluss ohne Hardwareänderung nicht möglich. Eine Firmwareoption allein genügt nicht. Siehe [serielle Schnittstellen](electronics-reference.md#serielle-schnittstellen).
+- **Native USB CDC requires a hardware change:** In the PCB netlist, USB-C leads to CH340X, not to the native USB pins of the ESP32-S3. GPIO19/20 are used by the touch UART. Native USB CDC is therefore not possible through the existing USB-C connector without a hardware change. A firmware option alone is not sufficient. See [serial interfaces](electronics-reference.md#serial-interfaces).
 
-- **Kein externer RAM:** Laut Nutzerbestätigung vom 28.09.2026 ist ESP32-S3-WROOM-1 bestückt, ohne externen RAM; die Pinbelegung ist korrekt. Die N8R8-Angabe der Netzliste weicht von dieser Hardwareangabe ab. Nur internen SRAM einplanen, PSRAM nicht aktivieren.
+- **No external RAM:** According to user confirmation of 2026-09-28, the ESP32-S3-WROOM-1 is populated without external RAM; the pin assignment is correct. The N8R8 designation in the netlist differs from this hardware statement. Plan only for internal SRAM and do not enable PSRAM.
 
-- **Servo-Stromschiene:** `H11` verbindet den gemeinsamen Versorgungs-Pin der Servostecker wahlweise mit `+5V` oder `VIN`. Vor Anschluss und Belastung die tatsächlich gesteckte Brücke und die Spannungsverträglichkeit der Servos prüfen. Die Servos hängen nicht am 3,3-V-Regler. Quelle: MAIN-PCB-Netzliste (`H9`, `H10`, `H11`).
-- **Akkumessung:** Die Firmware errechnet aus dem GPIO17-ADC einen Akkuwert. Es ist **keine Messung der 3,3-V-Schiene**. Die dokumentierten Messwerte fallen unter Balance-Last stark; Akku, Kontakt, Regler und ADC-Verhalten sind damit noch nicht getrennt beurteilt. Quelle: MAIN-Netzliste `R1/R2`, `readBatteryVoltage()` und [sensor diagnostic guide](../software/sensor-diagnostic-mode.md).
-- **Encoder:** Die gleichen AS5600-I²C-Adressen sind möglich, weil die zwei Radencoder an getrennten ESP32-I²C-Controllern hängen: `GPIO4/5` und `GPIO41/42`. Quelle: MAIN-/CODER-Netzliste und Firmware-Initialisierung.
-- **SBUS:** Der Empfänger wird über `H4` mit 5 V versorgt; das Signal läuft über den Transistor `Q1` invertiert zu `GPIO1`/UART2. Den Empfänger-Ausgang und die Pin-Reihenfolge vor dem Stecken prüfen. Quelle: MAIN-Netzliste und [SBUS-Anschlussblatt](../assets/es02-sbus-connect.pdf).
-- **UART1-Zuordnung:** Die PCB-Netze `RX1`/`TX1` liegen laut ESP32-Symbol an GPIO19/20, die Firmware verwendet für UART1 jedoch RX=GPIO20 und TX=GPIO19. Das ist eine echte Abweichung zwischen Netzbenennung und Softwarebelegung; die Kabelbelegung nicht allein aus den Namen ableiten. Quelle: `U4` in der [Bauteil-Netzliste](netlist.md) und `touchscreen.h`.
-- **5-V-Regler:** `U1`-Pin 5 (`EN`) erscheint im PCB-Export als unverbunden. Daraus allein lässt sich sein Betriebsverhalten nicht bestimmen; bei 5-V-Problemen diesen Pin und das Datenblatt prüfen. Quelle: [Bauteil-Netzliste](netlist.md).
-- **Datenlage:** README, BOM und Schaltplan nennen bei einzelnen Zukaufteilen unterschiedliche Modelle: Die BOM nennt Servo `GX-S7445`, das README `Pro-Tronik PTK 7452 MG-D`. Das README erwähnt außerdem an einer Stelle `MPU6050`, während Schaltplan, BOM und Firmware `ICM-42688P` belegen. Für Pin- und Schaltungsfragen die PCB-Netzliste, für die aktuell ausgeführte Funktion die Firmware heranziehen; konkrete bestückte Kaufteile am Roboter prüfen.
+- **Servo power rail:** `H11` connects the common supply pin of the servo connectors to either `+5V` or `VIN`. Before connecting and loading, check which jumper is actually fitted and the voltage tolerance of the servos. The servos are not connected to the 3.3 V regulator. Source: MAIN PCB netlist (`H9`, `H10`, `H11`).
+- **Battery measurement:** The firmware calculates a battery value from the GPIO17 ADC. It is **not a measurement of the 3.3 V rail**. The documented readings drop strongly under balance load; the battery, contact, regulator, and ADC behavior are therefore not yet assessed separately. Source: MAIN netlist `R1/R2`, `readBatteryVoltage()`, and [sensor diagnostic guide](../software/sensor-diagnostic-mode.md).
+- **Encoders:** The same AS5600 I²C addresses are possible because the two wheel encoders connect to separate ESP32 I²C controllers: `GPIO4/5` and `GPIO41/42`. Source: MAIN/CODER netlist and firmware initialization.
+- **SBUS:** The receiver is supplied with 5 V via `H4`; the signal passes through transistor `Q1`, inverted, to `GPIO1`/UART2. Check the receiver output and pin order before plugging in. Source: MAIN netlist and [SBUS connection sheet](../assets/es02-sbus-connect.pdf).
+- **UART1 mapping:** The PCB nets `RX1`/`TX1` are connected to GPIO19/20 according to the ESP32 symbol, but the firmware uses RX=GPIO20 and TX=GPIO19 for UART1. This is a real discrepancy between net naming and the software assignment; do not derive the cable wiring from the names alone. Source: `U4` in the [component netlist](netlist.md) and `touchscreen.h`.
+- **5 V regulator:** `U1` pin 5 (`EN`) appears as unconnected in the PCB export. This alone does not establish its operating behavior; for 5 V problems, check this pin and the datasheet. Source: [component netlist](netlist.md).
+- **Data status:** README, BOM, and schematic name different models for some purchased parts: the BOM lists servo `GX-S7445`, the README `Pro-Tronik PTK 7452 MG-D`. In one place the README also mentions `MPU6050`, while the schematic, BOM, and firmware establish `ICM-42688P`. For pin and circuit questions, use the PCB netlist; for the function currently executed, use the firmware; check the specific purchased parts fitted to the robot.
 
-## Quellen und Geltung
+## Sources and scope
 
-- **Schaltplan/Netzliste:** [`cad/robot/ProPrj_NavBot-ES02.epro`](../../../cad/robot/ProPrj_NavBot-ES02.epro), darin `project.json`, MAIN-/CODER-`.esch` und `.epcb`. Die hier genannten Steckerpins und Netznamen wurden aus `PAD_NET` der jeweiligen `.epcb` gelesen.
-- **Zukaufteile:** [`BOM.xlsx`](../assets/bom.xlsx), Tabelle `Sheet1`, Stand des Repositories.
-- **Firmware-Zuordnung:** [`src/ES-02/OllieFOCdrive/OllieFOCdrive.ino`](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), [`ICM42688.h`](../../../src/ES-02/OllieFOCdrive/ICM42688.h), [`touchscreen.h`](../../../src/ES-02/OllieFOCdrive/touchscreen.h), [`FUTABA_SBUS.h`](../../../src/ES-02/OllieFOCdrive/FUTABA_SBUS.h).
-- **Beobachtungen am vorhandenen Board:** [USB/serial guide](../software/usb-serial-flashing.md) und [sensor diagnostic guide](../software/sensor-diagnostic-mode.md). Diese beschreiben Messungen und lokale Tests; die Netzliste beschreibt das Design.
+- **Schematic/netlist:** [`cad/robot/ProPrj_NavBot-ES02.epro`](../../../cad/robot/ProPrj_NavBot-ES02.epro), containing `project.json`, MAIN/CODER `.esch` and `.epcb`. The connector pins and net names cited here were read from `PAD_NET` in the respective `.epcb`.
+- **Purchased parts:** [`BOM.xlsx`](../assets/bom.xlsx), sheet `Sheet1`, as of the repository state.
+- **Firmware mapping:** [`src/ES-02/OllieFOCdrive/OllieFOCdrive.ino`](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), [`ICM42688.h`](../../../src/ES-02/OllieFOCdrive/ICM42688.h), [`touchscreen.h`](../../../src/ES-02/OllieFOCdrive/touchscreen.h), [`FUTABA_SBUS.h`](../../../src/ES-02/OllieFOCdrive/FUTABA_SBUS.h).
+- **Observations on the existing board:** [USB/serial guide](../software/usb-serial-flashing.md) and [sensor diagnostic guide](../software/sensor-diagnostic-mode.md). These describe measurements and local tests; the netlist describes the design.
