@@ -2,10 +2,11 @@
 
 ## Where files go
 
-The folder list below is closed. Never create a top-level folder, and never create a folder inside `docs/`, `lab/`, or `cad/` that this table does not name. If a file fits nowhere, stop and ask the user. After adding, moving, or deleting a file, run `python3 tests/test_repo_layout.py`.
+The folder list below is closed. Never create a top-level folder, and never create a folder inside `docs/`, `lab/`, or `cad/` that this table does not name. If a file fits nowhere, stop and ask the user. After adding, moving, or deleting a file, run `python3 tests/layout/test_repo_layout.py`.
 
 | Path | Contains | Never contains |
 | --- | --- | --- |
+| Repository root | `README.md` (intro, quick start, links into docs), `AGENTS.md`, `CLAUDE.md`, `.gitignore`, `firmware-build-environment.json` (written by the build script) | Other files |
 | `src/<target>/` | Code and files built for or installed on that target: `ES-02/` (robot firmware), `ros2_pc/`, `navbot_link/` (shared by both), `libraries/` (vendored archives) | Docs, tests |
 | `scripts/` | Host tools | Tests, test fixtures, docs |
 | `tests/<area>/` | Tests, fixtures, and stubs of one area. `tests/scripts/` tests the host tools. ROS 2 package tests stay in their package. | Tools |
