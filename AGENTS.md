@@ -14,6 +14,6 @@ Build the default firmware from the project root with `python3 scripts/build_fir
 4. Open `hardware/pcb/ProPrj_NavBot-ES02.epro` or inspect the physical board when the task depends on layout, connector orientation, actual assembly, or a connection the notes do not resolve. Before applying power or changing wiring, verify the relevant pinout and voltage on the physical board.
 5. When a new hardware finding changes the overview or reference, update the affected canonical page and record the observation, evidence, and practical consequence in `agent_notes/robot/hardware-findings/` so the next agent can find it without reopening the PCB project.
 
-The upcoming ros2_pc has its own canonical documentation tree under `docs/ros2_pc/`. Treat its hardware and attached peripherals as pending until they are selected and verified; do not infer pinouts, power paths, or software behavior.
+The ros2_pc has its own canonical documentation tree under `docs/ros2_pc/`; start with the [ros2_pc hardware overview](docs/ros2_pc/hardware/README.md). Treat each peripheral as pending until its page marks it verified; do not infer pinouts, power paths, or software behavior. Call the computer "ros2_pc" and its board "ros2_pc carrier board"; do not name the module vendor or model.
 
 Run Haiku calls with network access enabled (`sandbox_permissions: "require_escalated"`), because sandboxed calls can stall.
