@@ -1,22 +1,22 @@
-# Touchscreen-Ständer
+# Touchscreen stand and robot mounting holes
 
-Die Datei [`touchscreenstand.stl`](../../../../hardware/3d%20print/touchscreenstand.stl) enthält den 3D-gedruckten Ständer für den Touchscreen. Diese Seite beschreibt nur die Befestigungslöcher.
+[`touchscreenstand.stl`](../../../../hardware/3d%20print/touchscreenstand.stl) is the 3D-printed stand that held the original touchscreen on top of the robot. The touchscreen is removed. Its mounting-hole pattern is still the robot-side interface: the [LiDAR/ros2_pc stand](../../../ros2_pc/hardware/README.md#mechanics) (`hardware/3d print/lidar_ros2_pc_stand/`) uses the same pattern. This page describes only the mounting holes.
 
-## Befestigungslöcher
+## Mounting holes
 
-| Merkmal | Angabe |
+| Feature | Value |
 | --- | --- |
-| Lochbild | Rechteck, 96,4 mm × 72,9 mm Mittenabstand |
-| Lochdurchmesser | 2,2 mm |
-| Senkung | Vorhanden; Maße nicht angegeben |
+| Pattern | Rectangle, 96.4 mm × 72.9 mm centre-to-centre |
+| Hole diameter | 2.2 mm |
+| Countersink | Present; dimensions not given |
 
-## Nicht angegeben
+## Not specified
 
-- Senkdurchmesser, Senktiefe, Senkwinkel und Senkseite.
-- Toleranzen der Lochmaße.
-- Lage der Löcher und Achsrichtung im Koordinatensystem der STL-Datei.
-- Schraubengröße. Sie ist nicht festgelegt.
+- Countersink diameter, depth, angle and side.
+- Tolerances of the hole dimensions.
+- Hole position and axis direction in the STL coordinate system.
+- Screw size.
 
-## Quelle
+## Source
 
-Die Maße stammen aus einer Nutzerangabe vom 13.10.2026. Die Rechteckmaße werden als Abstände zwischen den Lochmittelpunkten verstanden. Eine unabhängige Vermessung der STL-Datei liegt für diese Angaben nicht vor.
+User statement of 2026-10-13. The rectangle dimensions are read as distances between hole centres. Nobody has measured the STL file for these values. Evidence: [finding](../../../../agent_notes/robot/hardware-findings/touchscreenstand-mounting-holes.md).

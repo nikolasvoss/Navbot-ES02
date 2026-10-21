@@ -1,15 +1,15 @@
-# Touchscreen-Ständer: Lochbild aus Nutzerangabe, 2026-10-13
+# Touchscreen stand: hole pattern from user statement, 2026-10-13
 
-## Beobachtung
+## Observation
 
-Der Nutzer nennt für die Befestigungslöcher von `touchscreenstand.stl` ein rechteckiges Lochbild mit 96,4 mm × 72,9 mm, einen Lochdurchmesser von 2,2 mm und eine Senkung.
+The user gives the mounting holes of `touchscreenstand.stl` as a rectangular pattern of 96.4 mm × 72.9 mm, a hole diameter of 2.2 mm, and a countersink.
 
-## Evidenz
+## Evidence
 
-- Nutzernachricht vom 13.10.2026 ist die einzige Quelle der Maße. Wortlaut: „Die Maße der Mounting Holes von TouchscreenStand.stl sind die folgenden: rechteckig: 96,4mm x 72,9mm, lochdurchmesser 2,2mm mit senkung. dokumentiere das an passender stelle“
-- Die Datei [`hardware/3d print/touchscreenstand.stl`](../../../hardware/3d%20print/touchscreenstand.stl) liegt im Repository. Für diese Notiz wurde sie nicht vermessen.
-- Die Angabe „96,4 mm × 72,9 mm“ wird als Mittenabstand gelesen.
+- The user's message of 2026-10-13 is the only source of the dimensions. Original wording (German): „Die Maße der Mounting Holes von TouchscreenStand.stl sind die folgenden: rechteckig: 96,4mm x 72,9mm, lochdurchmesser 2,2mm mit senkung. dokumentiere das an passender stelle“
+- [`hardware/3d print/touchscreenstand.stl`](../../../hardware/3d%20print/touchscreenstand.stl) is in the repository. It was not measured for this note.
+- "96.4 mm × 72.9 mm" is read as centre-to-centre spacing.
 
-## Praktische Konsequenz
+## Practical consequence
 
-Die Maße gelten als Nutzerangabe, nicht als geprüfte STL-Geometrie. Senkgeometrie, Toleranzen, Achsrichtung und Schraubengröße bleiben offen. Kanonische Referenz: [Touchscreen-Ständer](../../../docs/robot/hardware/mechanics/touchscreenstand.md).
+The dimensions are a user statement, not checked STL geometry. Countersink geometry, tolerances, axis direction and screw size remain open. Canonical reference: [touchscreen stand](../../../docs/robot/hardware/mechanics/touchscreenstand.md).

@@ -1,57 +1,84 @@
-# Roboter mit ESP32: Elektronik-Hardware im Überblick
+# Robot hardware overview
 
-**Zweck:** Diese Seite in etwa einer Minute lesen. Für Pinbelegung, Strompfade und Quellen nur den benötigten Abschnitt in [hardware reference](electronics/reference.md) öffnen. Für einzelne Bauteile und unbenannte Netze gibt es zusätzlich die durchsuchbare [Bauteil-Netzliste](electronics/netlist.md). Die Angaben beziehen sich auf das eingecheckte EasyEDA-Projekt und die aktuelle Firmware, nicht auf eine Messung jeder Leiterbahn der aufgebauten Platine.
+Entry page for the robot's hardware (the ESP32-S3 controller board and everything attached to it). Read it in about a minute, then open only the section you need in the [electronics reference](electronics/reference.md). The ros2_pc and its sensors have their own tree: [ros2_pc hardware](../../ros2_pc/hardware/README.md).
 
-## System auf einen Blick
+## System at a glance
 
 ```text
-2 × 18650 in Serie ── Schutz / Schalter ── VIN (2S)
-                                         ├─ 2 × MP6536 → 2 × dreiphasiger 2208-Radmotor
-                                         ├─ RT8289 → +5 V → XC6210 → +3,3 V
-                                         └─ wählbare Servoversorgung (+5 V oder VIN)
+2 × 18650 in series ── protection / switch ── VIN (2S)
+                                             ├─ 2 × MP6536 → 2 × three-phase 2208 wheel motor
+                                             ├─ RT8289 → +5 V → XC6210 → +3.3 V
+                                             └─ servo rail, jumper-selected: +5 V or VIN
 
-ESP32-S3-WROOM-1 (MAIN)
-  ├─ 2 getrennte I²C-Busse → je 1 AS5600-Platine (CODER), Radwinkel für SimpleFOC
-  ├─ SPI → ICM-42688P, Beschleunigung und Drehrate für Lage/Balanceregelung
-  ├─ 6 PWM + 2 Enable → 2 Motor-Endstufen; 4 PWM → Beinservos
-  ├─ UART2 → invertierter SBUS-Empfänger; UART1 → ros2_pc-Link (500000 Baud)
-  ├─ UART0 → CH340X → USB-C für Flash und Serial
-  ├─ GPIO17/ADC → 2S-Akkuspannung über 10-kΩ/1-kΩ-Teiler
-  └─ BLE → Steuerung ohne zusätzlichen Funkchip
+ESP32-S3-WROOM-1 on MAIN (no PSRAM)
+  ├─ 2 separate I²C buses → 1 AS5600 board (CODER) each, wheel angle for SimpleFOC
+  ├─ SPI → ICM-42688P IMU, attitude and balance control
+  ├─ 6 PWM + 2 enable → 2 motor drivers; 4 PWM → leg servos
+  ├─ UART0 → CH340X → USB-C, flashing and serial (576000 baud)
+  ├─ UART1 → ros2_pc link (500000 baud)
+  ├─ UART2 ← inverted SBUS from the RC receiver
+  ├─ GPIO17 ADC ← 2S pack voltage via 10 kΩ / 1 kΩ divider
+  └─ BLE, built into the ESP32
 ```
 
-Das EasyEDA-Projekt enthält **MAIN** (Steuerung, Versorgung, Motortreiber, Anschlüsse) und **CODER** (AS5600-Encoderplatine; zwei Exemplare laut BOM). Die Mechanik hat zwei bürstenlose Radmotoren und vier Beinservos. RC-Steuerung erfolgt über einen externen Empfänger und dessen SBUS-Ausgang.
+The mechanics have two brushless wheel motors and four leg servos. A [photo of the robot](../media/photo1.JPG) shows the assembly.
 
-## Schnelle Orientierung
+## Pages in this tree
 
-| Aufgabe | Relevante Hardware | Direkt weiterlesen |
+| Page | Contents |
+| --- | --- |
+| [Electronics reference](electronics/reference.md) | Power, ESP32 module, full GPIO map, motors, sensors, all connectors, serial interfaces, source discrepancies. |
+| [Component netlist](electronics/netlist.md) | Every pad of every component on MAIN and CODER. Search it; do not read it whole. |
+| [Touchscreen stand](mechanics/touchscreenstand.md) | Mounting-hole pattern on the robot top, now used by the LiDAR/ros2_pc stand. |
+| [SBUS connection sheet](connectors/ES02-SBUS-connect.pdf), [wiring photo](connectors/ES02-SBUS-wire.png), [RadioLink connector](connectors/RadioLink-connector.png) | RC receiver wiring. |
+| [`BOM.xlsx`](BOM.xlsx) | Intended purchased parts, sheet `Sheet1`. |
+
+## Find by task
+
+| Task | Relevant hardware | Read |
 | --- | --- | --- |
-| Radmotor dreht nicht / FOC | MP6536 `U6/U7`, drei Motorphasen je Rad, AS5600 `H5/H6` | [Motoren und Encoder](electronics/reference.md#motoren-und-encoder) |
-| Lage, Balance oder Fahrverhalten prüfen | ICM-42688P `U5` an SPI, Akku-ADC `GPIO17` | [Regelungsablauf](../software/control/control-flow.md#noch-nicht-geklärt), [Sensoren](electronics/reference.md#sensoren-und-signale) |
-| Servo, Versorgungseinbruch | Vier Servoausgänge `H9/H10`, Versorgungsauswahl `H11`, `VIN` aus 2S-Akku | [Stromversorgung](electronics/reference.md#stromversorgung) und [Anschlüsse](electronics/reference.md#anschlüsse) |
-| Fernsteuerung | `H4`: GND, +5 V, SBUS; Inverter `Q1`; ESP32 `GPIO1` | [Anschlüsse](electronics/reference.md#anschlüsse) |
-| UART | `H2`/`CN4`: UART1; `H3`: UART2; `H1`: UART0 | [Serielle Schnittstellen](electronics/reference.md#serielle-schnittstellen) |
-| Einzelner Widerstand, IC-Pin oder unbenanntes Netz | Alle elektrisch verbundenen Pads beider PCBs | [Bauteil-Netzliste](electronics/netlist.md) |
-| Touchscreen-Ständer: Befestigungslöcher | `touchscreenstand.stl`: Rechteck 96,4 × 72,9 mm, Ø 2,2 mm mit Senkung; Maße aus Nutzerangabe | [Touchscreen-Ständer](mechanics/touchscreenstand.md) |
-| Flash / USB-Diagnose | USB-C → CH340X → UART0; nicht als natives USB-CDC voraussetzen | [USB/serial guide](../software/development/usb-serial-flashing.md) |
+| Wheel motor does not turn / FOC | MP6536 `U6`/`U7`, three phases per wheel, AS5600 on `H5`/`H6` | [Motors and encoders](electronics/reference.md#motors-and-encoders) |
+| Attitude, balance or driving behavior | ICM-42688P `U5` on SPI, battery ADC GPIO17 | [Sensors](electronics/reference.md#sensors-and-signals), [control flow](../software/control/control-flow.md) |
+| Servo problem or supply dip | `H9`/`H10` servo outputs, supply jumper `H11`, `VIN` from the 2S pack | [Power](electronics/reference.md#power), [connectors](electronics/reference.md#connectors) |
+| Which GPIO does what | ESP32-S3 `U4` | [GPIO map](electronics/reference.md#esp32-s3-gpio-map) |
+| RC receiver | `H4`: GND, +5 V, SBUS; inverter `Q1`; GPIO1 | [Serial interfaces](electronics/reference.md#serial-interfaces), [RC channel map](../software/control/rc-channel-map.md) |
+| Wiring the ros2_pc link | `H2`/`CN4`, UART1 | [Serial interfaces](electronics/reference.md#serial-interfaces), [ros2_pc J8 allocation](../../ros2_pc/hardware/README.md#j8-pin-allocation) |
+| Flashing / USB diagnosis | USB-C → CH340X → UART0; no native USB CDC | [USB/serial guide](../software/development/usb-serial-flashing.md) |
+| Memory budget (logging, buffers) | ESP32-S3 without PSRAM | [Module and memory](electronics/reference.md#esp32-s3-module-and-memory) |
+| One resistor, IC pin or unnamed net | All pads of both boards | [Netlist](electronics/netlist.md) |
+| Robot mounting holes on top | 96.4 × 72.9 mm pattern | [Touchscreen stand](mechanics/touchscreenstand.md) |
 
-## Wichtige Feststellungen und Konsequenzen
+## Pitfalls
 
-- **Natives USB CDC erfordert eine Hardwareänderung:** Im PCB-Netzplan führt USB-C zu CH340X, nicht zu den nativen USB-Pins des ESP32-S3. GPIO19/20 sind für den UART1-Link zum ros2_pc belegt. Natives USB CDC ist daher über den vorhandenen USB-C-Anschluss ohne Hardwareänderung nicht möglich. Eine Firmwareoption allein genügt nicht. Siehe [serielle Schnittstellen](electronics/reference.md#serielle-schnittstellen).
+Each item is explained in the linked section.
 
-- **Kein externer RAM:** Laut Nutzerbestätigung vom 28.09.2026 ist ESP32-S3-WROOM-1 bestückt, ohne externen RAM; die Pinbelegung ist korrekt. Die N8R8-Angabe der Netzliste weicht von dieser Hardwareangabe ab. Nur internen SRAM für Logging einplanen; siehe [Hardware constraints for logging](wireless-logging-constraints.md).
+- **No native USB CDC.** USB-C goes to the CH340X, and the native USB pins carry UART1. A firmware option cannot change that. [Details](electronics/reference.md#serial-interfaces).
+- **UART1 net names are reversed.** Net `RX1` (GPIO19) is the firmware's TX. Wire by GPIO number. [Details](electronics/reference.md#source-discrepancies).
+- **Servos 3 and 4 are swapped** between net names and firmware. [Details](electronics/reference.md#source-discrepancies).
+- **No PSRAM.** Plan with internal SRAM only, despite the N8R8 label in the netlist. [Details](electronics/reference.md#esp32-s3-module-and-memory).
+- **Servo rail can carry 2S VIN.** Check the `H11` jumper and the servo voltage rating first. The servos are not on the 3.3 V regulator. [Details](electronics/reference.md#power).
+- **Battery reading is a pack estimate.** GPIO17 reads the 2S pack through a divider, not the 3.3 V rail. Readings drop sharply under balance load; battery, contacts, regulator and ADC effects are not yet separated ([sensor diagnostic guide](../software/diagnostics/sensor-diagnostic-mode.md)). [Details](electronics/reference.md#power).
+- **No IMU interrupt line.** `INT1`/`INT2` do not reach the ESP32. [Details](electronics/reference.md#imu-interrupts).
+- **Identical encoder addresses are fine.** Each AS5600 has its own I²C controller. [Details](electronics/reference.md#motors-and-encoders).
+- **SBUS is inverted on the board.** The receiver gets 5 V on `H4`; `Q1` inverts the signal to GPIO1. Check pin order before plugging in. [Details](electronics/reference.md#serial-interfaces).
+- **Encoder/UART footprints have extra GND pads** (5/6). They are not cable wires. [Details](electronics/reference.md#connectors).
 
-- **Servo-Stromschiene:** `H11` verbindet den gemeinsamen Versorgungs-Pin der Servostecker wahlweise mit `+5V` oder `VIN`. Vor Anschluss und Belastung die tatsächlich gesteckte Brücke und die Spannungsverträglichkeit der Servos prüfen. Die Servos hängen nicht am 3,3-V-Regler. Quelle: MAIN-PCB-Netzliste (`H9`, `H10`, `H11`).
-- **Akkumessung:** Die Firmware errechnet aus dem GPIO17-ADC einen Akkuwert. Es ist **keine Messung der 3,3-V-Schiene**. Die dokumentierten Messwerte fallen unter Balance-Last stark; Akku, Kontakt, Regler und ADC-Verhalten sind damit noch nicht getrennt beurteilt. Quelle: MAIN-Netzliste `R1/R2`, `ReadVoltage()` und [sensor diagnostic guide](../software/diagnostics/sensor-diagnostic-mode.md).
-- **Encoder:** Die gleichen AS5600-I²C-Adressen sind möglich, weil die zwei Radencoder an getrennten ESP32-I²C-Controllern hängen: `GPIO4/5` und `GPIO41/42`. Quelle: MAIN-/CODER-Netzliste und Firmware-Initialisierung.
-- **SBUS:** Der Empfänger wird über `H4` mit 5 V versorgt; das Signal läuft über den Transistor `Q1` invertiert zu `GPIO1`/UART2. Den Empfänger-Ausgang und die Pin-Reihenfolge vor dem Stecken prüfen. Quelle: MAIN-Netzliste und [SBUS-Anschlussblatt](connectors/ES02-SBUS-connect.pdf).
-- **UART1-Zuordnung:** Die PCB-Netze `RX1`/`TX1` liegen laut ESP32-Symbol an GPIO19/20, die Firmware verwendet für UART1 jedoch RX=GPIO20 und TX=GPIO19. Das ist eine echte Abweichung zwischen Netzbenennung und Softwarebelegung; die Kabelbelegung nicht allein aus den Namen ableiten. Quelle: `U4` in der [Bauteil-Netzliste](electronics/netlist.md) und `link_uart.h`.
-- **5-V-Regler:** `U1`-Pin 5 (`EN`) erscheint im PCB-Export als unverbunden. Daraus allein lässt sich sein Betriebsverhalten nicht bestimmen; bei 5-V-Problemen diesen Pin und das Datenblatt prüfen. Quelle: [Bauteil-Netzliste](electronics/netlist.md).
-- **Datenlage:** README, BOM und Schaltplan nennen bei einzelnen Zukaufteilen unterschiedliche Modelle: Die BOM nennt Servo `GX-S7445`, das README `Pro-Tronik PTK 7452 MG-D`. Das README erwähnt außerdem an einer Stelle `MPU6050`, während Schaltplan, BOM und Firmware `ICM-42688P` belegen. Für Pin- und Schaltungsfragen die PCB-Netzliste, für die aktuell ausgeführte Funktion die Firmware heranziehen; konkrete bestückte Kaufteile am Roboter prüfen.
+## Sources of truth
 
-## Quellen und Geltung
+| Source | Describes | Location |
+| --- | --- | --- |
+| PCB netlist | Intended electrical connections | [`hardware/pcb/ProPrj_NavBot-ES02.epro`](../../../hardware/pcb/ProPrj_NavBot-ES02.epro): `project.json`, MAIN/CODER `.esch` and `.epcb`. Connector pins and nets come from `PAD_NET` in the `.epcb` files. |
+| Firmware | Configured pins and behavior | [`OllieFOCdrive.ino`](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), [`ICM42688.h`](../../../src/ES-02/OllieFOCdrive/ICM42688.h), [`link_uart.h`](../../../src/ES-02/OllieFOCdrive/link_uart.h), [`FUTABA_SBUS.h`](../../../src/ES-02/OllieFOCdrive/FUTABA_SBUS.h), [`ServoControl.h`](../../../src/ES-02/OllieFOCdrive/ServoControl.h) |
+| BOM | Intended purchased parts | [`BOM.xlsx`](BOM.xlsx) |
+| User statements and captures | The assembled robot | [Hardware findings](../../../agent_notes/robot/hardware-findings/), [USB/serial guide](../software/development/usb-serial-flashing.md), [sensor diagnostic guide](../software/diagnostics/sensor-diagnostic-mode.md) |
 
-- **Schaltplan/Netzliste:** [`hardware/pcb/ProPrj_NavBot-ES02.epro`](../../../hardware/pcb/ProPrj_NavBot-ES02.epro), darin `project.json`, MAIN-/CODER-`.esch` und `.epcb`. Die hier genannten Steckerpins und Netznamen wurden aus `PAD_NET` der jeweiligen `.epcb` gelesen.
-- **Zukaufteile:** [`BOM.xlsx`](BOM.xlsx), Tabelle `Sheet1`, Stand des Repositories.
-- **Firmware-Zuordnung:** [`src/ES-02/OllieFOCdrive/OllieFOCdrive.ino`](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), [`ICM42688.h`](../../../src/ES-02/OllieFOCdrive/ICM42688.h), [`link_uart.h`](../../../src/ES-02/OllieFOCdrive/link_uart.h), [`FUTABA_SBUS.h`](../../../src/ES-02/OllieFOCdrive/FUTABA_SBUS.h).
-- **Beobachtungen am vorhandenen Board:** [USB/serial guide](../software/development/usb-serial-flashing.md) und [sensor diagnostic guide](../software/diagnostics/sensor-diagnostic-mode.md). Diese beschreiben Messungen und lokale Tests; die Netzliste beschreibt das Design.
+When sources disagree, name the discrepancy instead of choosing silently. Check the physical board when the answer depends on layout, connector orientation, fitted parts or actual wiring. Verify pinout and voltage before applying power or changing wiring.
+
+## Open hardware questions
+
+- `U1` RT8289 `EN` pin appears unconnected in the export. [Check](electronics/reference.md#5-v-regulator-check).
+- Which `H11` servo supply jumper is fitted, and whether the servos tolerate 2S VIN.
+- Pole-pair check warnings (8.46 and 7.80 against the configured 7). [Details](electronics/reference.md#pole-pairs).
+- Battery protection cut-off threshold, charging behavior, operation while charging.
+- Free internal SRAM under firmware and Wi-Fi load.
+- Physical UART rate at 576000 baud is not measured. [USB/serial guide](../software/development/usb-serial-flashing.md).

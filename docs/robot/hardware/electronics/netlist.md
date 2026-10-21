@@ -1,12 +1,15 @@
-# Elektronik-Hardware: vollständige logische Bauteil-Netzliste
+# Robot component netlist
 
-Diese gezielt durchsuchbare Momentaufnahme ergänzt [Einstieg](../system-overview.md) und [technische Referenz](reference.md). Sie wurde aus den `PAD_NET`-Einträgen der beiden `.epcb` im [EasyEDA-Projekt](../../../../hardware/pcb/ProPrj_NavBot-ES02.epro) abgeleitet. Angegeben sind **Bauteil-Designator, Bauteilwert/Typ, Padnummer und Netz**; wo vorhanden steht der Schaltplansymbol-Pinname in eckigen Klammern. Suche mit `rg "U6|\$1N13944|VIN" docs/robot/hardware/electronics/netlist.md`.
+Complete logical netlist of both robot boards, for targeted search. Start with the [hardware overview](../system-overview.md) and the [electronics reference](reference.md). This snapshot was derived from the `PAD_NET` entries of the two `.epcb` files in the [EasyEDA project](../../../../hardware/pcb/ProPrj_NavBot-ES02.epro). Each row gives the **designator, value/type, pad number and net**; the schematic pin name follows in square brackets where it exists. Search it, for example with `rg "U6|\$1N13944|VIN" docs/robot/hardware/electronics/netlist.md`.
 
-`$1N…` bezeichnet ein unbenanntes, aber elektrisch identisches Netz innerhalb **derselben** Platine. `∅` bezeichnet ein im PCB-Netzlistenexport unverbundenes nummeriertes Pad. Mechanische Board-Geometrie ist ausgelassen; bei mehrfachen Gehäusepads auf einem Netz wird jede eindeutige Padnummer einmal genannt. Die Netzliste beschreibt die **geplante logische Verbindung**, nicht Leiterbahnführung, Schicht, Massefläche, Bauteilplatzierung, Bestückung oder gemessene Funktion. Bei Layout-, SI-/EMV- und Reparaturfragen bleibt der PCB-Editor bzw. die reale Platine maßgeblich.
+- `$1N…` is an unnamed net. Pads with the same `$1N…` name are connected only within the **same** board.
+- `∅` is a numbered pad that the PCB export lists as unconnected.
+- Mechanical board geometry is omitted. When several housing pads share one net, each distinct pad number appears once.
+- The netlist describes the **intended logical connections**. It does not describe track routing, layers, ground planes, placement, fitted parts or measured function. For layout, signal-integrity, EMC and repair questions, the PCB editor and the real board are authoritative.
 
-## MAIN (116 Bauteile)
+## MAIN (116 components)
 
-| Ref | Wert / Typ | Pads → Netze |
+| Ref | Value / type | Pads → nets |
 | --- | --- | --- |
 | `C1` | 100nF | `1=GND, 2=ADC` |
 | `C2` | 22uF | `1=GND, 2=VIN` |
@@ -125,9 +128,9 @@ Diese gezielt durchsuchbare Momentaufnahme ergänzt [Einstieg](../system-overvie
 | `U8` | HY2120-LB | `1[OD]=$1N42515, 2[OC]=$1N42523, 3[CS]=CS, 4[VC]=$1N46092, 5[VDD]=$1N46033, 6[VSS]=B-` |
 | `USB1` | TYPE-C 16PIN 2MD(073) | `1=GND, 2[VBUS]=VBUS, 4[CC1]=$1N3041, 5[DN2]=D-, 6[DP1]=D+, 7[DN1]=D-, 8[DP2]=D+, 10[CC2]=$1N3025, 11[VBUS]=VBUS, 12=GND, 13[SHELL]=GND, 14[SHELL]=GND, 3=∅, 9=∅` |
 
-## CODER (8 Bauteile)
+## CODER (8 components)
 
-| Ref | Wert / Typ | Pads → Netze |
+| Ref | Value / type | Pads → nets |
 | --- | --- | --- |
 | `C1` | 10uF | `1=GND, 2=3.3V` |
 | `C2` | 100nF | `1=GND, 2=3.3V` |

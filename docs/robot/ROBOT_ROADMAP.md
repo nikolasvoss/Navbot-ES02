@@ -12,7 +12,6 @@ Die Filterung läuft digital auf dem ESP32 und teilweise im ICM42688. Gyro- und 
 2. Mit längeren CSV-Aufzeichnungen tatsächliche Rate, Zeitabstände und Datenlücken gegen diese Grenzwerte prüfen. Den Einfluss auf den Regelzyklus erst mit dem festgelegten Testverfahren messen.
 3. Entscheiden, ob Reglerausgänge aufgezeichnet werden müssen. Dafür ist ein Verfahren nötig, das die Motortreiber deaktiviert lässt oder einen ausdrücklich sicheren Test im Regelbetrieb erlaubt.
 4. Ungefilterte und gefilterte IMU-Werte sowie Sensorfusion anhand wiederholbarer Aufzeichnungen und Offline-FFT vergleichen. Danach Filterwerte und Abnahmekriterien festlegen.
-5. Natives USB-CDC auf dem vorhandenen ESP32-S3-Board prüfen. Am USB-C-Anschluss wurde bisher nur der CH340-USB-UART beobachtet. Das Datenformat bleibt vom Transport getrennt.
 6. Pufferung oder binäre Frames erst einführen, wenn Messungen zeigen, dass CSV die festgelegte Datenrate nicht zuverlässig erreicht.
 7. Später ein Werkzeug prüfen, das aus CSV-Aufzeichnungen die FFT eines ausgewählten Messkanals anzeigt. Eine Live-FFT würde einen eigenen seriellen Client benötigen, da SerialPlot keine FFT-Plots bietet.
 8. Logging-Kommandos bereinigen. Auswahl von Messwerten, Ausgabeformate und Verhalten im Diagnose- und Normalmodus eindeutig dokumentieren.

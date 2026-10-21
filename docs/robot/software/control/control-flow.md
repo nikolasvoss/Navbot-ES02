@@ -30,7 +30,7 @@ flowchart LR
     ROBOT -. Messung .-> ENC
 ```
 
-Die IMU sitzt laut PCB-Entwurf auf dem MAIN-Board. Jeder Radmotor hat einen AS5600-Winkelsensor auf einem eigenen I²C-Bus. Die Motoren werden mit drei PWM-Phasen über je einen MP6536 angesteuert; die vier Beinservos erhalten 50-Hz-PWM. Quellen: [Hardwareübersicht](../../hardware/system-overview.md), [Motoren und Encoder](../../hardware/electronics/reference.md#motoren-und-encoder), [Sensoren](../../hardware/electronics/reference.md#sensoren-und-signale).
+Die IMU sitzt laut PCB-Entwurf auf dem MAIN-Board. Jeder Radmotor hat einen AS5600-Winkelsensor auf einem eigenen I²C-Bus. Die Motoren werden mit drei PWM-Phasen über je einen MP6536 angesteuert; die vier Beinservos erhalten 50-Hz-PWM. Quellen: [Hardwareübersicht](../../hardware/system-overview.md), [Motoren und Encoder](../../hardware/electronics/reference.md#motors-and-encoders), [Sensoren](../../hardware/electronics/reference.md#sensors-and-signals).
 
 ### Welche Regler beeinflussen was?
 
