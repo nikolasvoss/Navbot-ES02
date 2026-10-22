@@ -1,6 +1,6 @@
 # Motor commissioning: bounded current and voltage identification
 
-This page describes the Package 1 diagnostic commands for the two wheel motors, the manual phase-resistance method, the `KV_rating` fit, and the commissioning record. It is the operating procedure for [Package 1 of the robust control plan](../plans/robust-control-system.md#package-1-measurement-support-controller-unchanged). Software support is implemented; physical acceptance is pending. No measured value is recorded here yet.
+This page describes the Package 1 diagnostic commands for the two wheel motors, the manual phase-resistance method, the `KV_rating` fit, and the commissioning record. It is the operating procedure for [Package 1 of the robust control plan](../plans/robust-control-system.md#package-1-measurement-support-controller-unchanged). Software support is implemented; physical acceptance is pending. The only measured values recorded here are the two wheel phase-to-phase resistances; no `KV_rating` or voltage ceiling is recorded yet.
 
 ## Preconditions
 
@@ -8,7 +8,7 @@ Run these steps only on a supported robot. Support the body so that a fall canno
 
 - Balance is off: CH5 at position 0. The firmware refuses `T` and `M` requests while balance is enabled, and it latches a fault if balance is enabled during a request.
 - Calibration is inactive (`E` not running).
-- Both wheels are below the overspeed limit (15 rad/s shaft velocity, wheel-clear runs; see the caps table). A request is refused otherwise.
+- Both wheels are below the overspeed limit (60 rad/s shaft velocity, wheel-clear runs; see the caps table). A request is refused otherwise.
 - The robot is connected over the USB serial console at 576000 baud. Use [trace capture](trace-capture.md) for logs.
 
 ## Commands
@@ -33,13 +33,13 @@ These caps are in `MotorDiagnostic.h` and mirrored in `scripts/capture_balance_t
 | Quantity | Cap |
 | --- | --- |
 | Current per wheel, `T` | ±0.02 A |
-| Voltage `q`, `M` | ±0.5 V |
-| Lease | integer 1 to 2000 ms |
-| Shaft velocity overspeed | 15 rad/s per wheel, latched after 50 ms continuously over the limit. Wheel-clear runs only. |
+| Voltage `q`, `M` | ±2.0 V |
+| Lease | integer 1 to 5000 ms |
+| Shaft velocity overspeed | 60 rad/s per wheel, latched after 50 ms continuously over the limit. Wheel-clear runs only. |
 
-The 15 rad/s overspeed cap applies only to runs with the wheels clear of the surface. The earlier 3 rad/s cap ended every identification step: the wheels break away near 0.3 to 0.4 V and pass 3 rad/s before any speed plateau exists, so no KV or voltage-ceiling data was obtained. See [the first Package 1 hardware run](../../../lab/robot/2026-10-22-package1-motor-diagnostic-first-run.md). The cap is a diagnostic bound, not a commissioned limit.
+The 60 rad/s overspeed cap, the 2.0 V voltage cap, and the 5000 ms lease cap apply only to runs with the wheels clear of the surface. On 2026-10-22 the operator confirmed the wheels are clear and approved raising them from 15 rad/s, 0.5 V, and 2000 ms. The earlier 3 rad/s cap ended every identification step: the wheels break away near 0.3 to 0.4 V and pass 3 rad/s before any speed plateau exists. At 15 rad/s the steps ran their full lease, but speed still did not settle; see [the first Package 1 hardware run](../../../lab/robot/2026-10-22-package1-motor-diagnostic-first-run.md). These caps are diagnostic bounds, not commissioned limits.
 
-The 0.02 A current cap follows the voltage cap: 0.5 V / 22 ohm (the wheel phase resistance estimate) ≈ 0.023 A, so 0.02 A stays below that bound. This is an estimate-based cap, not a measured limit.
+The 0.02 A current cap is an estimate-based bound, not a measured limit, and it is not derived from the voltage cap. It rests on the 22 ohm `kWheelPhaseResistanceOhm` estimate, which is not measured. At 0.02 A that estimate gives about 0.44 V, below the 2.0 V voltage cap. The value is unchanged.
 
 A `T` request sets both wheel currents. A 0 A target is not an off state: in estimated-current mode the wheel still follows the back-EMF voltage. A `M` request disables the other wheel's driver.
 
@@ -47,7 +47,7 @@ A `T` request sets both wheel currents. A 0 A target is not an off state: in est
 
 Each request runs until its lease expires, `STOP` is received, or a fault occurs. Faults include lease expiry, invalid or overspeed velocity, balance enabled, and calibration active. Every fault disables both drivers, zeroes both targets, and stays latched.
 
-Overspeed is debounced by time. A wheel counts as over the limit when its shaft velocity magnitude is above 15 rad/s, on either wheel. The fault latches once that condition has lasted 50 ms, measured with the millisecond clock. A sample at or below the limit clears the timer, so a spike shorter than 50 ms is ignored. The −40 and −65 rad/s single-row spikes from the first hardware run were seen one trace row (about 17 ms) apart; their true duration is not measured yet, so whether this rule rejects them on the robot is open. A non-finite velocity still latches `InvalidVelocity` at once. The timer restarts on each new request and clears on `STOP`, `RESET`, and any latched fault.
+Overspeed is debounced by time. A wheel counts as over the limit when its shaft velocity magnitude is above 60 rad/s, on either wheel. The fault latches once that condition has lasted 50 ms, measured with the millisecond clock. A sample at or below the limit clears the timer, so a spike shorter than 50 ms is ignored. The −40 and −65 rad/s single-row spikes from the first hardware run were seen one trace row (about 17 ms) apart; their true duration is not measured yet, so whether this rule rejects them on the robot is open. The −65 rad/s spike is above the 60 rad/s cap, so only the 50 ms debounce decides whether it trips. A non-finite velocity still latches `InvalidVelocity` at once. The timer restarts on each new request and clears on `STOP`, `RESET`, and any latched fault.
 
 - A lease that runs out **latches** a `LeaseExpired` fault. Send `T RESET` or `M RESET` before the next request. `STOP` ends a request without a fault.
 - `RESET` clears a latched fault only when balance is off, calibration is inactive, and both wheels are within the overspeed limit. A reset never enables output; a new request is needed.
@@ -68,7 +68,7 @@ For a voltage identification of the right wheel:
 
 ```text
 K58
-M 2 0.2 1000               right wheel only, 0.2 V q-axis, 1000 ms lease
+M 2 1.0 5000               right wheel only, 1.0 V q-axis, 5000 ms lease
 ...
 M RESET
 K0                         MOTOR_ID_RESULT prints requested_q, actual_q, shaft_velocity
@@ -109,30 +109,28 @@ The BOM lists the wheel motors as `2208-90kv` (12N14P gimbal motor, 7 pole pairs
 
 ## KV fit
 
-Use voltage identification with wheels clear. Repeat the steps for each wheel at three voltages, for example 0.1, 0.2, and 0.3 V. Keep each lease within the 2000 ms cap.
+Use voltage identification with wheels clear. Repeat the steps for each wheel at least three voltages, for example 0.5, 1.0, 1.5, and 2.0 V. Keep each lease within the 5000 ms cap.
 
 1. Command one voltage with `M <n> <V> <lease_ms>`, long enough for the shaft velocity to settle to a plateau.
 2. Take the median shaft velocity over the plateau, and the commanded `q` voltage. The plateau must be steady: no drift and no rising speed.
 3. Convert the speed to rpm: `rpm = ω / RPM_TO_RADS`, where `RPM_TO_RADS = 2π/60`.
-4. Fit `rpm` against the voltage across the three points. The back-EMF convention used for the fit is that from the plan, `V_bemf = ω / (KV · √3 · RPM_TO_RADS)`. So the slope of `rpm` against voltage is `KV · √3`, and `KV_rating = slope / √3`. Verify this convention against the vendored SimpleFOC source before using the value.
+4. Fit `rpm` against the voltage across the measured points. The back-EMF convention used for the fit is that from the plan, `V_bemf = ω / (KV · √3 · RPM_TO_RADS)`. So the slope of `rpm` against voltage is `KV · √3`, and `KV_rating = slope / √3`. Verify this convention against the vendored SimpleFOC source before using the value.
 5. Use only points where the speed is steady. At these small voltages the resistive term `I · R` is small, but report the residual; do not extrapolate beyond the measured points.
 
 ### Usable voltage ceiling
 
-Increase the voltage in steps while speed still rises. The usable ceiling is the highest voltage before the speed stops rising. It is a candidate for `voltage_limit` in Package 2. It must stay under the 0.5 V cap until a reviewed recompile raises the cap.
+Increase the voltage in steps while speed still rises. The usable ceiling is the highest voltage before the speed stops rising. It is a candidate for `voltage_limit` in Package 2. It must stay within the 2.0 V cap (`kMaximumVoltageV`) until a reviewed recompile changes the cap.
 
 ## Commissioning record
 
-Only the phase-to-phase resistance row below is measured; every other value is pending or derived. Record each value with its date, firmware commit, and operator, and keep the source log for each one.
+Only the two wheel `R_pp` values are measured; every other value is pending or derived. Record each value with its date, firmware commit, and operator, and keep the source log for each one.
 
 | Item | Unit | Status |
 | --- | --- | --- |
 | Payload and leg-pose description | text | PENDING |
 | Firmware commit used for the run | hash | PENDING |
-| Wheel motor `R_pp` (phase to phase) | Ω | MEASURED 2026-10-22 by the operator: 11.5 Ω. Which wheel, which phase pair, the meter and the winding connection were not recorded. |
-| Wheel motor `R_phase` | Ω | 5.75 Ω if the winding is star (`R_pp / 2`). The winding connection is not verified, so treat this as derived, not measured. |
-| Left wheel `R_pp`, per-wheel confirmation | Ω | PENDING |
-| Right wheel `R_pp`, per-wheel confirmation | Ω | PENDING |
+| Left wheel `R_pp`; `R_phase` | Ω | `R_pp` 11.5 Ω MEASURED 2026-10-22 by the operator (phase pair, meter and winding connection not recorded). `R_phase` 5.75 Ω if star (`R_pp / 2`): derived, winding unverified. |
+| Right wheel `R_pp`; `R_phase` | Ω | `R_pp` 11.5 Ω MEASURED 2026-10-22 by the operator (phase pair, meter and winding connection not recorded). `R_phase` 5.75 Ω if star (`R_pp / 2`): derived, winding unverified. |
 | Left wheel `KV_rating` and fit residual | rpm/V | PENDING |
 | Right wheel `KV_rating` and fit residual | rpm/V | PENDING |
 | Left wheel usable `q` ceiling | V | PENDING |

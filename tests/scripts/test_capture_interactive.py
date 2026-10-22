@@ -12,8 +12,8 @@ from capture_balance_trace import (MAX_CURRENT_A, MAX_LEASE_MS, MAX_VOLTAGE_V, i
 class InteractiveWhitelistTest(unittest.TestCase):
     def test_firmware_caps_are_mirrored(self):
         self.assertEqual(MAX_CURRENT_A, 0.02)
-        self.assertEqual(MAX_VOLTAGE_V, 0.5)
-        self.assertEqual(MAX_LEASE_MS, 2000)
+        self.assertEqual(MAX_VOLTAGE_V, 2.0)
+        self.assertEqual(MAX_LEASE_MS, 5000)
 
     def test_bounded_current_commands_are_sent_uppercase_and_trimmed(self):
         self.assertEqual(interactive_command("T 0.01 -0.02 500\n"), "T 0.01 -0.02 500")
@@ -25,6 +25,8 @@ class InteractiveWhitelistTest(unittest.TestCase):
         self.assertEqual(interactive_command("M 1 0.5 2000"), "M 1 0.5 2000")
         self.assertEqual(interactive_command("m 2 -0.25 1"), "M 2 -0.25 1")
         self.assertEqual(interactive_command("M 2 0 10"), "M 2 0 10")
+        self.assertEqual(interactive_command("M 1 2.0 5000"), "M 1 2.0 5000")
+        self.assertEqual(interactive_command("M 2 -2 5000"), "M 2 -2 5000")
 
     def test_stop_and_reset_are_accepted_for_both_motion_commands(self):
         for command in ("T STOP", "T RESET", "M STOP", "M RESET", " m reset \r\n"):
@@ -37,12 +39,12 @@ class InteractiveWhitelistTest(unittest.TestCase):
                 self.assertIsNone(interactive_command(command))
 
     def test_voltage_over_cap_is_rejected(self):
-        for command in ("M 1 0.51 500", "M 2 -0.6 500"):
+        for command in ("M 1 2.01 500", "M 2 -2.1 500"):
             with self.subTest(command=command):
                 self.assertIsNone(interactive_command(command))
 
     def test_lease_must_be_whole_milliseconds_within_firmware_range(self):
-        for command in ("T 0 0 0", "T 0 0 2001", "T 0 0 500.5", "T 0 0 -5", "M 1 0.1 0", "M 1 0.1 2001",
+        for command in ("T 0 0 0", "T 0 0 5001", "T 0 0 500.5", "T 0 0 -5", "M 1 0.1 0", "M 1 0.1 5001",
                         "M 1 0.1 1.0"):
             with self.subTest(command=command):
                 self.assertIsNone(interactive_command(command))

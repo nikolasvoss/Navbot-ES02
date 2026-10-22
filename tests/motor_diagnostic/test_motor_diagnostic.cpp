@@ -34,12 +34,18 @@ int main() {
   assert(!parseCurrentRequest("nan 0 500", parsed));
   assert(!parseCurrentRequest("inf 0 500", parsed));
   assert(!parseCurrentRequest("0.03 0 500", parsed));
-  assert(!parseCurrentRequest("0 0 2001", parsed));
+  assert(parseCurrentRequest("0 0 5000", parsed) && parsed.leaseMs == 5000);
+  assert(!parseCurrentRequest("0 0 5001", parsed));
   assert(!parseCurrentRequest("0 0 500.5", parsed));
   assert(parseVoltageRequest("2 -0.5 1250", parsed));
   assert(parsed.selectedMotor == 2 && parsed.voltageV == -0.5f && parsed.leaseMs == 1250);
+  assert(parseVoltageRequest("1 2.0 5000", parsed));
+  assert(parsed.voltageV == 2.0f && parsed.leaseMs == 5000);
+  assert(parseVoltageRequest("2 -2.0 5000", parsed));
+  assert(parsed.voltageV == -2.0f);
   assert(!parseVoltageRequest("0 0.1 500", parsed));
-  assert(!parseVoltageRequest("1 0.51 500", parsed));
+  assert(!parseVoltageRequest("1 2.01 500", parsed));
+  assert(!parseVoltageRequest("1 0.1 5001", parsed));
   assert(!parseVoltageRequest("1 nan 500", parsed));
   assert(!parseVoltageRequest("1 0.1 500 1", parsed));
 

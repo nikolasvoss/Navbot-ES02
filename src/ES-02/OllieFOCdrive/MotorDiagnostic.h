@@ -8,12 +8,14 @@ enum class Mode : uint8_t { Idle, CurrentTest, VoltageIdentification };
 enum class Fault : uint8_t { None, LeaseExpired, BalanceEnabled, CalibrationActive, InvalidVelocity, Overspeed };
 enum class RequestResult : uint8_t { Accepted, Invalid, Unsafe, FaultLatched };
 
-constexpr uint32_t kMaximumLeaseMs = 2000;
-// Keep at or below kMaximumVoltageV divided by the 22 ohm wheel phase resistance estimate.
+constexpr uint32_t kMaximumLeaseMs = 5000;
+// Estimate-based bound on the T current target, not derived from kMaximumVoltageV. It rests on the 22 ohm
+// kWheelPhaseResistanceOhm estimate, which is not measured (the measured phase-to-phase value is 11.5 ohm).
 constexpr float kMaximumCurrentA = 0.02f;
-constexpr float kMaximumVoltageV = 0.5f;
-// Wheel-clear runs only. Wheels break away near 0.3-0.4 V and pass 3 rad/s before any plateau.
-constexpr float kMaximumSpeedRadPerSec = 15.0f;
+constexpr float kMaximumVoltageV = 2.0f;
+// Wheel-clear runs only. Raised from 15 rad/s by operator approval on 2026-10-22. The earlier 3 rad/s cap
+// ended identification before any speed plateau.
+constexpr float kMaximumSpeedRadPerSec = 60.0f;
 // Overspeed latches only after a wheel has stayed above the limit for this long (measured with Inputs::nowMs).
 constexpr uint32_t kOverspeedDebounceMs = 50;
 

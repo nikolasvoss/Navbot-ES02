@@ -14,8 +14,8 @@ TUNE_COMMAND = re.compile(r"(?:U[01]|[PSYR][PIDL](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+)
 
 # Mirror the firmware caps in MotorDiagnostic.h; the firmware refuses anything larger too.
 MAX_CURRENT_A = 0.02
-MAX_VOLTAGE_V = 0.5
-MAX_LEASE_MS = 2000
+MAX_VOLTAGE_V = 2.0
+MAX_LEASE_MS = 5000
 NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
 CURRENT_COMMAND = re.compile(rf"T ({NUMBER}) ({NUMBER}) (\d+)")
 VOLTAGE_COMMAND = re.compile(rf"M ([12]) ({NUMBER}) (\d+)")
