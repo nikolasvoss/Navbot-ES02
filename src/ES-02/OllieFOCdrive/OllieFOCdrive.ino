@@ -22,10 +22,8 @@
 #include "RobotLogCapture.h"
 #include "ServoControl.h"
 #include "SerialCommandRouter.h"
-#include "ble.h"
 #include "filter.h"
 #include "imu.h"
-#include "robot.h"
 #include "touchscreen.h"
 
 bool motorDiagnosticOwnsOutput = false;
@@ -94,13 +92,6 @@ constexpr PidPreset kTouchYPid{0.2, 170, 0.08, 0};
 #define SBUS_CHANNEL_MIN 192
 constexpr uint32_t kRcFrameTimeoutMs = 100;
 constexpr float kControlTimestepMinSec = 0.001f;
-
-struct RcRange {
-  long min;
-  long max;
-};
-
-using BodyHeightCurve = float (*)(long, const RcRange &, float);
 
 constexpr unsigned long kSerialBaudRate = 576000;
 constexpr size_t kSerialTxBufferBytes = 1024;
@@ -286,14 +277,6 @@ void setWheelSpeedFeedbackGain(char *cmd) { command.scalar(&wheelSpeedFeedbackGa
 void setDriveTiltReductionGain(char *cmd) { command.scalar(&driveTiltReductionGain, cmd); }
 
 void setPidParameterTuning(char *cmd) { command.scalar(&pidParameterTuning, cmd); }
-void handleUserCommand(char *cmd) {
-  if (*cmd == '{') {
-    rp.json_test(cmd);
-  } else {
-    setPidParameterTuning(cmd);
-  }
-}
-
 void setMahonyKp(char *cmd) {
   float value = 0.0f;
   imu::Settings candidate = imu::settings();
@@ -610,28 +593,6 @@ bool diagnosticImuReady = false;
 unsigned long diagnosticLastRcFrameMs = 0;
 bool diagnosticHasRcFrame = false;
 
-void cpu0Task(void *ptParam) {
-  while (1) {
-    if (tenMsecTick()) {
-      ble_loop();
-    }
-  }
-}
-bool tenMsecTick(void) {
-  static unsigned long lastMillis = 0;
-  unsigned long currentMillis = millis();
-
-  if (currentMillis - lastMillis >= 10) {
-    lastMillis = currentMillis;
-    return 1;
-  }
-  // Overflow handling
-  if (lastMillis > currentMillis) {
-    lastMillis = currentMillis;
-  }
-  return 0;
-}
-
 void logCalibration(const PersistedCalibrationValues &calibrationValues) {
   Logging::message(Logging::Level::Info, "Calibration", "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
                    calibrationValues.attitude.rollDegrees, calibrationValues.attitude.pitchDegrees);
@@ -728,7 +689,6 @@ const SerialCommandEntry commandEntries[] = {
     {'N', setTouchYPid, "touchYPidSettings"},
     {'G', setControlTorqueCompensation, "my ControlTorqueCompensation"},
 #endif
-    {'U', handleUserCommand, "my User_command"},
     {'V', setWheelSpeedFeedbackGain, "wheel speed feedback gain"},
     {'W', setDriveTiltReductionGain, "drive tilt reduction gain"},
 };
@@ -778,10 +738,6 @@ void setup() {
   Logging::setProfile(Logging::Profile::Diagnostic);
   return;
 #endif
-
-  // TODO could be turned off?
-  ble_init();
-  xTaskCreatePinnedToCore(cpu0Task, "cpu0_task", 4096, NULL, 0, NULL, 0);
 
   biquadFilterInitLPF(&voltageFilterLpf, 50, 1000);  // TODO replace numbers with names
 
@@ -839,72 +795,40 @@ float mapf(long x, long in_min, long in_max, float out_min, float out_max) {
   return (x - in_min) * (out_max - out_min) / divisor + out_min;
 }
 
-constexpr RcRange kBleRcRanges[10] = {
-    {BLE_CH0_MIN, BLE_CH0_MAX}, {BLE_CH1_MIN, BLE_CH1_MAX}, {BLE_CH2_MIN, BLE_CH2_MAX}, {BLE_CH3_MIN, BLE_CH3_MAX},
-    {BLE_CH4_MIN, BLE_CH4_MAX}, {BLE_CH5_MIN, BLE_CH5_MAX}, {BLE_CH6_MIN, BLE_CH6_MAX}, {BLE_CH7_MIN, BLE_CH7_MAX},
-    {BLE_CH8_MIN, BLE_CH8_MAX}, {BLE_CH9_MIN, BLE_CH9_MAX}};
-
-constexpr RcRange kSbusRcRanges[10] = {{SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
-                                       {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
-                                       {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
-                                       {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX},
-                                       {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}, {SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX}};
-
 constexpr long kSbusBodyHeightCenter = 992;
 
-float bleBodyHeightM(long raw, const RcRange &range, float maxHeightM) {
-  return mapf(raw, range.min, range.max, kBodyHeightDefaultM, maxHeightM);
-}
-
 // Below the stick centre the height falls to the minimum, above it rises to maxHeightM.
-float sbusBodyHeightM(long raw, const RcRange &range, float maxHeightM) {
+float sbusBodyHeightM(long raw, float maxHeightM) {
   if (raw <= kSbusBodyHeightCenter)
-    return mapf(raw, range.min, kSbusBodyHeightCenter, kBodyHeightMinM, kBodyHeightDefaultM);
-  return mapf(raw, kSbusBodyHeightCenter + 1, range.max, kBodyHeightDefaultM, maxHeightM);
+    return mapf(raw, SBUS_CHANNEL_MIN, kSbusBodyHeightCenter, kBodyHeightMinM, kBodyHeightDefaultM);
+  return mapf(raw, kSbusBodyHeightCenter + 1, SBUS_CHANNEL_MAX, kBodyHeightDefaultM, maxHeightM);
 }
 
 /**
- * @brief Maps ten raw remote channels to the body commands and mode switches.
+ * @brief Maps ten raw S.BUS channels to the body commands and mode switches.
  *
  * Channel 1 drives the body height or the pitching, depending on `attitudeMode`.
- * The two receivers differ only in their raw ranges and in the body height curve.
  */
-template <typename Raw>
-void applyRcChannels(const Raw *ch, const RcRange *range, BodyHeightCurve bodyHeightM) {
-  movementSpeed = mapf(ch[2], range[2].min, range[2].max, -15, 15);
-  bodyTurn = -mapf(ch[3], range[3].min, range[3].max, -11, 11);
-  pidGainsMode = map(ch[4], range[4].min, range[4].max, 0, 2);
-  postureOrMarkMode = map(ch[5], range[5].min, range[5].max, 0, 1);
-  rollMode = map(ch[6], range[6].min, range[6].max, 0, 1);
-  attitudeMode = map(ch[7], range[7].min, range[7].max, 0, 2);
+void applyRcChannels(const int16_t *ch) {
+  movementSpeed = mapf(ch[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -15, 15);
+  bodyTurn = -mapf(ch[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -11, 11);
+  pidGainsMode = map(ch[4], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
+  postureOrMarkMode = map(ch[5], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
+  rollMode = map(ch[6], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
+  attitudeMode = map(ch[7], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
   // Top ball
-  topBallX = mapf(ch[8], range[8].min, range[8].max, -5, 5);
-  topBallY = mapf(ch[9], range[9].min, range[9].max, -5, 5);
+  topBallX = mapf(ch[8], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -5, 5);
+  topBallY = mapf(ch[9], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -5, 5);
 
   if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT) {
-    bodyHeightCommandM = bodyHeightM(ch[1], range[1], kBodyHeightMaxM);
+    bodyHeightCommandM = sbusBodyHeightM(ch[1], kBodyHeightMaxM);
   } else if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST) {
-    bodyPitching = mapf(ch[1], range[1].min, range[1].max, -12, 12);
+    bodyPitching = mapf(ch[1], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -12, 12);
   } else if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) {
-    bodyHeightCommandM = bodyHeightM(ch[1], range[1], kBallPoiseMaxBodyHeightM);
+    bodyHeightCommandM = sbusBodyHeightM(ch[1], kBallPoiseMaxBodyHeightM);
   }
-  bodyRoll = mapf(ch[0], range[0].min, range[0].max, -0.011, 0.011);
+  bodyRoll = mapf(ch[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);
 }
-
-/**
- * @brief Choose BLE or remote control input
- *
- * Use the remote control as the input when BLE connection is lost.
- */
-void readControlInput() {
-  if (rp.ble_connected) {
-    bleCtrl();
-  } else {
-    readSbus();
-  }
-}
-
-void bleCtrl() { applyRcChannels(ble_ctrler.ch, kBleRcRanges, bleBodyHeightM); }
 
 /**
  * @brief Reads and processes data from the FUTABA S.BUS remote controller.
@@ -928,7 +852,7 @@ void readSbus() {
     sBus.UpdateChannels();
     sBus.toChannels = 0;
 
-    applyRcChannels(sBus.channels, kSbusRcRanges, sbusBodyHeightM);
+    applyRcChannels(sBus.channels);
     if (DIAGNOSTIC_LIVE_TUNING_DEFAULTS)
       movementSpeed *= 2.0f;  // Keep drive-command authority near the previous 0.03 x 3.3 setting.
   }
@@ -1441,7 +1365,7 @@ void diagnosticLoop(void) {
 }
 void updateMotorsAndCommands() {
   // iterative function setting the outer loop target
-  if (motorDiagnosticState.active) readControlInput();
+  if (motorDiagnosticState.active) readSbus();
   serviceMotorDiagnostic();
   if (!motorDiagnosticState.active) {
     if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO) {
@@ -1464,7 +1388,7 @@ void updateMotorsAndCommands() {
   // This also prevents a newly selected blocking calibration from running while leased.
   // Skipped on the normal path: no diagnostic is active or still applied to the motors.
   if (motorDiagnosticState.active || motorDiagnosticApplied) {
-    readControlInput();
+    readSbus();
     serviceMotorDiagnostic();
   }
 }
@@ -1474,7 +1398,7 @@ void updateMotorsAndCommands() {
  */
 bool readInputs() {
   const bool imuUpdated = imu::service();  // Poll once per loop without gating motor control
-  readControlInput();                      // BLE or remote control input
+  readSbus();                              // S.BUS remote control input
   ReadTouchDat();
   return imuUpdated;
 }
@@ -1689,7 +1613,7 @@ void runControlTick(bool imuUpdated) {
  *
  * This function runs repeatedly after `setup()` is complete:
  * 1. `updateMotorsAndCommands`: SimpleFOC `move()` and `loopFOC()` for both wheels, then Commander input.
- * 2. `readInputs`: IMU sample, BLE or S.BUS commands, touchscreen.
+ * 2. `readInputs`: IMU sample, S.BUS commands, touchscreen.
  * 3. `runControlTick`, once at least 1 ms has passed since the previous tick: input filtering,
  *    battery reading, telemetry, fall detection, status LED, calibration, wheel velocities,
  *    posture control, leg kinematics and servo output.
