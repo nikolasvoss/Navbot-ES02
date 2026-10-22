@@ -450,6 +450,28 @@ void applyMotorDiagnosticRequest() {
   diagnosticRestoredAwaitingResume = false;
 }
 
+OverspeedGuard::State wheelOverspeed{};
+
+// Coast fault: 0 A and both drivers off. It repeats every tick while tripped, so no other path can re-enable them.
+void serviceWheelOverspeed() {
+  const bool wasTripped = wheelOverspeed.tripped;
+  if (!OverspeedGuard::update(wheelOverspeed, millis(), m1VelocityRadPerSec, m2VelocityRadPerSec)) return;
+  motor1.target = 0.0f;
+  motor2.target = 0.0f;
+  driver.disable();
+  driver2.disable();
+  if (!wasTripped)
+    Logging::message(Logging::Level::Warning, "WHEEL_OVERSPEED", "peak=%.1frad_s limit=%.1frad_s; both drivers disabled",
+                     wheelOverspeed.peakRadPerSec, OverspeedGuard::kLimitRadPerSec);
+}
+
+// RESET rearms the guard only while both wheels are below the limit; the drivers stay off until balance is re-enabled.
+void resetWheelOverspeed() {
+  if (fabsf(m1VelocityRadPerSec) <= OverspeedGuard::kLimitRadPerSec &&
+      fabsf(m2VelocityRadPerSec) <= OverspeedGuard::kLimitRadPerSec)
+    OverspeedGuard::reset(wheelOverspeed);
+}
+
 // Shared by T and M so a flood of bad lines cannot fill the logger queue.
 bool diagnosticWarningDue() {
   static bool warned = false;
@@ -464,6 +486,7 @@ bool diagnosticWarningDue() {
 void handleM1MotionCommand(char *cmd) {
   cmd = trimDiagnosticCommand(cmd);
   if (strcmp(cmd, "RESET") == 0) {
+    resetWheelOverspeed();
     if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs()))
       Logging::message(Logging::Level::Info, "MOTOR_TEST", "fault reset; outputs remain disabled");
     else
@@ -480,6 +503,11 @@ void handleM1MotionCommand(char *cmd) {
       Logging::message(Logging::Level::Warning, "MOTOR_TEST", "use T <left_A> <right_A> <lease_ms>, T STOP, or T RESET");
     return;
   }
+  if (wheelOverspeed.tripped) {
+    if (diagnosticWarningDue())
+      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "request refused; wheel overspeed latched, send RESET");
+    return;
+  }
   const auto result = MotorDiagnostic::start(motorDiagnosticState, request, diagnosticInputs());
   if (result == MotorDiagnostic::RequestResult::Accepted) {
     applyMotorDiagnosticRequest();
@@ -493,6 +521,7 @@ void handleM1MotionCommand(char *cmd) {
 void handleM1Command(char *cmd) {
   cmd = trimDiagnosticCommand(cmd);
   if (strcmp(cmd, "RESET") == 0) {
+    resetWheelOverspeed();
     if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs()))
       Logging::message(Logging::Level::Info, "MOTOR_TEST", "fault reset; outputs remain disabled");
     else
@@ -507,6 +536,11 @@ void handleM1Command(char *cmd) {
   if (!MotorDiagnostic::parseVoltageRequest(cmd, request)) {
     if (diagnosticWarningDue())
       Logging::message(Logging::Level::Warning, "MOTOR_ID", "use M <motor_1|2> <voltage_V> <lease_ms>, M STOP, or M RESET");
+    return;
+  }
+  if (wheelOverspeed.tripped) {
+    if (diagnosticWarningDue())
+      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "request refused; wheel overspeed latched, send RESET");
     return;
   }
   const auto result = MotorDiagnostic::start(motorDiagnosticState, request, diagnosticInputs());
@@ -1629,6 +1663,7 @@ void runControlTick(bool imuUpdated) {
   serviceMotorDiagnostic();
   runCalibrationStep(imuUpdated);
   updateWheelVelocities();
+  serviceWheelOverspeed();
 
   const BodyPose pose = computeBodyPose();
 
