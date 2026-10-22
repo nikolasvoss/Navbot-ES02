@@ -16,6 +16,8 @@
 #include "LegKinematics.h"
 #include "Logging.h"
 #include "MotorDiagnostic.h"
+#include "OverspeedGuard.h"
+#include "WheelBoundary.h"
 #include "OllieFOCdrive.h"
 #include "RobotLogCapture.h"
 #include "ServoControl.h"
@@ -334,12 +336,12 @@ void setTouchYPid(char *cmd) { command.pid(&touchYPidSettings, cmd); }
 #endif
 
 // Wheel Motors and Drivers
-double m1PrevEncoderAngleRad = 0;
+// m1 is the left wheel and m2 the right wheel; speeds are forward positive (see WheelBoundary.h).
+WheelBoundary::WheelSpeedEstimator wheelSpeedEstimator;
 float m1VelocityRadPerSec = 0;
 float m1FilteredVelocityRadPerSec = 0;
 LowPassFilter m1VelocityFilter = LowPassFilter(0.01);  // Tf = 10ms
 
-double m2PrevEncoderAngleRad = 0;
 float m2VelocityRadPerSec = 0;
 float m2FilteredVelocityRadPerSec = 0;
 LowPassFilter m2VelocityFilter = LowPassFilter(0.01);  // Tf = 10ms
@@ -1515,14 +1517,13 @@ void runCalibrationStep(bool imuUpdated) {
 }
 
 void updateWheelVelocities() {
-  const float wheelVelocityDt = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? controlTimestepSec : 0.01f;
-  m1VelocityRadPerSec = (sensor1.getAngle() - m1PrevEncoderAngleRad) / wheelVelocityDt;
+  const uint32_t readTimeUs = micros();
+  WheelBoundary::WheelValues rawForward;
+  if (!wheelSpeedEstimator.update(sensor1.getAngle(), sensor2.getAngle(), readTimeUs, rawForward)) return;
+  m1VelocityRadPerSec = rawForward.left;
+  m2VelocityRadPerSec = rawForward.right;
   m1FilteredVelocityRadPerSec = m1VelocityFilter(m1VelocityRadPerSec);
-  m1PrevEncoderAngleRad = sensor1.getAngle();
-
-  m2VelocityRadPerSec = -(sensor2.getAngle() - m2PrevEncoderAngleRad) / wheelVelocityDt;
   m2FilteredVelocityRadPerSec = m2VelocityFilter(m2VelocityRadPerSec);
-  m2PrevEncoderAngleRad = sensor2.getAngle();
 }
 
 /**
