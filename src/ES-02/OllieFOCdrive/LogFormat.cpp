@@ -100,18 +100,6 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
     case Logging::DebugSelector::K25:
       return appendf(buffer, capacity, length, " LpfOut:%.6f BodyPitching:%.6f\n", p.bodyPitchState.filteredDeg,
                      p.bodyPitchState.rawDeg);
-    case Logging::DebugSelector::K26:
-      if (p.touchPoint.state == 1)
-        return appendf(buffer, capacity, length, "  aX:%d  aY:%d\n", static_cast<int>(p.touchPoint.x),
-                       static_cast<int>(p.touchPoint.y));
-      if (p.touchPoint.state == 0)
-        return appendf(buffer, capacity, length, "  tX:%d  tY:%d\n", static_cast<int>(p.touchPoint.x),
-                       static_cast<int>(p.touchPoint.y));
-      return 0;
-    case Logging::DebugSelector::K27:
-      return appendf(buffer, capacity, length, "  aX:%d  aY:%d  aXF:%.2f  aYF:%.2f\n",
-                     static_cast<int>(p.touchFilteredPoint.x), static_cast<int>(p.touchFilteredPoint.y),
-                     p.touchFilteredPoint.xFiltered, p.touchFilteredPoint.yFiltered);
     case Logging::DebugSelector::K28:
       return appendf(buffer, capacity, length, "  P:%.2f  R:%.5f  H:%.5f  S:%.2f  vra:%.2f  vra:%.2f\n",
                      p.filteredGeometry.bodyPitch, p.filteredGeometry.bodyRoll, p.filteredGeometry.bodyHeightM,
@@ -127,20 +115,9 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
                      p.pidIntegralOutputState.integralLimit, p.pidIntegralOutputState.integral,
                      p.pidIntegralOutputState.integralOutput, p.pidIntegralOutputState.auxiliary,
                      p.pidIntegralOutputState.output);
-    case Logging::DebugSelector::K36:
-      return appendf(buffer, capacity, length, " state:%d start:%d\n", static_cast<int>(p.touchState.state),
-                     static_cast<int>(p.touchState.start));
     case Logging::DebugSelector::K37:
       return appendf(buffer, capacity, length, " sbus_vra:%.2f sbus_vraf:%.2f sbus_vrb:%.2f sbus_vrbf:%.2f\n",
                      p.ballPosition.x, p.ballPosition.xFiltered, p.ballPosition.y, p.ballPosition.yFiltered);
-    case Logging::DebugSelector::K40:
-      if (p.touchPoint.state == 1)
-        return appendf(buffer, capacity, length, "  aX:%d  aY:%d\n", static_cast<int>(p.touchPoint.x),
-                       static_cast<int>(p.touchPoint.y));
-      if (p.touchPoint.state == 0)
-        return appendf(buffer, capacity, length, "  tX:%d  tY:%d\n", static_cast<int>(p.touchPoint.x),
-                       static_cast<int>(p.touchPoint.y));
-      return 0;
     case Logging::DebugSelector::K41:
       return appendf(buffer, capacity, length, " roll_ok:%.5f pa:%.5f out:%.5f\n", p.rollOutput.rollOk,
                      p.rollOutput.bodyPitch, p.rollOutput.output);

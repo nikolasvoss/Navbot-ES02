@@ -910,8 +910,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.speedPid = pidStatus(speedPid);
   in.yawPid = pidStatus(yawPid);
   in.rollPid = pidStatus(rollPid);
-  in.touch = {Touch.XPressDat, Touch.YPressDat, Touch.XPdat,  Touch.YPdat, Touch.XLdat,
-              Touch.YLdat,     Touch.XPdatF,    Touch.YPdatF, Touch.state, Touch.start};
 
   in.servoTrims = servoTrims;
   for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = servoTraceAngle[i];

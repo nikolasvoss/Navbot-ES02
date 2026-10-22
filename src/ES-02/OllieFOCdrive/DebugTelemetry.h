@@ -20,19 +20,6 @@ struct PidStatus {
   float error;
 };
 
-struct TouchStatus {
-  uint16_t XPressDat;
-  uint16_t YPressDat;
-  int16_t XPdat;
-  int16_t YPdat;
-  int16_t XLdat;
-  int16_t YLdat;
-  float XPdatF;
-  float YPdatF;
-  uint8_t state;
-  int start;
-};
-
 // Snapshot of the sketch state read by the debug selections, taken once per control tick.
 struct TelemetryInputs {
   int selection;
@@ -70,7 +57,6 @@ struct TelemetryInputs {
   PidStatus speedPid;
   PidStatus yawPid;
   PidStatus rollPid;
-  TouchStatus touch;
 
   ServoTrimsDegrees servoTrims;
   int servoTraceAngle[4];

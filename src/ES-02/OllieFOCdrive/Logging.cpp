@@ -214,9 +214,6 @@ Result submit(const DriveSample &sample) {
 
 Result submit(const DebugSample &sample) {
   if (!isValidDebugSelector(sample.selector)) return Result::Invalid;
-  if ((sample.selector == DebugSelector::K26 || sample.selector == DebugSelector::K40) &&
-      sample.payload.touchPoint.state != 0 && sample.payload.touchPoint.state != 1)
-    return Result::Invalid;
 
   const ProfileSnapshot profile = snapshotProfile();
   if (profile.profile != Profile::SelectedDebug) return Result::Suppressed;

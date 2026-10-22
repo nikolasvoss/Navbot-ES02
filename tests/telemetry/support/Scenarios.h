@@ -30,7 +30,7 @@ inline void fill(Filler& g, DebugTelemetry::PidStatus& p) {
   p.outP = g.f(); p.outI = g.f(); p.outD = g.f(); p.output = g.f(); p.error = g.f();
 }
 
-// Variant 0: balance running. 1: gains on but tumbling. 2: gains off, touch state outside {0,1}.
+// Variant 0: balance running. 1: gains on but tumbling. 2: gains off.
 inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, int tick) {
   static const uint32_t kGate[4] = {0, 3, 7, 14};
   Filler g(variant);
@@ -87,13 +87,6 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   fill(g, in.speedPid);
   fill(g, in.yawPid);
   fill(g, in.rollPid);
-
-  DebugTelemetry::TouchStatus& t = in.touch;
-  t.XPressDat = g.u16(); t.YPressDat = g.u16();
-  t.XPdat = g.i16(); t.YPdat = g.i16(); t.XLdat = g.i16(); t.YLdat = g.i16();
-  t.XPdatF = g.f(); t.YPdatF = g.f();
-  t.state = static_cast<uint8_t>(variant == 0 ? 1 : (variant == 1 ? 0 : 2));
-  t.start = g.i32();
 
   in.servoTrims = {g.f(), g.f(), g.f(), g.f()};
   for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = g.i32();

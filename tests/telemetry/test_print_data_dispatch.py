@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SKETCH = ROOT / "src/ES-02/OllieFOCdrive"
 TESTS = ROOT / "tests/telemetry"
 
-REMOVED = [29, 30, 34, 35, 38, 39]
+REMOVED = [26, 27, 29, 30, 34, 35, 36, 38, 39, 40]
 SELECTED = [selector for selector in range(1, 49) if selector not in REMOVED]
 CHANNELS = list(range(60, 76))
 SILENT = [0, 49, 54, 59, 76, 80] + REMOVED
@@ -48,15 +48,11 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="print-data-dispatch-") as directory:
         executable = compile_driver(Path(directory))
 
-        # Variant 0 has touch state 1 and gate 1 keeps the trace profiles quiet.
+        # Gate 1 keeps the trace profiles quiet.
         for selector in SELECTED + CHANNELS:
-            (due, paced, touch_idle) = run_ticks(
-                executable, [(selector, 1, 1, 0), (selector, 1, 0, 0), (selector, 1, 1, 2)])
+            (due, paced) = run_ticks(executable, [(selector, 1, 1, 0), (selector, 1, 0, 0)])
             expect(failures, "selector %d due" % selector, due, "%d 1 -> K%d" % (selector, selector))
             expect(failures, "selector %d paced out" % selector, paced, "%d 1 -> -" % selector)
-            touch_gated = selector in (26, 40)
-            expect(failures, "selector %d with touch state 2" % selector, touch_idle,
-                   "%d 1 -> %s" % (selector, "-" if touch_gated else "K%d" % selector))
 
         for selector in SILENT + list(TRACE_KIND):
             (off_gate,) = run_ticks(executable, [(selector, 1, 1, 0)])

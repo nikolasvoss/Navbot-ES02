@@ -156,34 +156,6 @@ bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &pa
   }
 }
 
-// Selectors 26, 27, 36 and 40.
-bool fillTouch(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
-  const TouchStatus &touch = in.touch;
-  switch (selection) {
-    case 26:
-      if (touch.state == 1) {
-        payload.touchPoint = {touch.state, touch.XPdat, touch.YPdat};
-      } else if (touch.state == 0) {
-        payload.touchPoint = {touch.state, touch.XLdat, touch.YLdat};
-      } else {
-        return false;
-      }
-      return true;
-    case 27:
-      payload.touchFilteredPoint = {touch.XPdat, touch.YPdat, touch.XPdatF, touch.YPdatF};
-      return true;
-    case 36:
-      payload.touchState = {touch.state, touch.start};
-      return true;
-    case 40:
-      if (touch.state != 0 && touch.state != 1) return false;
-      payload.touchPoint = {touch.state, touch.XPressDat, touch.YPressDat};
-      return true;
-    default:
-      return false;
-  }
-}
-
 // Selectors 19..21, 24, 25, 28, 37, 41 and 42.
 bool fillPose(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
@@ -272,11 +244,6 @@ bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &paylo
     case 32:
     case 33:
       return fillPid(selection, in, payload);
-    case 26:
-    case 27:
-    case 36:
-    case 40:
-      return fillTouch(selection, in, payload);
     case 19:
     case 20:
     case 21:

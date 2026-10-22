@@ -164,16 +164,12 @@ enum class DebugSelector : uint8_t {
   K23,
   K24,
   K25,
-  K26,
-  K27,
-  K28,
+  K28 = 28,
   K31 = 31,
   K32,
   K33,
-  K36 = 36,
-  K37,
-  K40 = 40,
-  K41,
+  K37 = 37,
+  K41 = 41,
   K42,
   K43,
   K44,
@@ -291,21 +287,6 @@ struct PidCoefficients {
   float ki;
   float kd;
 };
-struct TouchPoint {
-  int32_t state;
-  int32_t x;
-  int32_t y;
-};
-struct TouchFilteredPoint {
-  int32_t x;
-  int32_t y;
-  float xFiltered;
-  float yFiltered;
-};
-struct TouchState {
-  int32_t state;
-  int32_t start;
-};
 struct BallPosition {
   float x;
   float xFiltered;
@@ -418,9 +399,6 @@ union DebugPayload {
   BalanceState balanceState;
   PidState pidState;
   PidCoefficients pidCoefficients;
-  TouchPoint touchPoint;
-  TouchFilteredPoint touchFilteredPoint;
-  TouchState touchState;
   BallPosition ballPosition;
   RollOutputState rollOutput;
   VoltageState voltageState;
