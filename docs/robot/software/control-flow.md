@@ -21,8 +21,7 @@ flowchart LR
     CTRL -->|2 current targets, A| FOC[2 × SimpleFOC<br/>torque mode + FOC]
     ENC --> FOC
     FOC --> DRV[2 × MP6536<br/>wheel motors]
-    CTRL -->|height, roll| IK[Inverse leg kinematics]
-    IK --> SERVO[4 × servo PWM]
+    SERVO[4 × servo PWM<br/>fixed standing pose]
     DRV --> ROBOT[Mechanics and motion]
     SERVO --> ROBOT
     ROBOT -. measurement .-> IMU
@@ -33,23 +32,15 @@ The IMU sits on the MAIN board according to the PCB draft. Each wheel motor has 
 
 ### Which controllers affect what?
 
-| Branch | Error from setpoint and actual value | Result in the active two-wheel path |
-| --- | --- | --- |
-| **Tilt / balance** | `angleError = correctedRollDegrees + bodyPitchingFiltered` | No balance controller since Package 3 row 6; both wheel targets are 0 A. See the interim note below. `correctedRollDegrees` is called "roll" in the code. Here it is the attitude angle in degrees used for forward/backward tilting. |
-| **Yaw / steering** | `yawError = attitude.gyro.z - bodyTurn` | `yawPid` supplies a differential part: wheel 1 gets `−yawOutput`, wheel 2 gets `+yawOutput`. The gyro Z value and the turn command are in rad/s. |
-| **Drive / wheel speed** | none | The speed loop was removed in Package 3, row 2. CH3 is still parsed into `movementSpeed`, but no controller uses it. |
+There is no balance, speed, roll, or ball controller in the sketch since Package 3. Both wheel targets are 0 A (set in `runControlTick()`), and the legs hold the fixed standing pose: each servo at `-trim`, with no inverse kinematics. Package 4 adds the balance controller. See the [robust control plan](../plans/robust-control-system.md#package-4-controller-module).
 
-Core wheel motor logic: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`. Both are then limited to ±88. The signs are software conventions and do not replace a test of the mechanical direction of action.
-
-**Interim state (2026-10-22, Package 2):** the wheel motors now take ampere targets in torque mode, but the values above are still rad/s. `runPostureController()` therefore writes 0 A to both wheels after computing them. Balance does not drive the wheels until the Package 4 controller produces current commands. Package 3 and 4 remove or replace this path. See the [robust control plan](../plans/robust-control-system.md#package-2-motor-configuration-and-the-hardware-boundary). `runPostureController()` is the active two-wheel path. The unused older function `PIDcontroller_angle()` was removed during cleanup on 2026-10-01. It contained the classic cascade "speed → tilt → wheel motor", but `loop()` did not call it. The comment above `runPostureController()` also names a cascade, which is misleading at this point.
-
-**Numerical example without I/D parts:** With `correctedRollDegrees=+1°`, `bodyPitchingFiltered=0`, and balance P=6, the P part adds `+6` to the common wheel target speed. If `yawError=+0.2 rad/s` and yaw P=5 are present at the same time, the yaw part is `+1`: wheel 1 receives `6−1=5`, and wheel 2 receives `6+1=7 rad/s`. The example shows the mixing calculation. The actual response depends on signs, dynamics, I/D parts, and limits.
+The yaw loop is not computed either: `yawPid` keeps its settings from Commander `Y`, but no code updates its output since Package 3 row 9. Package 4 replaces it with a yaw-rate term.
 
 ### What happens on a drive command?
 
 1. CH3 is mapped to `movementSpeed`. No controller reads it since the speed loop was removed.
 2. The IMU supplies the tilt angle `correctedRollDegrees` via Mahony. No controller uses it since Package 3 row 6.
-3. CH4 sets `bodyTurn`. The yaw controller compares it with `gyro.z` and raises one wheel target speed while lowering the other.
+3. CH4 sets `bodyTurn`. No controller reads it yet (package 4).
 4. SimpleFOC receives each wheel's current target and computes the motor drive via FOC/PWM. Since Package 2 the motor mode is `torque` with `TorqueControlType::estimated_current`. The target in amperes is converted to `voltage.q = I · phase_resistance + back-EMF` and clamped to `voltage_limit` (4.2 V). The current is therefore an estimate, not a sensed value; the optional current sensing loops are compiled out. `current_limit` (about 0.73 A) is the derived stall current at the voltage ceiling, not a measured battery-current limit.
 
 The behavior is coupled through the mechanics: a servo movement changes the position, and a wheel movement changes tilt and wheel speed. A tremor can therefore appear in both actuator groups, even when the trigger comes from only one branch.
@@ -61,7 +52,7 @@ The behavior is coupled through the mechanics: a servo movement changes the posi
 | **CH1, CH2** | Unused since Package 3 row 8 (body roll, leg height, and pitch were removed). |
 | **CH3** | Drive request `movementSpeed`, normally ±15. Parsed only; no controller reads it. |
 | **CH4** | Turn request `bodyTurn`, range about ±11 rad/s after the sign reversal in the code. |
-| **CH5** | 0: wheel setpoints zero, PID integrators reset. 1 and 2: both activate the same two-wheel control path with the same gains. |
+| **CH5** | 0: balance off. 1 and 2: balance on, which gates the calibration refusal and the motor diagnostic. The wheel targets stay 0 A either way. |
 | **CH6, CH8, CH9, CH10** | Unused since Package 3 row 8 (posture, attitude, and ball modes were removed). |
 | **CH7** | Unused since Package 3 row 1 (roll control was removed). |
 
@@ -72,7 +63,7 @@ SBUS is the only remote-control source and is read exactly once per loop.
 - On every `loop()` pass, `motor.move()` and `motor.loopFOC()` run. The outer control block runs from `controlTimestepSec >= 0.001 s`. This is a **minimum threshold**, not a guaranteed 1 kHz rate. A stored standstill trace measured a median tick of about 1.66 ms. Under other load, it can differ. The 2026-10-22 voltage-sweep capture ([2 V log](../../../lab/robot/captures/2026-10-22-package1-t7-voltage-sweep-2v.log)) measured 424 loop passes per second, with a mean accepted IMU read interval of 2.36 ms (`imu_mean_interval_s` 0.002358 s). With the 1024-byte serial TX buffer (capture `lab/robot/captures/2026-10-22-package1-t10-after-tx-buffer.log`, wheels clear, balance off) the loop runs about 521 passes per second, the mean accepted IMU interval is 1.92 ms, and the maximum loop-entry interval is 2.5 ms instead of 7.3 ms. The remaining pass time of about 1.9 ms is not profiled, so the outer control block still does not run at 1 kHz.
 - The IMU is read over SPI in the main pass. Acceleration and gyro are low-pass filtered and fused with Mahony into the attitude angle. The yaw controller uses `attitude.gyro.z`, which is the scaled raw gyro value, not `gyrof.z`.
 - The wheel speed is computed as encoder angle difference divided by the **measured interval between encoder reads** (`micros()`), in every state, then smoothed with a SimpleFOC low-pass filter. It is forward-positive; the motor sign is applied only in `WheelBoundary`.
-- `correctedRollDegrees`/`correctedPitchDegrees` are angles in degrees after subtracting stored zero points. The gyro supplies rad/s. `bodyX` is a kinematic shift in meters. The wheel targets are SimpleFOC target speeds in rad/s. The named PID gains therefore carry different implicit units. Numbers from different controllers cannot be compared directly.
+- `correctedRollDegrees`/`correctedPitchDegrees` are angles in degrees after subtracting stored zero points. The gyro supplies rad/s. The wheel targets are amperes in torque mode (0 A now).
 
 ### Biquad filters and sample rates
 
@@ -80,7 +71,7 @@ SBUS is the only remote-control source and is read exactly once per loop.
 
 In normal mode, `loop()` calls `imu::service()` on every pass via `readInputs()`. `imu::kSampleRateHz` is the fixed constant 1000. It determines the IMU filter coefficients and the sensor ODR. The value does not clock any measurement. `MahonyFilter::update()` receives the filtered gyro and acceleration values and the measured `dtSec`. The source code does not establish a fixed IMU sample rate or an exact frequency response under load. The firmware recomputes the filter coefficients only when the cutoff frequencies change, not on every sample.
 
-In normal mode, the battery, remote-control, and PID output filters run in the outer control block, as soon as `controlTimestepSec` is at least 1 ms. Their sampling rate of 1000 Hz is a nominal design value. The guard does not guarantee a fixed rate of 1 kHz. An existing standstill trace measured a median of about 1.66 ms per tick. Other load can change this value. In the 2026-10-22 voltage-sweep capture the measured rate was 424 loop passes per second, about 0.42 of the nominal 1000 Hz. By calculation, a biquad designed for 1000 Hz then has its cutoff at roughly 0.42 times the design value; this is not a measured frequency response. After the TX buffer change the measured rate is about 521 passes per second (see above), not 1 kHz.
+In normal mode, the battery filter runs in the outer control block, as soon as `controlTimestepSec` is at least 1 ms. Their sampling rate of 1000 Hz is a nominal design value. The guard does not guarantee a fixed rate of 1 kHz. An existing standstill trace measured a median of about 1.66 ms per tick. Other load can change this value. In the 2026-10-22 voltage-sweep capture the measured rate was 424 loop passes per second, about 0.42 of the nominal 1000 Hz. By calculation, a biquad designed for 1000 Hz then has its cutoff at roughly 0.42 times the design value; this is not a measured frequency response. After the TX buffer change the measured rate is about 521 passes per second (see above), not 1 kHz.
 
 In normal mode, the battery filter now uses a cutoff of 50 Hz and a nominal sampling rate of 1000 Hz. In diagnostic mode it uses 20 Hz and 100 Hz; there the measurement runs every 10 ms. The corrected coefficients make the battery filter react faster to voltage changes in both modes than before. The diagnostic Mahony fusion receives the intended 20 Hz IMU filters instead of an effective limit around 0.2 Hz. The coefficients of the normal IMU filter remain at the start values of 50 Hz and 1000 Hz. The actual IMU sample rate, however, is not measured.
 
@@ -90,24 +81,14 @@ This recording confirms the diagnostic telemetry clock and stationary smoothing.
 
 ## Current parameters: start values and CH5 modes
 
-At start, the yaw gain is `YP4`, `YI0`, `YD0`, `YL0`. Later serial changes remain valid until restart.
-
-| Quantity | Current diagnostic start value | CH5=1 or CH5=2 |
-| --- | ---: | ---: |
-| Balance P / I / D | 5 / 200 / 0.11 | 5 / 200 / 0.11 |
-| Balance integral state limit | ±0.1 | ±0.1 |
-| Speed P / I / D, before `/100` | 0.045 / 0.005 / 0 | 0.045 / 0.005 / 0 |
-| Yaw P / I / D | 4 / 0 / 0 | 4 / 0 / 0 |
-| CH3 mapping | ±15 × 2 | ±15 |
-
-The yaw I start value is zero in both CH5 modes. The ±0.1 limit is the limit of the **balance integral state**, not of the motor target. With I=200, it yields a maximum contribution of ±20. P and D can supply further parts. The motor target itself is limited to ±88. The speed coefficients are divided by 100 in `runPostureController()` before `speedPid` uses them. Serial commands such as `PP5`, `PD0.12`, `SP0.04` change the values only until restart. The source and the flashed image must be reconciled before measurement comparisons.
+No balance gains are active. The yaw gain starts at `YP4`, `YI0`, `YD0`, `YL0`, and later serial changes remain valid until restart. Package 4 defines the new gain set.
 
 ## Enable and protection in the code
 
-- CH5=0 or a detected fall: wheel setpoints zero, `bodyX` and the PID integrators reset. SimpleFOC keeps running. "Setpoint zero" here does not mean the output stage is switched off.
+- CH5=0 or a detected fall: wheel setpoints zero. SimpleFOC keeps running. "Setpoint zero" here does not mean the output stage is switched off.
 - `updateTumbleState()` sets the fall flag after 20 consecutive control calls with `|correctedRollDegrees| >= 35°`. To re-enable, the angle must be `<= 5°` again and the internal counter must count back down. The time depends on the real control rate.
 - The battery voltage comes via GPIO17 from the **2S battery line**, not from the 3.3 V rail. Below 7.4 V, the status LED blinks faster, and the firmware logs a warning at most once per second in the control loop. There is no shutdown. A voltage dip can have further hardware effects, but this threshold does not actively prevent them.
-- `readSbus()` sets `movementSpeed` and `bodyTurn` to zero if no valid frame has arrived for more than 100 ms or `sBus.Failsafe()` does not report OK. The switch modes and the body height, pitch, and roll commands keep their last received value. The robot continues balancing in place.
+- `readSbus()` sets `movementSpeed` and `bodyTurn` to zero if no valid frame has arrived for more than 100 ms or `sBus.Failsafe()` does not report OK. The CH5 switch keeps its last received value. The robot holds 0 A on both wheels.
 - The gyro calibration (`E1`) blocks the control loop for several seconds. It is refused while balance is active (CH5 on and not fallen). `calibrationSelect` is reset to 0, and `gyro calibration refused: balance active` is logged.
 
 ## Where developers should look
@@ -117,11 +98,10 @@ The yaw I start value is zero in both CH5 modes. The ±0.1 limit is the limit of
 | Hardware, connectors, evidence level | [Hardware overview](../hardware/system-overview.md), [Electronics reference](../hardware/electronics-reference.md) |
 | Start configuration, SimpleFOC, gains | `OllieFOCdrive.ino`: defines at the top, `setup()` |
 | Active flow, enable, servo output | `OllieFOCdrive.ino`: `loop()` |
-| Two-wheel PID and motor mixing | `OllieFOCdrive.ino`: `runPostureController()` |
+| Wheel targets and fixed servo pose | `OllieFOCdrive.ino`: `runControlTick()` |
 | Remote control and modes | `OllieFOCdrive.ino`: `readSbus()` |
 | IMU fusion and posture offsets | `imu.cpp`: `imu::service()`; `MahonyFilter.cpp` |
 | PID calculation rule | `OllieFOCdrive.h`: `MyPIDController::compute()` |
-| Leg kinematics | `LegKinematics.cpp`: `LegKinematics::solveRight()`, `solveLeft()` |
 | Calibration and storage | `Calibration.cpp`, `CalibrationStore.cpp`; call in `OllieFOCdrive.ino`: `loop()` |
 | Servo output | `ServoControl.cpp`; trims in `zeroBias.servo1` through `zeroBias.servo4` |
 | K58 drive trace with controller parts | [README](trace-capture.md#capture-a-balance-shutdown), `scripts/capture_balance_trace.py` |

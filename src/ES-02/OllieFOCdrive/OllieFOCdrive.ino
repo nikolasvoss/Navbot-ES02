@@ -13,7 +13,6 @@
 #include "CalibrationStore.h"
 #include "DebugTelemetry.h"
 #include "FUTABA_SBUS.h"
-#include "LegKinematics.h"
 #include "Logging.h"
 #include "MotorDiagnostic.h"
 #include "OverspeedGuard.h"
@@ -86,7 +85,6 @@ constexpr WheelMotorParams kRightWheelMotor{5.75f, 76.7f};
 
 void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params);
 
-constexpr float kBodyHeightDefaultM = 0.06f;
 
 // Body
 float movementSpeed = 0;                                         // Movement speed
@@ -466,7 +464,6 @@ void serviceMotorDiagnostic() {
 }
 
 void readSbus();
-void runPostureController(float dt);
 void readBatteryVoltage(void);
 void updateTumbleState(void);
 void diagnosticLoop(void);
@@ -759,39 +756,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
 
 
 /**
- * @brief Main PID control loop for two-wheel balancing and posture control.
- *
- * This is the core control function for the two-wheeled mode. It orchestrates
- * multiple PID controllers to achieve stable balancing and respond to commands.
- * - It runs a PID loop for yaw (turning) control.
- * The outputs are summed to produce the final `target` values for each motor.
- *
- * @param dt The time delta since the last call, in seconds.
- */
-void runPostureController(float dt) {
-  // Yaw loop
-  yawPid.Kp = yawPidSettings.P;
-  yawPid.Ki = yawPidSettings.I;
-  yawPid.Kd = yawPidSettings.D;
-  yawPid.iLimit = yawPidSettings.limit;
-  yawPid.Ki = 0;  // Heading lock: the yaw loop has no integral term.
-  yawPid.integral = 0;
-
-  float yawError = imu::latest().angularVelocityRadPerSec.z - bodyTurn;  // Measured value minus target value
-  float yawOutput = yawPid.compute(yawError, dt);
-
-  float target1 = -yawOutput;
-  float target2 = yawOutput;
-
-  // The wheel motors now take ampere targets, not the rad/s targets computed above. Until the new controller
-  // (package 4) produces current commands, balance holds both wheels at 0 A.
-  (void)target1;
-  (void)target2;
-  motor1.target = 0.0f;
-  motor2.target = 0.0f;
-}
-
-/**
  * @brief Reads and filters the battery voltage.
  *
  * Reads the analog value from the voltage divider, applies a low-pass filter
@@ -1020,61 +984,16 @@ void updateWheelVelocities() {
   m2FilteredVelocityRadPerSec = m2VelocityFilter(m2VelocityRadPerSec);
 }
 
-/**
- * @brief Runs the balance controller when enabled. Otherwise it holds both wheels at 0 A and clears the yaw integral.
- */
-void computeBodyPose() {
-  if ((pidGainsMode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (robotTumble == ROBOT_TUMBLING)) {
-    if (!motorDiagnosticState.active) {
-      motor1.target = 0;
-      motor2.target = 0;
-    }
-    yawPid.integral = 0;
-  } else {
-    runPostureController(controlTimestepSec);  // PID controller
-  }
-}
-
-void warnIfLegUnreachable(const LegSolveResult &leg, const char *tag, uint32_t &lastWarningMs) {
-  if (leg.status != LegSolveStatus::Success && static_cast<uint32_t>(millis() - lastWarningMs) >= 1000) {
-    lastWarningMs = millis();
-    Logging::message(Logging::Level::Warning, tag, "no");
-  }
-}
-
 void writeLegServos() {
   servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1,
                               servoTraceAngle[3], 1);
-}
-
-void writeServos(const LegSolveResult &right, const LegSolveResult &left) {
-  if ((int)calibrationSelect == 3)  // Servo calibration
-  {
-    servoTraceAngle[0] = -servoTrims.servo1Degrees;
-    servoTraceAngle[1] = -servoTrims.servo2Degrees;
-    servoTraceAngle[2] = -servoTrims.servo3Degrees;
-    servoTraceAngle[3] = -servoTrims.servo4Degrees;
-  } else {
-    // An unreachable leg keeps its previous servo angles.
-    if (left.status == LegSolveStatus::Success) {
-      servoTraceAngle[0] = left.angles.joint1Degrees - servoTrims.servo1Degrees;
-      servoTraceAngle[1] = left.angles.joint2Degrees - servoTrims.servo2Degrees;
-    }
-    if (right.status == LegSolveStatus::Success) {
-      servoTraceAngle[2] = right.angles.joint1Degrees - servoTrims.servo3Degrees;
-      servoTraceAngle[3] = right.angles.joint2Degrees - servoTrims.servo4Degrees;
-    }
-  }
-  writeLegServos();
-
-  RobotLogCapture::observeServoAngles(servoTraceAngle);
 }
 
 void runControlTick(bool imuUpdated) {
   controlStartUs = micros();
   controlGateSequence++;
 
-  readBatteryVoltage();                                                   // Battery
+  readBatteryVoltage();  // Battery
 
   updateTumbleState();  // Machine fall detection
   updateStatusLed();
@@ -1083,18 +1002,19 @@ void runControlTick(bool imuUpdated) {
   updateWheelVelocities();
   serviceWheelOverspeed();
 
-  computeBodyPose();
+  // Both wheels hold 0 A until the balance controller of package 4 exists. The motor diagnostic owns them while active.
+  if (!motorDiagnosticState.active) {
+    motor1.target = 0.0f;
+    motor2.target = 0.0f;
+  }
 
-  static uint32_t lastRightLegWarningMs = 0;
-  static uint32_t lastLeftLegWarningMs = 0;
-  // The leg input is the fixed standing pose: no body command reaches the legs.
-  const LegSolveResult rightLeg = LegKinematics::solveRight({0.0f, kBodyHeightDefaultM, 0.0f});
-  warnIfLegUnreachable(rightLeg, "RightInverseKinematics", lastRightLegWarningMs);
-
-  const LegSolveResult leftLeg = LegKinematics::solveLeft({0.0f, kBodyHeightDefaultM, 0.0f});
-  warnIfLegUnreachable(leftLeg, "LeftInverseKinematics", lastLeftLegWarningMs);
-
-  writeServos(rightLeg, leftLeg);
+  // Fixed standing pose: every servo at its calibrated zero, which is the servo calibration pose. No IK runs.
+  servoTraceAngle[0] = -servoTrims.servo1Degrees;
+  servoTraceAngle[1] = -servoTrims.servo2Degrees;
+  servoTraceAngle[2] = -servoTrims.servo3Degrees;
+  servoTraceAngle[3] = -servoTrims.servo4Degrees;
+  writeLegServos();
+  RobotLogCapture::observeServoAngles(servoTraceAngle);
 
   controlExecutionUs = static_cast<uint32_t>(micros() - controlStartUs);
   DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
@@ -1108,9 +1028,9 @@ void runControlTick(bool imuUpdated) {
  * This function runs repeatedly after `setup()` is complete:
  * 1. `updateMotorsAndCommands`: SimpleFOC `move()` and `loopFOC()` for both wheels, then Commander input.
  * 2. `readInputs`: IMU sample and S.BUS commands.
- * 3. `runControlTick`, once at least 1 ms has passed since the previous tick: input filtering,
- *    battery reading, telemetry, fall detection, status LED, calibration, wheel velocities,
- *    posture control, leg kinematics and servo output.
+ * 3. `runControlTick`, once at least 1 ms has passed since the previous tick: battery reading,
+ *    fall detection, status LED, calibration, wheel velocities, the 0 A wheel targets,
+ *    the fixed servo pose, and telemetry.
  */
 void loop() {
 #if SENSOR_DIAGNOSTIC_MODE

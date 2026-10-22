@@ -354,6 +354,8 @@ Done when: with wheels clear, the package 1 current command produces the expecte
 
 ### Package 3: remove the replaced control paths
 
+Status: implemented on 2026-10-22 as one commit per table row. The build and every host test pass. Not flashed: the unloaded run with balance disabled and the fixed pose on hardware are not yet confirmed. Only the `MyPIDController` row remains, until package 4.
+
 Delete in the same change, with their callers, Commander entries, telemetry fields, and tests:
 
 | Remove | Where |
