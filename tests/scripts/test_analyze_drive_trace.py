@@ -18,7 +18,8 @@ OLD_HEADER = ("DRIVE,time_ms,ch5_mode,voltage_min_raw_v,ch3_target,"
 def drive_row(time_ms, command, speed, *, roll=0, ch5=1, **fields):
     values = {name: 0 for name in DRIVE_COLUMNS}
     values.update(time_ms=time_ms, ch5_mode=ch5, voltage_min_raw_v=7.9, voltage_filtered_v=7.9,
-                  imu_sequence=time_ms, imu_dt_s=0.007, imu_accepted_samples=time_ms,
+                  imu_sequence=time_ms, imu_read_time_us=time_ms * 1000, imu_dt_s=0.007,
+                  imu_accepted_samples=time_ms,
                   imu_max_interval_us=1200, control_execution_us=500, max_loop_entry_interval_us=1000,
                   ch3_target=command, effective_speed_target=command, motor1_velocity_f=speed,
                   motor2_velocity_f=speed, roll_ok=roll, motor1_target=2, motor2_target=-2,
@@ -85,9 +86,22 @@ class DriveTraceTest(unittest.TestCase):
         self.assertEqual(result["motor_voltage_q_abs_peak"], 0.41)
         self.assertEqual(result["battery_raw_instant_min_v"], 7.25)
         self.assertEqual(result["imu_long_gaps"], 4)
+        self.assertEqual(result["imu_long_gap_fraction"], 0.0248)
         self.assertEqual(result["imu_max_interval_us"], 9100)
-        self.assertEqual(result["imu_dt_median_s"], 0.007)
+        self.assertEqual(result["imu_mean_interval_s"], 0.001)
         self.assertEqual(result["imu_rate_hz"], 1000.0)
+
+    def test_imu_mean_interval_comes_from_read_time_not_row_phase(self):
+        lines = []
+        for index in range(24):
+            lines.append(drive_row(index * 7, 0, 0, imu_sequence=index * 4, imu_accepted_samples=index * 4,
+                                   imu_read_time_us=index * 9440 + 17, imu_dt_s=0.001845,
+                                   imu_long_gap_count=0 if index < 23 else 5))
+        with tempfile.TemporaryDirectory() as directory:
+            result = analyze(self.write_log(directory, lines))
+        self.assertEqual(result["imu_mean_interval_s"], 0.00236)
+        self.assertEqual(result["imu_long_gaps"], 5)
+        self.assertEqual(result["imu_long_gap_fraction"], 0.0543)
 
     def test_old_33_column_schema_is_rejected_without_fallback(self):
         lines = [f"DRIVE,{i * 50},1,7.9,0,0,0,0,2,-2,3" for i in range(24)]

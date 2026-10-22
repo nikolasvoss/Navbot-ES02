@@ -25,6 +25,7 @@ MIN_ROWS = 20
 MAX_BAD_FRACTION = 0.02
 NEUTRAL_THRESHOLD = 1.0
 STOP_WINDOW_MS = 1000
+UINT32_MODULO = 2 ** 32
 
 
 def rounded(value, places=3):
@@ -93,7 +94,10 @@ def analyze(path):
     angle_i = [abs(row["angle_out_i"]) for row in active if "angle_out_i" in row]
     motor_targets = [abs(row[field]) for row in active
                      for field in ("motor1_target", "motor2_target")]
-    imu_dts = [row["imu_dt_s"] for row in rows if row["imu_dt_s"] > 0]
+    imu_sequence_advance = int(rows[-1]["imu_sequence"] - rows[0]["imu_sequence"])
+    imu_read_advance_us = int(rows[-1]["imu_read_time_us"] - rows[0]["imu_read_time_us"]) % UINT32_MODULO
+    imu_accepted = int(rows[-1]["imu_accepted_samples"] - rows[0]["imu_accepted_samples"])
+    imu_long_gaps = int(rows[-1]["imu_long_gap_count"] - rows[0]["imu_long_gap_count"])
     result = {
         "file": str(path),
         "valid_rows": len(rows),
@@ -112,8 +116,10 @@ def analyze(path):
         "voltage_raw_min_v": rounded(min(row["voltage_min_raw_v"] for row in active)) if active else None,
         # IMU counters are cumulative since boot; per-row loop interval resets on each row.
         "imu_rate_hz": rounded(imu_sample_rate(rows), 1),
-        "imu_dt_median_s": rounded(statistics.median(imu_dts), 6) if imu_dts else None,
-        "imu_long_gaps": int(rows[-1]["imu_long_gap_count"] - rows[0]["imu_long_gap_count"]),
+        "imu_mean_interval_s": (rounded(imu_read_advance_us / imu_sequence_advance / 1e6, 6)
+                                if imu_sequence_advance > 0 else None),
+        "imu_long_gaps": imu_long_gaps,
+        "imu_long_gap_fraction": rounded(imu_long_gaps / imu_accepted, 4) if imu_accepted > 0 else None,
         "imu_max_interval_us": int(rows[-1]["imu_max_interval_us"]),
         "control_execution_us_peak": int(max(row["control_execution_us"] for row in rows)),
         "loop_entry_interval_us_peak": int(max(row["max_loop_entry_interval_us"] for row in rows)),
@@ -165,18 +171,22 @@ def markdown(results):
             issues.append("Stoppereignis vorhanden; für einen Vergleich Impulsstärke und -dauer beachten")
         lines.append(f"- `{run['file']}`: " + "; ".join(issues) + ".")
     lines.extend(["", "## Zeit- und Motorgrößen", "",
-                  "| Log | IMU-Rate | IMU-dt Median | IMU-Lücken | IMU-Intervall max. (seit Start) "
+                  "| Log | IMU-Rate | IMU-Intervall Mittel | IMU-Lücken (Anteil) | IMU-Intervall max. (seit Start) "
                   "| Regelzeit max. | Schleifenintervall max. | Strom-Soll max. | Spannung q max. "
                   "| Bus roh min. (momentan) |",
                   "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"])
     for run in results:
-        lines.append(f"| `{run['file']}` | {fmt(run['imu_rate_hz'])} Hz | {fmt(run['imu_dt_median_s'])} s "
-                     f"| {run['imu_long_gaps']} | {run['imu_max_interval_us']} µs "
+        gap_fraction = run["imu_long_gap_fraction"]
+        gaps = f"{run['imu_long_gaps']} ({gap_fraction * 100:.2f} %)" if gap_fraction is not None else str(run["imu_long_gaps"])
+        lines.append(f"| `{run['file']}` | {fmt(run['imu_rate_hz'])} Hz | {fmt(run['imu_mean_interval_s'])} s "
+                     f"| {gaps} | {run['imu_max_interval_us']} µs "
                      f"| {run['control_execution_us_peak']} µs | {run['loop_entry_interval_us_peak']} µs "
                      f"| {fmt(run['motor_current_sp_abs_peak'])} A | {fmt(run['motor_voltage_q_abs_peak'])} V "
                      f"| {fmt(run['battery_raw_instant_min_v'])} V |")
     lines.extend(["", "Strom-Soll und Spannung q sind Motorbetrag-Maxima je Rad (`motor1`/`motor2`, motor-lokales Vorzeichen). "
-                  "IMU-Lücken zählt den Zuwachs seit Capture-Start; das Intervall-Maximum ist seit Firmware-Start kumulativ. "
+                  "IMU-Intervall Mittel ist Lesezeit-Differenz durch Sequenz-Differenz im Fenster der gültigen Zeilen. "
+                  "IMU-Lücken zählt den Zuwachs seit Capture-Start; der Anteil bezieht sich auf die akzeptierten Samples "
+                  "im selben Fenster. Das Intervall-Maximum ist seit Firmware-Start kumulativ. "
                   "Regelzeit und Schleifenintervall gelten je Zeile; ihr Maximum ist über alle Zeilen gebildet.", ""])
     if any(run["releases"] for run in results):
         lines.extend(["", "## Einzelne Stopps", "",
