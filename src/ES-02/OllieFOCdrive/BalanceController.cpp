@@ -78,6 +78,8 @@ bool armingConditionsMet(const Measurements &measurements, const Request &reques
 bool configValid(const Config &config) {
   return std::isfinite(config.speedCapMps) && config.speedCapMps >= 0.0f &&
          std::isfinite(config.accelCapMps2) && config.accelCapMps2 > 0.0f &&
+         std::isfinite(config.demandScaleCapStart) && config.demandScaleCapStart > 0.0f &&
+         config.demandScaleCapStart < 1.0f &&
          std::isfinite(config.brakeCapMps2) && config.brakeCapMps2 > 0.0f &&
          std::isfinite(config.yawRateCapRadPerSec) && config.yawRateCapRadPerSec >= 0.0f &&
          std::isfinite(config.wheelRadiusM) && config.wheelRadiusM > 0.0f &&
@@ -92,6 +94,8 @@ bool configValid(const Config &config) {
          std::isfinite(config.standstillWheelSpeedTolMps) && config.standstillWheelSpeedTolMps > 0.0f &&
          std::isfinite(config.standstillTiltErrorTolRad) && config.standstillTiltErrorTolRad > 0.0f &&
          std::isfinite(config.transferToleranceRad) && config.transferToleranceRad > 0.0f &&
+         std::isfinite(config.saveRequestSpeedTolMps) && config.saveRequestSpeedTolMps >= 0.0f &&
+         std::isfinite(config.saveRequestYawTolRadPerSec) && config.saveRequestYawTolRadPerSec >= 0.0f &&
          std::fabs(config.storedTrimDeg * kDegreesToRadiansF) <= config.trimEnvelopeRad &&
          std::isfinite(config.tiltPAPerRad) && std::isfinite(config.gyroDampingAPerRadPerSec) &&
          std::isfinite(config.yawPAPerRadPerSec) && std::isfinite(config.reserveLowA) &&
@@ -127,15 +131,20 @@ float shapeSpeed(float previous, float target, float accelRate, float brakeRate,
 Demand BalanceController::shapeDemand(Demand previous, Demand requested, float demandScale, float dtSec,
                                       const Config &config) {
   const float scale = std::isnan(demandScale) ? 0.0f : std::clamp(demandScale, 0.0f, 1.0f);
-  const float speedCapMps = config.speedCapMps * scale;
-  const float yawCapRadPerSec = config.yawRateCapRadPerSec * scale;
+  // Acceleration and yaw give way first, from 1 at scale 1 to 0 at demandScaleCapStart. The cruise cap holds
+  // until scale falls below demandScaleCapStart, then falls to 0 at scale 0.
+  const float accelFactor = std::clamp((scale - config.demandScaleCapStart) / (1.0f - config.demandScaleCapStart),
+                                       0.0f, 1.0f);
+  const float capFactor = std::clamp(scale / config.demandScaleCapStart, 0.0f, 1.0f);
+  const float speedCapMps = config.speedCapMps * capFactor;
+  const float yawCapRadPerSec = config.yawRateCapRadPerSec * accelFactor;
 
   const float speedTarget = std::max(-speedCapMps, std::min(speedCapMps, nanToZero(requested.speedMps)));
   const float yawRate =
       std::max(-yawCapRadPerSec, std::min(yawCapRadPerSec, nanToZero(requested.yawRateRadPerSec)));
 
   Demand shaped;
-  shaped.speedMps = shapeSpeed(previous.speedMps, speedTarget, config.accelCapMps2 * scale,
+  shaped.speedMps = shapeSpeed(previous.speedMps, speedTarget, config.accelCapMps2 * accelFactor,
                                config.brakeCapMps2, dtSec);
   shaped.yawRateRadPerSec = yawRate;
   return shaped;
@@ -469,13 +478,13 @@ bool BalanceController::tryEnterCommissioning(const Measurements &measurements, 
   const float speedMps = measuredSpeedMps(measurements, config);
   // The raw stick must be near neutral, not just the shaped demand: shaping ramps to zero under the switch.
   // No ongoing clip or slew, and the previous tick had neither effort nor reserve limits.
-  const bool settled = std::fabs(request.speedMps) <= config.armingRequestSpeedMps &&
-                       std::fabs(request.yawRateRadPerSec) <= config.armingRequestYawRadPerSec && !knobEngaged_ &&
+  const bool settled = std::fabs(request.speedMps) <= config.saveRequestSpeedTolMps &&
+                       std::fabs(request.yawRateRadPerSec) <= config.saveRequestYawTolRadPerSec && !knobEngaged_ &&
                        shapedDemand_.speedMps == 0.0f && shapedDemand_.yawRateRadPerSec == 0.0f &&
                        std::fabs(speedMps) <= config.standstillWheelSpeedTolMps &&
                        std::fabs(measurements.tiltRad - tiltRefRad_) <= config.standstillTiltErrorTolRad &&
-                       !tiltClipped_ && !effortClippedPrev_ && !reserveLowPrev_ &&
-                       tiltRefRad_ == desiredTiltRad_;
+                       !tiltClipped_ && !effortClippedPrev_ && !reserveLowPrev_ && !measurements.voltageClipped &&
+                       !measurements.currentClipped && tiltRefRad_ == desiredTiltRad_;
   if (!settled) {
     return false;
   }
@@ -511,12 +520,12 @@ bool BalanceController::saveAllowed(const Measurements &measurements, const Requ
                                        std::min(config.trimEnvelopeRad, request.knobTrimDeg * kDegreesToRadiansF));
   const bool knobPending = knobEngaged_ && knobTargetRad != trimRad_;
   return !lost && speedIRad_ == 0.0f && shapedDemand_.speedMps == 0.0f &&
-         shapedDemand_.yawRateRadPerSec == 0.0f && std::fabs(request.speedMps) <= config.armingRequestSpeedMps &&
-         std::fabs(request.yawRateRadPerSec) <= config.armingRequestYawRadPerSec &&
+         shapedDemand_.yawRateRadPerSec == 0.0f && std::fabs(request.speedMps) <= config.saveRequestSpeedTolMps &&
+         std::fabs(request.yawRateRadPerSec) <= config.saveRequestYawTolRadPerSec &&
          std::fabs(speedMps) <= config.standstillWheelSpeedTolMps &&
          std::fabs(measurements.tiltRad - tiltRefRad_) <= config.standstillTiltErrorTolRad && !tiltClipped_ &&
-         !allocation_.effortClipped && allocation_.reserve >= config.reserveLowA &&
-         tiltRefRad_ == desiredTiltRad_ && !knobPending;
+         !allocation_.effortClipped && allocation_.reserve >= config.reserveLowA && !measurements.voltageClipped &&
+         !measurements.currentClipped && tiltRefRad_ == desiredTiltRad_ && !knobPending;
 }
 
 // Commissioning only. Pickup needs the knob inside the band around the working trim; once engaged, the trim

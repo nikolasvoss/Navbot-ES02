@@ -70,6 +70,11 @@ Config makeConfig() {
   config.standstillWheelSpeedTolMps = 0.01f;
   config.standstillTiltErrorTolRad = 0.01f;
   config.transferToleranceRad = 1e-4f;
+  // Save and transfer request bands, deliberately different from the 0.05 arming bands: 0.02 m/s and 0.03 rad/s.
+  config.saveRequestSpeedTolMps = 0.02f;
+  config.saveRequestYawTolRadPerSec = 0.03f;
+  // Demand scaling: acceleration and yaw give way from demandScale 1 down to 0.5; the cruise cap falls below 0.5.
+  config.demandScaleCapStart = 0.5f;
   return config;
 }
 
@@ -969,12 +974,37 @@ int main() {
     // 0.0075 s accelerates at 2 m/s^2 to -0.015 m/s within the same step.
     assert(closeTo(shape(Demand{0.01f, 0.0f}, -1.0f, 0.0f, 1.0f, 0.01f, c).speedMps, -0.015f));
 
-    // demandScale 0.5 halves the speed cap and the accel, but not the brake.
-    assert(closeTo(shape(zero, 5.0f, 0.0f, 0.5f, 0.01f, c).speedMps, 0.01f));
-    Demand half = zero;
-    for (int k = 0; k < 100; ++k) half = shape(half, 5.0f, 0.0f, 0.5f, 0.01f, c);
-    assert(closeTo(half.speedMps, 0.5f));
-    assert(closeTo(shape(start, 0.0f, 0.0f, 0.5f, 0.01f, c).speedMps, 0.46f));
+    // Demand scaling with demandScaleCapStart 0.5. Accel and yaw factor: clamp((s - 0.5) / 0.5). Cap factor:
+    // clamp(s / 0.5). The brake ramp is never scaled.
+    // s = 0.75: accel and yaw factor 0.5, cap factor 1. Accel 1 m/s^2 gives 0.01 m/s in one 0.01 s step, and the
+    // cruise cap stays at 1 m/s.
+    assert(closeTo(shape(zero, 5.0f, 0.0f, 0.75f, 0.01f, c).speedMps, 0.01f));
+    Demand reach = zero;
+    for (int k = 0; k < 200; ++k) reach = shape(reach, 5.0f, 0.0f, 0.75f, 0.01f, c);
+    assert(closeTo(reach.speedMps, 1.0f));
+    assert(closeTo(shape(zero, 0.0f, 2.0f, 0.75f, 0.01f, c).yawRateRadPerSec, 0.25f));
+
+    // s = 0.5: accel and yaw factor is 0 at demandScaleCapStart, so there is no gain from rest.
+    assert(closeTo(shape(zero, 5.0f, 0.0f, 0.5f, 0.01f, c).speedMps, 0.0f));
+
+    // s = 0.25: accel and yaw factor 0, cap factor 0.5. From rest nothing moves. From 0.9 m/s the speed brakes to
+    // the 0.5 m/s cruise cap at 4 m/s^2 (0.04 m/s per step) and stays there.
+    assert(closeTo(shape(zero, 5.0f, 0.0f, 0.25f, 0.01f, c).speedMps, 0.0f));
+    Demand cruise{0.9f, 0.0f};
+    for (int k = 0; k < 100; ++k) cruise = shape(cruise, 0.9f, 0.0f, 0.25f, 0.01f, c);
+    assert(closeTo(cruise.speedMps, 0.5f));
+    assert(closeTo(shape(zero, 0.0f, 2.0f, 0.25f, 0.01f, c).yawRateRadPerSec, 0.0f));
+
+    // The brake ramp is not scaled: from 0.5 m/s with a zero request it falls 0.04 m/s per step at s 0.25 and 0.
+    assert(closeTo(shape(start, 0.0f, 0.0f, 0.25f, 0.01f, c).speedMps, 0.46f));
+    assert(closeTo(shape(start, 0.0f, 0.0f, 0.0f, 0.01f, c).speedMps, 0.46f));
+
+    // s = 0: accel, yaw and cruise cap are all zero.
+    assert(closeTo(shape(zero, 5.0f, 0.0f, 0.0f, 0.01f, c).speedMps, 0.0f));
+    assert(closeTo(shape(zero, 0.0f, 2.0f, 0.0f, 0.01f, c).yawRateRadPerSec, 0.0f));
+
+    // s = 1: all factors 1, so the full 0.02 m/s step and the full 0.5 rad/s yaw cap apply.
+    assert(closeTo(shape(zero, 5.0f, 0.0f, 1.0f, 0.01f, c).speedMps, 0.02f));
 
     // demandScale above 1 counts as 1, below 0 as 0.
     assert(closeTo(shape(zero, 5.0f, 0.0f, 3.0f, 0.01f, c).speedMps, 0.02f));
@@ -985,7 +1015,6 @@ int main() {
     assert(closeTo(shape(zero, 0.0f, 2.0f, 1.0f, 0.01f, c).yawRateRadPerSec, 0.5f));
     assert(closeTo(shape(zero, 0.0f, -2.0f, 1.0f, 0.01f, c).yawRateRadPerSec, -0.5f));
     assert(closeTo(shape(zero, 0.0f, 0.3f, 1.0f, 0.01f, c).yawRateRadPerSec, 0.3f));
-    assert(closeTo(shape(zero, 0.0f, 2.0f, 0.5f, 0.01f, c).yawRateRadPerSec, 0.25f));
 
     // NaN requests count as zero, and a NaN demand scale counts as zero.
     const float nan = std::numeric_limits<float>::quiet_NaN();
@@ -1434,8 +1463,9 @@ int main() {
 
   // Step 6, demandScale: reserve = min(cMax - c, c - cMin). A rate of 15.8 rad/s with gyro damping 0.5 gives
   // balance 7.9 A, so reserve = 8.4 - 7.9 = 0.5 A = reserveLowA / 2 and demandScale = 0.5. The next sample shapes
-  // demand with that scale: the speed cap is 0.5 m/s and the accel cap 1 m/s^2, so over 10 ms the speed rises by
-  // 0.01 m/s (it would rise 0.02 m/s with scale 1).
+  // demand with that scale. demandScaleCapStart is 0.5, so the accel factor is 0 and the speed stays at zero, even
+  // though the 1 m/s cruise cap is whole at this scale. (The earlier version halved accel and cap together and
+  // expected 0.01 m/s.)
   {
     BalanceController bc;
     enterRun(bc, balance, 0);
@@ -1444,7 +1474,7 @@ int main() {
     assert(nearlyTo(first.diag.reserve, 0.5f, 1e-4f) && nearlyTo(first.diag.demandScale, 0.5f, 1e-4f));
 
     const Output next = imuSample(bc, balance, 22000, 3, ImuValues{}, liveRequest(22000, 1.0f, 0.0f));
-    assert(nearlyTo(next.diag.shapedSpeedMps, 0.01f, 1e-6f));
+    assert(nearlyTo(next.diag.shapedSpeedMps, 0.0f, 1e-6f));
     // With zero effort the reserve is back at 8.4 A and the scale returns to 1.
     assert(nearlyTo(next.diag.demandScale, 1.0f, 1e-6f));
   }
@@ -1611,6 +1641,58 @@ int main() {
 
   // Step 7 refusals. Each block changes one condition and checks that Run stays, with the refusal flagged. The
   // balance and yaw gains are zero unless a block sets them, so the tilt reference stays at the trim.
+
+  // Transfer request band: the raw request must lie within 0.02 m/s and 0.03 rad/s (the save bands, not the 0.05
+  // arming bands). 0.04 m/s is inside the arming band, so it is refused here only by the save band.
+  {
+    const Config cfg = makeBalanceConfig();
+    const auto transferWith = [&cfg](const Request &request) {
+      BalanceController bc;
+      enterRun(bc, cfg, 0);
+      imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+      return imuSample(bc, cfg, 22000, 3, ImuValues{}, request);
+    };
+    const Output speedInside = transferWith(motionRequest(22000, 0.019f, true));
+    assert(speedInside.state == State::Commissioning && !speedInside.diag.commissioningRefused);
+    const Output speedOutside = transferWith(motionRequest(22000, 0.021f, true));
+    assert(speedOutside.state == State::Run && speedOutside.diag.commissioningRefused);
+    const Output speedBetween = transferWith(motionRequest(22000, 0.04f, true));
+    assert(speedBetween.state == State::Run && speedBetween.diag.commissioningRefused);
+
+    Request yawInside = trimRequest(22000, true);
+    yawInside.yawRateRadPerSec = 0.029f;
+    const Output yawIn = transferWith(yawInside);
+    assert(yawIn.state == State::Commissioning && !yawIn.diag.commissioningRefused);
+    Request yawOutside = trimRequest(22000, true);
+    yawOutside.yawRateRadPerSec = 0.031f;
+    const Output yawOut = transferWith(yawOutside);
+    assert(yawOut.state == State::Run && yawOut.diag.commissioningRefused);
+    Request yawBetween = trimRequest(22000, true);
+    yawBetween.yawRateRadPerSec = 0.04f;
+    const Output yawMid = transferWith(yawBetween);
+    assert(yawMid.state == State::Run && yawMid.diag.commissioningRefused);
+  }
+
+  // Step 7, transfer: a voltage or current clip on the transfer tick refuses it. With neither flag it transfers.
+  {
+    const Config cfg = makeBalanceConfig();
+    const auto transferWithFlags = [&cfg](bool voltageClipped, bool currentClipped) {
+      BalanceController bc;
+      enterRun(bc, cfg, 0);
+      imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+      Measurements m = atTime(makeMeasurements(), 22000);
+      m.imuSequence = 3;
+      m.voltageClipped = voltageClipped;
+      m.currentClipped = currentClipped;
+      return bc.update(m, trimRequest(22000, true), cfg, 22000);
+    };
+    const Output clear = transferWithFlags(false, false);
+    assert(clear.state == State::Commissioning && !clear.diag.commissioningRefused);
+    const Output voltage = transferWithFlags(true, false);
+    assert(voltage.state == State::Run && voltage.diag.commissioningRefused);
+    const Output current = transferWithFlags(false, true);
+    assert(current.state == State::Run && current.diag.commissioningRefused);
+  }
 
   // Refused: nonzero shaped demand. The request ramps to 0.2 m/s; then the switch comes on and the shaped speed
   // ramps down at 4 m/s^2, 0.04 m/s per sample. The transfer waits for it to reach zero.
@@ -1954,6 +2036,22 @@ int main() {
     storedOutside.trimEnvelopeRad = 0.17f;  // the stored 10 deg (0.1745 rad) lies outside
     const Output c = armedWith(storedOutside);
     assert(c.state == State::Fault && c.fault == FaultReason::InvalidConfig);
+
+    // Save band: finite and not negative. Demand scale cap start: strictly between 0 and 1.
+    Config negativeSaveBand = makeBalanceConfig();
+    negativeSaveBand.saveRequestYawTolRadPerSec = -0.01f;
+    const Output d = armedWith(negativeSaveBand);
+    assert(d.state == State::Fault && d.fault == FaultReason::InvalidConfig);
+
+    Config capStartAtOne = makeBalanceConfig();
+    capStartAtOne.demandScaleCapStart = 1.0f;
+    const Output e = armedWith(capStartAtOne);
+    assert(e.state == State::Fault && e.fault == FaultReason::InvalidConfig);
+
+    Config capStartAtZero = makeBalanceConfig();
+    capStartAtZero.demandScaleCapStart = 0.0f;
+    const Output f = armedWith(capStartAtZero);
+    assert(f.state == State::Fault && f.fault == FaultReason::InvalidConfig);
   }
 
   // Step 7b, granted save: one pulse with the working trim in degrees, then the switch must go off and on again.
@@ -2040,7 +2138,7 @@ int main() {
   // stays in Commissioning. Commissioning is entered at 22000 us, so the edge is on the next sample at 32000 us.
   {
     const Config cfg = makeBalanceConfig();
-    // Demand: the request speed beyond the 0.05 m/s arming band. Commissioning ignores it for motion.
+    // Demand: the request speed beyond the 0.02 m/s save band. Commissioning ignores it for motion.
     BalanceController bc;
     enterCommissioning(bc, cfg, 0);
     Request fast = saveRequest(32000, true);
@@ -2051,7 +2149,7 @@ int main() {
   }
   {
     const Config cfg = makeBalanceConfig();
-    // Demand: the request yaw beyond the 0.05 rad/s arming band.
+    // Demand: the request yaw beyond the 0.03 rad/s save band.
     BalanceController bc;
     enterCommissioning(bc, cfg, 0);
     Request turning = saveRequest(32000, true);
@@ -2252,6 +2350,61 @@ int main() {
     turning.yawRateRadPerSec = 0.2f;
     const Output deflected = imuSample(bc, cfg, 22000, 3, ImuValues{}, turning);
     assert(deflected.state == State::Run && deflected.diag.commissioningRefused);
+  }
+
+  // Save request band: 0.02 m/s and 0.03 rad/s, not the 0.05 arming bands. 0.04 m/s is refused by the save band alone.
+  {
+    const Config cfg = makeBalanceConfig();
+    const auto saveWith = [&cfg](const Request &request) {
+      BalanceController bc;
+      enterCommissioning(bc, cfg, 0);
+      return imuSample(bc, cfg, 32000, 4, ImuValues{}, request);
+    };
+    Request speedInside = saveRequest(32000, true);
+    speedInside.speedMps = 0.019f;
+    const Output speedIn = saveWith(speedInside);
+    assert(speedIn.saveTrimRequested && !speedIn.diag.saveRefused);
+    Request speedOutside = saveRequest(32000, true);
+    speedOutside.speedMps = 0.021f;
+    const Output speedOut = saveWith(speedOutside);
+    assert(!speedOut.saveTrimRequested && speedOut.diag.saveRefused);
+    Request speedBetween = saveRequest(32000, true);
+    speedBetween.speedMps = 0.04f;
+    const Output speedMid = saveWith(speedBetween);
+    assert(!speedMid.saveTrimRequested && speedMid.diag.saveRefused);
+
+    Request yawInside = saveRequest(32000, true);
+    yawInside.yawRateRadPerSec = 0.029f;
+    const Output yawIn = saveWith(yawInside);
+    assert(yawIn.saveTrimRequested && !yawIn.diag.saveRefused);
+    Request yawOutside = saveRequest(32000, true);
+    yawOutside.yawRateRadPerSec = 0.031f;
+    const Output yawOut = saveWith(yawOutside);
+    assert(!yawOut.saveTrimRequested && yawOut.diag.saveRefused);
+    Request yawBetween = saveRequest(32000, true);
+    yawBetween.yawRateRadPerSec = 0.04f;
+    const Output yawMid = saveWith(yawBetween);
+    assert(!yawMid.saveTrimRequested && yawMid.diag.saveRefused);
+  }
+
+  // Step 7b, a save edge with a voltage or current clip on that tick is refused. With neither flag it is granted.
+  {
+    const Config cfg = makeBalanceConfig();
+    const auto saveWithFlags = [&cfg](bool voltageClipped, bool currentClipped) {
+      BalanceController bc;
+      enterCommissioning(bc, cfg, 0);
+      Measurements m = atTime(makeMeasurements(), 32000);
+      m.imuSequence = 4;
+      m.voltageClipped = voltageClipped;
+      m.currentClipped = currentClipped;
+      return bc.update(m, saveRequest(32000, true), cfg, 32000);
+    };
+    const Output clear = saveWithFlags(false, false);
+    assert(clear.saveTrimRequested && !clear.diag.saveRefused);
+    const Output voltage = saveWithFlags(true, false);
+    assert(!voltage.saveTrimRequested && voltage.diag.saveRefused && voltage.state == State::Commissioning);
+    const Output current = saveWithFlags(false, true);
+    assert(!current.saveTrimRequested && current.diag.saveRefused && current.state == State::Commissioning);
   }
 
   // Clip flags: a voltage clip or a current clip on the sample at 32000 us freezes the speed integral on the next

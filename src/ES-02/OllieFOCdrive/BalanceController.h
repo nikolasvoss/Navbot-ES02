@@ -128,12 +128,15 @@ struct Config {
   float busMinV = 0.0f;             // uncommissioned, commissioned model range
   float busMaxV = 0.0f;             // uncommissioned, commissioned model range
 
-  // Demand shaping. Speed cap, yaw cap and acceleration are scaled by demandScale; the brake ramp is not.
+  // Demand shaping. Under reserve pressure, acceleration and yaw give way first, then the cruise cap. The brake
+  // ramp is never scaled.
   float speedCapMps = 0.0f;          // uncommissioned
   float accelCapMps2 = 0.0f;         // uncommissioned
   float brakeCapMps2 = 0.0f;         // uncommissioned, rate of speed magnitude decrease
   float yawRateCapRadPerSec = 0.0f;  // uncommissioned
   uint32_t requestMaxAgeUs = 0;      // uncommissioned, older motion requests count as zero
+  // demandScale below which the cruise cap starts to fall. Must be in (0, 1) in configValid.
+  float demandScaleCapStart = 0.0f;  // uncommissioned
 
   // Speed loop. The provisional 50 Hz rate is 20000 us; it is set by the commissioning record, not here.
   float wheelRadiusM = 0.0f;          // uncommissioned
@@ -153,6 +156,9 @@ struct Config {
   float standstillWheelSpeedTolMps = 0.0f;    // uncommissioned, measured speed allowed for the transfer
   float standstillTiltErrorTolRad = 0.0f;     // uncommissioned, |tilt - applied reference| allowed for the transfer
   float transferToleranceRad = 0.0f;          // uncommissioned, numerical tolerance for an unchanged reference
+  // Raw request near-neutral bands for a save and for the Run -> Commissioning transfer. Not the arming bands.
+  float saveRequestSpeedTolMps = 0.0f;        // uncommissioned, finite and >= 0
+  float saveRequestYawTolRadPerSec = 0.0f;    // uncommissioned, finite and >= 0
 
   // Balance and yaw law, in amperes. Gains may be negative; the stage-1 sign test checks the signs.
   float tiltPAPerRad = 0.0f;              // uncommissioned, A per rad of tilt error
@@ -201,7 +207,8 @@ class BalanceController {
                                    float rightMinA, float rightMaxA);
 
   // Ramps the requested speed toward the capped target and clamps the requested yaw rate. A NaN
-  // request counts as zero, and a NaN demandScale counts as zero.
+  // request counts as zero, and a NaN demandScale counts as zero. Acceleration and yaw caps fall from 1 at
+  // demandScale 1 to 0 at demandScaleCapStart; the speed cap falls from 1 at demandScaleCapStart to 0 at 0.
   static Demand shapeDemand(Demand previous, Demand requested, float demandScale, float dtSec,
                             const Config &config);
 
