@@ -140,7 +140,6 @@ float bodyHeightCommandFilteredM = kBodyHeightDefaultM;
 float bodyPitchingFiltered = 0;           // Pitch
 float bodyRollFiltered = 0;               // Roll
 biquadFilter_t bodyCommandFilterLpf[12];  // Second-order low-pass filter
-float ballYOutputFiltered = 0;  // Filtered S.BUS top-ball Y command, used for roll.
 
 float bodyCommandFilterCutoffHz = 200;  // Low-pass cutoff frequency (Hz) for remote-control body command filtering.
 float bodyCommandFilteringEnabled = 1;
@@ -217,7 +216,6 @@ FUTABA_SBUS sBus;
 int sbusFrameIntervalMs = 0;
 int pidGainsMode = REMOTE_CONTROL_PID_GAINS_MODE_OFF;
 int postureOrMarkMode = REMOTE_CONTROL_PM_POSTURE_MODE;
-int rollMode = REMOTE_CONTROL_ROLL_MODE_MANUAL;
 int attitudeMode = REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT;
 float topBallX = 0;
 float topBallY = 0;
@@ -236,10 +234,6 @@ PIDController anglePidSettings(kBalancePid.angle.p, kBalancePid.angle.i, kBalanc
 PIDController speedPidSettings(kBalancePid.speed.p, kBalancePid.speed.i, kBalancePid.speed.d, 0,
                                kBalancePid.speed.limit);
 PIDController yawPidSettings(kYawPid.p, kYawPid.i, kYawPid.d, 0, kYawPid.limit);
-PIDController rollPidSettings(DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kBalancePid.roll.p : 0.06,
-                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kBalancePid.roll.i : 1.5,
-                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kBalancePid.roll.d : 0.003, 0,
-                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kBalancePid.roll.limit : 2);
 
 float controlTorqueCompensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
@@ -254,7 +248,6 @@ float pidTimestepSec = 0.01;
 MyPIDController anglePid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);  // p i d iLimit outputLimit dt EnableDFilter cutoffFreq
 MyPIDController speedPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 MyPIDController yawPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
-MyPIDController rollPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 
 bool balancePidNeedsPriming = true;  // Priming avoids a derivative kick when CH5 enables the balance loop.
 
@@ -294,8 +287,6 @@ void selectDebugLog(char *cmd) {
 void setAnglePid(char *cmd) { command.pid(&anglePidSettings, cmd); }
 void setSpeedPid(char *cmd) { command.pid(&speedPidSettings, cmd); }
 void setYawPid(char *cmd) { command.pid(&yawPidSettings, cmd); }
-
-void setRollPid(char *cmd) { command.pid(&rollPidSettings, cmd); }
 
 // Wheel Motors and Drivers
 // m1 is the left wheel and m2 the right wheel; speeds are forward positive (see WheelBoundary.h).
@@ -617,7 +608,6 @@ void initFilters() {
 
   biquadFilterInitLPF(&bodyCommandFilterLpf[8], 50, 1000);
   biquadFilterInitLPF(&bodyCommandFilterLpf[9], 50, 1000);
-  biquadFilterInitLPF(&bodyCommandFilterLpf[10], 200, 1000);
 }
 
 void initPositionSensors() {
@@ -658,7 +648,6 @@ const SerialCommandEntry commandEntries[] = {
     {'P', setAnglePid, "anglePidSettings"},
     {'S', setSpeedPid, "speedPidSettings"},
     {'Y', setYawPid, "yawPidSettings"},
-    {'R', setRollPid, "rollPidSettings"},
     {'O', setTargetBodyHeight, "my Target_Body_Height"},
     {'V', setWheelSpeedFeedbackGain, "wheel speed feedback gain"},
     {'W', setDriveTiltReductionGain, "drive tilt reduction gain"},
@@ -786,7 +775,6 @@ void applyRcChannels(const int16_t *ch) {
   pidGainsMode = min(static_cast<int>(map(ch[4], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2)),
                      REMOTE_CONTROL_PID_GAINS_MODE_ON);
   postureOrMarkMode = map(ch[5], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
-  rollMode = map(ch[6], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
   attitudeMode = map(ch[7], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
   // Top ball
   topBallX = mapf(ch[8], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -5, 5);
@@ -881,7 +869,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.anglePid = pidStatus(anglePid);
   in.speedPid = pidStatus(speedPid);
   in.yawPid = pidStatus(yawPid);
-  in.rollPid = pidStatus(rollPid);
 
   in.servoTrims = servoTrims;
   for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = servoTraceAngle[i];
@@ -947,7 +934,6 @@ void applyPidPreset(PIDController &pid, const PidPreset &preset) {
 }
 
 void applyBalancePidPreset(const BalancePidPreset &preset) {
-  applyPidPreset(rollPidSettings, preset.roll);
   applyPidPreset(speedPidSettings, preset.speed);
   applyPidPreset(anglePidSettings, preset.angle);
 }
@@ -975,7 +961,6 @@ void applyPidParameters(void) {
  * This is the core control function for the two-wheeled mode. It orchestrates
  * multiple PID controllers to achieve stable balancing and respond to commands.
  * - It applies the S.BUS top-ball input to `bodyPitching` and the roll command.
- * - It runs a PID loop for roll stabilization.
  * - It runs a cascade PID for speed and balance control (Speed loop -> Angle loop).
  * - It runs a PID loop for yaw (turning) control.
  * The outputs are summed to produce the final `target` values for each motor.
@@ -985,41 +970,9 @@ void applyPidParameters(void) {
 void runPostureController(float dt) {
   if ((int)pidParameterTuning == 0) applyPidParameters();
 
-  // S.BUS top-ball input: pitch in top-ball mode, filtered Y command for roll.
-  if ((attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) ||
-      (rollMode == REMOTE_CONTROL_ROLL_MODE_AUTO))  // Top ball mode
-  {
+  // S.BUS top-ball input: pitch in top-ball mode.
+  if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) {
     bodyPitching = -sbusTopBallXSmoothed;
-  }
-
-  if ((int)bodyCommandFilteringEnabled == 1) {
-    ballYOutputFiltered = biquadFilterApply(&bodyCommandFilterLpf[10], sbusTopBallYSmoothed);
-  } else {
-    ballYOutputFiltered = sbusTopBallYSmoothed;
-  }
-
-  if ((attitudeMode != REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) ||
-      (rollMode != REMOTE_CONTROL_ROLL_MODE_AUTO))  // Non-top ball mode
-  {
-    ballYOutputFiltered = 0;
-  }
-
-  // Roll
-  rollPid.Kp = rollPidSettings.P / 100;
-  rollPid.Ki = rollPidSettings.I / 100;
-  rollPid.Kd = rollPidSettings.D / 100;
-  rollPid.iLimit = rollPidSettings.limit;  // Integral limit
-
-  float targetBodyRoll = bodyRollFiltered * 777;                // Roll
-  if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball mode disables manual roll
-    targetBodyRoll = 0;
-  float rollError = (-imu::latest().correctedPitchDegrees) - (-targetBodyRoll) - (-ballYOutputFiltered);
-  if (rollMode == REMOTE_CONTROL_ROLL_MODE_AUTO)  // Roll leveling
-  {
-    rollPid.compute(rollError, dt);
-  } else {
-    rollPid.output = 0;
-    rollPid.integral = 0;
   }
 
   // Speed loop
@@ -1072,11 +1025,8 @@ void runPostureController(float dt) {
   yawPid.Ki = yawPidSettings.I;
   yawPid.Kd = yawPidSettings.D;
   yawPid.iLimit = yawPidSettings.limit;
-  if (rollMode != REMOTE_CONTROL_ROLL_MODE_AUTO)  // Lock heading angle
-  {
-    yawPid.Ki = 0;
-    yawPid.integral = 0;
-  }
+  yawPid.Ki = 0;  // Heading lock: the yaw loop has no integral term.
+  yawPid.integral = 0;
 
   float yawError = imu::latest().angularVelocityRadPerSec.z - bodyTurn;  // Measured value minus target value
   float yawOutput = yawPid.compute(yawError, dt);
@@ -1407,8 +1357,6 @@ BodyPose computeBodyPose() {
 
   } else if ((isPidGainsModeEnabled(pidGainsMode)) && (robotTumble == ROBOT_NOT_TUMBLING)) {
     runPostureController(controlTimestepSec);  // PID controller
-
-    if (rollMode == REMOTE_CONTROL_ROLL_MODE_AUTO) pose.roll = rollPid.output;
 
     if (targetBodyHeightOverrideM == kBodyHeightOverrideDisabledM)
       pose.heightM = bodyHeightCommandFilteredM;

@@ -56,7 +56,6 @@ struct TelemetryInputs {
   PidStatus anglePid;
   PidStatus speedPid;
   PidStatus yawPid;
-  PidStatus rollPid;
 
   ServoTrimsDegrees servoTrims;
   int servoTraceAngle[4];

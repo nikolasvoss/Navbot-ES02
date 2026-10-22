@@ -165,9 +165,7 @@ enum class DebugSelector : uint8_t {
   K24,
   K25,
   K28 = 28,
-  K31 = 31,
-  K32,
-  K33,
+  K33 = 33,
   K37 = 37,
   K41 = 41,
   K42,
@@ -274,18 +272,6 @@ struct BalanceGeometry {
 struct BalanceState {
   float rollOk;
   float bodyPitch;
-};
-struct PidState {
-  float error;
-  float integralLimit;
-  float integral;
-  float integralOutput;
-  float output;
-};
-struct PidCoefficients {
-  float kp;
-  float ki;
-  float kd;
 };
 struct BallPosition {
   float x;
@@ -397,8 +383,6 @@ union DebugPayload {
   ServoOffsets servoOffsets;
   BalanceGeometry balanceGeometry;
   BalanceState balanceState;
-  PidState pidState;
-  PidCoefficients pidCoefficients;
   BallPosition ballPosition;
   RollOutputState rollOutput;
   VoltageState voltageState;

@@ -38,7 +38,6 @@ The IMU sits on the MAIN board according to the PCB draft. Each wheel motor has 
 | **Tilt / balance** | `angleError = correctedRollDegrees + bodyPitchingFiltered` | `anglePid` supplies the common part of both wheel targets. Since 2026-10-22 these values are still rad/s and are not sent to the wheels; see the interim note below. `correctedRollDegrees` is called "roll" in the code. Here it is the attitude angle in degrees used for forward/backward tilting. |
 | **Yaw / steering** | `yawError = attitude.gyro.z - bodyTurn` | `yawPid` supplies a differential part: wheel 1 gets `−yawOutput`, wheel 2 gets `+yawOutput`. The gyro Z value and the turn command are in rad/s. |
 | **Drive / wheel speed** | `speedError = (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec)/2 - movementSpeed` | `speedPid` produces `bodyX`. The leg kinematics use it to shift the servo target positions. **In the active path, this output is not subtracted from the tilt setpoint of the wheel motors.** |
-| **Lateral posture** | `rollError` from `correctedPitchDegrees` and the roll setpoint | With CH7/AUTO, `rollPid` produces a height correction between the legs. In MANUAL, its output is zero. |
 | **Ball pose** | CH9/10 | Changes `bodyPitching` and thereby indirectly the wheel or servo targets. See below. |
 
 Core wheel motor logic: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`. Both are then limited to ±88. The signs are software conventions and do not replace a test of the mechanical direction of action.

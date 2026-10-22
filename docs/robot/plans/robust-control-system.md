@@ -358,7 +358,6 @@ Delete in the same change, with their callers, Commander entries, telemetry fiel
 
 | Remove | Where |
 | --- | --- |
-| Roll PID and roll leveling: `rollPid`, `rollPidSettings`, `rollMode`, Commander `R` | `runPostureController()`, `computeBodyPose()` |
 | Speed PI to `bodyX`: `speedPid` as used today, `driveSpeedBodyXRaw`, `kDriveBodyXLimitM`, `bodyPitchingCorrect()` use | `runPostureController()` |
 | Braking-only wheel correction: `wheelSpeedFeedbackGain`, `wheelVelocityFeedbackCorrection`, `kDriveWheelFeedbackLimit`, Commander `V` | `runPostureController()` |
 | `controlTorqueCompensation` and Commander `G` | `runPostureController()` |

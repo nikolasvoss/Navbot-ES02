@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 
-TUNE_COMMAND = re.compile(r"(?:U[01]|[PSYR][PIDL](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|[VW](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|K(?:0|9|55|56|57|58))\Z")
+TUNE_COMMAND = re.compile(r"(?:U[01]|[PSY][PIDL](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|[VW](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|K(?:0|9|55|56|57|58))\Z")
 
 # Mirror the firmware caps in MotorDiagnostic.h; the firmware refuses anything larger too.
 # Wheel-clear runs only (default caps, lowered 2026-10-22): 2.0 V and 60 rad/s, 5000 ms lease, 0.35 A.
@@ -97,7 +97,7 @@ def main():
     parser.add_argument("--trace-mode", type=int, choices=(55, 56, 57, 58), default=55,
                         help="55: actuator trace (default); 56: angle/yaw; 57: balance P/I/D; 58: drive-stop trace")
     parser.add_argument("--interactive", action="store_true",
-                        help="send U/P/S/Y/R/V/W/K tuning commands and bounded T/M motor commands from stdin "
+                        help="send U/P/S/Y/V/W/K tuning commands and bounded T/M motor commands from stdin "
                              "while recording; prints every tenth trace row")
     args = parser.parse_args()
     if args.seconds <= 0:

@@ -125,7 +125,7 @@ bool fillReceiver(const TelemetryInputs &in, Logging::DebugPayload &payload) {
   return true;
 }
 
-// Selectors 9, 22, 23 and 31..33.
+// Selectors 9, 22, 23 and 33.
 bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 9:
@@ -140,12 +140,6 @@ bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &pa
     case 23:
       payload.pidIntegralOutputState = {in.speedPid.iLimit, in.speedPid.integral, in.speedPid.outI,
                                         in.bodyPitchingFiltered, in.speedPid.output};
-      return true;
-    case 31:
-      payload.pidState = {in.rollPid.error, in.rollPid.iLimit, in.rollPid.integral, in.rollPid.outI, in.rollPid.output};
-      return true;
-    case 32:
-      payload.pidCoefficients = {in.rollPid.Kp, in.rollPid.Ki, in.rollPid.Kd};
       return true;
     case 33:
       payload.pidIntegralOutputState = {in.yawPid.iLimit, in.yawPid.integral, in.yawPid.outI, in.bodyPitchingFiltered,
@@ -240,8 +234,6 @@ bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &paylo
     case 9:
     case 22:
     case 23:
-    case 31:
-    case 32:
     case 33:
       return fillPid(selection, in, payload);
     case 19:

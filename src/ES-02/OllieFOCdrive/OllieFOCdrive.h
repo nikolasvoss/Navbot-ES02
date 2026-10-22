@@ -18,9 +18,6 @@
 #define REMOTE_CONTROL_PM_POSTURE_MODE 0  // Posture control mode
 #define REMOTE_CONTROL_PM_MARK_MODE 1     // Mark control mode
 
-#define REMOTE_CONTROL_ROLL_MODE_MANUAL 0
-#define REMOTE_CONTROL_ROLL_MODE_AUTO 1
-
 #define REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT 0
 #define REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST 1  // Pitching adjustment mode
 #define REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE 2       // Ball poise mode

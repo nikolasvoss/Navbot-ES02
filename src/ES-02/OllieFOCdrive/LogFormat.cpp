@@ -104,12 +104,6 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
       return appendf(buffer, capacity, length, "  P:%.2f  R:%.5f  H:%.5f  S:%.2f  vra:%.2f  vra:%.2f\n",
                      p.filteredGeometry.bodyPitch, p.filteredGeometry.bodyRoll, p.filteredGeometry.bodyHeightM,
                      p.filteredGeometry.slideStep, p.filteredGeometry.ballX, p.filteredGeometry.ballY);
-    case Logging::DebugSelector::K31:
-      return appendf(buffer, capacity, length, " E:%.6f it:%.5f il:%.5f oI:%.5f out:%.5f\n", p.pidState.error,
-                     p.pidState.integralLimit, p.pidState.integral, p.pidState.integralOutput, p.pidState.output);
-    case Logging::DebugSelector::K32:
-      return appendf(buffer, capacity, length, " RP:%.6f RI:%.6f RD:%.6f\n", p.pidCoefficients.kp, p.pidCoefficients.ki,
-                     p.pidCoefficients.kd);
     case Logging::DebugSelector::K33:
       return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f A:%.5f out:%.5f\n",
                      p.pidIntegralOutputState.integralLimit, p.pidIntegralOutputState.integral,

@@ -10,7 +10,7 @@ The remote control is connected to the NavBot through the receiver over **SBUS**
 | CH4 | Rotation / steering |
 | CH5 | PID control: off, on (3-position switch; the lower position is off, the two upper positions are on) |
 | CH6 | Posture mode or mark mode (2 levels) |
-| CH7 | Roll control manual or automatic (2 levels) |
+| CH7 | Unused; the roll control that used it was removed |
 | CH8 | Drive/posture mode: standard, Pitching Adjust, or Ball Balance (3 levels) |
 | CH9 | X target position of the ball in Ball Balance mode |
 | CH10 | Y target position of the ball in Ball Balance mode |

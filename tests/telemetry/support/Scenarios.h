@@ -86,7 +86,6 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   fill(g, in.anglePid);
   fill(g, in.speedPid);
   fill(g, in.yawPid);
-  fill(g, in.rollPid);
 
   in.servoTrims = {g.f(), g.f(), g.f(), g.f()};
   for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = g.i32();
