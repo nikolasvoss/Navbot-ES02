@@ -10,10 +10,14 @@ struct SerialCommandEntry {
 
 class SerialCommandRouter {
  public:
+  static constexpr size_t kByteBudgetPerRun = 64;
+
   template <size_t Count>
   void run(Stream &input, Commander &commander, const SerialCommandEntry (&commands)[Count]) {
-    while (input.available()) {
+    size_t processed = 0;
+    while (input.available() && processed < kByteBudgetPerRun) {
       const char ch = static_cast<char>(input.read());
+      ++processed;
       if (commander.echo && commander.com_port && commander.verbose != VerboseMode::nothing)
         commander.com_port->print(ch);
       if (discarding_) {
