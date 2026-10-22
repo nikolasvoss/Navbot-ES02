@@ -13,7 +13,6 @@ Full tutorial: [Frank Fu’s Build Guide](https://frankfu.blog/embodied-ai-robot
 
 -  **Self-balancing** using an ICM-42688 IMU and PID control
 -  **Legged motion** using 270° digital servos
--  **Touchscreen interface** for motion control to achieve  ball-balancing
 -  **Radiolink T12D RC System** for real-time operation switching via PWM/SBUS.
 -  **Modular Arduino-based firmware** for easy customization
 
@@ -27,7 +26,6 @@ Full tutorial: [Frank Fu’s Build Guide](https://frankfu.blog/embodied-ai-robot
 | **Motors**     |  2208 90KV 3mm Shaft Gimbal Brushless Motors            |
 | **IMU**        |  ICM42688 a 3-axis gyroscope and a 3-axis accelerometer            |
 | **Servos**     | Pro-Tronik PTK 7452 MG-D 2.8kg/0.11s 12.3g Micro Digital Servo     |
-| **HMI**        | 2.8" resistive/capacitive touchscreen         |
 | **Battery**    | 2Pcs 18650 Battery Charger Pack              |
 | **Controller**    | Radiolink T12D 12CH 2.4G RC Transmitter R12F Receiver                     |
 
@@ -46,7 +44,7 @@ Full tutorial: [Frank Fu’s Build Guide](https://frankfu.blog/embodied-ai-robot
 | `docs/` | Documentation of the current state and plans |
 | `lab/` | Dated observations and raw captures |
 
-The full placement rules are in [AGENTS.md](AGENTS.md#where-files-go). The current firmware supports the two-wheel balancing robot only. Legacy four-wheel gait control and master/slave communication have been removed. UART1 remains available for the touchscreen, and UART2 handles SBUS.
+The full placement rules are in [AGENTS.md](AGENTS.md#where-files-go). The current firmware supports the two-wheel balancing robot only. Legacy four-wheel gait control and master/slave communication have been removed. UART2 handles SBUS.
 
 ## Project documentation
 

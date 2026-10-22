@@ -18,7 +18,6 @@ flowchart LR
     CMD --> CTRL[Two-wheel control]
     MAH --> CTRL
     VEL --> CTRL
-    TOUCH[Touch surface<br/>if connected] --> CTRL
     CTRL -->|2 current targets, A| FOC[2 × SimpleFOC<br/>torque mode + FOC]
     ENC --> FOC
     FOC --> DRV[2 × MP6536<br/>wheel motors]
@@ -39,8 +38,8 @@ The IMU sits on the MAIN board according to the PCB draft. Each wheel motor has 
 | **Tilt / balance** | `angleError = correctedRollDegrees + bodyPitchingFiltered` | `anglePid` supplies the common part of both wheel targets. Since 2026-10-22 these values are still rad/s and are not sent to the wheels; see the interim note below. `correctedRollDegrees` is called "roll" in the code. Here it is the attitude angle in degrees used for forward/backward tilting. |
 | **Yaw / steering** | `yawError = attitude.gyro.z - bodyTurn` | `yawPid` supplies a differential part: wheel 1 gets `−yawOutput`, wheel 2 gets `+yawOutput`. The gyro Z value and the turn command are in rad/s. |
 | **Drive / wheel speed** | `speedError = (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec)/2 - movementSpeed` | `speedPid` produces `bodyX`. The leg kinematics use it to shift the servo target positions. **In the active path, this output is not subtracted from the tilt setpoint of the wheel motors.** |
-| **Lateral posture** | `rollError` from `correctedPitchDegrees`, the roll setpoint, and touch Y | With CH7/AUTO, `rollPid` produces a height correction between the legs. In MANUAL, its output is zero. |
-| **Touch / ball pose** | Touch X/Y and CH9/10 | Changes `bodyPitching`, a lateral touch component, and thereby indirectly the wheel or servo targets. See below. |
+| **Lateral posture** | `rollError` from `correctedPitchDegrees` and the roll setpoint | With CH7/AUTO, `rollPid` produces a height correction between the legs. In MANUAL, its output is zero. |
+| **Ball pose** | CH9/10 | Changes `bodyPitching` and thereby indirectly the wheel or servo targets. See below. |
 
 Core wheel motor logic: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`. Both are then limited to ±88. The signs are software conventions and do not replace a test of the mechanical direction of action.
 
@@ -66,13 +65,13 @@ The behavior is coupled through the mechanics: a servo movement changes the posi
 | **CH2** | Leg height in standard/ball pose. In posture 1, a direct `bodyPitching` request. |
 | **CH3** | Drive request `movementSpeed`, normally ±15. ×2 in the current diagnostic source state. |
 | **CH4** | Turn request `bodyTurn`, range about ±11 rad/s after the sign reversal in the code. |
-| **CH5** | 0: wheel setpoints zero, PID integrators reset. 1 and 2: both activate the same two-wheel control path. Without a diagnostic override, 1/2 select different gain sets. |
+| **CH5** | 0: wheel setpoints zero, PID integrators reset. 1 and 2: both activate the same two-wheel control path with the same gains. |
 | **CH6** | Posture: inverse leg kinematics. Mark: servo mounting/calibration position. |
-| **CH7** | MANUAL/AUTO for lateral correction. AUTO also activates the `bodyPitching` path from touch X and CH9. |
-| **CH8** | Standard, Pitching Adjust, Ball Pose. Ball Pose also activates `bodyPitching` from touch X and CH9. |
-| **CH9/CH10** | Ball setpoints `topBallX/Y` of about ±5. CH9 can influence the tilt setpoint even when no touchscreen is connected. |
+| **CH7** | MANUAL/AUTO for lateral correction. AUTO also activates the `bodyPitching` path from CH9. |
+| **CH8** | Standard, Pitching Adjust, Ball Pose. Ball Pose also activates `bodyPitching` from CH9. |
+| **CH9/CH10** | Ball setpoints `topBallX/Y` of about ±5. CH9 can influence the tilt setpoint. |
 
-**Important for comparisons:** `bodyPitching` is not explicitly set to zero everywhere in standard posture. After a mode change, a previous value in RAM can keep acting until it is overwritten or reset in the CH5-off path for `bodyPitchingFiltered`. `Touch.XPdatF` is not established as a measured zero without a connected touchscreen. For a test, log CH7/CH8/CH9 and the touch value together.
+**Important for comparisons:** `bodyPitching` is not explicitly set to zero everywhere in standard posture. After a mode change, a previous value in RAM can keep acting until it is overwritten or reset in the CH5-off path for `bodyPitchingFiltered`. For a test, log CH7/CH8/CH9 together.
 
 SBUS is the only remote-control source and is read exactly once per loop.
 
@@ -89,7 +88,7 @@ SBUS is the only remote-control source and is read exactly once per loop.
 
 In normal mode, `loop()` calls `imu::service()` on every pass via `readInputs()`. `imu::kSampleRateHz` is the fixed constant 1000. It determines the IMU filter coefficients and the sensor ODR. The value does not clock any measurement. `MahonyFilter::update()` receives the filtered gyro and acceleration values and the measured `dtSec`. The source code does not establish a fixed IMU sample rate or an exact frequency response under load. The firmware recomputes the filter coefficients only when the cutoff frequencies change, not on every sample.
 
-In normal mode, the battery, remote-control, touch, and PID output filters run in the outer control block, as soon as `controlTimestepSec` is at least 1 ms. Their sampling rate of 1000 Hz is a nominal design value. The guard does not guarantee a fixed rate of 1 kHz. An existing standstill trace measured a median of about 1.66 ms per tick. Other load can change this value. In the 2026-10-22 voltage-sweep capture the measured rate was 424 loop passes per second, about 0.42 of the nominal 1000 Hz. By calculation, a biquad designed for 1000 Hz then has its cutoff at roughly 0.42 times the design value; this is not a measured frequency response. After the TX buffer change the measured rate is about 521 passes per second (see above), not 1 kHz.
+In normal mode, the battery, remote-control, and PID output filters run in the outer control block, as soon as `controlTimestepSec` is at least 1 ms. Their sampling rate of 1000 Hz is a nominal design value. The guard does not guarantee a fixed rate of 1 kHz. An existing standstill trace measured a median of about 1.66 ms per tick. Other load can change this value. In the 2026-10-22 voltage-sweep capture the measured rate was 424 loop passes per second, about 0.42 of the nominal 1000 Hz. By calculation, a biquad designed for 1000 Hz then has its cutoff at roughly 0.42 times the design value; this is not a measured frequency response. After the TX buffer change the measured rate is about 521 passes per second (see above), not 1 kHz.
 
 In normal mode, the battery filter now uses a cutoff of 50 Hz and a nominal sampling rate of 1000 Hz. In diagnostic mode it uses 20 Hz and 100 Hz; there the measurement runs every 10 ms. The corrected coefficients make the battery filter react faster to voltage changes in both modes than before. The diagnostic Mahony fusion receives the intended 20 Hz IMU filters instead of an effective limit around 0.2 Hz. The coefficients of the normal IMU filter remain at the start values of 50 Hz and 1000 Hz. The actual IMU sample rate, however, is not measured.
 
@@ -99,15 +98,15 @@ This recording confirms the diagnostic telemetry clock and stationary smoothing.
 
 ## Current parameters: start values and CH5 modes
 
-`DIAGNOSTIC_LIVE_TUNING_DEFAULTS=1` is currently set in the local sketch. At start, the firmware loads the gentler CH5=2 set, overrides parts of it, and leaves live tuning enabled. This also applies after briefly cycling CH5=1. The start set matches the live values read back on 2026-10-01, with which the user no longer reported vibration. Later serial changes remain valid until restart and do not change this start set.
+`DIAGNOSTIC_LIVE_TUNING_DEFAULTS=1` is currently set in the local sketch. At start, the firmware loads the balance gain set, overrides parts of it, and leaves live tuning enabled. This also applies after briefly cycling CH5=1. The start set matches the live values read back on 2026-10-01, with which the user no longer reported vibration. Later serial changes remain valid until restart and do not change this start set.
 
-| Quantity | Current diagnostic start value | CH5=1 without touch | CH5=2 with touch |
-| --- | ---: | ---: | ---: |
-| Balance P / I / D | 5 / 200 / 0.11 | 5 / 200 / 0.11 | 5 / 200 / 0.11 |
-| Balance integral state limit | ±0.1 | ±0.1 | ±0.1 |
-| Speed P / I / D, before `/100` | 0.045 / 0.005 / 0 | 0.045 / 0.005 / 0 | 0.045 / 0.005 / 0 |
-| Yaw P / I / D | 4 / 0 / 0 | 4 / 0 / 0 | 4 / 0 / 0 |
-| CH3 mapping | ±15 × 2 | ±15 | ±15 |
+| Quantity | Current diagnostic start value | CH5=1 or CH5=2 |
+| --- | ---: | ---: |
+| Balance P / I / D | 5 / 200 / 0.11 | 5 / 200 / 0.11 |
+| Balance integral state limit | ±0.1 | ±0.1 |
+| Speed P / I / D, before `/100` | 0.045 / 0.005 / 0 | 0.045 / 0.005 / 0 |
+| Yaw P / I / D | 4 / 0 / 0 | 4 / 0 / 0 |
+| CH3 mapping | ±15 × 2 | ±15 |
 
 The yaw I start value is zero in both CH5 modes. The ±0.1 limit is the limit of the **balance integral state**, not of the motor target. With I=200, it yields a maximum contribution of ±20. P and D can supply further parts. The motor target itself is limited to ±88. The speed coefficients are divided by 100 in `runPostureController()` before `speedPid` uses them. Serial commands such as `PP5`, `PD0.12`, `SP0.04` change the values only until restart. The source and the flashed image must be reconciled before measurement comparisons.
 

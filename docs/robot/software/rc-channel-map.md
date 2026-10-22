@@ -8,7 +8,7 @@ The remote control is connected to the NavBot through the receiver over **SBUS**
 | CH2 | Leg length; in "Pitching Adjust" mode, pitch angle instead |
 | CH3 | Drive speed forward/backward |
 | CH4 | Rotation / steering |
-| CH5 | PID control: off, on without touchscreen, on with touchscreen (3 levels) |
+| CH5 | PID control: off, on (3-position switch; the lower position is off, the two upper positions are on) |
 | CH6 | Posture mode or mark mode (2 levels) |
 | CH7 | Roll control manual or automatic (2 levels) |
 | CH8 | Drive/posture mode: standard, Pitching Adjust, or Ball Balance (3 levels) |

@@ -7,7 +7,7 @@ The robot is the ESP32-S3 controller board and everything attached to it: wheel 
 - [System overview](hardware/system-overview.md): start here for any hardware question.
 - [Electronics reference](hardware/electronics-reference.md): power paths, GPIOs, connectors, and firmware interfaces.
 - [Netlist](hardware/netlist.md): every component pad and net, for targeted search.
-- [Touchscreen stand](hardware/touchscreenstand.md): stand dimensions and robot mounting holes.
+- [Mounting holes](hardware/touchscreenstand.md): robot mounting-hole pattern, also used by the lidar stand.
 
 ## Software
 

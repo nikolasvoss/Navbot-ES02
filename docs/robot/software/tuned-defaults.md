@@ -6,7 +6,7 @@ The selected defaults are angle `PP5 PI200 PD0.11 PL0.1`, speed `SP0.045 SI0.005
 
 The startup-default build completed successfully with `esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=default`. Upload through the reidentified CH340 at `/dev/ttyUSB1` identified ESP32-S3 revision v0.2 and passed flash verification. A post-upload serial startup check queried all 14 values without writing gains and matched every value. This established startup persistence; it did not include a new post-flash balancing trial.
 
-At the user's subsequent request, both CH5 balance/speed presets, the global controller initializers, and the common yaw preset also use this gain set. Roll and touch-controller gains retain their existing mode-specific values. The motor target limit and control timing retain their existing implementations.
+At the user's subsequent request, both CH5 balance/speed presets, the global controller initializers, and the common yaw preset also use this gain set. Roll gains retain their existing mode-specific values. The motor target limit and control timing retain their existing implementations.
 
 The retained local startup captures are [control-startup.log](../../../lab/robot/captures/control-startup.log) and [control-defaults-flash-test.log](../../../lab/robot/captures/control-defaults-flash-test.log). Other historical control-recovery traces are not present in this workspace.
 
