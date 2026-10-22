@@ -230,7 +230,6 @@ PIDController anglePidSettings(kBalancePid.angle.p, kBalancePid.angle.i, kBalanc
                                kBalancePid.angle.limit);
 PIDController yawPidSettings(kYawPid.p, kYawPid.i, kYawPid.d, 0, kYawPid.limit);
 
-float controlTorqueCompensation = 0;  // Control torque compensation
 float driveTiltReductionGain =
     1.0f;  // Scales the speed reduction applied as tilt approaches kDriveTiltReductionFullDeg.
 
@@ -240,8 +239,6 @@ MyPIDController anglePid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);  // p i d iLimit 
 MyPIDController yawPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 
 bool balancePidNeedsPriming = true;  // Priming avoids a derivative kick when CH5 enables the balance loop.
-
-void setControlTorqueCompensation(char *cmd) { command.scalar(&controlTorqueCompensation, cmd); }
 
 void setDriveTiltReductionGain(char *cmd) { command.scalar(&driveTiltReductionGain, cmd); }
 
@@ -967,18 +964,6 @@ void runPostureController(float dt) {
 
   float target1 = angleOutput - yawOutput;
   float target2 = angleOutput + yawOutput;
-
-  if (controlTorqueCompensation != 0) {
-    if (target1 > 0)
-      target1 = target1 + controlTorqueCompensation;
-    else if (target1 < 0)
-      target1 = target1 + (-controlTorqueCompensation);
-
-    if (target2 > 0)
-      target2 = target2 + controlTorqueCompensation;
-    else if (target2 < 0)
-      target2 = target2 + (-controlTorqueCompensation);
-  }
 
   // The wheel motors now take ampere targets, not the rad/s targets computed above. Until the new controller
   // (package 4) produces current commands, balance holds both wheels at 0 A.

@@ -73,7 +73,6 @@ COMMAND_CALLBACK(setBodyCommandFilteringEnabled)
 COMMAND_CALLBACK(setAnglePid)
 COMMAND_CALLBACK(setYawPid)
 COMMAND_CALLBACK(setTargetBodyHeight)
-COMMAND_CALLBACK(setControlTorqueCompensation)
 COMMAND_CALLBACK(setDriveTiltReductionGain)
 #undef COMMAND_CALLBACK
 
