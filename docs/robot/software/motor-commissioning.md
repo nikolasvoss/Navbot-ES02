@@ -24,7 +24,7 @@ The commands are sent on the serial console while the trace is running (`K58`) o
 | `M STOP` | End the current identification clean; no fault is latched | — |
 | `M RESET` | Clear a latched fault; outputs stay off | — |
 
-`motor_1` is the left wheel and `motor_2` is the right wheel (`motor1` and `motor2` in the trace). The targets reach each motor unchanged, so the sign is the motor-local SimpleFOC direction for each wheel. It is not forward-positive; the boundary sign arrives in Package 2. Compare left and right results only after checking this sign for each wheel.
+`motor_1` is the left wheel and `motor_2` is the right wheel (`motor1` and `motor2` in the trace). The targets reach each motor unchanged, so the sign is the motor-local SimpleFOC direction for each wheel. It is not forward-positive; the boundary sign is applied in Package 2 by `toMotorTargets()` and `fromMotorVelocities()` in [WheelBoundary.cpp](../../../src/ES-02/OllieFOCdrive/WheelBoundary.cpp). Compare left and right results only after checking this sign for each wheel.
 
 ### Compile-time caps
 
@@ -39,7 +39,7 @@ These caps are in `MotorDiagnostic.h` and mirrored in `scripts/capture_balance_t
 
 The default 60 rad/s overspeed cap, 2.0 V voltage cap, and 5000 ms lease cap apply only to runs with the wheels clear of the surface. On 2026-10-22 the operator lowered the voltage cap back to 2.0 V and the overspeed cap back to 60 rad/s; the lease cap (5000 ms) and the current cap (0.02 A) are unchanged. The ceiling sweep to 6 V ran earlier the same day with a temporary recompile at 6.0 V and 120 rad/s (firmware commit `54c04ca`). Repeating that sweep needs the same reviewed recompile, and the default caps must be restored afterwards. The earlier history: the 3 rad/s cap ended every identification step, because the wheels break away near 0.3 to 0.4 V and pass 3 rad/s before any speed plateau exists. The 15 rad/s cap then let the steps run their full lease, but speed still did not settle. See [the first Package 1 hardware run](../../../lab/robot/2026-10-22-package1-motor-diagnostic-first-run.md). These caps are diagnostic bounds, not commissioned limits.
 
-The 0.02 A current cap is an estimate-based bound, not a measured limit, and it is not derived from the voltage cap. It rests on the 22 ohm `kWheelPhaseResistanceOhm` estimate, which is not measured. At 0.02 A that estimate gives about 0.44 V, below the 2.0 V voltage cap. The value is unchanged.
+The 0.02 A current cap is an estimate-based bound, not a measured limit, and it is not derived from the voltage cap. It was sized for the 22 ohm phase-resistance estimate, which Package 2 replaced with 5.75 Ω per phase (see the commissioning record). The cap value is unchanged, but its effect has changed: at 5.75 Ω a `T` current of 0.02 A commands about 0.115 V, a quarter of the 0.44 V it was sized for. Measured on 2026-10-22: `T 0.02 0.02` gave q = 0.104 V and no wheel motion. The `T` command is therefore now a quarter-strength command. Raising the cap (about 0.08 A restores the old drive) needs operator authorization and has not been done.
 
 A `T` request sets both wheel currents. A 0 A target is not an off state: in estimated-current mode the wheel still follows the back-EMF voltage. A `M` request disables the other wheel's driver.
 
@@ -105,7 +105,7 @@ The firmware does not measure resistance. Measure it by hand with power off:
 
 ### Published reference values (not measured on this robot)
 
-The BOM lists the wheel motors as `2208-90kv` (12N14P gimbal motor, 7 pole pairs). No manufacturer datasheet was found. Community sources give line-to-line resistance (between two phase leads) for this motor class as 12.5 Ω to 16.4 Ω; the [SimpleFOC motor table](https://docs.simplefoc.com/bldc_motors) lists 13 to 16 Ω, and one [forum measurement](https://community.simplefoc.com/t/the-2208-90kv-bldc-has-a-phase-resistance-of-16-4/814) reports 16.4 Ω against an advertised 13.3 Ω. For a star winding the per-phase value is half of the line-to-line value, about 6 to 8 Ω. The firmware constant `kWheelPhaseResistanceOhm` is 22 Ω, which is above the published line-to-line range; its origin is not recorded. The nominal rating is 90 rpm/V. Use these numbers only to judge whether a measurement is plausible. They do not replace the manual measurement below, because listings for this price class are not reliable.
+The BOM lists the wheel motors as `2208-90kv` (12N14P gimbal motor, 7 pole pairs). No manufacturer datasheet was found. Community sources give line-to-line resistance (between two phase leads) for this motor class as 12.5 Ω to 16.4 Ω; the [SimpleFOC motor table](https://docs.simplefoc.com/bldc_motors) lists 13 to 16 Ω, and one [forum measurement](https://community.simplefoc.com/t/the-2208-90kv-bldc-has-a-phase-resistance-of-16-4/814) reports 16.4 Ω against an advertised 13.3 Ω. For a star winding the per-phase value is half of the line-to-line value, about 6 to 8 Ω. The former firmware constant `kWheelPhaseResistanceOhm` was 22 Ω, which is above the published line-to-line range; its origin is not recorded. Package 2 removed it. The nominal rating is 90 rpm/V. Use these numbers only to judge whether a measurement is plausible. They do not replace the manual measurement below, because listings for this price class are not reliable.
 
 ## KV fit
 
@@ -148,6 +148,19 @@ Only the two wheel `R_pp` values are measured; every other value is pending or d
 | Control execution time and maximum loop interval from a supported capture | µs | Peak control execution 690 µs; peak `loop()` entry interval 7342 µs; DRIVE rows about 62 per second (median 16 ms), `logger_dropped` 0, `uart_write_failures` 0 over 3512 rows. Taken without balance running. |
 | Leg pose used (fixed pose check) | text | Free-hanging legs at servo position 0, unloaded. This is not a loaded fixed-pose check; that check stays PENDING for Package 2 stage 3. |
 
-The measured 11.5 Ω phase-to-phase value lies just below the published 12.5 to 16.4 Ω range. The firmware constant `kWheelPhaseResistanceOhm` (22 Ω) is about twice the measured value and about four times the star per-phase value. The constant is unchanged, so `T` current targets still scale with 22 Ω and the 0.02 A cap was derived from it. Package 2 decides which value the firmware uses and which convention SimpleFOC `phase_resistance` expects.
+The measured 11.5 Ω phase-to-phase value lies just below the published 12.5 to 16.4 Ω range. The former 22 Ω firmware estimate was about twice the measured value and about four times the star per-phase value.
+
+Package 2 decisions, made on 2026-10-22 and implemented in firmware. Only the two `R_pp` readings are measured; the other values below are decisions based on them:
+
+- Phase resistance: `phase_resistance` = 5.75 Ω on both wheels, assuming a star winding (`R_pp / 2`). SimpleFOC uses this as the per-phase, line-to-neutral value in `voltage.q = I · R + back-EMF`. The winding connection is NOT verified.
+- KV: `KV_rating` 79.5 rpm/V (left) and 76.7 rpm/V (right), the fit values above, in SimpleFOC's convention. The fit is range dependent.
+- Voltage limit: `voltage_limit` 4.2 V on both wheels, the usable ceiling above (battery dependent).
+- Current limit: `current_limit` = 4.2 V / 5.75 Ω ≈ 0.73 A on both wheels. This is the stall current at the voltage ceiling, derived from the values above, not separately measured.
+- Boundary sign: −1 for both wheels (`kLeftMotorSign`, `kRightMotorSign` in [WheelBoundary.h](../../../src/ES-02/OllieFOCdrive/WheelBoundary.h)). Positive motor q rolls both wheels backward, so forward is a negative motor-local target. Motor signs appear only in `toMotorTargets()` and `fromMotorVelocities()`. Wheel speeds in telemetry are forward-positive.
+- Overspeed fault: 60 rad/s, latched after 50 ms over the limit, in every state with the drivers enabled. Implemented in [OverspeedGuard.cpp](../../../src/ES-02/OllieFOCdrive/OverspeedGuard.cpp), it trips on either wheel and disables both drivers. `T RESET` or `M RESET` re-arms it only when both wheels are below the limit.
+
+Verification, wheels clear, on 2026-10-22: a temporary build with the guard limit at 20 rad/s (not the final 60 rad/s build) was used. `M 1 1.5 3000` reached 28.6 rad/s, logged `WHEEL_OVERSPEED`, and disabled both drivers; a following `M 2 1.0` was refused until `M RESET`. `M 2 0.8 2000` gave 15.0 rad/s in torque mode with the commissioned settings. `T 0.02 0.02` gave q = 0.104 V with no wheel motion (see the caps table).
+
+Not yet checked: the forward/backward sign through `toMotorTargets()` under a real current command (needs the cap decision above); loaded or standing behavior; overspeed at the real 60 rad/s limit (tested only at 20 rad/s).
 
 Until these rows are filled from supported runs, the firmware caps stay in force and no loaded control is commissioned.

@@ -89,3 +89,14 @@ The operator states that for all runs above the robot was supported on the main 
 ## 2026-10-22 follow-up: physical rolling direction
 
 The operator ran `M 1 0.5 3000` and `M 2 0.5 3000` with the robot supported and the wheels clear. Positive q made both wheels roll backward in the robot frame. Consequence: forward motion needs a negative motor-local target on both wheels, and the two wheels need the same sign inversion at the Package 2 boundary. This completes the sign check; the `T` and `M` signs agree (see the earlier entry).
+
+## 2026-10-22 Package 2: torque mode, boundary, and overspeed guard
+
+Observation: Package 2 is in the working tree and was flashed for a test. The wheel motors now run in SimpleFOC torque mode with `estimated_current`, using `phase_resistance` 5.75 Ω per phase (half the measured 11.5 Ω phase-to-phase, star winding assumed, NOT verified), `KV_rating` 79.5 (left) and 76.7 (right) rpm/V, `voltage_limit` 4.2 V, and `current_limit` 0.73 A (4.2 V / 5.75 Ω, derived). The velocity PID was removed. Motor signs (both −1) are applied only in `toMotorTargets()` and `fromMotorVelocities()`. A wheel overspeed guard (60 rad/s, 50 ms, both drivers disabled, latched, re-armed by `T RESET` or `M RESET` only when both wheels are below the limit) runs in every state. Balance writes 0 A to both wheels because its rad/s targets would otherwise be read as amperes. Operator set-up: robot supported on the main body, wheels clear, legs free at position 0, no load. Evidence, with a temporary build that lowers the guard limit to 20 rad/s (the final build uses 60):
+
+- `M 1 1.5 3000`: shaft velocity reached 28.6 rad/s, `WHEEL_OVERSPEED` logged, both drivers disabled. A following `M 2 1.0` was refused until `M RESET`.
+- `M 2 0.8 2000`: 15.0 rad/s in torque mode with the commissioned settings.
+- `T 0.02 0.02`: q = 0.104 V (about 0.02 A × 5.75 Ω) with no wheel motion.
+- After a diagnostic lease expires, the fault latches and needs `T RESET` or `M RESET` before the next request. This is existing Package 1 behavior, observed again.
+
+Consequence: the guard works as designed at 20 rad/s, and the wheels follow the commissioned torque-mode settings. The 0.02 A diagnostic cap was sized for the old 22 Ω estimate, so it now commands about a quarter of the voltage it was sized for (0.115 V instead of 0.44 V). Raising the cap (about 0.08 A restores the old drive) needs operator authorization and has NOT been done, so current commands are too weak to test the sign of `toMotorTargets()` for now. Not yet checked: the forward/backward sign under a real current command; loaded or standing behavior; the guard at the real 60 rad/s limit; the star winding of the 5.75 Ω value.

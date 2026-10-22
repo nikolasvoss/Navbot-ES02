@@ -20,7 +20,7 @@ flowchart LR
     MAH --> CTRL
     VEL --> CTRL
     TOUCH[Touch surface<br/>if connected] --> CTRL
-    CTRL -->|2 target speeds| FOC[2 × SimpleFOC<br/>speed control + FOC]
+    CTRL -->|2 current targets, A| FOC[2 × SimpleFOC<br/>torque mode + FOC]
     ENC --> FOC
     FOC --> DRV[2 × MP6536<br/>wheel motors]
     CTRL -->|bodyX, height, roll| IK[Inverse leg kinematics]
@@ -37,13 +37,15 @@ The IMU sits on the MAIN board according to the PCB draft. Each wheel motor has 
 
 | Branch | Error from setpoint and actual value | Result in the active two-wheel path |
 | --- | --- | --- |
-| **Tilt / balance** | `angleError = correctedRollDegrees + bodyPitchingFiltered` | `anglePid` supplies the common part of both wheel target speeds. `correctedRollDegrees` is called "roll" in the code. Here it is the attitude angle in degrees used for forward/backward tilting. |
+| **Tilt / balance** | `angleError = correctedRollDegrees + bodyPitchingFiltered` | `anglePid` supplies the common part of both wheel targets. Since 2026-10-22 these values are still rad/s and are not sent to the wheels; see the interim note below. `correctedRollDegrees` is called "roll" in the code. Here it is the attitude angle in degrees used for forward/backward tilting. |
 | **Yaw / steering** | `yawError = attitude.gyro.z - bodyTurn` | `yawPid` supplies a differential part: wheel 1 gets `−yawOutput`, wheel 2 gets `+yawOutput`. The gyro Z value and the turn command are in rad/s. |
 | **Drive / wheel speed** | `speedError = (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec)/2 - movementSpeed` | `speedPid` produces `bodyX`. The leg kinematics use it to shift the servo target positions. **In the active path, this output is not subtracted from the tilt setpoint of the wheel motors.** |
 | **Lateral posture** | `rollError` from `correctedPitchDegrees`, the roll setpoint, and touch Y | With CH7/AUTO, `rollPid` produces a height correction between the legs. In MANUAL, its output is zero. |
 | **Touch / ball pose** | Touch X/Y and CH9/10 | Changes `bodyPitching`, a lateral touch component, and thereby indirectly the wheel or servo targets. See below. |
 
-Core wheel motor logic: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`. Both are then limited to ±88. The signs are software conventions and do not replace a test of the mechanical direction of action. `runPostureController()` is the active two-wheel path. The unused older function `PIDcontroller_angle()` was removed during cleanup on 2026-10-01. It contained the classic cascade "speed → tilt → wheel motor", but `loop()` did not call it. The comment above `runPostureController()` also names a cascade, which is misleading at this point.
+Core wheel motor logic: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`. Both are then limited to ±88. The signs are software conventions and do not replace a test of the mechanical direction of action.
+
+**Interim state (2026-10-22, Package 2):** the wheel motors now take ampere targets in torque mode, but the values above are still rad/s. `runPostureController()` therefore writes 0 A to both wheels after computing them. Balance does not drive the wheels until the Package 4 controller produces current commands. Package 3 and 4 remove or replace this path. See the [robust control plan](../plans/robust-control-system.md#package-2-motor-configuration-and-the-hardware-boundary). `runPostureController()` is the active two-wheel path. The unused older function `PIDcontroller_angle()` was removed during cleanup on 2026-10-01. It contained the classic cascade "speed → tilt → wheel motor", but `loop()` did not call it. The comment above `runPostureController()` also names a cascade, which is misleading at this point.
 
 **Numerical example without I/D parts:** With `correctedRollDegrees=+1°`, `bodyPitchingFiltered=0`, and balance P=6, the P part adds `+6` to the common wheel target speed. If `yawError=+0.2 rad/s` and yaw P=5 are present at the same time, the yaw part is `+1`: wheel 1 receives `6−1=5`, and wheel 2 receives `6+1=7 rad/s`. The example shows the mixing calculation. The actual response depends on signs, dynamics, I/D parts, and limits.
 
@@ -53,7 +55,7 @@ Core wheel motor logic: `target1 = angleOutput − yawOutput`, `target2 = angleO
 2. `speedPid` computes `bodyX` from actual minus setpoint. `bodyX` feeds the X coordinate of the inverse leg kinematics. The servos thereby shift the geometry and, with it, the load relative to the wheels.
 3. The IMU supplies the tilt angle `correctedRollDegrees` via Mahony. `anglePid` changes **both** wheel target speeds together to regulate the tilt.
 4. CH4 sets `bodyTurn`. The yaw controller compares it with `gyro.z` and raises one wheel target speed while lowering the other.
-5. SimpleFOC compares each wheel target speed with the encoder and computes the motor drive via FOC/PWM. In this configuration, the SimpleFOC motor mode is `velocity`, and the inner torque control is `voltage`. The optional current sensing loops are compiled out. `current_limit=5` is therefore **no proof** of a measured or hard-limited battery current.
+5. SimpleFOC receives each wheel's current target and computes the motor drive via FOC/PWM. Since Package 2 the motor mode is `torque` with `TorqueControlType::estimated_current`. The target in amperes is converted to `voltage.q = I · phase_resistance + back-EMF` and clamped to `voltage_limit` (4.2 V). The current is therefore an estimate, not a sensed value; the optional current sensing loops are compiled out. `current_limit` (about 0.73 A) is the derived stall current at the voltage ceiling, not a measured battery-current limit.
 
 The behavior is coupled through the mechanics: a servo movement changes the position, and a wheel movement changes tilt and wheel speed. A tremor can therefore appear in both actuator groups, even when the trigger comes from only one branch.
 
@@ -79,7 +81,7 @@ BLE has its own mapping of the control channels. `readControlInput()` reads only
 
 - On every `loop()` pass, `motor.move()` and `motor.loopFOC()` run. The outer control block runs from `controlTimestepSec >= 0.001 s`. This is a **minimum threshold**, not a guaranteed 1 kHz rate. A stored standstill trace measured a median tick of about 1.66 ms. Under other load, it can differ. The 2026-10-22 voltage-sweep capture ([2 V log](../../../lab/robot/captures/2026-10-22-package1-t7-voltage-sweep-2v.log)) measured 424 loop passes per second, with a mean accepted IMU read interval of 2.36 ms (`imu_mean_interval_s` 0.002358 s). With the 1024-byte serial TX buffer (capture `lab/robot/captures/2026-10-22-package1-t10-after-tx-buffer.log`, wheels clear, balance off) the loop runs about 521 passes per second, the mean accepted IMU interval is 1.92 ms, and the maximum loop-entry interval is 2.5 ms instead of 7.3 ms. The remaining pass time of about 1.9 ms is not profiled, so the outer control block still does not run at 1 kHz.
 - The IMU is read over SPI in the main pass. Acceleration and gyro are low-pass filtered and fused with Mahony into the attitude angle. The yaw controller uses `attitude.gyro.z`, which is the scaled raw gyro value, not `gyrof.z`.
-- In the current diagnostic source state, the wheel speed is computed as encoder angle difference / **measured `controlTimestepSec`**, then smoothed with a SimpleFOC low-pass filter (`Tf=0.01 s`). If `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` is switched off, the code instead divides by a fixed `0.01 s`. At a tick of about 1.8 ms, this scales the measurement too small by a factor of 5.6 by calculation. Gain values of the two states are therefore not directly comparable.
+- Since Package 2 (2026-10-22), the wheel speed is computed as encoder angle difference divided by the **measured interval between encoder reads** (`micros()`), in both live-tuning states, then smoothed with a SimpleFOC low-pass filter. It is forward-positive; the motor sign is applied only in `WheelBoundary`. Before this change, the divisor was the control tick only with `DIAGNOSTIC_LIVE_TUNING_DEFAULTS`, and a fixed `0.01 s` otherwise. That scaled the speed too small by about 5.6 at a 1.8 ms tick, so gains from the two states were not comparable.
 - `correctedRollDegrees`/`correctedPitchDegrees` are angles in degrees after subtracting stored zero points. The gyro supplies rad/s. `bodyX` is a kinematic shift in meters. The wheel targets are SimpleFOC target speeds in rad/s. The named PID gains therefore carry different implicit units. Numbers from different controllers cannot be compared directly.
 
 ### Biquad filters and sample rates
