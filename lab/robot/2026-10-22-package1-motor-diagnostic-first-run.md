@@ -43,3 +43,18 @@ Practical consequence: the speed does not settle. Within one step the velocity m
 ## 2026-10-22 follow-up: phase resistance measured by hand
 
 The operator measured 11.5 Ω phase to phase on a wheel motor. The wheel, phase pair, meter and winding connection were not recorded. Consequence: this is the first measured resistance. It is below the published 12.5 to 16.4 Ω and about half of the firmware constant (22 Ω). If the winding is star, the per-phase value is 5.75 Ω. Recorded in the [commissioning record](../../docs/robot/software/motor-commissioning.md#commissioning-record); per-wheel confirmation stays pending.
+
+## 2026-10-22 follow-up: 2 V sweep reaches plateaus
+
+Firmware `c309861` (caps 2 V, 5 s, 60 rad/s), CH5 = 0 in every row, wheels clear. `M <motor> <V> 4000` for 0.5, 1.0, 1.5, 2.0 V on each wheel (`captures/2026-10-22-package1-t7-voltage-sweep-2v.log`). All eight steps ran the full lease with no fault; `logger_dropped` and `uart_write_failures` stayed 0 over 3512 rows.
+
+Plateau (median of the last second, rad/s; sd about 1 rad/s) and the 500 ms bin medians show the speed settles within the first 500 ms:
+
+| Voltage | Motor 1 | Motor 2 |
+| --- | --- | --- |
+| 0.5 V | 8.7 | 8.7 |
+| 1.0 V | 18.2 | 18.5 |
+| 1.5 V | 25.3 | 25.0 |
+| 2.0 V | 30.4 | 29.7 |
+
+Linear fit over the four points with the plan's convention (`KV = slope / √3`): motor 1 79.5 rpm/V, motor 2 76.7 rpm/V, intercept about 2.6 to 3.1 rad/s, residual up to 1.5 rad/s. The curve flattens with voltage (slope 19, 14, 10 rad/s per V between successive points), so the linear KV depends on the range; it is below the 90 rpm/V rating. The cause of the flattening is not established (load, friction and resistive drop at higher current are candidates). Both wheels agree within 4 %. The usable q ceiling is not reached at the 2.0 V cap. Peak control execution was 690 µs and the peak loop interval 7.3 ms, taken without balance load.

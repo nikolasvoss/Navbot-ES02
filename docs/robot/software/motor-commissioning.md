@@ -128,16 +128,16 @@ Only the two wheel `R_pp` values are measured; every other value is pending or d
 | Item | Unit | Status |
 | --- | --- | --- |
 | Payload and leg-pose description | text | PENDING |
-| Firmware commit used for the run | hash | PENDING |
+| Firmware commit used for the run | hash | `c309861` (flashed from the clean tree; capture `lab/robot/captures/2026-10-22-package1-t7-voltage-sweep-2v.log`) |
 | Left wheel `R_pp`; `R_phase` | Ω | `R_pp` 11.5 Ω MEASURED 2026-10-22 by the operator (phase pair, meter and winding connection not recorded). `R_phase` 5.75 Ω if star (`R_pp / 2`): derived, winding unverified. |
 | Right wheel `R_pp`; `R_phase` | Ω | `R_pp` 11.5 Ω MEASURED 2026-10-22 by the operator (phase pair, meter and winding connection not recorded). `R_phase` 5.75 Ω if star (`R_pp / 2`): derived, winding unverified. |
-| Left wheel `KV_rating` and fit residual | rpm/V | PENDING |
-| Right wheel `KV_rating` and fit residual | rpm/V | PENDING |
-| Left wheel usable `q` ceiling | V | PENDING |
-| Right wheel usable `q` ceiling | V | PENDING |
-| Motor sign convention, each wheel, verified against wheel motion | text | PENDING |
-| IMU sample rate and maximum interval from a supported capture | Hz; µs | PENDING |
-| Control execution time and maximum loop interval from a supported capture | µs | PENDING |
+| Left wheel `KV_rating` and fit residual | rpm/V | 79.5 rpm/V from a linear fit over 0.5, 1.0, 1.5, 2.0 V (plateau medians 8.7, 18.2, 25.3, 30.4 rad/s), max residual 1.2 rad/s. The speed curve flattens with voltage, so the fit depends on the range; the 0.5 to 1.0 V pair alone gives about 105 rpm/V. Nominal rating 90 rpm/V. 2026-10-22, operator-run. |
+| Right wheel `KV_rating` and fit residual | rpm/V | 76.7 rpm/V, same method (plateau medians 8.7, 18.5, 25.0, 29.7 rad/s), max residual 1.5 rad/s; 0.5 to 1.0 V pair alone about 108 rpm/V. |
+| Left wheel usable `q` ceiling | V | At least 2.0 V (the cap): speed still rose from 25.3 to 30.4 rad/s between 1.5 and 2.0 V with no saturation. Not found. |
+| Right wheel usable `q` ceiling | V | At least 2.0 V (the cap); 25.0 to 29.7 rad/s between 1.5 and 2.0 V. Not found. |
+| Motor sign convention, each wheel, verified against wheel motion | text | Positive q gave positive `shaft_velocity` on both wheels (motor-local SimpleFOC sign). The physical rolling direction was not observed. PENDING for the boundary sign. |
+| IMU sample rate and maximum interval from a supported capture | Hz; µs | Wheels-clear diagnostic run, no balance load: maximum IMU interval 7460 µs; the derived rate (424 Hz) and the long-gap counter (24577) disagree with the nominal 1 kHz and are not yet explained. |
+| Control execution time and maximum loop interval from a supported capture | µs | Peak control execution 690 µs; peak `loop()` entry interval 7342 µs; DRIVE rows about 62 per second (median 16 ms), `logger_dropped` 0, `uart_write_failures` 0 over 3512 rows. Taken without balance running. |
 | Leg pose used (fixed pose check) | text | PENDING |
 
 The measured 11.5 Ω phase-to-phase value lies just below the published 12.5 to 16.4 Ω range. The firmware constant `kWheelPhaseResistanceOhm` (22 Ω) is about twice the measured value and about four times the star per-phase value. The constant is unchanged, so `T` current targets still scale with 22 Ω and the 0.02 A cap was derived from it. Package 2 decides which value the firmware uses and which convention SimpleFOC `phase_resistance` expects.
