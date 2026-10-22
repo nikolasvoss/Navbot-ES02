@@ -62,3 +62,16 @@ Linear fit over the four points with the plan's convention (`KV = slope / √3`)
 ## 2026-10-22 follow-up: current command sign check
 
 Firmware `c309861`, CH5 = 0, wheels clear, `T <left_A> <right_A> 3000` under K58 (`captures/2026-10-22-package1-t8-current-test-signs.log`). Each run held its target for the full lease; `voltage_q` was ±0.44 V (0.02 A × the 22 Ω firmware constant). Median shaft velocity, left/right: `T 0.02 0.02` +7.09/+7.34 rad/s; `T -0.02 -0.02` -7.35/-7.44; `T 0.02 -0.02` +7.04/-7.49. Consequence: the current command produces the expected motor-local sign on each wheel independently, and its speed matches the voltage sweep (0.5 V gave 8.7 rad/s). The earlier runs with the 3 rad/s cap showed `fault=5` (overspeed) disabling both drivers, which covers the overspeed gating. The physical rolling direction was still not observed.
+
+## 2026-10-22 follow-up: voltage ceiling found
+
+Firmware `54c04ca` (caps 6 V, 5 s, 120 rad/s), CH5 = 0, wheels clear. `M <motor> <V> 4000` for 3, 4, 5, 6 V on each wheel, no faults (`captures/2026-10-22-package1-t9-voltage-sweep-6v.log`). Plateau median shaft velocity, rad/s (bus voltage 7.4 V at 3 V falling to 7.2 V at 6 V):
+
+| Voltage | Motor 1 | Motor 2 |
+| --- | --- | --- |
+| 3 V | 39.5 | 37.5 |
+| 4 V | 44.3 | 41.4 |
+| 5 V | 47.1 | 44.1 |
+| 6 V | 47.3 | 44.7 |
+
+Consequence: the speed stops rising between 4 and 5 V; 5 to 6 V adds 0.4 % and 1.4 %. The plan's prediction was supply/√3, which is about 4.2 V at the measured 7.2 to 7.4 V bus and 4.85 V at the 8.4 V constant. The measurement fits the lower value, so `voltage_limit` for Package 2 should follow the real bus voltage, not 8.4 V. The speeds at 3 V and above exceed what the linear low-voltage trend predicts, so the earlier KV fit (77 to 80 rpm/V, 0.5 to 2 V) describes only that range.
