@@ -101,6 +101,7 @@ struct RcRange {
 using BodyHeightCurve = float (*)(long, const RcRange &, float);
 
 constexpr unsigned long kSerialBaudRate = 576000;
+constexpr size_t kSerialTxBufferBytes = 1024;
 #define DIAGNOSTIC_LOG_INTERVAL_US 5000  // Diagnostic CSV rows are emitted at 200 Hz.
 constexpr unsigned int kDiagnosticLogSampleRateHz = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
@@ -723,6 +724,7 @@ void setup() {
   digitalWrite(board::kWheel2EnablePin, LOW);
 #endif
 
+  Serial.setTxBufferSize(kSerialTxBufferBytes);
   Serial.begin(kSerialBaudRate);
   Logging::begin();
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
