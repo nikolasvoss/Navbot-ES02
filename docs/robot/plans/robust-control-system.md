@@ -299,13 +299,8 @@ Decided by the user on 2026-10-22:
 | Bluetooth | Removed completely; see package 3. SBUS is the only motion and command input besides the USB serial console. |
 | Touchscreen | Removed completely, including the driver files; see package 3. |
 | Actuator fault action | Coast. In the tick that detects the fault, set both targets to 0 A, then call `motor1.disable()` and `motor2.disable()`, which pull the driver enable pins low (the same pins `SENSOR_DIAGNOSTIC_MODE` holds low at boot). Keep servo power and the fixed pose. Only a deliberate rearm (enable-switch off-to-on edge through Arming) calls `motor.enable()`. A 0 A command alone is not off: with `KV_rating` set, estimated-current mode still outputs the back-EMF voltage. Braking would not help a falling robot: with 22 ohm windings, shorted-phase braking torque is negligible, and disabled drivers keep a fallen robot's wheels from spinning on stale commands. Verified in stage 3 (see below). |
+| RC switches | Measured on 2026-10-22 (positions as reported by `remote_status.py`, which picks the nearest of 192, 992, 1792): CH5 is a 3-position switch (0/1/2), CH6 and CH7 are latching 2-position switches (0/1). Decode a 3-position switch with the bands raw < 592 → 0, 592-1392 → 1, > 1392 → 2, and a 2-position switch with raw < 992 → 0, else 1. CH5: position 0 disables balance; 1 and 2 both enable it, as today, so that the middle position passed while flipping does not disarm. Arming needs a change from 0 to 1 or 2. CH6: the save trigger is the 0-to-1 edge only; to save again, flip back to 0 and then to 1. CH7: 0 = RUN path, 1 = standstill commissioning. A position already set at boot or at state entry never counts as an edge. |
 | `COMMUNICATION_OBJECT` modes | Removed. Delete `SIMPLEFOC_STUDIO`, `CONTROL_DUAL_MOTORS`, the `COMMUNICATION_OBJECT` define and its branches in `updateMotorsAndCommands()` and `computeBodyPose()`, `motor1.useMonitoring()` and `motor1.monitor()`, and Commander `T` (`handleM1MotionCommand`) and `M` (`handleM1Command`). `M` gives raw SimpleFOC access that bypasses the overspeed check and the allocator. The package 1 current-test command and motor identification command replace them. `SENSOR_DIAGNOSTIC_MODE` stays as the safe bring-up build. |
-
-Still open; record the answer here before package 2:
-
-| Decision | Options and constraint |
-| --- | --- |
-| RC channel map for the remaining channels | See the proposed map below. Confirm against the actual transmitter output with the serial monitor. |
 
 RC map (1-based channel names as in the existing comments; array index is one lower):
 
@@ -315,9 +310,9 @@ RC map (1-based channel names as in the existing comments; array index is one lo
 | CH2 `ch[1]` | height or pitch | unused |
 | CH3 `ch[2]` | `movementSpeed` ±15 | requested speed, m/s, mapped to ± the commissioned speed cap; stick forward gives raw 1792 (measured), mapped to forward speed |
 | CH4 `ch[3]` | `bodyTurn` ±11 | requested yaw rate, rad/s, mapped to ± the commissioned turn cap; stick left gives raw 192 (measured), mapped to a left turn |
-| CH5 `ch[4]` | `pidGainsMode` 0..2 | balance enable; arming needs an off-to-on edge, a level present at boot is ignored |
-| CH6 `ch[5]` | `postureOrMarkMode` | trim save trigger, edge only, commissioning state only |
-| CH7 `ch[6]` | `rollMode` | commissioning state select (off = RUN path, on = standstill commissioning) |
+| CH5 `ch[4]` | `pidGainsMode` 0..2 | balance enable: 0 off, 1 or 2 on; arming needs a change from 0, a position present at boot is ignored |
+| CH6 `ch[5]` | `postureOrMarkMode` | trim save trigger: latching switch, 0-to-1 edge only, commissioning state only |
+| CH7 `ch[6]` | `rollMode` | commissioning state select (0 = RUN path, 1 = standstill commissioning) |
 | CH8 `ch[7]` | `attitudeMode` | unused |
 | CH9 `ch[8]` | `topBallX` | trim knob (decided), commissioning state only, with pickup |
 | CH10 `ch[9]` | `topBallY` | unused |

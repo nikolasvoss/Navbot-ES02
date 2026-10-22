@@ -31,7 +31,7 @@ Each proportional channel passes through three conversions before a controller u
 | 1500 µs | 992 | yes (CH1-CH4, CH9, CH10) |
 | 2000 µs | 1792 | yes (CH9) |
 
-Direction on the HT-10A as configured on 2026-10-22: CH3 stick forward gives 1792, CH4 stick left gives 192. The switches CH5-CH8 read 192 in their tested position. See the [lab note](../../../lab/robot/2026-10-22-rc-transmitter-raw-values.md).
+Direction on the HT-10A as configured on 2026-10-22: CH3 stick forward gives 1792, CH4 stick left gives 192. CH5 is a 3-position switch (positions 0/1/2, raw about 192/992/1792). CH6 and CH7 are latching 2-position switches (0/1, raw about 192/1792); CH6 does not spring back. CH8 was only seen at 192. See the [lab note](../../../lab/robot/2026-10-22-rc-transmitter-raw-values.md).
 
 Current conversion of the drive channels:
 

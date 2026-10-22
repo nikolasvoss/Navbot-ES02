@@ -26,3 +26,7 @@ Four `remote_status.py` JSON results from `/dev/ttyUSB0`, captured between 11:48
 ## Practical consequence and limits
 
 The full transmitter range reaches the firmware's full mapping range without clipping, and centre maps exactly to 992. Forward on CH3 and left on CH4 are now known as raw values. Whether a positive firmware speed moves the robot forward depends on the motor and encoder signs, which this check did not test. The [RC channel map](../../docs/robot/software/rc-channel-map.md) describes the resulting conversion chain.
+
+## 2026-10-22 addendum: switch positions
+
+The user reported the switch positions from further `remote_status.py` runs: CH5 has three positions (0/1/2), CH6 and CH7 have two (0/1), and CH6 is latching, not momentary. The script reports the nearest of 192, 992, and 1792, so these are estimated positions; the raw values were not pasted. CH8 positions other than 192 remain unrecorded.
