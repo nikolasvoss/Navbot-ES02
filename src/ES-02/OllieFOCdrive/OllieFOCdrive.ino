@@ -118,21 +118,21 @@ struct BodyPose {
   float roll;
 };
 
-struct WheelPidParams {
-  float p;
-  float i;
-  float d;
+// Wheel motor constants, measured 2026-10-22 (docs/robot/software/motor-commissioning.md).
+// SimpleFOC uses phase_resistance as the per-phase (line-to-neutral) value in voltage.q = I * R + bemf.
+// The meter reads 11.5 ohm phase to phase on both wheels; 5.75 ohm assumes a star winding, not yet verified.
+struct WheelMotorParams {
+  float phaseResistanceOhm;
+  float kvRatingRpmPerV;  // SimpleFOC convention: V_bemf = velocity / (KV * sqrt(3) * RPM_TO_RADS)
 };
 
 constexpr float kWheelSupplyVoltageV = 8.4;
-constexpr float kWheelVelocityLimitRadPerSec = 88.0;
-constexpr float kWheelCurrentLimitA = 5.0;
-constexpr float kWheelPhaseResistanceOhm = 22;
-constexpr float kWheelVelocityPidOutputRamp = 10000;
+constexpr float kWheelVoltageLimitV = 4.2;  // usable q ceiling at about 7.3 V bus; the modulation limit is bus / sqrt(3)
 constexpr float kWheelVelocityFilterTfSec = 0.001;
-constexpr WheelPidParams kWheelVelocityPid{0.006, 0, 0};
+constexpr WheelMotorParams kLeftWheelMotor{5.75f, 79.5f};
+constexpr WheelMotorParams kRightWheelMotor{5.75f, 76.7f};
 
-void configureWheelMotor(BLDCMotor &motor, const WheelPidParams &pid);
+void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params);
 
 constexpr float kBodyHeightOverrideDisabledM = 0.0f;
 constexpr float kBodyHeightMinM = 0.05f;
@@ -398,10 +398,9 @@ void zeroMotorOutput(BLDCMotor &motor) {
   motor.voltage.d = 0.0f;
 }
 
-void restoreMotorConfiguration(BLDCMotor &motor) {
+void restoreMotorConfiguration(BLDCMotor &motor, const WheelMotorParams &params) {
   zeroMotorOutput(motor);
-  configureWheelMotor(motor, kWheelVelocityPid);
-  motor.PID_velocity.reset();
+  configureWheelMotor(motor, params);
 }
 
 MotorDiagnostic::Inputs diagnosticInputs() {
@@ -412,8 +411,8 @@ MotorDiagnostic::Inputs diagnosticInputs() {
 void applyMotorDiagnosticRequest() {
   if (!motorDiagnosticState.active) return;
   const MotorDiagnostic::Request &request = motorDiagnosticState.request;
-  restoreMotorConfiguration(motor1);
-  restoreMotorConfiguration(motor2);
+  restoreMotorConfiguration(motor1, kLeftWheelMotor);
+  restoreMotorConfiguration(motor2, kRightWheelMotor);
   motor1.controller = MotionControlType::torque;
   motor2.controller = MotionControlType::torque;
   if (request.mode == MotorDiagnostic::Mode::CurrentTest) {
@@ -539,8 +538,8 @@ void serviceMotorDiagnostic() {
     driver2.disable();
     zeroMotorOutput(motor1);
     zeroMotorOutput(motor2);
-    restoreMotorConfiguration(motor1);
-    restoreMotorConfiguration(motor2);
+    restoreMotorConfiguration(motor1, kLeftWheelMotor);
+    restoreMotorConfiguration(motor2, kRightWheelMotor);
     motorDiagnosticApplied = false;
     motorDiagnosticOwnsOutput = false;
     diagnosticRestoredAwaitingResume = true;
@@ -610,22 +609,18 @@ void logCalibration(const PersistedCalibrationValues &calibrationValues) {
                    calibrationValues.servos.servo3Degrees, calibrationValues.servos.servo4Degrees);
 }
 
-void configureWheelMotor(BLDCMotor &motor, const WheelPidParams &pid) {
+void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params) {
   motor.torque_controller = TorqueControlType::estimated_current;
-  motor.controller = MotionControlType::velocity;
+  motor.controller = MotionControlType::torque;
   motor.motion_downsample = 0.0;
 
-  motor.PID_velocity.P = pid.p;
-  motor.PID_velocity.I = pid.i;
-  motor.PID_velocity.D = pid.d;
-  motor.PID_velocity.output_ramp = kWheelVelocityPidOutputRamp;
-  motor.PID_velocity.limit = kWheelSupplyVoltageV;
+  // shaft_velocity feeds the back-EMF estimate, so the velocity filter stays.
   motor.LPF_velocity.Tf = kWheelVelocityFilterTfSec;
 
-  motor.velocity_limit = kWheelVelocityLimitRadPerSec;
-  motor.voltage_limit = kWheelSupplyVoltageV;
-  motor.current_limit = kWheelCurrentLimitA;
-  motor.phase_resistance = kWheelPhaseResistanceOhm;
+  motor.phase_resistance = params.phaseResistanceOhm;
+  motor.KV_rating = params.kvRatingRpmPerV;
+  motor.voltage_limit = kWheelVoltageLimitV;
+  motor.current_limit = kWheelVoltageLimitV / params.phaseResistanceOhm;  // stall current at the voltage ceiling
   motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
   motor.modulation_centered = 1.0;
 }
@@ -770,8 +765,8 @@ void setup() {
   SimpleFOCDebug::enable(&Serial);  // TODO a more centralized way to enable debug sections would be nice
   initPositionSensors();
   initDrivers();
-  configureWheelMotor(motor1, kWheelVelocityPid);
-  configureWheelMotor(motor2, kWheelVelocityPid);
+  configureWheelMotor(motor1, kLeftWheelMotor);
+  configureWheelMotor(motor2, kRightWheelMotor);
 
   motor1.init();
   motor2.init();
@@ -1253,9 +1248,12 @@ void runPostureController(float dt) {
       target2 = target2 + (-controlTorqueCompensation);
   }
 
-  // SimpleFOC's velocity mode does not apply velocity_limit to its target.
-  motor1.target = constrain(target1, -motor1.velocity_limit, motor1.velocity_limit);
-  motor2.target = constrain(target2, -motor2.velocity_limit, motor2.velocity_limit);
+  // The wheel motors now take ampere targets, not the rad/s targets computed above. Until the new controller
+  // (package 4) produces current commands, balance holds both wheels at 0 A.
+  (void)target1;
+  (void)target2;
+  motor1.target = 0.0f;
+  motor2.target = 0.0f;
 }
 
 /**

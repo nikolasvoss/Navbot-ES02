@@ -9,8 +9,8 @@ enum class Fault : uint8_t { None, LeaseExpired, BalanceEnabled, CalibrationActi
 enum class RequestResult : uint8_t { Accepted, Invalid, Unsafe, FaultLatched };
 
 constexpr uint32_t kMaximumLeaseMs = 5000;
-// Estimate-based bound on the T current target, not derived from kMaximumVoltageV. It rests on the 22 ohm
-// kWheelPhaseResistanceOhm estimate, which is not measured (the measured phase-to-phase value is 11.5 ohm).
+// Bound on the T current target, not derived from kMaximumVoltageV. It was sized for the earlier 22 ohm
+// estimate; with the commissioned 5.75 ohm per phase it commands about a quarter of the voltage (0.115 V).
 constexpr float kMaximumCurrentA = 0.02f;
 // Wheel-clear runs only. The request reaches voltage.q unclamped up to this value; the SpaceVectorPWM
 // modulator saturates near supply/sqrt(3). Lowered back to 2.0 V on 2026-10-22 by operator request.
