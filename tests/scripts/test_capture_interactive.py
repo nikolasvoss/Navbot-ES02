@@ -59,7 +59,7 @@ class InteractiveWhitelistTest(unittest.TestCase):
     def test_non_motor_commands_keep_the_existing_whitelist(self):
         self.assertEqual(interactive_command("K0"), "K0")
         self.assertEqual(interactive_command("K58"), "K58")
-        self.assertEqual(interactive_command("sp0.04"), "SP0.04")
+        self.assertEqual(interactive_command("yp0.04"), "YP0.04")
         self.assertIsNone(interactive_command("E1"))
         self.assertIsNone(interactive_command("K1"))
         self.assertIsNone(interactive_command(""))

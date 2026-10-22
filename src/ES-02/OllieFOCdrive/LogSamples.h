@@ -83,7 +83,6 @@ struct BalanceSample {
   float angleProportional;
   float angleIntegral;
   float angleDerivative;
-  float bodyX;
   float leftMotorTarget;
   float rightMotorTarget;
   int32_t maxServoRange;
@@ -105,17 +104,9 @@ struct DriveSample {
   uint32_t controlExecutionUs;
   uint32_t maxLoopEntryIntervalUs;
   float requestedSpeed;
-  float effectiveSpeed;
   float leftWheelVelocity;
   float rightWheelVelocity;
   float controlDtSec;
-  float speedError;
-  float speedProportional;
-  float speedIntegral;
-  float speedDerivative;
-  float speedOutput;
-  float driveBodyXRaw;
-  float bodyX;
   float bodyPitchFiltered;
   float rollOk;
   float angleOutput;
@@ -161,15 +152,12 @@ enum class DebugSelector : uint8_t {
   K20,
   K21,
   K22,
-  K23,
-  K24,
+  K24 = 24,
   K25,
   K28 = 28,
   K33 = 33,
   K37 = 37,
-  K41 = 41,
-  K42,
-  K43,
+  K43 = 43,
   K44,
   K45,
   K46 = 46,
@@ -230,7 +218,6 @@ struct ControllerGains {
 };
 struct ControllerGainsSet {
   ControllerGains angle;
-  ControllerGains speed;
   ControllerGains yaw;
   float dtSec;
 };
@@ -279,11 +266,6 @@ struct BallPosition {
   float y;
   float yFiltered;
 };
-struct RollOutputState {
-  float rollOk;
-  float bodyPitch;
-  float output;
-};
 struct VoltageState {
   int32_t adc;
   float filteredV;
@@ -330,11 +312,6 @@ struct FilteredGeometry {
   float slideStep;
   float ballX;
   float ballY;
-};
-struct RollCorrection {
-  float rollOk;
-  float bodyPitch;
-  float correctedBodyPitch;
 };
 struct BodyPitchState {
   float filteredDeg;
@@ -384,7 +361,6 @@ union DebugPayload {
   BalanceGeometry balanceGeometry;
   BalanceState balanceState;
   BallPosition ballPosition;
-  RollOutputState rollOutput;
   VoltageState voltageState;
   TuningState tuningState;
   TumbleState tumbleState;
@@ -394,7 +370,6 @@ union DebugPayload {
   PidIntegralState pidIntegralState;
   PidIntegralOutputState pidIntegralOutputState;
   FilteredGeometry filteredGeometry;
-  RollCorrection rollCorrection;
   BodyPitchState bodyPitchState;
   GyroFftSample gyroFft;
   ImuCadenceSample imuCadence;

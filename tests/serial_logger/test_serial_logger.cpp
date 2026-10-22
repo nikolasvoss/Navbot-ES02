@@ -44,9 +44,8 @@ void fillWidestDrive(Logging::DriveSample &d) {
   d.imuLongGapCount = d.imuMaxIntervalUs = d.controlStartUs = d.controlExecutionUs = d.maxLoopEntryIntervalUs = u;
   d.gainMode = d.maxServoRange = -999;
   d.minimumBatteryRawV = d.batteryV = d.imuDtSec = f;
-  d.requestedSpeed = d.effectiveSpeed = d.leftWheelVelocity = d.rightWheelVelocity = d.controlDtSec = f;
-  d.speedError = d.speedProportional = d.speedIntegral = d.speedDerivative = d.speedOutput = f;
-  d.driveBodyXRaw = d.bodyX = d.bodyPitchFiltered = d.rollOk = d.angleOutput = f;
+  d.requestedSpeed = d.leftWheelVelocity = d.rightWheelVelocity = d.controlDtSec = f;
+  d.bodyPitchFiltered = d.rollOk = d.angleOutput = f;
   d.angleProportional = d.angleIntegral = d.angleDerivative = d.wheelSpeedFeedbackOutput = f;
   d.leftMotorTarget = d.rightMotorTarget = d.leftCurrentSetpoint = d.rightCurrentSetpoint = f;
   d.leftVoltageQ = d.rightVoltageQ = d.leftShaftVelocity = d.rightShaftVelocity = f;
@@ -54,7 +53,7 @@ void fillWidestDrive(Logging::DriveSample &d) {
 }
 
 // Column i of the DRIVE row (0-based, after the tag, in DRIVE_COLUMNS order) holds the value i + 1.
-// logger_dropped (column 46) and uart_write_failures (column 47) are formatRecord arguments 47 and 48.
+// logger_dropped (column 39) and uart_write_failures (column 40) are formatRecord arguments 39 and 40.
 // scripts/capture_balance_trace.py reads these values back and checks each one against its column name.
 void fillDistinctDrive(Logging::DriveSample &d) {
   d.timestampMs = 1;                 // time_ms
@@ -71,38 +70,30 @@ void fillDistinctDrive(Logging::DriveSample &d) {
   d.controlExecutionUs = 12;         // control_execution_us
   d.maxLoopEntryIntervalUs = 13;     // max_loop_entry_interval_us
   d.requestedSpeed = 14;             // ch3_target
-  d.effectiveSpeed = 15;             // effective_speed_target
-  d.leftWheelVelocity = 16;          // motor1_velocity_f
-  d.rightWheelVelocity = 17;         // motor2_velocity_f
-  d.controlDtSec = 18;               // tick_dt_s
-  d.speedError = 19;                 // speed_error
-  d.speedProportional = 20;          // speed_out_p
-  d.speedIntegral = 21;              // speed_out_i
-  d.speedDerivative = 22;            // speed_out_d
-  d.speedOutput = 23;                // speed_output
-  d.driveBodyXRaw = 24;              // speed_body_x_raw
-  d.bodyX = 25;                      // body_x
-  d.bodyPitchFiltered = 26;          // body_pitching_f
-  d.rollOk = 27;                     // roll_ok
-  d.angleOutput = 28;                // angle_output
-  d.angleProportional = 29;          // angle_out_p
-  d.angleIntegral = 30;              // angle_out_i
-  d.angleDerivative = 31;            // angle_out_d
-  d.wheelSpeedFeedbackOutput = 32;   // wheel_speed_feedback
-  d.leftMotorTarget = 33;            // motor1_target
-  d.rightMotorTarget = 34;           // motor2_target
-  d.leftCurrentSetpoint = 35;        // motor1_current_sp
-  d.rightCurrentSetpoint = 36;       // motor2_current_sp
-  d.leftVoltageQ = 37;               // motor1_voltage_q
-  d.rightVoltageQ = 38;              // motor2_voltage_q
-  d.leftShaftVelocity = 39;          // motor1_shaft_velocity
-  d.rightShaftVelocity = 40;         // motor2_shaft_velocity
-  d.batteryInstantRawV = 41;         // battery_raw_instant_v
-  d.batteryInstantFilteredV = 42;    // battery_filtered_instant_v
-  d.ballX = 43;                      // top_ball_x
-  d.bodyPitch = 44;                  // body_pitching
-  d.maxServoRange = 45;              // max_servo_range_deg
-  d.sequence = 46;                   // sequence
+  d.leftWheelVelocity = 15;          // motor1_velocity_f
+  d.rightWheelVelocity = 16;         // motor2_velocity_f
+  d.controlDtSec = 17;               // tick_dt_s
+  d.bodyPitchFiltered = 18;          // body_pitching_f
+  d.rollOk = 19;                     // roll_ok
+  d.angleOutput = 20;                // angle_output
+  d.angleProportional = 21;          // angle_out_p
+  d.angleIntegral = 22;              // angle_out_i
+  d.angleDerivative = 23;            // angle_out_d
+  d.wheelSpeedFeedbackOutput = 24;   // wheel_speed_feedback
+  d.leftMotorTarget = 25;            // motor1_target
+  d.rightMotorTarget = 26;           // motor2_target
+  d.leftCurrentSetpoint = 27;        // motor1_current_sp
+  d.rightCurrentSetpoint = 28;       // motor2_current_sp
+  d.leftVoltageQ = 29;               // motor1_voltage_q
+  d.rightVoltageQ = 30;              // motor2_voltage_q
+  d.leftShaftVelocity = 31;          // motor1_shaft_velocity
+  d.rightShaftVelocity = 32;         // motor2_shaft_velocity
+  d.batteryInstantRawV = 33;         // battery_raw_instant_v
+  d.batteryInstantFilteredV = 34;    // battery_filtered_instant_v
+  d.ballX = 35;                      // top_ball_x
+  d.bodyPitch = 36;                  // body_pitching
+  d.maxServoRange = 37;              // max_servo_range_deg
+  d.sequence = 38;                   // sequence
 }
 
 void printDistinctDrive() {
@@ -110,7 +101,7 @@ void printDistinctDrive() {
   record.kind = LoggingInternal::RecordKind::Drive;
   fillDistinctDrive(record.payload.drive);
   char line[LoggingInternal::kLineBufferSize];
-  const int length = LoggingInternal::formatRecord(record, line, sizeof(line), 47, 48);
+  const int length = LoggingInternal::formatRecord(record, line, sizeof(line), 39, 40);
   require(length > 0 && static_cast<size_t>(length) < sizeof(line), "distinct DRIVE row did not format");
   std::fwrite(line, 1, static_cast<size_t>(length), stdout);
 }
@@ -128,7 +119,7 @@ void verifyFormatters(const char *fixturePath) {
       value.replace(position, 2, "\n");
     fixtures[line.substr(0, separator)] = value;
   }
-  require(fixtures.size() == 57, "format fixture does not cover every active selector and profile");
+  require(fixtures.size() == 54, "format fixture does not cover every active selector and profile");
 
   const LoggingInternal::RecordKind kinds[] = {
       LoggingInternal::RecordKind::Diagnostic, LoggingInternal::RecordKind::Trace,
@@ -141,8 +132,9 @@ void verifyFormatters(const char *fixturePath) {
   }
 
   for (int selector = 1; selector <= 48; ++selector) {
-    if (selector == 26 || selector == 27 || selector == 29 || selector == 30 || selector == 31 || selector == 32 ||
-        selector == 34 || selector == 35 || selector == 36 || selector == 38 || selector == 39 || selector == 40)
+    if (selector == 23 || selector == 26 || selector == 27 || selector == 29 || selector == 30 || selector == 31 ||
+        selector == 32 || selector == 34 || selector == 35 || selector == 36 || selector == 38 || selector == 39 ||
+        selector == 40 || selector == 41 || selector == 42)
       continue;  // Removed selectors have no formatter.
     LoggingInternal::Record record{};
     record.kind = LoggingInternal::RecordKind::Debug;

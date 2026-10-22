@@ -91,7 +91,6 @@ constexpr size_t kSerialTxBufferBytes = 1024;
 #define DIAGNOSTIC_LOG_INTERVAL_US 5000  // Diagnostic CSV rows are emitted at 200 Hz.
 constexpr unsigned int kDiagnosticLogSampleRateHz = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
-constexpr float kDriveBodyXLimitM = 0.010f;
 constexpr float kDriveWheelFeedbackLimit = 8.0f;
 constexpr float kDriveTiltReductionStartDeg = 5.0f;
 constexpr float kDriveTiltReductionFullDeg = 10.0f;
@@ -132,7 +131,6 @@ float bodyPitching = 0;                                          // Pitch
 float bodyRoll = 0;                                              // Roll
 float movementSpeed = 0;                                         // Movement speed
 float bodyTurn = 0;                                              // Turning
-float bodyX = 0;                                                 // X position (controller output)
 int robotTumble = ROBOT_NOT_TUMBLING;  // Fall-detection state, see docs/robot/ROBOT_ROADMAP.md
 
 // Filtered remote-control commands
@@ -231,8 +229,6 @@ float pidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto 
 
 PIDController anglePidSettings(kBalancePid.angle.p, kBalancePid.angle.i, kBalancePid.angle.d, 0,
                                kBalancePid.angle.limit);
-PIDController speedPidSettings(kBalancePid.speed.p, kBalancePid.speed.i, kBalancePid.speed.d, 0,
-                               kBalancePid.speed.limit);
 PIDController yawPidSettings(kYawPid.p, kYawPid.i, kYawPid.d, 0, kYawPid.limit);
 
 float controlTorqueCompensation = 0;  // Control torque compensation
@@ -240,13 +236,10 @@ float wheelSpeedFeedbackGain = 0.0f;
 float wheelVelocityFeedbackCorrection = 0;
 float driveTiltReductionGain =
     1.0f;  // Scales the speed reduction applied as tilt approaches kDriveTiltReductionFullDeg.
-float driveEffectiveSpeed = 0;
-float driveSpeedBodyXRaw = 0;
 
 float pidTimestepSec = 0.01;
 
 MyPIDController anglePid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);  // p i d iLimit outputLimit dt EnableDFilter cutoffFreq
-MyPIDController speedPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 MyPIDController yawPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 
 bool balancePidNeedsPriming = true;  // Priming avoids a derivative kick when CH5 enables the balance loop.
@@ -285,7 +278,6 @@ void selectDebugLog(char *cmd) {
 
 // Cb prefix: Commander callback.
 void setAnglePid(char *cmd) { command.pid(&anglePidSettings, cmd); }
-void setSpeedPid(char *cmd) { command.pid(&speedPidSettings, cmd); }
 void setYawPid(char *cmd) { command.pid(&yawPidSettings, cmd); }
 
 // Wheel Motors and Drivers
@@ -646,7 +638,6 @@ const SerialCommandEntry commandEntries[] = {
     {'F', setBodyCommandFilterCutoffHz, "my CutoffFreq"},
     {'J', setBodyCommandFilteringEnabled, "my EnableDFilter"},
     {'P', setAnglePid, "anglePidSettings"},
-    {'S', setSpeedPid, "speedPidSettings"},
     {'Y', setYawPid, "yawPidSettings"},
     {'O', setTargetBodyHeight, "my Target_Body_Height"},
     {'V', setWheelSpeedFeedbackGain, "wheel speed feedback gain"},
@@ -867,7 +858,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.sbusFrameIntervalMs = sbusFrameIntervalMs;
 
   in.anglePid = pidStatus(anglePid);
-  in.speedPid = pidStatus(speedPid);
   in.yawPid = pidStatus(yawPid);
 
   in.servoTrims = servoTrims;
@@ -882,17 +872,13 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.bodyPitching = bodyPitching;
   in.bodyPitchingFiltered = bodyPitchingFiltered;
   in.bodyRollFiltered = bodyRollFiltered;
-  in.bodyPitchCorrection = bodyPitchingCorrect(bodyPitchingFiltered);
   in.bodyHeightCommandM = bodyHeightCommandM;
   in.bodyHeightCommandFilteredM = bodyHeightCommandFilteredM;
   in.bodyTurn = bodyTurn;
-  in.bodyX = bodyX;
   in.bodyCommandFilteringEnabled = bodyCommandFilteringEnabled;
   in.bodyCommandFilterCutoffHz = bodyCommandFilterCutoffHz;
 
   in.movementSpeed = movementSpeed;
-  in.driveEffectiveSpeed = driveEffectiveSpeed;
-  in.driveSpeedBodyXRaw = driveSpeedBodyXRaw;
   in.wheelVelocityFeedbackCorrection = wheelVelocityFeedbackCorrection;
 
   in.voltageAdc = voltageAdc;
@@ -912,20 +898,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   return in;
 }
 
-/**
- * @brief Applies a quadratic correction to the body pitching value.
- *
- * Computes y = 4E-06 x^2 + 0.0004 x - 0.0008.
- *
- * @param x The raw body pitching value.
- * @return The corrected body pitching value.
- */
-float bodyPitchingCorrect(float x)  // Pitch angle correction
-{
-  float y = 0.000004 * x * x + 0.0004 * x - 0.0008;
-  return y;
-}
-
 void applyPidPreset(PIDController &pid, const PidPreset &preset) {
   pid.P = preset.p;
   pid.I = preset.i;
@@ -934,7 +906,6 @@ void applyPidPreset(PIDController &pid, const PidPreset &preset) {
 }
 
 void applyBalancePidPreset(const BalancePidPreset &preset) {
-  applyPidPreset(speedPidSettings, preset.speed);
   applyPidPreset(anglePidSettings, preset.angle);
 }
 
@@ -975,35 +946,7 @@ void runPostureController(float dt) {
     bodyPitching = -sbusTopBallXSmoothed;
   }
 
-  // Speed loop
-  speedPid.Kp = speedPidSettings.P / 100;
-  speedPid.Ki = speedPidSettings.I / 100;
-  speedPid.Kd = speedPidSettings.D / 100;
-  speedPid.iLimit = speedPidSettings.limit;  // Integral limit
-
   const float avgVelocity = 0.5f * (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec);
-  driveEffectiveSpeed = movementSpeed;
-  // Reduce only further acceleration when tilt consumes balance headroom.
-  if (movementSpeed * avgVelocity >= 0.0f && fabsf(movementSpeed) > fabsf(avgVelocity)) {
-    const float tiltFraction = constrain((fabsf(imu::latest().correctedRollDegrees) - kDriveTiltReductionStartDeg) /
-                                             (kDriveTiltReductionFullDeg - kDriveTiltReductionStartDeg),
-                                         0.0f, 1.0f);
-    const float reduction = tiltFraction * constrain(driveTiltReductionGain, 0.0f, 1.0f);
-    driveEffectiveSpeed = avgVelocity + (movementSpeed - avgVelocity) * (1.0f - reduction);
-  }
-  const float speedError = avgVelocity - driveEffectiveSpeed;
-
-  const float previousSpeedIntegral = speedPid.integral;
-  driveSpeedBodyXRaw = speedPid.compute(speedError, dt);
-  if (speedPid.Ki != 0.0f && fabsf(driveSpeedBodyXRaw) > kDriveBodyXLimitM && driveSpeedBodyXRaw * speedError > 0.0f) {
-    speedPid.integral = previousSpeedIntegral;
-    speedPid.outI = speedPid.Ki * previousSpeedIntegral;
-    driveSpeedBodyXRaw = speedPid.outP + speedPid.outI + speedPid.outD;
-    speedPid.output = driveSpeedBodyXRaw;
-  }
-  const float speedBodyX = constrain(driveSpeedBodyXRaw, -kDriveBodyXLimitM, kDriveBodyXLimitM);
-
-  bodyX = speedBodyX + bodyPitchingCorrect(bodyPitchingFiltered);
 
   // Balance loop
   anglePid.Kp = anglePidSettings.P;
@@ -1344,16 +1287,12 @@ BodyPose computeBodyPose() {
     }
 
     pose.heightM = kBodyHeightDefaultM;
-    bodyX = 0;
     pose.roll = 0;
     bodyPitchingFiltered = 0;
 
     anglePid.integral = 0;
-    speedPid.integral = 0;
     yawPid.integral = 0;
     wheelVelocityFeedbackCorrection = 0;
-    driveEffectiveSpeed = 0;
-    driveSpeedBodyXRaw = 0;
 
   } else if ((isPidGainsModeEnabled(pidGainsMode)) && (robotTumble == ROBOT_NOT_TUMBLING)) {
     runPostureController(controlTimestepSec);  // PID controller
@@ -1367,7 +1306,6 @@ BodyPose computeBodyPose() {
   if (robotTumble == ROBOT_TUMBLING)  // Machine fall
   {
     pose.heightM = kBodyHeightDefaultM;
-    bodyX = 0;
     pose.roll = 0;
     bodyPitchingFiltered = 0;
   }
@@ -1435,10 +1373,10 @@ void runControlTick(bool imuUpdated) {
 
   static uint32_t lastRightLegWarningMs = 0;
   static uint32_t lastLeftLegWarningMs = 0;
-  const LegSolveResult rightLeg = LegKinematics::solveRight({-bodyX, pose.heightM - pose.roll, bodyPitchingFiltered});
+  const LegSolveResult rightLeg = LegKinematics::solveRight({0.0f, pose.heightM - pose.roll, bodyPitchingFiltered});
   warnIfLegUnreachable(rightLeg, "RightInverseKinematics", lastRightLegWarningMs);
 
-  const LegSolveResult leftLeg = LegKinematics::solveLeft({-bodyX, pose.heightM + pose.roll, bodyPitchingFiltered});
+  const LegSolveResult leftLeg = LegKinematics::solveLeft({0.0f, pose.heightM + pose.roll, bodyPitchingFiltered});
   warnIfLegUnreachable(leftLeg, "LeftInverseKinematics", lastLeftLegWarningMs);
 
   writeServos(rightLeg, leftLeg);

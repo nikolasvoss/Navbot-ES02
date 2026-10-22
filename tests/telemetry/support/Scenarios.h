@@ -84,7 +84,6 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   in.sbusFrameIntervalMs = 14 + variant;
 
   fill(g, in.anglePid);
-  fill(g, in.speedPid);
   fill(g, in.yawPid);
 
   in.servoTrims = {g.f(), g.f(), g.f(), g.f()};
@@ -99,17 +98,13 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   in.bodyPitching = g.f();
   in.bodyPitchingFiltered = g.f();
   in.bodyRollFiltered = g.f();
-  in.bodyPitchCorrection = g.f();
   in.bodyHeightCommandM = g.f();
   in.bodyHeightCommandFilteredM = g.f();
   in.bodyTurn = g.f();
-  in.bodyX = g.f();
   in.bodyCommandFilteringEnabled = g.f();
   in.bodyCommandFilterCutoffHz = g.f();
 
   in.movementSpeed = g.f();
-  in.driveEffectiveSpeed = g.f();
-  in.driveSpeedBodyXRaw = g.f();
   in.wheelVelocityFeedbackCorrection = g.f();
 
   in.voltageAdc = static_cast<uint16_t>(700 + 11 * tick + variant);

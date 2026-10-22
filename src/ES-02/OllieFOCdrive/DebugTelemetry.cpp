@@ -125,21 +125,16 @@ bool fillReceiver(const TelemetryInputs &in, Logging::DebugPayload &payload) {
   return true;
 }
 
-// Selectors 9, 22, 23 and 33.
+// Selectors 9, 22 and 33.
 bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 9:
       payload.controllerGains = {{in.anglePid.Kp, in.anglePid.Ki, in.anglePid.Kd},
-                                 {in.speedPid.Kp, in.speedPid.Ki, in.speedPid.Kd},
                                  {in.yawPid.Kp, in.yawPid.Ki, in.yawPid.Kd},
                                  in.controlTimestepSec};
       return true;
     case 22:
       payload.pidIntegralState = {in.anglePid.iLimit, in.anglePid.integral, in.anglePid.outI, in.anglePid.output};
-      return true;
-    case 23:
-      payload.pidIntegralOutputState = {in.speedPid.iLimit, in.speedPid.integral, in.speedPid.outI,
-                                        in.bodyPitchingFiltered, in.speedPid.output};
       return true;
     case 33:
       payload.pidIntegralOutputState = {in.yawPid.iLimit, in.yawPid.integral, in.yawPid.outI, in.bodyPitchingFiltered,
@@ -150,7 +145,7 @@ bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &pa
   }
 }
 
-// Selectors 19..21, 24, 25, 28, 37, 41 and 42.
+// Selectors 19..21, 24, 25, 28 and 37.
 bool fillPose(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 19:
@@ -175,12 +170,6 @@ bool fillPose(int selection, const TelemetryInputs &in, Logging::DebugPayload &p
       return true;
     case 37:
       payload.ballPosition = {in.topBallX, in.sbusTopBallXSmoothed, in.topBallY, in.sbusTopBallYSmoothed};
-      return true;
-    case 41:
-      payload.rollOutput = {in.imu.correctedRollDegrees, in.bodyPitching, in.speedPid.output};
-      return true;
-    case 42:
-      payload.rollCorrection = {in.imu.correctedRollDegrees, in.bodyPitching, in.bodyPitchCorrection};
       return true;
     default:
       return false;
@@ -233,7 +222,6 @@ bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &paylo
       return fillReceiver(in, payload);
     case 9:
     case 22:
-    case 23:
     case 33:
       return fillPid(selection, in, payload);
     case 19:
@@ -243,8 +231,6 @@ bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &paylo
     case 25:
     case 28:
     case 37:
-    case 41:
-    case 42:
       return fillPose(selection, in, payload);
     case 43:
     case 44:
@@ -339,7 +325,6 @@ void submitBalance(const TelemetryInputs &in, const TraceRow &row) {
   sample.angleProportional = whenActive(in, in.anglePid.outP);
   sample.angleIntegral = whenActive(in, in.anglePid.outI);
   sample.angleDerivative = whenActive(in, in.anglePid.outD);
-  sample.bodyX = whenActive(in, in.bodyX);
   sample.leftMotorTarget = in.motor1Target;
   sample.rightMotorTarget = in.motor2Target;
   sample.maxServoRange = row.maxServoRange;
@@ -363,17 +348,9 @@ bool submitDrive(const TelemetryInputs &in, const TraceRow &row) {
   sample.controlExecutionUs = in.controlExecutionUs;
   sample.maxLoopEntryIntervalUs = in.maxLoopEntryIntervalUs;
   sample.requestedSpeed = in.movementSpeed;
-  sample.effectiveSpeed = whenActive(in, in.driveEffectiveSpeed);
   sample.leftWheelVelocity = in.m1FilteredVelocityRadPerSec;
   sample.rightWheelVelocity = in.m2FilteredVelocityRadPerSec;
   sample.controlDtSec = in.controlTimestepSec;
-  sample.speedError = whenActive(in, in.speedPid.error);
-  sample.speedProportional = whenActive(in, in.speedPid.outP);
-  sample.speedIntegral = whenActive(in, in.speedPid.outI);
-  sample.speedDerivative = whenActive(in, in.speedPid.outD);
-  sample.speedOutput = whenActive(in, in.speedPid.output);
-  sample.driveBodyXRaw = whenActive(in, in.driveSpeedBodyXRaw);
-  sample.bodyX = whenActive(in, in.bodyX);
   sample.bodyPitchFiltered = in.bodyPitchingFiltered;
   sample.rollOk = in.imu.correctedRollDegrees;
   sample.angleOutput = whenActive(in, in.anglePid.output);

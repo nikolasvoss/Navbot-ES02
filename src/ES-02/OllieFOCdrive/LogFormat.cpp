@@ -48,10 +48,9 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
       return appendf(buffer, capacity, length, " sbus_dt_ms:%.2f \n", p.receiverChannels.frameDtMs);
     case Logging::DebugSelector::K9:
       return appendf(
-          buffer, capacity, length, " PP:%.2f PI:%.2f PD:%.2f SP:%.2f SI:%.2f SD:%.2f YP:%.2f YI:%.2f YD:%.2fdt:%.6f\n",
+          buffer, capacity, length, " PP:%.2f PI:%.2f PD:%.2f YP:%.2f YI:%.2f YD:%.2fdt:%.6f\n",
           p.controllerGains.angle.kp, p.controllerGains.angle.ki, p.controllerGains.angle.kd,
-          p.controllerGains.speed.kp, p.controllerGains.speed.ki, p.controllerGains.speed.kd, p.controllerGains.yaw.kp,
-          p.controllerGains.yaw.ki, p.controllerGains.yaw.kd, p.controllerGains.dtSec);
+          p.controllerGains.yaw.kp, p.controllerGains.yaw.ki, p.controllerGains.yaw.kd, p.controllerGains.dtSec);
     case Logging::DebugSelector::K10:
       return appendf(buffer, capacity, length, " twoKp:%.2f twoKi:%.2f Roll:%.2f Pitch:%.2fIMUdt:%.6f\n",
                      p.mahony.twoKp, p.mahony.twoKi, p.mahony.rollDeg, p.mahony.pitchDeg, p.mahony.imuDtSec);
@@ -90,11 +89,6 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
     case Logging::DebugSelector::K22:
       return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f out:%.5f\n", p.pidIntegralState.integralLimit,
                      p.pidIntegralState.integral, p.pidIntegralState.integralOutput, p.pidIntegralState.output);
-    case Logging::DebugSelector::K23:
-      return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f A:%.5f out:%.5f\n",
-                     p.pidIntegralOutputState.integralLimit, p.pidIntegralOutputState.integral,
-                     p.pidIntegralOutputState.integralOutput, p.pidIntegralOutputState.auxiliary,
-                     p.pidIntegralOutputState.output);
     case Logging::DebugSelector::K24:
       return appendf(buffer, capacity, length, " EN:%.2f HZ:%.5f\n", p.pair.first, p.pair.second);
     case Logging::DebugSelector::K25:
@@ -112,12 +106,6 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
     case Logging::DebugSelector::K37:
       return appendf(buffer, capacity, length, " sbus_vra:%.2f sbus_vraf:%.2f sbus_vrb:%.2f sbus_vrbf:%.2f\n",
                      p.ballPosition.x, p.ballPosition.xFiltered, p.ballPosition.y, p.ballPosition.yFiltered);
-    case Logging::DebugSelector::K41:
-      return appendf(buffer, capacity, length, " roll_ok:%.5f pa:%.5f out:%.5f\n", p.rollOutput.rollOk,
-                     p.rollOutput.bodyPitch, p.rollOutput.output);
-    case Logging::DebugSelector::K42:
-      return appendf(buffer, capacity, length, " P:%.5f P1:%.5f P3:%.5f\n", p.rollCorrection.rollOk,
-                     p.rollCorrection.bodyPitch, p.rollCorrection.correctedBodyPitch);
     case Logging::DebugSelector::K43:
       return appendf(buffer, capacity, length, " Vdat:%d Vdatf:%.2f V:%.5f\n", static_cast<int>(p.voltageState.adc),
                      p.voltageState.filteredV, p.voltageState.voltageV);
@@ -197,9 +185,9 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
     }
     case RecordKind::Balance: {
       const Logging::BalanceSample &s = record.payload.balance;
-      return snprintf(buffer, capacity, "BAL,%lu,%d,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.4f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
+      return snprintf(buffer, capacity, "BAL,%lu,%d,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
                       static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode), s.minimumBatteryRawV,
-                      s.rollOk, s.angleError, s.angleProportional, s.angleIntegral, s.angleDerivative, s.bodyX,
+                      s.rollOk, s.angleError, s.angleProportional, s.angleIntegral, s.angleDerivative,
                       s.leftMotorTarget, s.rightMotorTarget, static_cast<int>(s.maxServoRange),
                       static_cast<unsigned long>(s.sequence), static_cast<unsigned long>(droppedRecords),
                       static_cast<unsigned long>(writeFailures));
@@ -218,16 +206,14 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
       size_t length = static_cast<size_t>(written);
       // One conversion per argument, in DRIVE_COLUMNS order from index 13 (ch3_target) to uart_write_failures.
       return appendf(buffer, capacity, length,
-                     ",%.3f,%.3f,%.3f,%.3f,%.6f,%.3f"           // ch3_target .. speed_error
-                     ",%.4f,%.4f,%.4f,%.4f,%.4f,%.4f"           // speed_out_p/i/d, speed_output, body_x_raw, body_x
+                     ",%.3f,%.3f,%.3f,%.6f"                     // ch3_target, motor1/2 velocity_f, tick_dt
                      ",%.4f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f"      // body_pitching_f, roll_ok, angle_* , wheel_feedback
                      ",%.4f,%.4f,%.4f,%.4f,%.4f,%.4f"           // motor targets, current_sp, voltage_q
                      ",%.4f,%.4f,%.3f,%.3f"                     // shaft velocities, battery raw/filtered
                      ",%.3f,%.3f,%d"                            // top_ball_x, body_pitching, servo range
                      ",%lu,%lu,%lu\n",                          // sequence, logger_dropped, uart_write_failures
-                     s.requestedSpeed, s.effectiveSpeed, s.leftWheelVelocity, s.rightWheelVelocity, s.controlDtSec,
-                     s.speedError, s.speedProportional, s.speedIntegral, s.speedDerivative, s.speedOutput,
-                     s.driveBodyXRaw, s.bodyX, s.bodyPitchFiltered, s.rollOk, s.angleOutput, s.angleProportional,
+                     s.requestedSpeed, s.leftWheelVelocity, s.rightWheelVelocity, s.controlDtSec,
+                     s.bodyPitchFiltered, s.rollOk, s.angleOutput, s.angleProportional,
                      s.angleIntegral, s.angleDerivative, s.wheelSpeedFeedbackOutput, s.leftMotorTarget,
                      s.rightMotorTarget, s.leftCurrentSetpoint, s.rightCurrentSetpoint, s.leftVoltageQ, s.rightVoltageQ,
                      s.leftShaftVelocity, s.rightShaftVelocity, s.batteryInstantRawV, s.batteryInstantFilteredV,

@@ -37,7 +37,7 @@ Current conversion of the drive channels:
 
 | Channel | `applyRcChannels()` | Later change | Controller use |
 | --- | --- | --- | --- |
-| CH3 speed | `movementSpeed = mapf(raw, 192, 1792, -15, 15)`; forward gives +15 | `readSbus()` multiplies by 2.0 when `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` is set, so ±30 in the current build | Compared with the average filtered wheel speed in wheel rad/s (motor 2 sign inverted in `updateWheelVelocities()`) |
+| CH3 speed | `movementSpeed = mapf(raw, 192, 1792, -15, 15)`; forward gives +15 | `readSbus()` multiplies by 2.0 when `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` is set, so ±30 in the current build | None since Package 3 row 2 removed the speed loop; the value is parsed only |
 | CH4 turn | `bodyTurn = -mapf(raw, 192, 1792, -11, 11)`; left gives +11 | none | Yaw-rate setpoint compared with gyro Z in rad/s |
 | CH9 ball X | `topBallX = mapf(raw, 192, 1792, -5, 5)` | biquad low-pass at 50 Hz (`sbusTopBallXSmoothed`) | Added to `bodyPitching` in ball-balance or roll-auto mode |
 

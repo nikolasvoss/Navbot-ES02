@@ -54,7 +54,6 @@ struct TelemetryInputs {
   int sbusFrameIntervalMs;
 
   PidStatus anglePid;
-  PidStatus speedPid;
   PidStatus yawPid;
 
   ServoTrimsDegrees servoTrims;
@@ -69,17 +68,13 @@ struct TelemetryInputs {
   float bodyPitching;
   float bodyPitchingFiltered;
   float bodyRollFiltered;
-  float bodyPitchCorrection;
   float bodyHeightCommandM;
   float bodyHeightCommandFilteredM;
   float bodyTurn;
-  float bodyX;
   float bodyCommandFilteringEnabled;
   float bodyCommandFilterCutoffHz;
 
   float movementSpeed;
-  float driveEffectiveSpeed;
-  float driveSpeedBodyXRaw;
   float wheelVelocityFeedbackCorrection;
 
   uint16_t voltageAdc;

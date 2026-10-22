@@ -21,7 +21,7 @@ flowchart LR
     CTRL -->|2 current targets, A| FOC[2 × SimpleFOC<br/>torque mode + FOC]
     ENC --> FOC
     FOC --> DRV[2 × MP6536<br/>wheel motors]
-    CTRL -->|bodyX, height, roll| IK[Inverse leg kinematics]
+    CTRL -->|height, roll| IK[Inverse leg kinematics]
     IK --> SERVO[4 × servo PWM]
     DRV --> ROBOT[Mechanics and motion]
     SERVO --> ROBOT
@@ -37,7 +37,7 @@ The IMU sits on the MAIN board according to the PCB draft. Each wheel motor has 
 | --- | --- | --- |
 | **Tilt / balance** | `angleError = correctedRollDegrees + bodyPitchingFiltered` | `anglePid` supplies the common part of both wheel targets. Since 2026-10-22 these values are still rad/s and are not sent to the wheels; see the interim note below. `correctedRollDegrees` is called "roll" in the code. Here it is the attitude angle in degrees used for forward/backward tilting. |
 | **Yaw / steering** | `yawError = attitude.gyro.z - bodyTurn` | `yawPid` supplies a differential part: wheel 1 gets `−yawOutput`, wheel 2 gets `+yawOutput`. The gyro Z value and the turn command are in rad/s. |
-| **Drive / wheel speed** | `speedError = (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec)/2 - movementSpeed` | `speedPid` produces `bodyX`. The leg kinematics use it to shift the servo target positions. **In the active path, this output is not subtracted from the tilt setpoint of the wheel motors.** |
+| **Drive / wheel speed** | none | The speed loop was removed in Package 3, row 2. CH3 is still parsed into `movementSpeed`, but no controller uses it. |
 | **Ball pose** | CH9/10 | Changes `bodyPitching` and thereby indirectly the wheel or servo targets. See below. |
 
 Core wheel motor logic: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`. Both are then limited to ±88. The signs are software conventions and do not replace a test of the mechanical direction of action.
@@ -48,11 +48,10 @@ Core wheel motor logic: `target1 = angleOutput − yawOutput`, `target2 = angleO
 
 ### What happens on a drive command?
 
-1. CH3 is mapped to `movementSpeed`. The wheel angle change becomes the filtered wheel speed. The mean of both wheels forms the actual value of the speed controller.
-2. `speedPid` computes `bodyX` from actual minus setpoint. `bodyX` feeds the X coordinate of the inverse leg kinematics. The servos thereby shift the geometry and, with it, the load relative to the wheels.
-3. The IMU supplies the tilt angle `correctedRollDegrees` via Mahony. `anglePid` changes **both** wheel target speeds together to regulate the tilt.
-4. CH4 sets `bodyTurn`. The yaw controller compares it with `gyro.z` and raises one wheel target speed while lowering the other.
-5. SimpleFOC receives each wheel's current target and computes the motor drive via FOC/PWM. Since Package 2 the motor mode is `torque` with `TorqueControlType::estimated_current`. The target in amperes is converted to `voltage.q = I · phase_resistance + back-EMF` and clamped to `voltage_limit` (4.2 V). The current is therefore an estimate, not a sensed value; the optional current sensing loops are compiled out. `current_limit` (about 0.73 A) is the derived stall current at the voltage ceiling, not a measured battery-current limit.
+1. CH3 is mapped to `movementSpeed`. No controller reads it since the speed loop was removed.
+2. The IMU supplies the tilt angle `correctedRollDegrees` via Mahony. `anglePid` changes **both** wheel target speeds together to regulate the tilt.
+3. CH4 sets `bodyTurn`. The yaw controller compares it with `gyro.z` and raises one wheel target speed while lowering the other.
+4. SimpleFOC receives each wheel's current target and computes the motor drive via FOC/PWM. Since Package 2 the motor mode is `torque` with `TorqueControlType::estimated_current`. The target in amperes is converted to `voltage.q = I · phase_resistance + back-EMF` and clamped to `voltage_limit` (4.2 V). The current is therefore an estimate, not a sensed value; the optional current sensing loops are compiled out. `current_limit` (about 0.73 A) is the derived stall current at the voltage ceiling, not a measured battery-current limit.
 
 The behavior is coupled through the mechanics: a servo movement changes the position, and a wheel movement changes tilt and wheel speed. A tremor can therefore appear in both actuator groups, even when the trigger comes from only one branch.
 
