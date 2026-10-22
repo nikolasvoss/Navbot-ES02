@@ -207,14 +207,14 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
       // One conversion per argument, in DRIVE_COLUMNS order from index 13 (ch3_target) to uart_write_failures.
       return appendf(buffer, capacity, length,
                      ",%.3f,%.3f,%.3f,%.6f"                     // ch3_target, motor1/2 velocity_f, tick_dt
-                     ",%.4f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f"      // body_pitching_f, roll_ok, angle_* , wheel_feedback
+                     ",%.4f,%.3f,%.4f,%.4f,%.4f,%.4f"           // body_pitching_f, roll_ok, angle_*
                      ",%.4f,%.4f,%.4f,%.4f,%.4f,%.4f"           // motor targets, current_sp, voltage_q
                      ",%.4f,%.4f,%.3f,%.3f"                     // shaft velocities, battery raw/filtered
                      ",%.3f,%.3f,%d"                            // top_ball_x, body_pitching, servo range
                      ",%lu,%lu,%lu\n",                          // sequence, logger_dropped, uart_write_failures
                      s.requestedSpeed, s.leftWheelVelocity, s.rightWheelVelocity, s.controlDtSec,
                      s.bodyPitchFiltered, s.rollOk, s.angleOutput, s.angleProportional,
-                     s.angleIntegral, s.angleDerivative, s.wheelSpeedFeedbackOutput, s.leftMotorTarget,
+                     s.angleIntegral, s.angleDerivative, s.leftMotorTarget,
                      s.rightMotorTarget, s.leftCurrentSetpoint, s.rightCurrentSetpoint, s.leftVoltageQ, s.rightVoltageQ,
                      s.leftShaftVelocity, s.rightShaftVelocity, s.batteryInstantRawV, s.batteryInstantFilteredV,
                      s.ballX, s.bodyPitch, static_cast<int>(s.maxServoRange),

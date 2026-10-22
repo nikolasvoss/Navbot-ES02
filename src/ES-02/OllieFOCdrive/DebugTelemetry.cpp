@@ -357,7 +357,6 @@ bool submitDrive(const TelemetryInputs &in, const TraceRow &row) {
   sample.angleProportional = whenActive(in, in.anglePid.outP);
   sample.angleIntegral = whenActive(in, in.anglePid.outI);
   sample.angleDerivative = whenActive(in, in.anglePid.outD);
-  sample.wheelSpeedFeedbackOutput = whenActive(in, in.wheelVelocityFeedbackCorrection);
   sample.leftMotorTarget = in.motor1Target;
   sample.rightMotorTarget = in.motor2Target;
   sample.leftCurrentSetpoint = in.motor1CurrentSetpoint;

@@ -91,7 +91,6 @@ constexpr size_t kSerialTxBufferBytes = 1024;
 #define DIAGNOSTIC_LOG_INTERVAL_US 5000  // Diagnostic CSV rows are emitted at 200 Hz.
 constexpr unsigned int kDiagnosticLogSampleRateHz = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
-constexpr float kDriveWheelFeedbackLimit = 8.0f;
 constexpr float kDriveTiltReductionStartDeg = 5.0f;
 constexpr float kDriveTiltReductionFullDeg = 10.0f;
 // -------------------------------------
@@ -232,8 +231,6 @@ PIDController anglePidSettings(kBalancePid.angle.p, kBalancePid.angle.i, kBalanc
 PIDController yawPidSettings(kYawPid.p, kYawPid.i, kYawPid.d, 0, kYawPid.limit);
 
 float controlTorqueCompensation = 0;  // Control torque compensation
-float wheelSpeedFeedbackGain = 0.0f;
-float wheelVelocityFeedbackCorrection = 0;
 float driveTiltReductionGain =
     1.0f;  // Scales the speed reduction applied as tilt approaches kDriveTiltReductionFullDeg.
 
@@ -245,8 +242,6 @@ MyPIDController yawPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 bool balancePidNeedsPriming = true;  // Priming avoids a derivative kick when CH5 enables the balance loop.
 
 void setControlTorqueCompensation(char *cmd) { command.scalar(&controlTorqueCompensation, cmd); }
-
-void setWheelSpeedFeedbackGain(char *cmd) { command.scalar(&wheelSpeedFeedbackGain, cmd); }
 
 void setDriveTiltReductionGain(char *cmd) { command.scalar(&driveTiltReductionGain, cmd); }
 
@@ -640,7 +635,6 @@ const SerialCommandEntry commandEntries[] = {
     {'P', setAnglePid, "anglePidSettings"},
     {'Y', setYawPid, "yawPidSettings"},
     {'O', setTargetBodyHeight, "my Target_Body_Height"},
-    {'V', setWheelSpeedFeedbackGain, "wheel speed feedback gain"},
     {'W', setDriveTiltReductionGain, "drive tilt reduction gain"},
 };
 
@@ -879,7 +873,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.bodyCommandFilterCutoffHz = bodyCommandFilterCutoffHz;
 
   in.movementSpeed = movementSpeed;
-  in.wheelVelocityFeedbackCorrection = wheelVelocityFeedbackCorrection;
 
   in.voltageAdc = voltageAdc;
   in.voltageAdcFiltered = voltageAdcFiltered;
@@ -946,8 +939,6 @@ void runPostureController(float dt) {
     bodyPitching = -sbusTopBallXSmoothed;
   }
 
-  const float avgVelocity = 0.5f * (m1FilteredVelocityRadPerSec + m2FilteredVelocityRadPerSec);
-
   // Balance loop
   anglePid.Kp = anglePidSettings.P;
   anglePid.Ki = anglePidSettings.I;
@@ -974,13 +965,8 @@ void runPostureController(float dt) {
   float yawError = imu::latest().angularVelocityRadPerSec.z - bodyTurn;  // Measured value minus target value
   float yawOutput = yawPid.compute(yawError, dt);
 
-  // Use the existing wheel path only to oppose measured overspeed.
-  const float boundedWheelGain = constrain(wheelSpeedFeedbackGain, 0.0f, 0.4f);
-  const bool braking = avgVelocity * (avgVelocity - movementSpeed) > 0.0f;
-  const float wheelCorrection = braking ? boundedWheelGain * (avgVelocity - movementSpeed) : 0.0f;
-  wheelVelocityFeedbackCorrection = constrain(wheelCorrection, -kDriveWheelFeedbackLimit, kDriveWheelFeedbackLimit);
-  float target1 = angleOutput - yawOutput + wheelVelocityFeedbackCorrection;
-  float target2 = angleOutput + yawOutput + wheelVelocityFeedbackCorrection;
+  float target1 = angleOutput - yawOutput;
+  float target2 = angleOutput + yawOutput;
 
   if (controlTorqueCompensation != 0) {
     if (target1 > 0)
@@ -1292,7 +1278,6 @@ BodyPose computeBodyPose() {
 
     anglePid.integral = 0;
     yawPid.integral = 0;
-    wheelVelocityFeedbackCorrection = 0;
 
   } else if ((isPidGainsModeEnabled(pidGainsMode)) && (robotTumble == ROBOT_NOT_TUMBLING)) {
     runPostureController(controlTimestepSec);  // PID controller

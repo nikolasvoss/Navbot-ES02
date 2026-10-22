@@ -74,7 +74,6 @@ COMMAND_CALLBACK(setAnglePid)
 COMMAND_CALLBACK(setYawPid)
 COMMAND_CALLBACK(setTargetBodyHeight)
 COMMAND_CALLBACK(setControlTorqueCompensation)
-COMMAND_CALLBACK(setWheelSpeedFeedbackGain)
 COMMAND_CALLBACK(setDriveTiltReductionGain)
 #undef COMMAND_CALLBACK
 
@@ -87,29 +86,27 @@ int main() {
   commander.com_port = &output;
   SerialCommandRouter router;
 
-  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 18);
+  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 17);
   const char *expectedCallbacks[] = {"handleM1MotionCommand", "handleM1Command", "zeroBiasServo1", "zeroBiasServo2",
                                     "zeroBiasServo3", "zeroBiasServo4", "setImuLowPassCutoff", "setMahonyKp",
                                     "setMahonyKi", "selectDebugLog", "selectCalibration", "setBodyCommandFilterCutoffHz",
                                     "setBodyCommandFilteringEnabled", "setAnglePid", "setYawPid",
                                     "setTargetBodyHeight",
-                                    "setWheelSpeedFeedbackGain", "setDriveTiltReductionGain"};
-  const char ids[] = "TMABCDZQIKEFJPYOVW";
+                                    "setDriveTiltReductionGain"};
+  const char ids[] = "TMABCDZQIKEFJPYOW";
   for (size_t i = 0; ids[i]; ++i) {
     Stream input(std::string(1, ids[i]) + "\n");
     router.run(input, commander, commandEntries);
     assert(calls[i] == std::string(expectedCallbacks[i]) + ":\n");
   }
-  assert(calls.size() == 18);
+  assert(calls.size() == 17);
   assert(calls[14] == "setYawPid:\n");
-  assert(calls[16] == "setWheelSpeedFeedbackGain:\n");
-  assert(calls[17] == "setDriveTiltReductionGain:\n");
+  assert(calls[16] == "setDriveTiltReductionGain:\n");
 
   calls.clear();
-  Stream yawInput("YP?\nYI2\nYD\nYL\nV\nV0.75\nW\nW2\n");
+  Stream yawInput("YP?\nYI2\nYD\nYL\nW\nW2\n");
   router.run(yawInput, commander, commandEntries);
   assert((calls == std::vector<std::string>{"setYawPid:P?\n", "setYawPid:I2\n", "setYawPid:D\n", "setYawPid:L\n",
-                                             "setWheelSpeedFeedbackGain:\n", "setWheelSpeedFeedbackGain:0.75\n",
                                              "setDriveTiltReductionGain:\n", "setDriveTiltReductionGain:2\n"}));
 
   Stream helpInput("?\n");

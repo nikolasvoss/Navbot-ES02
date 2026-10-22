@@ -358,7 +358,6 @@ Delete in the same change, with their callers, Commander entries, telemetry fiel
 
 | Remove | Where |
 | --- | --- |
-| Braking-only wheel correction: `wheelSpeedFeedbackGain`, `wheelVelocityFeedbackCorrection`, `kDriveWheelFeedbackLimit`, Commander `V` | `runPostureController()` |
 | `controlTorqueCompensation` and Commander `G` | `runPostureController()` |
 | Tilt-based drive reduction: `driveTiltReductionGain`, `kDriveTiltReductionStartDeg/FullDeg`, Commander `W` | replaced by the reserve policy in package 4 |
 | Balance angle PID: `anglePid`, `anglePidSettings`, `balancePidNeedsPriming`, Commander `P` | `runPostureController()` |

@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SKETCH = ROOT / "src/ES-02/OllieFOCdrive"
 # Sentinel columns: the C++ test writes column index + 1 into each DRIVE column.
-DRIVE_SENTINELS = {"sequence": 38, "motor2_shaft_velocity": 32, "battery_filtered_instant_v": 34}
+DRIVE_SENTINELS = {"sequence": 37, "motor2_shaft_velocity": 31, "battery_filtered_instant_v": 33}
 
 
 def drive_columns():

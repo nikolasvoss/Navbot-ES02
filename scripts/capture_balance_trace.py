@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 
-TUNE_COMMAND = re.compile(r"(?:U[01]|[PY][PIDL](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|[VW](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|K(?:0|9|55|56|57|58))\Z")
+TUNE_COMMAND = re.compile(r"(?:U[01]|[PY][PIDL](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|W(?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|K(?:0|9|55|56|57|58))\Z")
 
 # Mirror the firmware caps in MotorDiagnostic.h; the firmware refuses anything larger too.
 # Wheel-clear runs only (default caps, lowered 2026-10-22): 2.0 V and 60 rad/s, 5000 ms lease, 0.35 A.
@@ -31,7 +31,7 @@ DRIVE_COLUMNS = (
     "control_start_us", "control_execution_us", "max_loop_entry_interval_us",
     "ch3_target", "motor1_velocity_f", "motor2_velocity_f", "tick_dt_s",
     "body_pitching_f",
-    "roll_ok", "angle_output", "angle_out_p", "angle_out_i", "angle_out_d", "wheel_speed_feedback",
+    "roll_ok", "angle_output", "angle_out_p", "angle_out_i", "angle_out_d",
     "motor1_target", "motor2_target",
     "motor1_current_sp", "motor2_current_sp", "motor1_voltage_q", "motor2_voltage_q",
     "motor1_shaft_velocity", "motor2_shaft_velocity",
@@ -96,7 +96,7 @@ def main():
     parser.add_argument("--trace-mode", type=int, choices=(55, 56, 57, 58), default=55,
                         help="55: actuator trace (default); 56: angle/yaw; 57: balance P/I/D; 58: drive-stop trace")
     parser.add_argument("--interactive", action="store_true",
-                        help="send U/P/Y/V/W/K tuning commands and bounded T/M motor commands from stdin "
+                        help="send U/P/Y/W/K tuning commands and bounded T/M motor commands from stdin "
                              "while recording; prints every tenth trace row")
     args = parser.parse_args()
     if args.seconds <= 0:
@@ -127,7 +127,7 @@ def main():
             else:
                 print(f"Recording for {args.seconds:g} s. Switch CH5 once while the robot is supported.", flush=True)
             if args.interactive:
-                print("Type tuning commands and press Enter (for example U1, YP10, V0.2, V, K0). "
+                print("Type tuning commands and press Enter (for example U1, YP10, W0.2, W, K0). "
                       "Motor commands (T/M) need balance off.", flush=True)
             deadline = time.monotonic() + args.seconds
             trace_count = 0

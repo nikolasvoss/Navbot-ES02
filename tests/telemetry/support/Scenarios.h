@@ -105,7 +105,6 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   in.bodyCommandFilterCutoffHz = g.f();
 
   in.movementSpeed = g.f();
-  in.wheelVelocityFeedbackCorrection = g.f();
 
   in.voltageAdc = static_cast<uint16_t>(700 + 11 * tick + variant);
   in.voltageAdcFiltered = g.f();

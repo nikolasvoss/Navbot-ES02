@@ -46,14 +46,14 @@ void fillWidestDrive(Logging::DriveSample &d) {
   d.minimumBatteryRawV = d.batteryV = d.imuDtSec = f;
   d.requestedSpeed = d.leftWheelVelocity = d.rightWheelVelocity = d.controlDtSec = f;
   d.bodyPitchFiltered = d.rollOk = d.angleOutput = f;
-  d.angleProportional = d.angleIntegral = d.angleDerivative = d.wheelSpeedFeedbackOutput = f;
+  d.angleProportional = d.angleIntegral = d.angleDerivative = f;
   d.leftMotorTarget = d.rightMotorTarget = d.leftCurrentSetpoint = d.rightCurrentSetpoint = f;
   d.leftVoltageQ = d.rightVoltageQ = d.leftShaftVelocity = d.rightShaftVelocity = f;
   d.batteryInstantRawV = d.batteryInstantFilteredV = d.ballX = d.bodyPitch = f;
 }
 
 // Column i of the DRIVE row (0-based, after the tag, in DRIVE_COLUMNS order) holds the value i + 1.
-// logger_dropped (column 39) and uart_write_failures (column 40) are formatRecord arguments 39 and 40.
+// logger_dropped (column 38) and uart_write_failures (column 39) are formatRecord arguments 38 and 39.
 // scripts/capture_balance_trace.py reads these values back and checks each one against its column name.
 void fillDistinctDrive(Logging::DriveSample &d) {
   d.timestampMs = 1;                 // time_ms
@@ -79,21 +79,20 @@ void fillDistinctDrive(Logging::DriveSample &d) {
   d.angleProportional = 21;          // angle_out_p
   d.angleIntegral = 22;              // angle_out_i
   d.angleDerivative = 23;            // angle_out_d
-  d.wheelSpeedFeedbackOutput = 24;   // wheel_speed_feedback
-  d.leftMotorTarget = 25;            // motor1_target
-  d.rightMotorTarget = 26;           // motor2_target
-  d.leftCurrentSetpoint = 27;        // motor1_current_sp
-  d.rightCurrentSetpoint = 28;       // motor2_current_sp
-  d.leftVoltageQ = 29;               // motor1_voltage_q
-  d.rightVoltageQ = 30;              // motor2_voltage_q
-  d.leftShaftVelocity = 31;          // motor1_shaft_velocity
-  d.rightShaftVelocity = 32;         // motor2_shaft_velocity
-  d.batteryInstantRawV = 33;         // battery_raw_instant_v
-  d.batteryInstantFilteredV = 34;    // battery_filtered_instant_v
-  d.ballX = 35;                      // top_ball_x
-  d.bodyPitch = 36;                  // body_pitching
-  d.maxServoRange = 37;              // max_servo_range_deg
-  d.sequence = 38;                   // sequence
+  d.leftMotorTarget = 24;            // motor1_target
+  d.rightMotorTarget = 25;           // motor2_target
+  d.leftCurrentSetpoint = 26;        // motor1_current_sp
+  d.rightCurrentSetpoint = 27;       // motor2_current_sp
+  d.leftVoltageQ = 28;               // motor1_voltage_q
+  d.rightVoltageQ = 29;              // motor2_voltage_q
+  d.leftShaftVelocity = 30;          // motor1_shaft_velocity
+  d.rightShaftVelocity = 31;         // motor2_shaft_velocity
+  d.batteryInstantRawV = 32;         // battery_raw_instant_v
+  d.batteryInstantFilteredV = 33;    // battery_filtered_instant_v
+  d.ballX = 34;                      // top_ball_x
+  d.bodyPitch = 35;                  // body_pitching
+  d.maxServoRange = 36;              // max_servo_range_deg
+  d.sequence = 37;                   // sequence
 }
 
 void printDistinctDrive() {
@@ -101,7 +100,7 @@ void printDistinctDrive() {
   record.kind = LoggingInternal::RecordKind::Drive;
   fillDistinctDrive(record.payload.drive);
   char line[LoggingInternal::kLineBufferSize];
-  const int length = LoggingInternal::formatRecord(record, line, sizeof(line), 39, 40);
+  const int length = LoggingInternal::formatRecord(record, line, sizeof(line), 38, 39);
   require(length > 0 && static_cast<size_t>(length) < sizeof(line), "distinct DRIVE row did not format");
   std::fwrite(line, 1, static_cast<size_t>(length), stdout);
 }

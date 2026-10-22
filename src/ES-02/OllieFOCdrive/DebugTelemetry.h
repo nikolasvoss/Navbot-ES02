@@ -75,7 +75,6 @@ struct TelemetryInputs {
   float bodyCommandFilterCutoffHz;
 
   float movementSpeed;
-  float wheelVelocityFeedbackCorrection;
 
   uint16_t voltageAdc;
   float voltageAdcFiltered;

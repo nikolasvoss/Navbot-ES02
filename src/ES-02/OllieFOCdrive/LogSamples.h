@@ -113,7 +113,6 @@ struct DriveSample {
   float angleProportional;
   float angleIntegral;
   float angleDerivative;
-  float wheelSpeedFeedbackOutput;
   float leftMotorTarget;
   float rightMotorTarget;
   float leftCurrentSetpoint;
