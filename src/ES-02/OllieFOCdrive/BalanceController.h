@@ -99,6 +99,7 @@ struct Config {
   float armingTiltRateRadPerSec = 0.0f;  // uncommissioned
   float armingRequestSpeedMps = 0.0f;    // uncommissioned
   float armingRequestYawRadPerSec = 0.0f;  // uncommissioned
+  float armingWheelSpeedRadPerSec = 0.0f;  // uncommissioned, each wheel's |speed| must be within it
 
   // Measurement freshness: maximum age of each acquisition timestamp. Uncommissioned.
   uint32_t imuMaxAgeUs = 0;    // uncommissioned
@@ -234,7 +235,8 @@ class BalanceController {
   void resetRunTracking(const Config &config, uint32_t nowUs);
   void checkRunning(const Measurements &measurements, const Request &request, const Config &config,
                     uint32_t nowUs);
-  bool tryEnterCommissioning(const Measurements &measurements, const Request &request, const Config &config);
+  bool tryEnterCommissioning(const Measurements &measurements, const Request &request, const Config &config,
+                             bool clippedSinceLoop);
   bool saveAllowed(const Measurements &measurements, const Request &request, const Config &config,
                    bool lost) const;
   void stepKnob(const Request &request, const Config &config);
@@ -293,10 +295,10 @@ class BalanceController {
   float tiltRefRad_ = 0.0f;      // applied reference, slewed toward desiredTiltRad_ every processed sample
   bool tiltClipped_ = false;
   uint32_t lastSpeedLoopUs_ = 0;
-  // From the last processed sample in Run; they gate the speed integral on the next loop run.
-  bool effortClippedPrev_ = false;
-  bool reserveLowPrev_ = false;
-  bool voltageOrCurrentClippedPrev_ = false;
+  // OR-latched on every Run tick since the last speed loop run. The loop reads them, then they are cleared.
+  bool effortClippedSinceLoop_ = false;
+  bool reserveLowSinceLoop_ = false;
+  bool voltageOrCurrentClippedSinceLoop_ = false;
   // Start of the current run of clipped tilt reference, valid while tiltClipRunning_ is set. Checked every tick.
   bool tiltClipRunning_ = false;
   uint32_t tiltClipStartUs_ = 0;

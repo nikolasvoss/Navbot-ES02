@@ -69,7 +69,9 @@ bool armingConditionsMet(const Measurements &measurements, const Request &reques
          std::fabs(measurements.tiltRad - trimRad) <= config.armingTiltWindowRad &&
          std::fabs(measurements.tiltRateRadPerSec) <= config.armingTiltRateRadPerSec &&
          std::fabs(request.speedMps) <= config.armingRequestSpeedMps &&
-         std::fabs(request.yawRateRadPerSec) <= config.armingRequestYawRadPerSec;
+         std::fabs(request.yawRateRadPerSec) <= config.armingRequestYawRadPerSec &&
+         std::fabs(measurements.leftWheelRadPerSec) <= config.armingWheelSpeedRadPerSec &&
+         std::fabs(measurements.rightWheelRadPerSec) <= config.armingWheelSpeedRadPerSec;
 }
 
 // Demand caps must be usable: a zero brake cap would hold the last speed when the request times out,
@@ -96,6 +98,8 @@ bool configValid(const Config &config) {
          std::isfinite(config.transferToleranceRad) && config.transferToleranceRad > 0.0f &&
          std::isfinite(config.saveRequestSpeedTolMps) && config.saveRequestSpeedTolMps >= 0.0f &&
          std::isfinite(config.saveRequestYawTolRadPerSec) && config.saveRequestYawTolRadPerSec >= 0.0f &&
+         std::isfinite(config.armingWheelSpeedRadPerSec) && config.armingWheelSpeedRadPerSec >= 0.0f &&
+         std::isfinite(config.currentLimitA) && config.currentLimitA > 0.0f &&
          std::fabs(config.storedTrimDeg * kDegreesToRadiansF) <= config.trimEnvelopeRad &&
          std::isfinite(config.tiltPAPerRad) && std::isfinite(config.gyroDampingAPerRadPerSec) &&
          std::isfinite(config.yawPAPerRadPerSec) && std::isfinite(config.reserveLowA) &&
@@ -235,16 +239,23 @@ Output BalanceController::update(const Measurements &measurements, const Request
           armingStartUs_ = nowUs;
         }
         break;
-      case State::Arming:
+      case State::Arming: {
         // A lost request holds Arming; the arming timeout below still applies.
-        if (!lost && armingConditionsMet(measurements, request, config, nowUs)) {
+        const bool ready = !lost && armingConditionsMet(measurements, request, config, nowUs);
+        if (ready) {
+          checkEnvelopes(measurements, config);  // drivers must not be enabled on an invalid model; may latch Fault
+        }
+        // Arming needs an envelope that contains 0 A on both wheels. An interval excluding zero is only a
+        // braking model at speed, so it holds Arming until the timeout.
+        const bool containsZero = leftMinA_ <= 0.0f && 0.0f <= leftMaxA_ && rightMinA_ <= 0.0f && 0.0f <= rightMaxA_;
+        if (ready && state_ == State::Arming && containsZero) {
           state_ = State::Run;
           resetRunTracking(config, nowUs);
-          checkEnvelopes(measurements, config);  // drivers must not be enabled on an invalid model
-        } else if (elapsedLongerThan(nowUs, armingStartUs_, config.armingTimeoutUs)) {
+        } else if (state_ == State::Arming && elapsedLongerThan(nowUs, armingStartUs_, config.armingTimeoutUs)) {
           state_ = State::Disabled;
         }
         break;
+      }
       case State::Run:  // Run -> Commissioning is decided inside checkRunning, on a processed IMU sample.
         checkRunning(measurements, request, config, nowUs);
         break;
@@ -276,7 +287,7 @@ Output BalanceController::update(const Measurements &measurements, const Request
     shapedDemand_ = Demand{};
     trimRad_ = speedPRad_ = speedIRad_ = desiredTiltRad_ = tiltRefRad_ = 0.0f;
     tiltClipped_ = false;
-    effortClippedPrev_ = reserveLowPrev_ = voltageOrCurrentClippedPrev_ = false;
+    effortClippedSinceLoop_ = reserveLowSinceLoop_ = voltageOrCurrentClippedSinceLoop_ = false;
     demandScale_ = 1.0f;
     knobEngaged_ = false;
     allocation_ = Allocation{};
@@ -332,7 +343,7 @@ void BalanceController::resetRunTracking(const Config &config, uint32_t nowUs) {
   tiltRefRad_ = trimRad_;
   tiltClipped_ = false;
   lastSpeedLoopUs_ = nowUs;
-  effortClippedPrev_ = reserveLowPrev_ = voltageOrCurrentClippedPrev_ = false;
+  effortClippedSinceLoop_ = reserveLowSinceLoop_ = voltageOrCurrentClippedSinceLoop_ = false;
   allocation_ = Allocation{};
   haveEffortDemand_ = false;
   demandScale_ = 1.0f;
@@ -397,6 +408,10 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
       }
       shapedDemand_ = shapeDemand(shapedDemand_, requested, demandScale_, dtSec_, config);
 
+      // Clip and reserve flags of every tick since the last loop run. The transfer check below reads the same value.
+      const bool clippedSinceLoop =
+          effortClippedSinceLoop_ || reserveLowSinceLoop_ || voltageOrCurrentClippedSinceLoop_;
+
       // The loop runs on the first processed sample at or after its period, and integrates over that elapsed time.
       const uint32_t loopElapsedUs = nowUs - lastSpeedLoopUs_;
       if (loopElapsedUs >= config.speedLoopPeriodUs) {
@@ -405,19 +420,20 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
         loopConfig.speedIntegralEnabled = config.speedIntegralEnabled && state_ == State::Run;
         const SpeedLoopResult loop =
             speedLoopStep(speedIRad_, shapedDemand_.speedMps - measuredSpeedMps(measurements, config), trimRad_,
-                          effortClippedPrev_ || reserveLowPrev_ || voltageOrCurrentClippedPrev_,
-                          static_cast<float>(loopElapsedUs) * 1e-6f, loopConfig);
+                          clippedSinceLoop, static_cast<float>(loopElapsedUs) * 1e-6f, loopConfig);
         speedPRad_ = loop.speedPRad;
         speedIRad_ = loop.speedIRad;
         desiredTiltRad_ = loop.desiredTiltRad;
         tiltClipped_ = loop.tiltClipped;
         lastSpeedLoopUs_ = nowUs;
+        effortClippedSinceLoop_ = reserveLowSinceLoop_ = voltageOrCurrentClippedSinceLoop_ = false;
       }
       tiltRefRad_ = slewTiltRef(tiltRefRad_, desiredTiltRad_, dtSec_, config);
 
       if (state_ == State::Run) {
         // A lost request does not count as the commissioning switch, so Run stays and the entry is flagged refused.
-        if (request.commissioningSwitch && (rcLost || !tryEnterCommissioning(measurements, request, config))) {
+        if (request.commissioningSwitch &&
+            (rcLost || !tryEnterCommissioning(measurements, request, config, clippedSinceLoop))) {
           commissioningRefused_ = true;
         }
       } else if (knobUsable && state_ == State::Commissioning) {
@@ -474,16 +490,16 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
 
 // Run -> Commissioning, on one processed IMU sample. Changes nothing unless every check holds.
 bool BalanceController::tryEnterCommissioning(const Measurements &measurements, const Request &request,
-                                              const Config &config) {
+                                              const Config &config, bool clippedSinceLoop) {
   const float speedMps = measuredSpeedMps(measurements, config);
   // The raw stick must be near neutral, not just the shaped demand: shaping ramps to zero under the switch.
-  // No ongoing clip or slew, and the previous tick had neither effort nor reserve limits.
+  // No ongoing clip or slew, and no effort or reserve limit since the last loop run.
   const bool settled = std::fabs(request.speedMps) <= config.saveRequestSpeedTolMps &&
                        std::fabs(request.yawRateRadPerSec) <= config.saveRequestYawTolRadPerSec && !knobEngaged_ &&
                        shapedDemand_.speedMps == 0.0f && shapedDemand_.yawRateRadPerSec == 0.0f &&
                        std::fabs(speedMps) <= config.standstillWheelSpeedTolMps &&
                        std::fabs(measurements.tiltRad - tiltRefRad_) <= config.standstillTiltErrorTolRad &&
-                       !tiltClipped_ && !effortClippedPrev_ && !reserveLowPrev_ && !measurements.voltageClipped &&
+                       !tiltClipped_ && !clippedSinceLoop && !measurements.voltageClipped &&
                        !measurements.currentClipped && tiltRefRad_ == desiredTiltRad_;
   if (!settled) {
     return false;
@@ -561,9 +577,10 @@ void BalanceController::computeEffort(const Measurements &measurements, const Co
   }
 
   allocation_ = allocateEffort(balanceCommonA_, yawDifferentialA_, leftMinA_, leftMaxA_, rightMinA_, rightMaxA_);
-  effortClippedPrev_ = allocation_.effortClipped;
-  reserveLowPrev_ = allocation_.reserve < config.reserveLowA;
-  voltageOrCurrentClippedPrev_ = measurements.voltageClipped || measurements.currentClipped;
+  effortClippedSinceLoop_ = effortClippedSinceLoop_ || allocation_.effortClipped;
+  reserveLowSinceLoop_ = reserveLowSinceLoop_ || allocation_.reserve < config.reserveLowA;
+  voltageOrCurrentClippedSinceLoop_ =
+      voltageOrCurrentClippedSinceLoop_ || measurements.voltageClipped || measurements.currentClipped;
   demandScale_ = std::clamp(allocation_.reserve / config.reserveLowA, 0.0f, 1.0f);
 
   if (!allocation_.effortClipped) {

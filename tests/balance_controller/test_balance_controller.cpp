@@ -18,6 +18,7 @@ Config makeConfig() {
   config.armingTiltRateRadPerSec = 0.1f;
   config.armingRequestSpeedMps = 0.05f;
   config.armingRequestYawRadPerSec = 0.05f;
+  config.armingWheelSpeedRadPerSec = 5.0f;  // test value
   config.imuMaxAgeUs = 20000;
   config.wheelMaxAgeUs = 20000;
   config.busMaxAgeUs = 100000;
@@ -313,6 +314,37 @@ Output integralThenTransfer(const Config &config) {
   }
   return imuSample(controller, config, 922000u, 92, drift, trimRequest(922000u, true));
 }
+
+enum class FlagSource : uint8_t { None, Voltage, Current, Effort, Reserve };
+
+// Speed I after the Run ticks up to endUs, at 1 ms ticks from 3000 us. An IMU sample comes every 10 ms (12000, 22000,
+// ...), and the loop runs on each 20 ms step (22000, 42000, ...). The wheels turn at -1 rad/s, so the speed error is
+// +0.1 m/s. The source flag is set on every tick except the one before each loop run (21000, 41000, ...), or with
+// dipOnly on the single tick 15000. Effort and reserve clear only with a wide envelope, so their other ticks run the
+// wheels at -50 rad/s, which the loop never samples (it reads the wheels on its own tick).
+float speedIAt(const Config &config, FlagSource source, bool dipOnly, uint32_t endUs) {
+  BalanceController bc;
+  enterRun(bc, config, 0);
+  const bool effortOrReserve = source == FlagSource::Effort || source == FlagSource::Reserve;
+  uint32_t imuSequence = 1;
+  Output last;
+  for (uint32_t t = 3000; t <= endUs; t += 1000) {
+    if (t % 10000 == 2000) {
+      ++imuSequence;
+    }
+    const bool flagged = dipOnly ? t == 15000 : t % 20000 != 1000;
+    Measurements m = atTime(makeMeasurements(), t);
+    m.imuSequence = imuSequence;
+    m.tiltRateRadPerSec = source == FlagSource::Effort ? 20.0f : source == FlagSource::Reserve ? 15.8f : 0.0f;
+    const float wheel = !flagged && effortOrReserve ? -50.0f : -1.0f;
+    m.leftWheelRadPerSec = wheel;
+    m.rightWheelRadPerSec = wheel;
+    m.voltageClipped = flagged && source == FlagSource::Voltage;
+    m.currentClipped = flagged && source == FlagSource::Current;
+    last = bc.update(m, liveRequest(t, 0.0f, 0.0f), config, t);
+  }
+  return last.diag.speedI;
+}
 }  // namespace
 
 int main() {
@@ -550,21 +582,57 @@ int main() {
     assert(bc.update(m, makeRequest(true), config, now).fault == FaultReason::StaleImu);
   }
 
-  // Arming needs fresh IMU, wheels and bus; stale inputs keep Arming until fresh ones arrive.
-  {
+  // Arming needs fresh IMU, wheels and bus. The request is live (received now), so each stale input alone is what
+  // holds Arming; a request received at 0 would be lost and hold Arming by itself. Run follows once it is fresh.
+  for (int which = 0; which < 3; ++which) {
     BalanceController bc;
     tick(bc, good, liveSwitch(200000, false), config, 200000);
     assert(tick(bc, good, liveSwitch(201000, true), config, 201000).state == State::Arming);
 
-    Measurements staleBus = atTime(good, 202000);
-    staleBus.busReadTimeUs = 202000 - config.busMaxAgeUs - 1;
-    assert(bc.update(staleBus, makeRequest(true), config, 202000).state == State::Arming);
+    Measurements late = atTime(good, 202000);
+    if (which == 0) late.imuReadTimeUs = 202000 - config.imuMaxAgeUs - 1;
+    if (which == 1) late.wheelReadTimeUs = 202000 - config.wheelMaxAgeUs - 1;
+    if (which == 2) late.busReadTimeUs = 202000 - config.busMaxAgeUs - 1;
+    assert(bc.update(late, liveSwitch(202000, true), config, 202000).state == State::Arming);
 
-    Measurements staleImu = atTime(good, 203000);
-    staleImu.imuReadTimeUs = 203000 - config.imuMaxAgeUs - 1;
-    assert(bc.update(staleImu, makeRequest(true), config, 203000).state == State::Arming);
+    assert(tick(bc, good, liveSwitch(203000, true), config, 203000).state == State::Run);
+  }
 
-    assert(tick(bc, good, liveSwitch(204000, true), config, 204000).state == State::Run);
+  // Arming needs the wheels inside the arming band (5 rad/s here). Spinning wheels keep Arming; the same
+  // measurements at rest arm.
+  {
+    Measurements spinning = good;
+    spinning.leftWheelRadPerSec = 95.0f;
+    spinning.rightWheelRadPerSec = 95.0f;
+    BalanceController bc;
+    tick(bc, spinning, liveSwitch(1000, false), config, 1000);
+    tick(bc, spinning, liveSwitch(2000, true), config, 2000);
+    assert(tick(bc, spinning, liveSwitch(3000, true), config, 3000).state == State::Arming);
+    assert(tick(bc, good, liveSwitch(4000, true), config, 4000).state == State::Run);
+  }
+
+  // Arming needs an envelope that contains 0 A on both wheels. With KV 1 the back-EMF at 4 rad/s is about 22 V, far
+  // above the 8.4 V limit, so the wheels inside the band still give envelopes excluding zero: about [-1.38, -0.62] A.
+  // Arming holds, without a fault, until the timeout. At rest the same config arms.
+  {
+    Config lowKv = config;
+    lowKv.kvRating = 1.0f;
+    Measurements spinning = good;
+    spinning.leftWheelRadPerSec = 4.0f;
+    spinning.rightWheelRadPerSec = 4.0f;
+    BalanceController bc;
+    tick(bc, good, liveSwitch(1000, false), lowKv, 1000);
+    tick(bc, spinning, liveSwitch(2000, true), lowKv, 2000);
+    const Output held = tick(bc, spinning, liveSwitch(3000, true), lowKv, 3000);
+    assert(held.state == State::Arming && !held.driveEnabled && held.fault == FaultReason::None);
+    assert(tick(bc, spinning, liveSwitch(4000, true), lowKv, 4000).state == State::Arming);
+    assert(tick(bc, spinning, liveSwitch(2000 + kTimeoutUs + 1, true), lowKv, 2000 + kTimeoutUs + 1).state ==
+           State::Disabled);
+
+    BalanceController atRest;
+    tick(atRest, good, liveSwitch(1000, false), lowKv, 1000);
+    tick(atRest, good, liveSwitch(2000, true), lowKv, 2000);
+    assert(tick(atRest, good, liveSwitch(3000, true), lowKv, 3000).state == State::Run);
   }
 
   // An unchanged IMU sequence is not a new sample: it computes no dt and does not refresh the sample.
@@ -1363,6 +1431,21 @@ int main() {
     }
   }
 
+  // currentLimitA must be finite and positive. Zero or negative leaves an empty envelope, and NaN is refused, all on the
+  // arming tick, so no driver is enabled.
+  {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    for (float badLimit : {0.0f, -5.0f, nan}) {
+      Config noLimit = config;
+      noLimit.currentLimitA = badLimit;
+      BalanceController bc;
+      tick(bc, good, liveSwitch(1000, false), noLimit, 1000);
+      assert(tick(bc, good, liveSwitch(2000, true), noLimit, 2000).state == State::Arming);
+      const Output out = tick(bc, good, liveSwitch(3000, true), noLimit, 3000);
+      assert(out.state == State::Fault && out.fault == FaultReason::InvalidConfig && !out.driveEnabled);
+    }
+  }
+
   // Step 6, update(): balance law and yaw law with exact currents. Envelopes are +/-8.4 A at standstill.
   // Tilt error 0.01 rad, tilt rate 0.2 rad/s: balance = 2 * 0.01 + 0.5 * 0.2 = 0.12 A. Measured yaw 0 and request 0,
   // so the yaw differential is 0 and both wheels carry 0.12 A. The first processed sample only records its timestamp,
@@ -1519,6 +1602,28 @@ int main() {
     const Output frozen = imuSample(bc, integ, 22000, 3, clipped, makeRequest(true));
     assert(frozen.diag.effortClipped);
     assert(nearlyTo(frozen.diag.speedI, 0.0f, 1e-6f));
+  }
+
+  // Step 6, anti-windup hold: a flag set on every tick since the last loop run freezes the integral, not only a flag
+  // on the tick just before the loop run. Control first: with no flag the integral moves.
+  {
+    const Config cfg = makeTrimConfig();
+    assert(speedIAt(cfg, FlagSource::None, false, 1002000) > 0.05f);
+    assert(speedIAt(cfg, FlagSource::Voltage, false, 1002000) == 0.0f);
+    assert(speedIAt(cfg, FlagSource::Current, false, 1002000) == 0.0f);
+    assert(speedIAt(cfg, FlagSource::Effort, false, 1002000) == 0.0f);
+    assert(speedIAt(cfg, FlagSource::Reserve, false, 1002000) == 0.0f);
+  }
+  // A flag on a single tick (15000 us) freezes the first loop run after it (22000 us). The next run (42000 us)
+  // integrates for the sensor flags. Effort and reserve are not checked there: the wide-envelope ticks make the
+  // loop's 22000 us run see a 5 m/s error, and the tilt response then pushes the reserve below its limit by itself.
+  {
+    const Config cfg = makeTrimConfig();
+    for (FlagSource source : {FlagSource::Voltage, FlagSource::Current, FlagSource::Effort, FlagSource::Reserve}) {
+      assert(speedIAt(cfg, source, true, 22000) == 0.0f);
+    }
+    assert(speedIAt(cfg, FlagSource::Voltage, true, 42000) > 0.0f);
+    assert(speedIAt(cfg, FlagSource::Current, true, 42000) > 0.0f);
   }
 
   // Step 6, authority fault timing: clipped effort at 12000 us starts the timer. The limit is 100000 us, so 112000
