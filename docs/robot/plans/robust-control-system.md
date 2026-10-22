@@ -358,7 +358,6 @@ Delete in the same change, with their callers, Commander entries, telemetry fiel
 
 | Remove | Where |
 | --- | --- |
-| Height, pitch, roll, ball commands: `bodyHeightCommandM`, `bodyPitching`, `bodyRoll`, `topBallX/Y`, their filters in `filterRemoteControl()`, `targetBodyHeightOverrideM`, Commander `O`, `attitudeMode`, `postureOrMarkMode` | `applyRcChannels()`, `filterRemoteControl()`, `computeBodyPose()`, `writeServos()` |
 | `MyPIDController` in [OllieFOCdrive.h](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.h) and `tests/pid/` | only if no user remains after package 4 |
 
 `runPostureController()` and `computeBodyPose()` disappear. The fixed pose writes `servoTraceAngle[i] = -servoTrimN` through `writeLegServos()` each tick, as decided above. `LegKinematics` then has no runtime caller; delete it and `tests/kinematics/` in the same change unless the IK fallback pose is needed. Servo calibration (`calibrationSelect` 3 through Commander `E`) keeps working with balance disabled.

@@ -44,7 +44,6 @@ struct TraceSample {
   uint32_t timestampMs;
   uint32_t sequence;
   int32_t gainMode;
-  int32_t postureOrMarkMode;
   float minimumBatteryRawV;
   float batteryV;
   float rollOk;
@@ -101,7 +100,6 @@ struct DriveSample {
   float leftWheelVelocity;
   float rightWheelVelocity;
   float controlDtSec;
-  float bodyPitchFiltered;
   float rollOk;
   float leftMotorTarget;
   float rightMotorTarget;
@@ -113,8 +111,6 @@ struct DriveSample {
   float rightShaftVelocity;
   float batteryInstantRawV;
   float batteryInstantFilteredV;
-  float ballX;
-  float bodyPitch;
   int32_t maxServoRange;
 };
 
@@ -138,13 +134,7 @@ enum class DebugSelector : uint8_t {
   K17,
   K18,
   K19,
-  K20,
-  K21,
-  K24 = 24,
-  K25,
-  K28 = 28,
   K33 = 33,
-  K37 = 37,
   K43 = 43,
   K45 = 45,
   K46 = 46,
@@ -237,21 +227,6 @@ struct SensorAngles {
 struct ServoOffsets {
   float servo[4];
 };
-struct BalanceGeometry {
-  float bodyX;
-  float bodyRoll;
-  float bodyHeightM;
-};
-struct BalanceState {
-  float rollOk;
-  float bodyPitch;
-};
-struct BallPosition {
-  float x;
-  float xFiltered;
-  float y;
-  float yFiltered;
-};
 struct VoltageState {
   int32_t adc;
   float filteredV;
@@ -268,29 +243,11 @@ struct ChannelState {
 struct CurrentSetpoint {
   float amperes;
 };
-struct BallBalanceGeometry {
-  float ballX;
-  float bodyRoll;
-  float bodyHeightM;
-};
 struct PidIntegralOutputState {
   float integralLimit;
   float integral;
   float integralOutput;
-  float auxiliary;
   float output;
-};
-struct FilteredGeometry {
-  float bodyPitch;
-  float bodyRoll;
-  float bodyHeightM;
-  float slideStep;
-  float ballX;
-  float ballY;
-};
-struct BodyPitchState {
-  float filteredDeg;
-  float rawDeg;
 };
 struct GyroFftSample {
   uint32_t timestampUs;
@@ -333,17 +290,11 @@ union DebugPayload {
   ScalarPair pair;
   SensorAngles sensorAngles;
   ServoOffsets servoOffsets;
-  BalanceGeometry balanceGeometry;
-  BalanceState balanceState;
-  BallPosition ballPosition;
   VoltageState voltageState;
   TumbleState tumbleState;
   ChannelState channelState;
   CurrentSetpoint currentSetpoint;
-  BallBalanceGeometry ballBalanceGeometry;
   PidIntegralOutputState pidIntegralOutputState;
-  FilteredGeometry filteredGeometry;
-  BodyPitchState bodyPitchState;
   GyroFftSample gyroFft;
   ImuCadenceSample imuCadence;
   MotorStateSample motorState;

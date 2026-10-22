@@ -132,39 +132,19 @@ bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &pa
       payload.controllerGains = {{in.yawPid.Kp, in.yawPid.Ki, in.yawPid.Kd}, in.controlTimestepSec};
       return true;
     case 33:
-      payload.pidIntegralOutputState = {in.yawPid.iLimit, in.yawPid.integral, in.yawPid.outI, in.bodyPitchingFiltered,
-                                        in.yawPid.output};
+      payload.pidIntegralOutputState = {in.yawPid.iLimit, in.yawPid.integral, in.yawPid.outI, in.yawPid.output};
       return true;
     default:
       return false;
   }
 }
 
-// Selectors 19..21, 24, 25, 28 and 37.
+// Selector 19.
 bool fillPose(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 19:
       payload.servoOffsets = {{in.servoTrims.servo1Degrees, in.servoTrims.servo2Degrees, in.servoTrims.servo3Degrees,
                                in.servoTrims.servo4Degrees}};
-      return true;
-    case 20:
-      payload.ballBalanceGeometry = {in.topBallX, in.bodyRoll, in.bodyHeightCommandM};
-      return true;
-    case 21:
-      payload.balanceState = {in.imu.correctedRollDegrees, in.bodyPitching};
-      return true;
-    case 24:
-      payload.pair = {in.bodyCommandFilteringEnabled, in.bodyCommandFilterCutoffHz};
-      return true;
-    case 25:
-      payload.bodyPitchState = {in.bodyPitchingFiltered, in.bodyPitching};
-      return true;
-    case 28:
-      payload.filteredGeometry = {
-          in.bodyPitchingFiltered, in.bodyRollFiltered, in.bodyHeightCommandFilteredM, 0.0f, in.topBallX, in.topBallY};
-      return true;
-    case 37:
-      payload.ballPosition = {in.topBallX, in.sbusTopBallXSmoothed, in.topBallY, in.sbusTopBallYSmoothed};
       return true;
     default:
       return false;
@@ -216,12 +196,6 @@ bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &paylo
     case 33:
       return fillPid(selection, in, payload);
     case 19:
-    case 20:
-    case 21:
-    case 24:
-    case 25:
-    case 28:
-    case 37:
       return fillPose(selection, in, payload);
     case 43:
     case 45:
@@ -270,7 +244,6 @@ void submitTrace(const TelemetryInputs &in, const TraceRow &row) {
   sample.timestampMs = in.nowMs;
   sample.sequence = row.sequence;
   sample.gainMode = in.pidGainsMode;
-  sample.postureOrMarkMode = in.postureOrMarkMode;
   sample.minimumBatteryRawV = row.minimumBatteryRawV;
   sample.batteryV = in.voltage;
   sample.rollOk = in.imu.correctedRollDegrees;
@@ -335,7 +308,6 @@ bool submitDrive(const TelemetryInputs &in, const TraceRow &row) {
   sample.leftWheelVelocity = in.m1FilteredVelocityRadPerSec;
   sample.rightWheelVelocity = in.m2FilteredVelocityRadPerSec;
   sample.controlDtSec = in.controlTimestepSec;
-  sample.bodyPitchFiltered = in.bodyPitchingFiltered;
   sample.rollOk = in.imu.correctedRollDegrees;
   sample.leftMotorTarget = in.motor1Target;
   sample.rightMotorTarget = in.motor2Target;
@@ -347,8 +319,6 @@ bool submitDrive(const TelemetryInputs &in, const TraceRow &row) {
   sample.rightShaftVelocity = in.motor2ShaftVelocity;
   sample.batteryInstantRawV = in.batteryInstantRawV;
   sample.batteryInstantFilteredV = in.batteryInstantFilteredV;
-  sample.ballX = in.topBallX;
-  sample.bodyPitch = in.bodyPitching;
   sample.maxServoRange = row.maxServoRange;
   return Logging::submit(sample) == Logging::Result::Accepted;
 }

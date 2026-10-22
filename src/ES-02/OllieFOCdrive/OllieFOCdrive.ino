@@ -70,11 +70,6 @@ constexpr size_t kSerialTxBufferBytes = 1024;
 constexpr unsigned int kDiagnosticLogSampleRateHz = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // -------------------------------------
 
-struct BodyPose {
-  float heightM;
-  float roll;
-};
-
 // Wheel motor constants, measured 2026-10-22 (docs/robot/software/motor-commissioning.md).
 // SimpleFOC uses phase_resistance as the per-phase (line-to-neutral) value in voltage.q = I * R + bemf.
 // The meter reads 11.5 ohm phase to phase on both wheels; 5.75 ohm assumes a star winding, not yet verified.
@@ -91,34 +86,12 @@ constexpr WheelMotorParams kRightWheelMotor{5.75f, 76.7f};
 
 void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params);
 
-constexpr float kBodyHeightOverrideDisabledM = 0.0f;
-constexpr float kBodyHeightMinM = 0.05f;
 constexpr float kBodyHeightDefaultM = 0.06f;
-constexpr float kBallPoiseMaxBodyHeightM = 0.07f;
-constexpr float kBodyHeightMaxM = 0.09f;
-constexpr int kBodyHeightCommandFilterIndex = 2;
 
 // Body
-float targetBodyHeightOverrideM = kBodyHeightOverrideDisabledM;  // Zero disables the Commander height override.
-float bodyHeightCommandM = kBodyHeightDefaultM;                  // Remote-controlled body height
-float bodyPitching = 0;                                          // Pitch
-float bodyRoll = 0;                                              // Roll
 float movementSpeed = 0;                                         // Movement speed
 float bodyTurn = 0;                                              // Turning
 int robotTumble = ROBOT_NOT_TUMBLING;  // Fall-detection state, see docs/robot/ROBOT_ROADMAP.md
-
-// Filtered remote-control commands
-float bodyHeightCommandFilteredM = kBodyHeightDefaultM;
-float bodyPitchingFiltered = 0;           // Pitch
-float bodyRollFiltered = 0;               // Roll
-biquadFilter_t bodyCommandFilterLpf[12];  // Second-order low-pass filter
-
-float bodyCommandFilterCutoffHz = 200;  // Low-pass cutoff frequency (Hz) for remote-control body command filtering.
-float bodyCommandFilteringEnabled = 1;
-
-void setBodyCommandFilterCutoffHz(char *cmd) { command.scalar(&bodyCommandFilterCutoffHz, cmd); }
-
-void setBodyCommandFilteringEnabled(char *cmd) { command.scalar(&bodyCommandFilteringEnabled, cmd); }
 
 int statusLedOn = 1;
 int statusLedTicks = 0;
@@ -166,8 +139,6 @@ void setImuLowPassCutoff(char *cmd) {
   Logging::message(Logging::Level::Info, "LPF_CUTOFF_FREQ", "%u", cutoff);
 }
 
-void setTargetBodyHeight(char *cmd) { command.scalar(&targetBodyHeightOverrideM, cmd); }
-
 // Servo zero position offsets
 void zeroBiasServo1(char *cmd) { command.scalar(&servoTrims.servo1Degrees, cmd); }
 void zeroBiasServo2(char *cmd) { command.scalar(&servoTrims.servo2Degrees, cmd); }
@@ -187,12 +158,6 @@ int servoTraceAngle[4] = {0, 0, 0, 0};  // Last angle arguments sent to the four
 FUTABA_SBUS sBus;
 int sbusFrameIntervalMs = 0;
 int pidGainsMode = REMOTE_CONTROL_PID_GAINS_MODE_OFF;
-int postureOrMarkMode = REMOTE_CONTROL_PM_POSTURE_MODE;
-int attitudeMode = REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT;
-float topBallX = 0;
-float topBallY = 0;
-float sbusTopBallXSmoothed = 0;
-float sbusTopBallYSmoothed = 0;
 
 //  Create PID controller instance
 float debugLogSelector = 0;   // Selects debug data and the log profile.
@@ -502,7 +467,6 @@ void serviceMotorDiagnostic() {
 
 void readSbus();
 void runPostureController(float dt);
-void filterRemoteControl(void);
 void readBatteryVoltage(void);
 void updateTumbleState(void);
 void diagnosticLoop(void);
@@ -549,14 +513,6 @@ void initRemoteControl() {
   sBus.begin();  // TODO rename sBus to rc or similar
 }
 
-void initFilters() {
-  for (int i = 0; i < 6; i++)
-    biquadFilterInitLPF(&bodyCommandFilterLpf[i], (unsigned int)bodyCommandFilterCutoffHz, 1000);
-
-  biquadFilterInitLPF(&bodyCommandFilterLpf[8], 50, 1000);
-  biquadFilterInitLPF(&bodyCommandFilterLpf[9], 50, 1000);
-}
-
 void initPositionSensors() {
   i2cOne.begin(board::kI2cOneSdaPin, board::kI2cOneSclPin, 400000);
   i2cTwo.begin(board::kI2cTwoSdaPin, board::kI2cTwoSclPin, 400000);
@@ -590,10 +546,7 @@ const SerialCommandEntry commandEntries[] = {
     {'I', setMahonyKi, "my TwoKi"},
     {'K', selectDebugLog, "my Select"},
     {'E', selectCalibration, "my CalibrationSelect"},
-    {'F', setBodyCommandFilterCutoffHz, "my CutoffFreq"},
-    {'J', setBodyCommandFilteringEnabled, "my EnableDFilter"},
     {'Y', setYawPid, "yawPidSettings"},
-    {'O', setTargetBodyHeight, "my Target_Body_Height"},
 };
 
 SerialCommandRouter serialCommandRouter;
@@ -654,7 +607,6 @@ void setup() {
 
   initIMU(imuCalibration);
   initRemoteControl();
-  initFilters();
   SimpleFOCDebug::enable(&Serial);  // TODO a more centralized way to enable debug sections would be nice
   initPositionSensors();
   initDrivers();
@@ -698,47 +650,21 @@ float mapf(long x, long in_min, long in_max, float out_min, float out_max) {
   return (x - in_min) * (out_max - out_min) / divisor + out_min;
 }
 
-constexpr long kSbusBodyHeightCenter = 992;
-
-// Below the stick centre the height falls to the minimum, above it rises to maxHeightM.
-float sbusBodyHeightM(long raw, float maxHeightM) {
-  if (raw <= kSbusBodyHeightCenter)
-    return mapf(raw, SBUS_CHANNEL_MIN, kSbusBodyHeightCenter, kBodyHeightMinM, kBodyHeightDefaultM);
-  return mapf(raw, kSbusBodyHeightCenter + 1, SBUS_CHANNEL_MAX, kBodyHeightDefaultM, maxHeightM);
-}
-
 /**
- * @brief Maps ten raw S.BUS channels to the body commands and mode switches.
- *
- * Channel 1 drives the body height or the pitching, depending on `attitudeMode`.
+ * @brief Maps the S.BUS channels used by the drive, the turn, and the balance enable.
  */
 void applyRcChannels(const int16_t *ch) {
   movementSpeed = mapf(ch[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -15, 15);
   bodyTurn = -mapf(ch[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -11, 11);
   pidGainsMode = min(static_cast<int>(map(ch[4], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2)),
                      REMOTE_CONTROL_PID_GAINS_MODE_ON);
-  postureOrMarkMode = map(ch[5], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
-  attitudeMode = map(ch[7], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
-  // Top ball
-  topBallX = mapf(ch[8], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -5, 5);
-  topBallY = mapf(ch[9], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -5, 5);
-
-  if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT) {
-    bodyHeightCommandM = sbusBodyHeightM(ch[1], kBodyHeightMaxM);
-  } else if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST) {
-    bodyPitching = mapf(ch[1], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -12, 12);
-  } else if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) {
-    bodyHeightCommandM = sbusBodyHeightM(ch[1], kBallPoiseMaxBodyHeightM);
-  }
-  bodyRoll = mapf(ch[0], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -0.011, 0.011);
 }
 
 /**
  * @brief Reads and processes data from the FUTABA S.BUS remote controller.
  *
  * This function decodes the S.BUS signal, maps the raw channel values to
- * meaningful control variables like `movementSpeed`, `bodyTurn`, `bodyHeightCommandM`,
- * and `bodyPitching`, and updates global state based on the RC switch positions.
+ * meaningful control variables like `movementSpeed` and `bodyTurn`.
  * While frames are missing for `kRcFrameTimeoutMs` or the receiver reports a
  * failsafe, `movementSpeed` and `bodyTurn` are forced to zero and every other
  * command keeps its last received value.
@@ -812,20 +738,8 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.servoTrims = servoTrims;
   for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = servoTraceAngle[i];
 
-  in.topBallX = topBallX;
-  in.topBallY = topBallY;
-  in.sbusTopBallXSmoothed = sbusTopBallXSmoothed;
-  in.sbusTopBallYSmoothed = sbusTopBallYSmoothed;
 
-  in.bodyRoll = bodyRoll;
-  in.bodyPitching = bodyPitching;
-  in.bodyPitchingFiltered = bodyPitchingFiltered;
-  in.bodyRollFiltered = bodyRollFiltered;
-  in.bodyHeightCommandM = bodyHeightCommandM;
-  in.bodyHeightCommandFilteredM = bodyHeightCommandFilteredM;
   in.bodyTurn = bodyTurn;
-  in.bodyCommandFilteringEnabled = bodyCommandFilteringEnabled;
-  in.bodyCommandFilterCutoffHz = bodyCommandFilterCutoffHz;
 
   in.movementSpeed = movementSpeed;
 
@@ -839,9 +753,7 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.maxLoopEntryIntervalUs = debugTelemetryState.maxLoopEntryIntervalUs;
 
   in.pidGainsMode = pidGainsMode;
-  in.postureOrMarkMode = postureOrMarkMode;
   in.robotTumble = robotTumble;
-  in.targetBodyHeightOverrideM = targetBodyHeightOverrideM;
   return in;
 }
 
@@ -851,18 +763,12 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
  *
  * This is the core control function for the two-wheeled mode. It orchestrates
  * multiple PID controllers to achieve stable balancing and respond to commands.
- * - It applies the S.BUS top-ball input to `bodyPitching` and the roll command.
  * - It runs a PID loop for yaw (turning) control.
  * The outputs are summed to produce the final `target` values for each motor.
  *
  * @param dt The time delta since the last call, in seconds.
  */
 void runPostureController(float dt) {
-  // S.BUS top-ball input: pitch in top-ball mode.
-  if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) {
-    bodyPitching = -sbusTopBallXSmoothed;
-  }
-
   // Yaw loop
   yawPid.Kp = yawPidSettings.P;
   yawPid.Ki = yawPidSettings.I;
@@ -883,45 +789,6 @@ void runPostureController(float dt) {
   (void)target2;
   motor1.target = 0.0f;
   motor2.target = 0.0f;
-}
-
-/**
- * @brief Applies a low-pass filter to the remote control input values.
- *
- * This function smooths the raw values received from the S.BUS controller
- * (`bodyPitching`, `bodyRoll`, `bodyHeightCommandM`, etc.) using biquad low-pass filters.
- * This prevents jerky movements and improves the stability of the robot's response
- * to user commands. The filter cutoff frequency can be adjusted live.
- */
-void filterRemoteControl(void)  // Remote control filter
-{
-  static int bodyCommandFilteringEnabledLast = (int)bodyCommandFilteringEnabled;
-  static int bodyCommandFilterCutoffHzLast = (int)bodyCommandFilterCutoffHz;
-
-  sbusTopBallXSmoothed = biquadFilterApply(&bodyCommandFilterLpf[8], topBallX);
-  sbusTopBallYSmoothed = biquadFilterApply(&bodyCommandFilterLpf[9], topBallY);
-
-  if ((int)bodyCommandFilteringEnabled == 1) {
-    bodyPitchingFiltered = biquadFilterApply(&bodyCommandFilterLpf[0], bodyPitching);
-    bodyRollFiltered = biquadFilterApply(&bodyCommandFilterLpf[1], bodyRoll);
-    bodyHeightCommandFilteredM =
-        biquadFilterApply(&bodyCommandFilterLpf[kBodyHeightCommandFilterIndex], bodyHeightCommandM);
-  } else {
-    bodyPitchingFiltered = bodyPitching;
-    bodyRollFiltered = bodyRoll;
-    bodyHeightCommandFilteredM = bodyHeightCommandM;
-  }
-
-  if (((int)bodyCommandFilteringEnabled != bodyCommandFilteringEnabledLast) ||
-      ((int)bodyCommandFilterCutoffHz != bodyCommandFilterCutoffHzLast)) {
-    for (int i = 0; i < 6; i++) {
-      biquadFilterInitLPF(&bodyCommandFilterLpf[i], (unsigned int)bodyCommandFilterCutoffHz, 1000);
-    }
-
-    bodyCommandFilteringEnabledLast = (int)bodyCommandFilteringEnabled;
-    bodyCommandFilterCutoffHzLast = (int)bodyCommandFilterCutoffHz;
-    Logging::message(Logging::Level::Info, "Filter", "ok");
-  }
 }
 
 /**
@@ -1154,43 +1021,18 @@ void updateWheelVelocities() {
 }
 
 /**
- * @brief Runs the balance controller when enabled and returns the body height and roll offset.
- *
- * With balance off or the robot tumbling it zeroes the wheel targets, the body offsets and the
- * controller integrals instead.
+ * @brief Runs the balance controller when enabled. Otherwise it holds both wheels at 0 A and clears the yaw integral.
  */
-BodyPose computeBodyPose() {
-  BodyPose pose{kBodyHeightDefaultM, bodyRollFiltered};
-
+void computeBodyPose() {
   if ((pidGainsMode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (robotTumble == ROBOT_TUMBLING)) {
-    if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE && !motorDiagnosticState.active) {
+    if (!motorDiagnosticState.active) {
       motor1.target = 0;
       motor2.target = 0;
     }
-
-    pose.heightM = kBodyHeightDefaultM;
-    pose.roll = 0;
-    bodyPitchingFiltered = 0;
-
     yawPid.integral = 0;
-
-  } else if ((isPidGainsModeEnabled(pidGainsMode)) && (robotTumble == ROBOT_NOT_TUMBLING)) {
+  } else {
     runPostureController(controlTimestepSec);  // PID controller
-
-    if (targetBodyHeightOverrideM == kBodyHeightOverrideDisabledM)
-      pose.heightM = bodyHeightCommandFilteredM;
-    else
-      pose.heightM = targetBodyHeightOverrideM;
   }
-
-  if (robotTumble == ROBOT_TUMBLING)  // Machine fall
-  {
-    pose.heightM = kBodyHeightDefaultM;
-    pose.roll = 0;
-    bodyPitchingFiltered = 0;
-  }
-
-  return pose;
 }
 
 void warnIfLegUnreachable(const LegSolveResult &leg, const char *tag, uint32_t &lastWarningMs) {
@@ -1206,8 +1048,13 @@ void writeLegServos() {
 }
 
 void writeServos(const LegSolveResult &right, const LegSolveResult &left) {
-  if (postureOrMarkMode == REMOTE_CONTROL_PM_POSTURE_MODE)  // Posture
+  if ((int)calibrationSelect == 3)  // Servo calibration
   {
+    servoTraceAngle[0] = -servoTrims.servo1Degrees;
+    servoTraceAngle[1] = -servoTrims.servo2Degrees;
+    servoTraceAngle[2] = -servoTrims.servo3Degrees;
+    servoTraceAngle[3] = -servoTrims.servo4Degrees;
+  } else {
     // An unreachable leg keeps its previous servo angles.
     if (left.status == LegSolveStatus::Success) {
       servoTraceAngle[0] = left.angles.joint1Degrees - servoTrims.servo1Degrees;
@@ -1217,20 +1064,8 @@ void writeServos(const LegSolveResult &right, const LegSolveResult &left) {
       servoTraceAngle[2] = right.angles.joint1Degrees - servoTrims.servo3Degrees;
       servoTraceAngle[3] = right.angles.joint2Degrees - servoTrims.servo4Degrees;
     }
-    writeLegServos();
-  } else  // Assembly position and calibration
-  {
-    if ((int)calibrationSelect == 3)  // Servo calibration
-    {
-      servoTraceAngle[0] = -servoTrims.servo1Degrees;
-      servoTraceAngle[1] = -servoTrims.servo2Degrees;
-      servoTraceAngle[2] = -servoTrims.servo3Degrees;
-      servoTraceAngle[3] = -servoTrims.servo4Degrees;
-    } else {
-      servoTraceAngle[0] = servoTraceAngle[1] = servoTraceAngle[2] = servoTraceAngle[3] = 0;
-    }
-    writeLegServos();
   }
+  writeLegServos();
 
   RobotLogCapture::observeServoAngles(servoTraceAngle);
 }
@@ -1239,7 +1074,6 @@ void runControlTick(bool imuUpdated) {
   controlStartUs = micros();
   controlGateSequence++;
 
-  filterRemoteControl();                                                  // Remote control signal filtering
   readBatteryVoltage();                                                   // Battery
 
   updateTumbleState();  // Machine fall detection
@@ -1249,14 +1083,15 @@ void runControlTick(bool imuUpdated) {
   updateWheelVelocities();
   serviceWheelOverspeed();
 
-  const BodyPose pose = computeBodyPose();
+  computeBodyPose();
 
   static uint32_t lastRightLegWarningMs = 0;
   static uint32_t lastLeftLegWarningMs = 0;
-  const LegSolveResult rightLeg = LegKinematics::solveRight({0.0f, pose.heightM - pose.roll, bodyPitchingFiltered});
+  // The leg input is the fixed standing pose: no body command reaches the legs.
+  const LegSolveResult rightLeg = LegKinematics::solveRight({0.0f, kBodyHeightDefaultM, 0.0f});
   warnIfLegUnreachable(rightLeg, "RightInverseKinematics", lastRightLegWarningMs);
 
-  const LegSolveResult leftLeg = LegKinematics::solveLeft({0.0f, pose.heightM + pose.roll, bodyPitchingFiltered});
+  const LegSolveResult leftLeg = LegKinematics::solveLeft({0.0f, kBodyHeightDefaultM, 0.0f});
   warnIfLegUnreachable(leftLeg, "LeftInverseKinematics", lastLeftLegWarningMs);
 
   writeServos(rightLeg, leftLeg);

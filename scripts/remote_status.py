@@ -26,8 +26,6 @@ CHANNEL_PATTERN = re.compile(r"\bch:(\d+)")
 INTERVAL_PATTERN = re.compile(r"\bsbus_dt_ms:(\d+)")
 SWITCH_NAMES = {
     5: ("pid_control", ("off", "on", "on")),
-    6: ("posture_or_mark", ("posture", "mark")),
-    8: ("attitude", ("default", "pitching_adjust", "ball_balance")),
 }
 
 

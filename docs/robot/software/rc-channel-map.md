@@ -4,16 +4,16 @@ The remote control is connected to the NavBot through the receiver over **SBUS**
 
 | Channel | Function |
 | --- | --- |
-| CH1 | Body roll / lateral tilt |
-| CH2 | Leg length; in "Pitching Adjust" mode, pitch angle instead |
+| CH1 | Unused; body roll was removed |
+| CH2 | Unused; leg length and pitch were removed |
 | CH3 | Drive speed forward/backward |
 | CH4 | Rotation / steering |
 | CH5 | PID control: off, on (3-position switch; the lower position is off, the two upper positions are on) |
-| CH6 | Posture mode or mark mode (2 levels) |
+| CH6 | Unused; posture and mark modes were removed |
 | CH7 | Unused; the roll control that used it was removed |
-| CH8 | Drive/posture mode: standard, Pitching Adjust, or Ball Balance (3 levels) |
-| CH9 | X target position of the ball in Ball Balance mode |
-| CH10 | Y target position of the ball in Ball Balance mode |
+| CH8 | Unused; the attitude modes were removed |
+| CH9 | Unused; ball balance was removed (the trim knob comes in package 4) |
+| CH10 | Unused; ball balance was removed |
 
 **Note on the HT-10A:** The table describes the SBUS channels the robot expects, not the fixed wiring of particular HT-10A switches. Which sticks, switches, or dials send CH1–CH10 depends on the transmitter configuration. After any change to the transmitter, check the channel assignment in the receiver/servo monitor.
 
@@ -22,7 +22,7 @@ The remote control is connected to the NavBot through the receiver over **SBUS**
 Each proportional channel passes through three conversions before a controller uses it.
 
 1. **Transmitter to SBUS.** The transmitter shows 1000-2000 µs, with 1500 µs as default. The receiver sends these as raw SBUS values `raw = (µs - 880) * 1.6`.
-2. **SBUS range in the firmware.** `SBUS_CHANNEL_MIN = 192` and `SBUS_CHANNEL_MAX = 1792` bound the mapping; centre is 992 (`kSbusBodyHeightCenter`). The firmware does not clip raw values outside this range.
+2. **SBUS range in the firmware.** `SBUS_CHANNEL_MIN = 192` and `SBUS_CHANNEL_MAX = 1792` bound the mapping; centre is 992. The firmware does not clip raw values outside this range.
 3. **Scaling to controller units in `applyRcChannels()`.** Each channel has its own `mapf()` range and sign. `readSbus()` then changes some values again.
 
 | Transmitter | Raw SBUS | Measured |
@@ -39,8 +39,7 @@ Current conversion of the drive channels:
 | --- | --- | --- | --- |
 | CH3 speed | `movementSpeed = mapf(raw, 192, 1792, -15, 15)`; forward gives +15 | none | None since Package 3 row 2 removed the speed loop; the value is parsed only |
 | CH4 turn | `bodyTurn = -mapf(raw, 192, 1792, -11, 11)`; left gives +11 | none | Yaw-rate setpoint compared with gyro Z in rad/s |
-| CH9 ball X | `topBallX = mapf(raw, 192, 1792, -5, 5)` | biquad low-pass at 50 Hz (`sbusTopBallXSmoothed`) | Added to `bodyPitching` in ball-balance or roll-auto mode |
 
-On RC loss (no frame for 100 ms or receiver failsafe), `movementSpeed` and `bodyTurn` become 0; all other values keep their last received value.
+On RC loss (no frame for 100 ms or receiver failsafe), `movementSpeed` and `bodyTurn` become 0.
 
-This description matches the current SBUS handling in `src/ES-02/OllieFOCdrive/OllieFOCdrive.ino` and the mode constants in `OllieFOCdrive.h`.
+This description matches the current SBUS handling in `src/ES-02/OllieFOCdrive/OllieFOCdrive.ino`.

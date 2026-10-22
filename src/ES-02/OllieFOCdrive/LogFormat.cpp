@@ -78,29 +78,10 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
       return appendf(buffer, capacity, length, " servo1:%.2f servo2:%.2f servo3:%.2f servo4:%.2f\n",
                      p.servoOffsets.servo[0], p.servoOffsets.servo[1], p.servoOffsets.servo[2],
                      p.servoOffsets.servo[3]);
-    case Logging::DebugSelector::K20:
-      return appendf(buffer, capacity, length, " vra:%.6f BodyRoll:%.6f BodyHeightM:%.6f\n",
-                     p.ballBalanceGeometry.ballX, p.ballBalanceGeometry.bodyRoll, p.ballBalanceGeometry.bodyHeightM);
-    case Logging::DebugSelector::K21:
-      return appendf(buffer, capacity, length, " roll_ok:%.6f BodyPitching:%.6f\n", p.balanceState.rollOk,
-                     p.balanceState.bodyPitch);
-    case Logging::DebugSelector::K24:
-      return appendf(buffer, capacity, length, " EN:%.2f HZ:%.5f\n", p.pair.first, p.pair.second);
-    case Logging::DebugSelector::K25:
-      return appendf(buffer, capacity, length, " LpfOut:%.6f BodyPitching:%.6f\n", p.bodyPitchState.filteredDeg,
-                     p.bodyPitchState.rawDeg);
-    case Logging::DebugSelector::K28:
-      return appendf(buffer, capacity, length, "  P:%.2f  R:%.5f  H:%.5f  S:%.2f  vra:%.2f  vra:%.2f\n",
-                     p.filteredGeometry.bodyPitch, p.filteredGeometry.bodyRoll, p.filteredGeometry.bodyHeightM,
-                     p.filteredGeometry.slideStep, p.filteredGeometry.ballX, p.filteredGeometry.ballY);
     case Logging::DebugSelector::K33:
-      return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f A:%.5f out:%.5f\n",
+      return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f out:%.5f\n",
                      p.pidIntegralOutputState.integralLimit, p.pidIntegralOutputState.integral,
-                     p.pidIntegralOutputState.integralOutput, p.pidIntegralOutputState.auxiliary,
-                     p.pidIntegralOutputState.output);
-    case Logging::DebugSelector::K37:
-      return appendf(buffer, capacity, length, " sbus_vra:%.2f sbus_vraf:%.2f sbus_vrb:%.2f sbus_vrbf:%.2f\n",
-                     p.ballPosition.x, p.ballPosition.xFiltered, p.ballPosition.y, p.ballPosition.yFiltered);
+                     p.pidIntegralOutputState.integralOutput, p.pidIntegralOutputState.output);
     case Logging::DebugSelector::K43:
       return appendf(buffer, capacity, length, " Vdat:%d Vdatf:%.2f V:%.5f\n", static_cast<int>(p.voltageState.adc),
                      p.voltageState.filteredV, p.voltageState.voltageV);
@@ -156,9 +137,8 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
     case RecordKind::Trace: {
       const Logging::TraceSample &s = record.payload.trace;
       return snprintf(
-          buffer, capacity, "TRACE,%lu,%d,%d,%.3f,%.3f,%.2f,%.2f,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%lu,%lu,%lu\n",
-          static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode),
-          static_cast<int>(s.postureOrMarkMode), s.minimumBatteryRawV, s.batteryV, s.rollOk, s.pitchOk,
+          buffer, capacity, "TRACE,%lu,%d,%.3f,%.3f,%.2f,%.2f,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%lu,%lu,%lu\n",
+          static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode), s.minimumBatteryRawV, s.batteryV, s.rollOk, s.pitchOk,
           static_cast<int>(s.servoAngle[0]), static_cast<int>(s.servoAngle[1]), static_cast<int>(s.servoAngle[2]),
           static_cast<int>(s.servoAngle[3]), static_cast<int>(s.servoRange[0]), static_cast<int>(s.servoRange[1]),
           static_cast<int>(s.servoRange[2]), static_cast<int>(s.servoRange[3]), s.leftMotorTarget, s.rightMotorTarget,
@@ -198,16 +178,16 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
       // One conversion per argument, in DRIVE_COLUMNS order from index 13 (ch3_target) to uart_write_failures.
       return appendf(buffer, capacity, length,
                      ",%.3f,%.3f,%.3f,%.6f"                     // ch3_target, motor1/2 velocity_f, tick_dt
-                     ",%.4f,%.3f"                               // body_pitching_f, roll_ok
+                     ",%.3f"                                    // roll_ok
                      ",%.4f,%.4f,%.4f,%.4f,%.4f,%.4f"           // motor targets, current_sp, voltage_q
                      ",%.4f,%.4f,%.3f,%.3f"                     // shaft velocities, battery raw/filtered
-                     ",%.3f,%.3f,%d"                            // top_ball_x, body_pitching, servo range
+                     ",%d"                                      // servo range
                      ",%lu,%lu,%lu\n",                          // sequence, logger_dropped, uart_write_failures
                      s.requestedSpeed, s.leftWheelVelocity, s.rightWheelVelocity, s.controlDtSec,
-                     s.bodyPitchFiltered, s.rollOk, s.leftMotorTarget,
+                     s.rollOk, s.leftMotorTarget,
                      s.rightMotorTarget, s.leftCurrentSetpoint, s.rightCurrentSetpoint, s.leftVoltageQ, s.rightVoltageQ,
                      s.leftShaftVelocity, s.rightShaftVelocity, s.batteryInstantRawV, s.batteryInstantFilteredV,
-                     s.ballX, s.bodyPitch, static_cast<int>(s.maxServoRange),
+                     static_cast<int>(s.maxServoRange),
                      static_cast<unsigned long>(s.sequence), static_cast<unsigned long>(droppedRecords),
                      static_cast<unsigned long>(writeFailures));
     }

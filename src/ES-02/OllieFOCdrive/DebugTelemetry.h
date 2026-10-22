@@ -58,20 +58,8 @@ struct TelemetryInputs {
   ServoTrimsDegrees servoTrims;
   int servoTraceAngle[4];
 
-  float topBallX;
-  float topBallY;
-  float sbusTopBallXSmoothed;
-  float sbusTopBallYSmoothed;
 
-  float bodyRoll;
-  float bodyPitching;
-  float bodyPitchingFiltered;
-  float bodyRollFiltered;
-  float bodyHeightCommandM;
-  float bodyHeightCommandFilteredM;
   float bodyTurn;
-  float bodyCommandFilteringEnabled;
-  float bodyCommandFilterCutoffHz;
 
   float movementSpeed;
 
@@ -85,9 +73,7 @@ struct TelemetryInputs {
   uint32_t maxLoopEntryIntervalUs;
 
   int pidGainsMode;
-  int postureOrMarkMode;
   int robotTumble;
-  float targetBodyHeightOverrideM;
 };
 
 // Telemetry state that persists across control ticks.

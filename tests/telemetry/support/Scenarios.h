@@ -88,20 +88,8 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   in.servoTrims = {g.f(), g.f(), g.f(), g.f()};
   for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = g.i32();
 
-  in.topBallX = g.f();
-  in.topBallY = g.f();
-  in.sbusTopBallXSmoothed = g.f();
-  in.sbusTopBallYSmoothed = g.f();
 
-  in.bodyRoll = g.f();
-  in.bodyPitching = g.f();
-  in.bodyPitchingFiltered = g.f();
-  in.bodyRollFiltered = g.f();
-  in.bodyHeightCommandM = g.f();
-  in.bodyHeightCommandFilteredM = g.f();
   in.bodyTurn = g.f();
-  in.bodyCommandFilteringEnabled = g.f();
-  in.bodyCommandFilterCutoffHz = g.f();
 
   in.movementSpeed = g.f();
 
@@ -115,9 +103,7 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   in.maxLoopEntryIntervalUs = 1200u + 50u * tick;
 
   in.pidGainsMode = variant == 2 ? 0 : (variant == 0 ? 2 : 1);
-  in.postureOrMarkMode = 1 + variant;
   in.robotTumble = variant == 1 ? 2 : 0;
-  in.targetBodyHeightOverrideM = g.f();
   return in;
 }
 

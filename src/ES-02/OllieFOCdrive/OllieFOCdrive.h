@@ -15,13 +15,6 @@
 #define REMOTE_CONTROL_PID_GAINS_MODE_OFF 0
 #define REMOTE_CONTROL_PID_GAINS_MODE_ON 1
 
-#define REMOTE_CONTROL_PM_POSTURE_MODE 0  // Posture control mode
-#define REMOTE_CONTROL_PM_MARK_MODE 1     // Mark control mode
-
-#define REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT 0
-#define REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST 1  // Pitching adjustment mode
-#define REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE 2       // Ball poise mode
-
 class MyPIDController {
  public:
   float Kp;  // Proportional coefficient

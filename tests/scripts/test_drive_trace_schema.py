@@ -20,11 +20,10 @@ FIRMWARE_DRIVE_ORDER = [
     "imu_sequence", "imu_read_time_us", "imu_dt_s", "imu_accepted_samples",
     "imu_long_gap_count", "imu_max_interval_us", "control_start_us", "control_execution_us",
     "max_loop_entry_interval_us", "ch3_target", "motor1_velocity_f", "motor2_velocity_f",
-    "tick_dt_s", "body_pitching_f", "roll_ok",
+    "tick_dt_s", "roll_ok",
     "motor1_target", "motor2_target", "motor1_current_sp", "motor2_current_sp",
     "motor1_voltage_q", "motor2_voltage_q", "motor1_shaft_velocity", "motor2_shaft_velocity",
-    "battery_raw_instant_v", "battery_filtered_instant_v", "top_ball_x", "body_pitching",
-    "max_servo_range_deg", "sequence", "logger_dropped", "uart_write_failures",
+    "battery_raw_instant_v", "battery_filtered_instant_v", "max_servo_range_deg", "sequence", "logger_dropped", "uart_write_failures",
 ]
 
 
@@ -39,7 +38,7 @@ def drive_line(time_ms, **overrides):
 class DriveSchemaTest(unittest.TestCase):
     def test_drive_columns_match_firmware_order_exactly(self):
         self.assertEqual(list(DRIVE_COLUMNS), FIRMWARE_DRIVE_ORDER)
-        self.assertEqual(len(DRIVE_COLUMNS), 35)
+        self.assertEqual(len(DRIVE_COLUMNS), 32)
 
     def test_capture_writes_the_same_drive_header(self):
         self.assertEqual(TRACE_HEADERS[58], "DRIVE," + ",".join(FIRMWARE_DRIVE_ORDER))

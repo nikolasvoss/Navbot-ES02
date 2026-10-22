@@ -12,7 +12,7 @@ A **setpoint** is the desired behavior, and an **actual value** is the measureme
 
 ```mermaid
 flowchart LR
-    RC[SBUS remote control<br/>CH3 drive · CH4 turn<br/>CH5 enable · CH7/8 posture] --> CMD[Setpoints and operating mode]
+    RC[SBUS remote control<br/>CH3 drive · CH4 turn<br/>CH5 enable] --> CMD[Setpoints and operating mode]
     IMU[ICM-42688P<br/>acceleration + angular rate] --> MAH[Filter + Mahony<br/>tilt correctedRollDegrees / correctedPitchDegrees]
     ENC[2 × AS5600<br/>wheel angle] --> VEL[Wheel speed estimate]
     CMD --> CTRL[Two-wheel control]
@@ -38,7 +38,6 @@ The IMU sits on the MAIN board according to the PCB draft. Each wheel motor has 
 | **Tilt / balance** | `angleError = correctedRollDegrees + bodyPitchingFiltered` | No balance controller since Package 3 row 6; both wheel targets are 0 A. See the interim note below. `correctedRollDegrees` is called "roll" in the code. Here it is the attitude angle in degrees used for forward/backward tilting. |
 | **Yaw / steering** | `yawError = attitude.gyro.z - bodyTurn` | `yawPid` supplies a differential part: wheel 1 gets `−yawOutput`, wheel 2 gets `+yawOutput`. The gyro Z value and the turn command are in rad/s. |
 | **Drive / wheel speed** | none | The speed loop was removed in Package 3, row 2. CH3 is still parsed into `movementSpeed`, but no controller uses it. |
-| **Ball pose** | CH9/10 | Changes `bodyPitching` and thereby indirectly the wheel or servo targets. See below. |
 
 Core wheel motor logic: `target1 = angleOutput − yawOutput`, `target2 = angleOutput + yawOutput`. Both are then limited to ±88. The signs are software conventions and do not replace a test of the mechanical direction of action.
 
@@ -59,17 +58,12 @@ The behavior is coupled through the mechanics: a servo movement changes the posi
 
 | Input | Effect in the current two-wheel code |
 | --- | --- |
-| **CH1** | Lateral posture request `bodyRoll` (effective in AUTO). |
-| **CH2** | Leg height in standard/ball pose. In posture 1, a direct `bodyPitching` request. |
-| **CH3** | Drive request `movementSpeed`, normally ±15. ×2 in the current diagnostic source state. |
+| **CH1, CH2** | Unused since Package 3 row 8 (body roll, leg height, and pitch were removed). |
+| **CH3** | Drive request `movementSpeed`, normally ±15. Parsed only; no controller reads it. |
 | **CH4** | Turn request `bodyTurn`, range about ±11 rad/s after the sign reversal in the code. |
 | **CH5** | 0: wheel setpoints zero, PID integrators reset. 1 and 2: both activate the same two-wheel control path with the same gains. |
-| **CH6** | Posture: inverse leg kinematics. Mark: servo mounting/calibration position. |
-| **CH7** | MANUAL/AUTO for lateral correction. AUTO also activates the `bodyPitching` path from CH9. |
-| **CH8** | Standard, Pitching Adjust, Ball Pose. Ball Pose also activates `bodyPitching` from CH9. |
-| **CH9/CH10** | Ball setpoints `topBallX/Y` of about ±5. CH9 can influence the tilt setpoint. |
-
-**Important for comparisons:** `bodyPitching` is not explicitly set to zero everywhere in standard posture. After a mode change, a previous value in RAM can keep acting until it is overwritten or reset in the CH5-off path for `bodyPitchingFiltered`. For a test, log CH7/CH8/CH9 together.
+| **CH6, CH8, CH9, CH10** | Unused since Package 3 row 8 (posture, attitude, and ball modes were removed). |
+| **CH7** | Unused since Package 3 row 1 (roll control was removed). |
 
 SBUS is the only remote-control source and is read exactly once per loop.
 
