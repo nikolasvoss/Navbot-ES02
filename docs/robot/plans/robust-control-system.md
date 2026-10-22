@@ -321,6 +321,8 @@ Servo assembly and servo calibration currently depend on CH6 through `writeServo
 
 ### Package 1: measurement support, controller unchanged
 
+Status: software support implemented; physical acceptance pending. The telemetry, bounded `T`/`M` diagnostics, and host trace tools are in place. The operating procedure and the commissioning record with pending measurements are in [motor commissioning](../software/motor-commissioning.md). No resistance, `KV_rating`, or voltage ceiling has been measured yet.
+
 Purpose: collect stage 1-3 data without changing the balance behavior.
 
 1. Telemetry additions to the existing `DebugTelemetry` selections and `Logging::DriveSample` in [LogSamples.h](../../../src/ES-02/OllieFOCdrive/LogSamples.h); no new protocol:
@@ -344,7 +346,7 @@ Done when: a supported capture shows IMU cadence, control execution time, per-mo
 2. Remove `WheelPidParams`, `kWheelVelocityPid`, `kWheelVelocityPidOutputRamp`, and `kWheelVelocityLimitRadPerSec`. Replace `kWheelPhaseResistanceOhm` and `kWheelCurrentLimitA` with per-motor measured constants. `configureWheelMotor()` loses its `pid` argument.
 3. Add one boundary function, for example `MotorTargets toMotorTargets(float leftA, float rightA)`, which applies the per-wheel direction signs. It is the only place where motor signs appear. `updateWheelVelocities()` already negates motor 2; move that sign into the same boundary (`fromEncoders()`), so that the controller sees forward-positive left and right wheel speeds.
 4. Fix wheel-speed timing: `updateWheelVelocities()` divides by `controlTimestepSec` only when `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` is set, else by 0.01 s. Use the measured interval between encoder reads always, and record the read timestamp for freshness.
-5. Wheel overspeed check: after `updateWheelVelocities()`, if either wheel speed exceeds the commissioned limit, execute the fault action. It runs in every state in which the drivers are enabled, including diagnostic current tests.
+5. Wheel overspeed check: after `updateWheelVelocities()`, if either wheel speed exceeds the commissioned limit, execute the fault action. It runs in every state in which the drivers are enabled, including diagnostic current tests. The Package 1 diagnostic latches only after an over-limit condition lasts 50 ms, so single-sample spikes do not fault; the Package 2 rule's debounce is not yet decided.
 
 Done when: with wheels clear, the package 1 current command produces the expected sign on each wheel, the overspeed fault trips and gates output, and `voltage.q` stays inside `voltage_limit`.
 
