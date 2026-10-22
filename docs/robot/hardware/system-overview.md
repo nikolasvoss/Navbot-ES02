@@ -52,5 +52,5 @@ The EasyEDA project contains **MAIN** (control, power, motor drivers, connectors
 
 - **Schematic/netlist:** [`cad/robot/ProPrj_NavBot-ES02.epro`](../../../cad/robot/ProPrj_NavBot-ES02.epro), containing `project.json`, MAIN/CODER `.esch` and `.epcb`. The connector pins and net names cited here were read from `PAD_NET` in the respective `.epcb`.
 - **Purchased parts:** [`BOM.xlsx`](../assets/bom.xlsx), sheet `Sheet1`, as of the repository state.
-- **Firmware mapping:** [`src/ES-02/OllieFOCdrive/OllieFOCdrive.ino`](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), [`ICM42688.h`](../../../src/ES-02/OllieFOCdrive/ICM42688.h), [`touchscreen.h`](../../../src/ES-02/OllieFOCdrive/touchscreen.h), [`FUTABA_SBUS.h`](../../../src/ES-02/OllieFOCdrive/FUTABA_SBUS.h).
+- **Firmware mapping:** [`src/ES-02/OllieFOCdrive/OllieFOCdrive.ino`](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino), [`ICM42688.h`](../../../src/ES-02/OllieFOCdrive/ICM42688.h), [`FUTABA_SBUS.h`](../../../src/ES-02/OllieFOCdrive/FUTABA_SBUS.h).
 - **Observations on the existing board:** [USB/serial guide](../software/usb-serial-flashing.md) and [sensor diagnostic guide](../software/sensor-diagnostic-mode.md). These describe measurements and local tests; the netlist describes the design.

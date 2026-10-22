@@ -4,7 +4,6 @@
 #include <Arduino.h>
 
 #include "filter.h"
-#include "touchscreen.h"
 
 #define ADJUSTMENT_PARAM_BALANCE_SPEED_YAW_ROLL 0
 #define ADJUSTMENT_PARAM_BALL_PUSHING 1  // For tuning main balance and movement PID loops

@@ -32,9 +32,6 @@ constexpr int kImuSpiMosiPin = 9;
 constexpr int kImuSpiMisoPin = 10;
 constexpr int kImuSpiCsPin = 13;
 
-constexpr int kTouchUartRxPin = 20;
-constexpr int kTouchUartTxPin = 19;
-
 constexpr int kSbusRxPin = 1;
 constexpr int kSbusTxPin = 2;
 

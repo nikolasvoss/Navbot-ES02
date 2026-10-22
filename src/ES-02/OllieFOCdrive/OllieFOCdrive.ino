@@ -24,7 +24,6 @@
 #include "SerialCommandRouter.h"
 #include "filter.h"
 #include "imu.h"
-#include "touchscreen.h"
 
 bool motorDiagnosticOwnsOutput = false;
 
@@ -147,7 +146,7 @@ float bodyHeightCommandFilteredM = kBodyHeightDefaultM;
 float bodyPitchingFiltered = 0;           // Pitch
 float bodyRollFiltered = 0;               // Roll
 biquadFilter_t bodyCommandFilterLpf[12];  // Second-order low-pass filter
-float touchYPidOutputFiltered = 0;
+float ballYOutputFiltered = 0;  // Filtered S.BUS top-ball Y command, used for roll.
 
 float bodyCommandFilterCutoffHz = 200;  // Low-pass cutoff frequency (Hz) for remote-control body command filtering.
 float bodyCommandFilteringEnabled = 1;
@@ -266,8 +265,6 @@ MyPIDController speedPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 MyPIDController yawPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 MyPIDController rollPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 
-MyPIDController touchXPid(0, 0, 0, 0, 10, pidTimestepSec, 0, 0);
-MyPIDController touchYPid(0, 0, 0, 0, 8, pidTimestepSec, 0, 0);
 bool balancePidNeedsPriming = true;  // Priming avoids a derivative kick when CH5 enables the balance loop.
 
 void setControlTorqueCompensation(char *cmd) { command.scalar(&controlTorqueCompensation, cmd); }
@@ -632,15 +629,13 @@ void initRemoteControl() {
   sBus.begin();  // TODO rename sBus to rc or similar
 }
 
-void initTouchAndFilters() {
+void initFilters() {
   for (int i = 0; i < 6; i++)
     biquadFilterInitLPF(&bodyCommandFilterLpf[i], (unsigned int)bodyCommandFilterCutoffHz, 1000);
 
   biquadFilterInitLPF(&bodyCommandFilterLpf[8], 50, 1000);
   biquadFilterInitLPF(&bodyCommandFilterLpf[9], 50, 1000);
   biquadFilterInitLPF(&bodyCommandFilterLpf[10], 200, 1000);
-
-  TouchscreenInit(1000);
 }
 
 void initPositionSensors() {
@@ -751,7 +746,7 @@ void setup() {
 
   initIMU(imuCalibration);
   initRemoteControl();
-  initTouchAndFilters();
+  initFilters();
   SimpleFOCDebug::enable(&Serial);  // TODO a more centralized way to enable debug sections would be nice
   initPositionSensors();
   initDrivers();
@@ -1004,17 +999,13 @@ void applyPidParameters(void) {
   applyPidPreset(touchYPidSettings, kTouchYPid);
 }
 
-constexpr int kTouchPressFrames = 4;
-constexpr int kTouchLiftFrames = 44;
-constexpr int kTouchKdRampDivisor = 22;
-constexpr int kTouchDerivClamp = 11000;
 
 /**
  * @brief Main PID control loop for two-wheel balancing and posture control.
  *
  * This is the core control function for the two-wheeled mode. It orchestrates
  * multiple PID controllers to achieve stable balancing and respond to commands.
- * - It runs PID loops for the touchscreen input to generate `bodyPitching` and roll commands.
+ * - It applies the S.BUS top-ball input to `bodyPitching` and the roll command.
  * - It runs a PID loop for roll stabilization.
  * - It runs a cascade PID for speed and balance control (Speed loop -> Angle loop).
  * - It runs a PID loop for yaw (turning) control.
@@ -1025,84 +1016,23 @@ constexpr int kTouchDerivClamp = 11000;
 void runPostureController(float dt) {
   if ((int)pidParameterTuning == 0) applyPidParameters();
 
-  // Touch screen
-  touchXPid.Kp = touchXPidSettings.P / 100;
-  touchXPid.Ki = touchXPidSettings.I / 100;
-  touchXPid.Kd = touchXPidSettings.D / 100;
-  touchXPid.iLimit = touchXPidSettings.limit;  // Integral limit
-
-  touchYPid.Kp = touchYPidSettings.P / 100;
-  touchYPid.Ki = touchYPidSettings.I / 100;
-  touchYPid.Kd = touchYPidSettings.D / 100;
-  touchYPid.iLimit = touchYPidSettings.limit;  // Integral limit
-
-  float touchXError = Touch.XPdatF;
-  float touchYError = Touch.YPdatF;
-  static float touchXKd = 0;
-  static float touchYKd = 0;
-
-  touchXPid.compute(touchXError, dt);
-  touchYPid.compute(touchYError, dt);
-
-  touchXPid.deriv = constrain(touchXPid.deriv, -kTouchDerivClamp, kTouchDerivClamp);
-  touchXPid.outD = touchXKd * touchXPid.deriv;
-
+  // S.BUS top-ball input: pitch in top-ball mode, filtered Y command for roll.
   if ((attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) ||
       (rollMode == REMOTE_CONTROL_ROLL_MODE_AUTO))  // Top ball mode
   {
-    bodyPitching = touchXPid.outP + touchXPid.outI + touchXPid.outD + sbusTopBallXSmoothed;
-    bodyPitching = -bodyPitching;
+    bodyPitching = -sbusTopBallXSmoothed;
   }
 
-  touchYPid.deriv = constrain(touchYPid.deriv, -kTouchDerivClamp, kTouchDerivClamp);
-  touchYPid.outD = touchYKd * touchYPid.deriv;
-  touchYPid.output = touchYPid.outP + touchYPid.outI + touchYPid.outD + sbusTopBallYSmoothed;
   if ((int)bodyCommandFilteringEnabled == 1) {
-    touchYPidOutputFiltered = biquadFilterApply(&bodyCommandFilterLpf[10], touchYPid.output);
+    ballYOutputFiltered = biquadFilterApply(&bodyCommandFilterLpf[10], sbusTopBallYSmoothed);
   } else {
-    touchYPidOutputFiltered = touchYPid.output;
-  }
-
-  if ((Touch.state == 1) && (Touch.P_count < kTouchPressFrames)) {
-    Touch.P_count++;
-    touchXPid.integral = 0;
-    touchYPid.integral = 0;
-  }
-
-  if (Touch.P_count >= kTouchPressFrames) {
-    if (touchXKd < touchXPid.Kd) {
-      touchXKd = touchXKd + (touchXPid.Kd / kTouchKdRampDivisor);
-    }
-    if (touchYKd < touchYPid.Kd) {
-      touchYKd = touchYKd + (touchYPid.Kd / kTouchKdRampDivisor);
-    }
-    Touch.start = 2;
-  }
-
-  if ((Touch.state == 0) && (Touch.L_count < kTouchLiftFrames))
-    Touch.L_count++;
-  else
-    Touch.L_count = 0;
-
-  if (Touch.L_count >= kTouchLiftFrames) {
-    touchXPid.integral = 0;
-    touchYPid.integral = 0;
-    Touch.P_count = 0;
-    touchXKd = 0;
-    touchYKd = 0;
-    Touch.start = -2;
+    ballYOutputFiltered = sbusTopBallYSmoothed;
   }
 
   if ((attitudeMode != REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) ||
       (rollMode != REMOTE_CONTROL_ROLL_MODE_AUTO))  // Non-top ball mode
   {
-    touchXPid.integral = 0;
-    touchXPid.output = 0;
-    touchYPid.integral = 0;
-    touchYPid.output = 0;
-    touchYPidOutputFiltered = 0;
-    touchXKd = 0;
-    touchYKd = 0;
+    ballYOutputFiltered = 0;
   }
 
   // Roll
@@ -1114,7 +1044,7 @@ void runPostureController(float dt) {
   float targetBodyRoll = bodyRollFiltered * 777;                // Roll
   if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE)  // Top ball mode disables manual roll
     targetBodyRoll = 0;
-  float rollError = (-imu::latest().correctedPitchDegrees) - (-targetBodyRoll) - (-touchYPidOutputFiltered);
+  float rollError = (-imu::latest().correctedPitchDegrees) - (-targetBodyRoll) - (-ballYOutputFiltered);
   if (rollMode == REMOTE_CONTROL_ROLL_MODE_AUTO)  // Roll leveling
   {
     rollPid.compute(rollError, dt);
@@ -1395,7 +1325,6 @@ void updateMotorsAndCommands() {
 bool readInputs() {
   const bool imuUpdated = imu::service();  // Poll once per loop without gating motor control
   readSbus();                              // S.BUS remote control input
-  ReadTouchDat();
   return imuUpdated;
 }
 
@@ -1574,7 +1503,6 @@ void writeServos(const LegSolveResult &right, const LegSolveResult &left) {
 void runControlTick(bool imuUpdated) {
   controlStartUs = micros();
   controlGateSequence++;
-  TouchBiquadFilter();  // Touch screen filter
 
   filterRemoteControl();                                                  // Remote control signal filtering
   readBatteryVoltage();                                                   // Battery
@@ -1609,7 +1537,7 @@ void runControlTick(bool imuUpdated) {
  *
  * This function runs repeatedly after `setup()` is complete:
  * 1. `updateMotorsAndCommands`: SimpleFOC `move()` and `loopFOC()` for both wheels, then Commander input.
- * 2. `readInputs`: IMU sample, S.BUS commands, touchscreen.
+ * 2. `readInputs`: IMU sample and S.BUS commands.
  * 3. `runControlTick`, once at least 1 ms has passed since the previous tick: input filtering,
  *    battery reading, telemetry, fall detection, status LED, calibration, wheel velocities,
  *    posture control, leg kinematics and servo output.
