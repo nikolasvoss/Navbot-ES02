@@ -12,7 +12,8 @@ constexpr uint32_t kMaximumLeaseMs = 2000;
 // Keep at or below kMaximumVoltageV divided by the 22 ohm wheel phase resistance estimate.
 constexpr float kMaximumCurrentA = 0.02f;
 constexpr float kMaximumVoltageV = 0.5f;
-constexpr float kMaximumSpeedRadPerSec = 3.0f;
+// Wheel-clear runs only. Wheels break away near 0.3-0.4 V and pass 3 rad/s before any plateau.
+constexpr float kMaximumSpeedRadPerSec = 15.0f;
 // Overspeed latches only after a wheel has stayed above the limit for this long (measured with Inputs::nowMs).
 constexpr uint32_t kOverspeedDebounceMs = 50;
 

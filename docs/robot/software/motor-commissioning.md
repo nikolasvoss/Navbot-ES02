@@ -8,7 +8,7 @@ Run these steps only on a supported robot. Support the body so that a fall canno
 
 - Balance is off: CH5 at position 0. The firmware refuses `T` and `M` requests while balance is enabled, and it latches a fault if balance is enabled during a request.
 - Calibration is inactive (`E` not running).
-- Both wheels are below the overspeed limit (3 rad/s shaft velocity). A request is refused otherwise.
+- Both wheels are below the overspeed limit (15 rad/s shaft velocity, wheel-clear runs; see the caps table). A request is refused otherwise.
 - The robot is connected over the USB serial console at 576000 baud. Use [trace capture](trace-capture.md) for logs.
 
 ## Commands
@@ -35,7 +35,9 @@ These caps are in `MotorDiagnostic.h` and mirrored in `scripts/capture_balance_t
 | Current per wheel, `T` | ±0.02 A |
 | Voltage `q`, `M` | ±0.5 V |
 | Lease | integer 1 to 2000 ms |
-| Shaft velocity overspeed | 3 rad/s per wheel, latched after 50 ms continuously over the limit |
+| Shaft velocity overspeed | 15 rad/s per wheel, latched after 50 ms continuously over the limit. Wheel-clear runs only. |
+
+The 15 rad/s overspeed cap applies only to runs with the wheels clear of the surface. The earlier 3 rad/s cap ended every identification step: the wheels break away near 0.3 to 0.4 V and pass 3 rad/s before any speed plateau exists, so no KV or voltage-ceiling data was obtained. See [the first Package 1 hardware run](../../../lab/robot/2026-10-22-package1-motor-diagnostic-first-run.md). The cap is a diagnostic bound, not a commissioned limit.
 
 The 0.02 A current cap follows the voltage cap: 0.5 V / 22 ohm (the wheel phase resistance estimate) ≈ 0.023 A, so 0.02 A stays below that bound. This is an estimate-based cap, not a measured limit.
 
@@ -45,7 +47,7 @@ A `T` request sets both wheel currents. A 0 A target is not an off state: in est
 
 Each request runs until its lease expires, `STOP` is received, or a fault occurs. Faults include lease expiry, invalid or overspeed velocity, balance enabled, and calibration active. Every fault disables both drivers, zeroes both targets, and stays latched.
 
-Overspeed is debounced by time. A wheel counts as over the limit when its shaft velocity magnitude is above 3 rad/s, on either wheel. The fault latches once that condition has lasted 50 ms, measured with the millisecond clock. A sample at or below the limit clears the timer, so a spike shorter than 50 ms is ignored. The −40 and −65 rad/s single-row spikes from the first hardware run were seen one trace row (about 17 ms) apart; their true duration is not measured yet, so whether this rule rejects them on the robot is open. A non-finite velocity still latches `InvalidVelocity` at once. The timer restarts on each new request and clears on `STOP`, `RESET`, and any latched fault.
+Overspeed is debounced by time. A wheel counts as over the limit when its shaft velocity magnitude is above 15 rad/s, on either wheel. The fault latches once that condition has lasted 50 ms, measured with the millisecond clock. A sample at or below the limit clears the timer, so a spike shorter than 50 ms is ignored. The −40 and −65 rad/s single-row spikes from the first hardware run were seen one trace row (about 17 ms) apart; their true duration is not measured yet, so whether this rule rejects them on the robot is open. A non-finite velocity still latches `InvalidVelocity` at once. The timer restarts on each new request and clears on `STOP`, `RESET`, and any latched fault.
 
 - A lease that runs out **latches** a `LeaseExpired` fault. Send `T RESET` or `M RESET` before the next request. `STOP` ends a request without a fault.
 - `RESET` clears a latched fault only when balance is off, calibration is inactive, and both wheels are within the overspeed limit. A reset never enables output; a new request is needed.
