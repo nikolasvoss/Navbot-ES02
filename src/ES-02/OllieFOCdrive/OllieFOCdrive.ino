@@ -3,17 +3,20 @@
 #include <esp_system.h>
 #include <esp_timer.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 
+#include "BalanceController.h"
 #include "BoardConfig.h"
 #include "Calibration.h"
 #include "CalibrationStore.h"
 #include "DebugTelemetry.h"
 #include "FUTABA_SBUS.h"
 #include "Logging.h"
+#include "MathConstants.h"
 #include "MotorDiagnostic.h"
 #include "OverspeedGuard.h"
 #include "WheelBoundary.h"
@@ -79,6 +82,94 @@ constexpr float kWheelVelocityFilterTfSec = 0.001;
 constexpr WheelMotorParams kLeftWheelMotor{5.75f, 79.5f};
 constexpr WheelMotorParams kRightWheelMotor{5.75f, 76.7f};
 
+// Balance configuration, built once. Gains are zero, so the demand is zero. The envelope can still command a small
+// braking current above roughly 50 rad/s, because the plan requires outputs inside the envelope.
+// Each value is one of: existing constant (named), plan (decision or stated number), or an uncommissioned placeholder.
+const Config &balanceConfig() {
+  static const Config config = [] {
+    Config c;
+    // Arming
+    c.armingTimeoutUs = 3000000;                 // uncommissioned: proposed starting value, 3 s
+    c.armingTiltWindowRad = 0.0872665f;          // uncommissioned: proposed starting value, rad (5 deg)
+    c.armingTiltRateRadPerSec = 0.1f;            // uncommissioned: proposed starting value, rad/s
+    c.armingRequestSpeedMps = 0.05f;             // uncommissioned: proposed starting value, m/s
+    c.armingRequestYawRadPerSec = 0.05f;         // uncommissioned: proposed starting value, rad/s
+    c.armingWheelSpeedRadPerSec = 2.0f;          // uncommissioned: proposed starting value, rad/s per wheel
+
+    // Measurement freshness and loop gap
+    c.imuMaxAgeUs = 20000;                       // uncommissioned: proposed starting value, 20 ms
+    c.wheelMaxAgeUs = 20000;                     // uncommissioned: proposed starting value, 20 ms
+    c.busMaxAgeUs = 100000;                      // uncommissioned: proposed starting value, 100 ms
+    c.dtMaxUs = 20000;                           // uncommissioned: proposed starting value, 20 ms
+
+    // Fall: the 35 deg tumble threshold of the former fall detector (existing constant)
+    c.fallAngleRad = 35.0f * kDegreesToRadiansF;  // existing tumble threshold, rad
+    c.fallDurationUs = 100000;                   // uncommissioned: proposed starting value, 100 ms
+
+    // Overspeed: the existing OverspeedGuard limit and debounce
+    c.wheelOverspeedRadPerSec = OverspeedGuard::kLimitRadPerSec;   // existing constant, rad/s
+    c.overspeedDurationUs = OverspeedGuard::kDebounceMs * 1000U;   // existing constant, us
+
+    // Effort envelope. One KV is used for both wheels: 76.7 (right) and 79.5 (left) measured, about 3.6 percent apart,
+    // so the envelope error is small. The lower value is used.
+    c.phaseResistanceOhm = kLeftWheelMotor.phaseResistanceOhm;     // existing constant, ohm per phase (5.75 not verified)
+    c.kvRating = std::min(kLeftWheelMotor.kvRatingRpmPerV, kRightWheelMotor.kvRatingRpmPerV);  // existing constant, rpm/V
+    c.voltageLimitV = kWheelVoltageLimitV;                         // existing constant, V
+    c.currentLimitA = kWheelVoltageLimitV / c.phaseResistanceOhm;  // as configureWheelMotor(), A
+    c.sagMarginV = 0.5f;                         // uncommissioned: proposed starting value, V
+    c.modulationFactor = 0.57735027f;            // plan: SpaceVectorPWM usable amplitude is bus / sqrt(3)
+    // Motor speed = sign * forward speed. Forward is negative motor-local on both wheels (WheelBoundary.h).
+    c.leftWheelSign = static_cast<int>(WheelBoundary::kLeftMotorSign);
+    c.rightWheelSign = static_cast<int>(WheelBoundary::kRightMotorSign);
+    c.busMinV = 6.0f;                            // uncommissioned: proposed starting value, V
+    c.busMaxV = 9.0f;                            // uncommissioned: proposed starting value, V
+
+    // Demand shaping
+    c.speedCapMps = 0.3f;                        // uncommissioned: proposed starting value, m/s
+    c.accelCapMps2 = 0.5f;                       // uncommissioned: proposed starting value, m/s^2
+    c.brakeCapMps2 = 1.0f;                       // uncommissioned: proposed starting value, m/s^2
+    c.yawRateCapRadPerSec = 0.5f;                // uncommissioned: proposed starting value, rad/s
+    c.requestMaxAgeUs = kRcFrameTimeoutMs * 1000U;  // existing constant (RC frame timeout), us
+    c.demandScaleCapStart = 0.5f;                // uncommissioned: proposed starting value, dimensionless
+
+    // Speed loop (gains zero, integral off)
+    c.wheelRadiusM = 0.03f;                      // uncommissioned: NOT MEASURED placeholder, m
+    c.speedLoopPeriodUs = 20000;                 // plan: provisional 50 Hz speed loop, us
+    c.speedKpRadPerMps = 0.0f;                   // passive: zero gain
+    c.speedKiRadPerMpsS = 0.0f;                  // passive: zero gain
+    c.speedIntegralEnabled = false;              // passive: integral off
+    c.tiltRefLimitRad = 0.0872665f;              // uncommissioned: proposed starting value, rad (5 deg)
+    c.tiltRefSlewRadPerSec = 0.5f;               // uncommissioned: proposed starting value, rad/s
+    c.tiltClipDurationUs = 500000;               // uncommissioned: proposed starting value, 0.5 s
+
+    // Trim and standstill commissioning
+    c.trimEnvelopeRad = 0.0523599f;              // uncommissioned: proposed starting value, rad (3 deg)
+    c.trimSlewRadPerSec = 0.05f;                 // uncommissioned: proposed starting value, rad/s
+    c.knobPickupBandRad = 0.01f;                 // uncommissioned: proposed starting value, rad
+    c.standstillWheelSpeedTolMps = 0.02f;        // plan: average standstill wheel speed below 0.02 m/s
+    c.standstillTiltErrorTolRad = 0.01f;         // uncommissioned: proposed starting value, rad
+    c.transferToleranceRad = 0.001f;             // uncommissioned: proposed starting value, rad
+    c.saveRequestSpeedTolMps = 0.02f;            // uncommissioned: proposed starting value, m/s
+    c.saveRequestYawTolRadPerSec = 0.05f;        // uncommissioned: proposed starting value, rad/s
+
+    // Balance and yaw law (passive: zero)
+    c.tiltPAPerRad = 0.0f;                       // passive: zero gain, A/rad
+    c.gyroDampingAPerRadPerSec = 0.0f;           // passive: zero gain, A/(rad/s)
+    c.yawPAPerRadPerSec = 0.0f;                  // passive: zero gain, A/(rad/s)
+
+    // Reserve and authority
+    c.reserveLowA = 0.2f;                        // uncommissioned: proposed starting value, A
+    c.authorityDurationUs = 2000000;             // uncommissioned: proposed starting value, 2 s
+
+    // Sketch-supplied inputs: first commissioning, trim taken as validated at zero (user decision 2026-10-22)
+    c.trimValidated = true;
+    c.storedTrimDeg = 0.0f;                      // deg
+    c.fixedPoseReachable = true;                 // plan: fixed pose, all joint angles 0
+    return c;
+  }();
+  return config;
+}
+
 void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params);
 
 
@@ -139,10 +230,6 @@ void zeroBiasServo2(char *cmd) { command.scalar(&servoTrims.servo2Degrees, cmd);
 void zeroBiasServo3(char *cmd) { command.scalar(&servoTrims.servo3Degrees, cmd); }
 void zeroBiasServo4(char *cmd) { command.scalar(&servoTrims.servo4Degrees, cmd); }
 
-bool isPidGainsModeEnabled(int mode) {
-  return mode == REMOTE_CONTROL_PID_GAINS_MODE_ON;
-}
-
 //  Create ServoControl object
 ServoControl servoControl(board::kLegServoPin[0], board::kLegServoPin[1], board::kLegServoPin[2],
                           board::kLegServoPin[3]);
@@ -151,7 +238,27 @@ int servoTraceAngle[4] = {0, 0, 0, 0};  // Last angle arguments sent to the four
 // Remote control
 FUTABA_SBUS sBus;
 int sbusFrameIntervalMs = 0;
-int pidGainsMode = REMOTE_CONTROL_PID_GAINS_MODE_OFF;
+int pidGainsMode = REMOTE_CONTROL_PID_GAINS_MODE_OFF;  // telemetry: 1 while the CH5 balance enable is on
+// Raw S.BUS values (SBUS_CHANNEL_MIN 192 to SBUS_CHANNEL_MAX 1792, centre 992). Decided and measured 2026-10-22 (plan: RC map).
+constexpr int kRcCenterRaw = (SBUS_CHANNEL_MAX + SBUS_CHANNEL_MIN) / 2;     // 992
+constexpr int kRcHalfRangeRaw = (SBUS_CHANNEL_MAX - SBUS_CHANNEL_MIN) / 2;  // 800
+constexpr int kRcEnableOnRaw = 592;   // CH5: 0 below, 1 and 2 at or above; 3-position switch
+constexpr int kRcSwitchOnRaw = 992;   // CH6 and CH7: 2-position latching switches
+constexpr int kRcKnobMinRaw = 172;    // CH9 trim knob: outside 172 to 1811 the knob is invalid
+constexpr int kRcKnobMaxRaw = 1811;
+int16_t rcChannels[18] = {};          // last S.BUS frame, raw
+bool rcFrameSeen = false;
+uint32_t rcFrameUs = 0;               // micros() when the last frame was decoded
+
+// Balance controller and the sketch inputs it reads
+BalanceController balanceController;
+Output balanceOutput{};               // result of the last update()
+// Balance measurement timestamps and validity, set by the acquisition functions
+uint32_t wheelReadTimeUs = 0;
+bool wheelsValid = false;
+uint32_t busReadTimeUs = 0;
+
+bool balanceActive() { return balanceOutput.state != State::Disabled; }
 
 //  Create PID controller instance
 float debugLogSelector = 0;   // Selects debug data and the log profile.
@@ -239,9 +346,6 @@ void selectCalibration(char *cmd) {
   }
   calibrationSelect = requested;
 }
-bool diagnosticRestoredAwaitingResume = false;
-bool previousBalanceEnabled = false;
-
 char *trimDiagnosticCommand(char *cmd) {
   while (*cmd == ' ' || *cmd == '\t') ++cmd;
   size_t length = strlen(cmd);
@@ -256,6 +360,17 @@ void zeroMotorOutput(BLDCMotor &motor) {
   motor.current_sp = 0.0f;
   motor.voltage.q = 0.0f;
   motor.voltage.d = 0.0f;
+}
+
+// The only owner of wheel enable state. motor.enabled follows SimpleFOC enable()/disable(), and move() and loopFOC()
+// return early while it is 0. Disabling also zeroes the output, so no stale target survives a disable.
+void setWheelEnabled(BLDCMotor &motor, bool enabled) {
+  if (enabled) {
+    if (!motor.enabled) motor.enable();
+    return;
+  }
+  if (motor.enabled) motor.disable();
+  zeroMotorOutput(motor);
 }
 
 void restoreMotorConfiguration(BLDCMotor &motor, const WheelMotorParams &params) {
@@ -284,8 +399,8 @@ void applyMotorDiagnosticRequest() {
     motor2.voltage_limit = MotorDiagnostic::kMaximumVoltageV;
     motor1.target = request.leftCurrentA;
     motor2.target = request.rightCurrentA;
-    driver.enable();
-    driver2.enable();
+    setWheelEnabled(motor1, true);
+    setWheelEnabled(motor2, true);
   } else {
     motor1.torque_controller = TorqueControlType::voltage;
     motor2.torque_controller = TorqueControlType::voltage;
@@ -296,18 +411,17 @@ void applyMotorDiagnosticRequest() {
     if (request.selectedMotor == 1) {
       motor1.target = request.voltageV;
       motor2.target = 0.0f;
-      driver.enable();
-      driver2.disable();
+      setWheelEnabled(motor1, true);
+      setWheelEnabled(motor2, false);
     } else {
       motor1.target = 0.0f;
       motor2.target = request.voltageV;
-      driver.disable();
-      driver2.enable();
+      setWheelEnabled(motor1, false);
+      setWheelEnabled(motor2, true);
     }
   }
   motorDiagnosticApplied = true;
   motorDiagnosticOwnsOutput = true;
-  diagnosticRestoredAwaitingResume = false;
 }
 
 OverspeedGuard::State wheelOverspeed{};
@@ -318,14 +432,16 @@ void serviceWheelOverspeed() {
   if (!OverspeedGuard::update(wheelOverspeed, millis(), m1VelocityRadPerSec, m2VelocityRadPerSec)) return;
   motor1.target = 0.0f;
   motor2.target = 0.0f;
-  driver.disable();
-  driver2.disable();
+  setWheelEnabled(motor1, false);
+  setWheelEnabled(motor2, false);
   if (!wasTripped)
     Logging::message(Logging::Level::Warning, "WHEEL_OVERSPEED", "peak=%.1frad_s limit=%.1frad_s; both drivers disabled",
                      wheelOverspeed.peakRadPerSec, OverspeedGuard::kLimitRadPerSec);
 }
 
-// RESET rearms the guard only while both wheels are below the limit; the drivers stay off until balance is re-enabled.
+// Called only after a successful diagnostic RESET. Rearms the guard only while both wheels are below the limit.
+// Rearming does not enable the drivers. balanceRequest() reports enable off while the guard is tripped, so CH5 must
+// go off and on again before the controller drives the wheels.
 void resetWheelOverspeed() {
   if (fabsf(m1VelocityRadPerSec) <= OverspeedGuard::kLimitRadPerSec &&
       fabsf(m2VelocityRadPerSec) <= OverspeedGuard::kLimitRadPerSec)
@@ -346,10 +462,10 @@ bool diagnosticWarningDue() {
 void handleM1MotionCommand(char *cmd) {
   cmd = trimDiagnosticCommand(cmd);
   if (strcmp(cmd, "RESET") == 0) {
-    resetWheelOverspeed();
-    if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs()))
+    if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs())) {
+      resetWheelOverspeed();
       Logging::message(Logging::Level::Info, "MOTOR_TEST", "fault reset; outputs remain disabled");
-    else
+    } else
       Logging::message(Logging::Level::Warning, "MOTOR_TEST", "reset refused; balance off and safe speed required");
     return;
   }
@@ -381,10 +497,10 @@ void handleM1MotionCommand(char *cmd) {
 void handleM1Command(char *cmd) {
   cmd = trimDiagnosticCommand(cmd);
   if (strcmp(cmd, "RESET") == 0) {
-    resetWheelOverspeed();
-    if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs()))
+    if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs())) {
+      resetWheelOverspeed();
       Logging::message(Logging::Level::Info, "MOTOR_TEST", "fault reset; outputs remain disabled");
-    else
+    } else
       Logging::message(Logging::Level::Warning, "MOTOR_TEST", "reset refused; balance off and safe speed required");
     return;
   }
@@ -414,7 +530,6 @@ void handleM1Command(char *cmd) {
 }
 
 void serviceMotorDiagnostic() {
-  const bool balanceEnabled = pidGainsMode != REMOTE_CONTROL_PID_GAINS_MODE_OFF;
   const MotorDiagnostic::Fault before = motorDiagnosticState.fault;
   const MotorDiagnostic::Fault fault = MotorDiagnostic::update(motorDiagnosticState, diagnosticInputs());
   const bool faulted = fault != MotorDiagnostic::Fault::None && motorDiagnosticApplied;
@@ -427,16 +542,16 @@ void serviceMotorDiagnostic() {
     const float shaftVelocity = request.mode == MotorDiagnostic::Mode::VoltageIdentification
                                     ? (request.selectedMotor == 1 ? motor1.shaft_velocity : motor2.shaft_velocity)
                                     : 0.0f;
-    // Disable before restoring any configuration or emitting a message.
-    driver.disable();
-    driver2.disable();
+    // Disable before restoring any configuration or emitting a message. The wheels stay disabled after this:
+    // the balance drive path re-enables them only when the controller drives.
+    setWheelEnabled(motor1, false);
+    setWheelEnabled(motor2, false);
     zeroMotorOutput(motor1);
     zeroMotorOutput(motor2);
     restoreMotorConfiguration(motor1, kLeftWheelMotor);
     restoreMotorConfiguration(motor2, kRightWheelMotor);
     motorDiagnosticApplied = false;
     motorDiagnosticOwnsOutput = false;
-    diagnosticRestoredAwaitingResume = true;
     if (request.mode == MotorDiagnostic::Mode::VoltageIdentification)
       Logging::message(Logging::Level::Info, "MOTOR_ID_RESULT",
                        "motor=%u requested_q=%.3fV actual_q=%.3fV shaft_velocity=%.3frad_s result=%s fault=%d",
@@ -448,20 +563,11 @@ void serviceMotorDiagnostic() {
       Logging::message(Logging::Level::Warning, "MOTOR_TEST", "diagnostic fault=%d; both drivers disabled",
                        static_cast<int>(fault));
   }
-  if (motorDiagnosticState.active) {
-    if (!motorDiagnosticApplied) applyMotorDiagnosticRequest();
-  } else if (diagnosticRestoredAwaitingResume && balanceEnabled && !previousBalanceEnabled &&
-             motorDiagnosticState.fault == MotorDiagnostic::Fault::None) {
-    driver.enable();
-    driver2.enable();
-    diagnosticRestoredAwaitingResume = false;
-  }
-  previousBalanceEnabled = balanceEnabled;
+  if (motorDiagnosticState.active && !motorDiagnosticApplied) applyMotorDiagnosticRequest();
 }
 
 void readSbus();
 void readBatteryVoltage(void);
-void updateTumbleState(void);
 void diagnosticLoop(void);
 bool diagnosticImuReady = false;
 unsigned long diagnosticLastRcFrameMs = 0;
@@ -623,41 +729,20 @@ void setup() {
 }
 
 /**
- * @brief Re-maps a number from one range to another, using floating-point precision.
- *
- * @param x The number to map.
- * @param in_min The lower bound of the value's current range.
- * @param in_max The upper bound of the value's current range.
- * @param out_min The lower bound of the value's target range.
- * @param out_max The upper bound of the value's target range.
- * @return The mapped value.
- */
-float mapf(long x, long in_min, long in_max, float out_min, float out_max) {
-  long divisor = (in_max - in_min);
-  if (divisor == 0) {
-    return -1;  // AVR returns -1, SAM returns 0
-  }
-  return (x - in_min) * (out_max - out_min) / divisor + out_min;
-}
-
-/**
- * @brief Maps the S.BUS channels used by the drive, the turn, and the balance enable.
+ * @brief Stores a decoded S.BUS frame with its arrival time. balanceRequest() reads the channels every tick.
+ *        The CH5 balance enable also sets the pidGainsMode telemetry field.
  */
 void applyRcChannels(const int16_t *ch) {
-  movementSpeed = mapf(ch[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -15, 15);
-  bodyTurn = -mapf(ch[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -11, 11);
-  pidGainsMode = min(static_cast<int>(map(ch[4], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2)),
-                     REMOTE_CONTROL_PID_GAINS_MODE_ON);
+  for (int i = 0; i < 18; ++i) rcChannels[i] = ch[i];
+  rcFrameUs = micros();
+  rcFrameSeen = true;
+  pidGainsMode = rcChannels[4] >= kRcEnableOnRaw ? REMOTE_CONTROL_PID_GAINS_MODE_ON : REMOTE_CONTROL_PID_GAINS_MODE_OFF;
 }
 
 /**
  * @brief Reads and processes data from the FUTABA S.BUS remote controller.
  *
- * This function decodes the S.BUS signal, maps the raw channel values to
- * meaningful control variables like `movementSpeed` and `bodyTurn`.
- * While frames are missing for `kRcFrameTimeoutMs` or the receiver reports a
- * failsafe, `movementSpeed` and `bodyTurn` are forced to zero and every other
- * command keeps its last received value.
+ * Decodes the S.BUS signal into `rcChannels`. Freshness and receiver failsafe are judged in balanceRequest().
  */
 void readSbus() {
   static uint32_t lastFrameMs = millis();
@@ -672,13 +757,6 @@ void readSbus() {
     sBus.toChannels = 0;
 
     applyRcChannels(sBus.channels);
-  }
-
-  const bool lost =
-      static_cast<uint32_t>(millis() - lastFrameMs) > kRcFrameTimeoutMs || sBus.Failsafe() != FUTABA_SBUS::kSignalOk;
-  if (lost) {
-    movementSpeed = 0;
-    bodyTurn = 0;
   }
 }
 
@@ -695,7 +773,7 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.selection = (int)debugLogSelector;
   in.nowMs = millis();
   in.controlGateSequence = controlGateSequence;
-  in.balanceActive = isPidGainsModeEnabled(pidGainsMode) && robotTumble == ROBOT_NOT_TUMBLING;
+  in.balanceActive = balanceActive();
 
   in.imu = imu::latest();
   in.imuTiming = imu::timingStatistics();
@@ -755,6 +833,7 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
  * to get a stable reading, and converts it to the actual voltage.
  */
 void readBatteryVoltage(void) {
+  busReadTimeUs = micros();
   voltageAdc = analogRead(board::kBatteryAdcPin);
   if (debugTelemetryState.voltageAdcMin == 0 || voltageAdc < debugTelemetryState.voltageAdcMin)
     debugTelemetryState.voltageAdcMin = voltageAdc;
@@ -762,32 +841,101 @@ void readBatteryVoltage(void) {
   batteryVoltage = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
 }
 
+// Balance measurements, built at the hardware boundary. Sign and axis constants are unverified until stage 1.
+// UNVERIFIED sign/axis: verify on the supported robot (plan: stage 1 sign test)
+constexpr float kTiltSign = 1.0f;
+// UNVERIFIED sign/axis: verify on the supported robot (plan: stage 1 sign test)
+constexpr float kTiltRateSign = 1.0f;
+// UNVERIFIED sign/axis: verify on the supported robot (plan: stage 1 sign test)
+constexpr float kYawRateSign = 1.0f;
+
 /**
- * @brief Detects if the robot has fallen over.
- *
- * If the absolute roll angle exceeds a threshold (35 degrees) for a certain
- * number of consecutive cycles, it sets the `robotTumble` flag to 1. The flag
- * is reset to 0 only after the robot is brought back to a near-level position.
- * This is a safety feature to disable motors upon falling.
+ * @brief Builds the controller measurements from the latest IMU sample, wheel speeds and bus voltage.
+ *        Timestamps are the acquisition times; the caller takes nowUs after this call.
  */
-void updateTumbleState(void) {
-  static int x = 0;
-  if (fabsf(imu::latest().correctedRollDegrees) >= 35) {
-    x++;
-    if (x >= 20) {
-      x = 20;
-      robotTumble = ROBOT_TUMBLING;  // Machine fall
-    }
-  } else {
-    if ((robotTumble == ROBOT_TUMBLING) && (fabsf(imu::latest().correctedRollDegrees) <= 5))  // Machine fall after fall
-    {
-      x--;
-      if (x <= 0) {
-        x = 0;
-        robotTumble = ROBOT_NOT_TUMBLING;
-      }
-    }
+Measurements balanceMeasurements() {
+  const imu::Snapshot &imuSnapshot = imu::latest();
+  Measurements m{};
+  m.imuSequence = imuSnapshot.sequence;
+  m.imuReadTimeUs = imuSnapshot.readTimeUs;
+  m.imuValid = imuSnapshot.valid;
+  m.tiltRad = kTiltSign * imuSnapshot.correctedRollDegrees * kDegreesToRadiansF;
+  m.tiltRateRadPerSec = kTiltRateSign * imuSnapshot.angularVelocityRadPerSec.x;
+  m.yawRateRadPerSec = kYawRateSign * imuSnapshot.angularVelocityRadPerSec.z;
+  m.wheelReadTimeUs = wheelReadTimeUs;
+  m.wheelsValid = wheelsValid;
+  m.leftWheelRadPerSec = m1VelocityRadPerSec;
+  m.rightWheelRadPerSec = m2VelocityRadPerSec;
+  m.busReadTimeUs = busReadTimeUs;
+  m.busVoltageV = batteryVoltage;
+  // Approximation: near the usable voltage ceiling, or at the current limit of the last command.
+  m.voltageClipped = fabsf(motor1.voltage.q) >= motor1.voltage_limit - 0.01f ||
+                     fabsf(motor2.voltage.q) >= motor2.voltage_limit - 0.01f;
+  m.currentClipped = fabsf(motor1.target) >= motor1.current_limit || fabsf(motor2.target) >= motor2.current_limit;
+  return m;
+}
+
+// Stick position in -1..1 from a raw S.BUS value, centred on kRcCenterRaw.
+float rcStickFraction(int16_t raw) {
+  const float fraction = static_cast<float>(raw - kRcCenterRaw) / kRcHalfRangeRaw;
+  return std::max(-1.0f, std::min(1.0f, fraction));
+}
+
+/**
+ * @brief Builds the balance request from the latest S.BUS frame. The frame counts only while it is younger than
+ *        kRcFrameTimeoutMs and the receiver reports no failsafe.
+ */
+Request balanceRequest(uint32_t nowUs) {
+  const Config &config = balanceConfig();
+  const bool fresh = rcFrameSeen && static_cast<uint32_t>(nowUs - rcFrameUs) <= kRcFrameTimeoutMs * 1000U;
+  Request request{};
+  request.receivedTimeUs = rcFrameUs;
+  request.sourceValid = fresh && sBus.Failsafe() == FUTABA_SBUS::kSignalOk;
+  request.speedMps = config.speedCapMps * rcStickFraction(rcChannels[2]);         // CH3: forward is positive
+  request.yawRateRadPerSec = -config.yawRateCapRadPerSec * rcStickFraction(rcChannels[3]);  // CH4: left is positive
+  // A guard trip reads as enable off, so the controller goes Disabled. The operator must switch CH5 off and on to rearm.
+  request.enableSwitch = rcChannels[4] >= kRcEnableOnRaw && !wheelOverspeed.tripped;  // CH5
+  request.saveSwitch = rcChannels[5] >= kRcSwitchOnRaw;                           // CH6
+  request.commissioningSwitch = rcChannels[6] >= kRcSwitchOnRaw;                  // CH7
+  request.knobValid = rcChannels[8] >= kRcKnobMinRaw && rcChannels[8] <= kRcKnobMaxRaw;  // CH9
+  request.knobTrimDeg = rcStickFraction(rcChannels[8]) * config.trimEnvelopeRad * kRadiansToDegreesF;
+  return request;
+}
+
+/**
+ * @brief Logs state and fault changes, save pulses, and refusal edges. Never logs per tick.
+ */
+void logBalanceChange(const Output &out) {
+  if (out.state != balanceOutput.state || out.fault != balanceOutput.fault)
+    Logging::message(Logging::Level::Info, "BALANCE", "state=%d fault=%d commissioningRefused=%d",
+                     static_cast<int>(out.state), static_cast<int>(out.fault), out.diag.commissioningRefused ? 1 : 0);
+  if (out.saveTrimRequested)  // one-tick pulse
+    Logging::message(Logging::Level::Info, "BALANCE", "save requested trim=%.3f deg; storage not wired", out.trimToSaveDeg);
+  if (out.diag.saveRefused && !balanceOutput.diag.saveRefused)
+    Logging::message(Logging::Level::Info, "BALANCE", "save refused; no pulse");
+  if (out.diag.commissioningRefused && !balanceOutput.diag.commissioningRefused)
+    Logging::message(Logging::Level::Info, "BALANCE", "commissioning transfer refused");
+}
+
+/**
+ * @brief Applies the controller output to the wheels. Drive needs driveEnabled and a clear overspeed guard.
+ *        Otherwise both wheels get 0 A and are disabled; setWheelEnabled() acts only on a wheel that is still enabled.
+ *        The motor diagnostic owns the outputs while it is active or applied.
+ */
+void applyBalanceOutput(const Output &out) {
+  if (motorDiagnosticState.active || motorDiagnosticApplied) return;
+  if (out.driveEnabled && !wheelOverspeed.tripped) {
+    setWheelEnabled(motor1, true);
+    setWheelEnabled(motor2, true);
+    const WheelBoundary::MotorValues targets = WheelBoundary::toMotorTargets(out.leftA, out.rightA);
+    motor1.target = targets.motor1;
+    motor2.target = targets.motor2;
+    return;
   }
+  motor1.target = 0.0f;
+  motor2.target = 0.0f;
+  setWheelEnabled(motor1, false);
+  setWheelEnabled(motor2, false);
 }
 
 void diagnosticLoop(void) {
@@ -919,8 +1067,7 @@ void runCalibrationStep(bool imuUpdated) {
   imu::CalibrationValues activeCalibration = imu::calibration();
   const imu::Snapshot &acceptedImu = imu::latest();
   CalibrationResult calibrationResult{CalibrationCompletion::None, false, {false, false, false, false}};
-  if (static_cast<int>(calibrationSelect) == 1 && isPidGainsModeEnabled(pidGainsMode) &&
-      robotTumble == ROBOT_NOT_TUMBLING) {
+  if (static_cast<int>(calibrationSelect) == 1 && balanceActive()) {
     calibrationSelect = 0;
     Logging::message(Logging::Level::Warning, "Calibration", "gyro calibration refused: balance active");
   }
@@ -964,6 +1111,8 @@ void updateWheelVelocities() {
   const uint32_t readTimeUs = micros();
   WheelBoundary::WheelValues rawForward;
   if (!wheelSpeedEstimator.update(motor1.shaftAngle(), motor2.shaftAngle(), readTimeUs, rawForward)) return;
+  wheelReadTimeUs = readTimeUs;
+  wheelsValid = true;
   m1VelocityRadPerSec = rawForward.left;
   m2VelocityRadPerSec = rawForward.right;
   m1FilteredVelocityRadPerSec = m1VelocityFilter(m1VelocityRadPerSec);
@@ -981,18 +1130,23 @@ void runControlTick(bool imuUpdated) {
 
   readBatteryVoltage();  // Battery
 
-  updateTumbleState();  // Machine fall detection
   updateStatusLed();
   serviceMotorDiagnostic();
   runCalibrationStep(imuUpdated);
   updateWheelVelocities();
   serviceWheelOverspeed();
 
-  // Both wheels hold 0 A until the balance controller of package 4 exists. The motor diagnostic owns them while active.
-  if (!motorDiagnosticState.active) {
-    motor1.target = 0.0f;
-    motor2.target = 0.0f;
-  }
+  // Measurements are built before nowUs, so none of their timestamps is later than nowUs.
+  const Measurements measurements = balanceMeasurements();
+  const uint32_t balanceNowUs = micros();
+  const Request request = balanceRequest(balanceNowUs);
+  const Output out = balanceController.update(measurements, request, balanceConfig(), balanceNowUs);
+  logBalanceChange(out);
+  balanceOutput = out;
+  robotTumble = out.fault == FaultReason::Fall ? ROBOT_TUMBLING : ROBOT_NOT_TUMBLING;
+  movementSpeed = request.sourceValid ? request.speedMps : 0.0f;  // telemetry only
+  bodyTurn = request.sourceValid ? request.yawRateRadPerSec : 0.0f;
+  applyBalanceOutput(out);
 
   // Fixed standing pose: every servo at its calibrated zero, which is the servo calibration pose. No IK runs.
   servoTraceAngle[0] = -servoTrims.servo1Degrees;
@@ -1015,7 +1169,7 @@ void runControlTick(bool imuUpdated) {
  * 1. `updateMotorsAndCommands`: SimpleFOC `move()` and `loopFOC()` for both wheels, then Commander input.
  * 2. `readInputs`: IMU sample and S.BUS commands.
  * 3. `runControlTick`, once at least 1 ms has passed since the previous tick: battery reading,
- *    fall detection, status LED, calibration, wheel velocities, the 0 A wheel targets,
+ *    status LED, calibration, wheel velocities, the balance controller and wheel outputs,
  *    the fixed servo pose, and telemetry.
  */
 void loop() {
