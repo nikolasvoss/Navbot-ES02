@@ -103,6 +103,10 @@ The firmware does not measure resistance. Measure it by hand with power off:
 4. For a star (wye) winding, `R_phase = R_pp / 2`. This is the per-phase, line-to-neutral value. For a delta winding, `R_phase = 1.5 × R_pp`.
 5. Record the winding connection, the meter, and which value you put in `phase_resistance`. Verify the winding connection before choosing the formula.
 
+### Published reference values (not measured on this robot)
+
+The BOM lists the wheel motors as `2208-90kv` (12N14P gimbal motor, 7 pole pairs). No manufacturer datasheet was found. Community sources give line-to-line resistance (between two phase leads) for this motor class as 12.5 Ω to 16.4 Ω; the [SimpleFOC motor table](https://docs.simplefoc.com/bldc_motors) lists 13 to 16 Ω, and one [forum measurement](https://community.simplefoc.com/t/the-2208-90kv-bldc-has-a-phase-resistance-of-16-4/814) reports 16.4 Ω against an advertised 13.3 Ω. For a star winding the per-phase value is half of the line-to-line value, about 6 to 8 Ω. The firmware constant `kWheelPhaseResistanceOhm` is 22 Ω, which is above the published line-to-line range; its origin is not recorded. The nominal rating is 90 rpm/V. Use these numbers only to judge whether a measurement is plausible. They do not replace the manual measurement below, because listings for this price class are not reliable.
+
 ## KV fit
 
 Use voltage identification with wheels clear. Repeat the steps for each wheel at three voltages, for example 0.1, 0.2, and 0.3 V. Keep each lease within the 2000 ms cap.
