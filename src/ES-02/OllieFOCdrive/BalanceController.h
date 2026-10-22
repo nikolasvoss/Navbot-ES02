@@ -40,6 +40,7 @@ enum class FaultReason : uint8_t {
   BadDt,
   Fall,
   Overspeed,
+  InvalidEnvelope,
 };
 
 struct Diagnostics {
@@ -60,6 +61,10 @@ struct Diagnostics {
   float speedI = 0.0f;
   float reserve = 0.0f;
   float demandScale = 0.0f;
+  float leftMinA = 0.0f;   // forward positive effort envelope
+  float leftMaxA = 0.0f;
+  float rightMinA = 0.0f;
+  float rightMaxA = 0.0f;
 };
 
 struct Output {
@@ -97,6 +102,18 @@ struct Config {
   float wheelOverspeedRadPerSec = 0.0f;  // uncommissioned
   uint32_t overspeedDurationUs = 0;      // uncommissioned
 
+  // Effort envelope per wheel. All uncommissioned; zero defaults make the envelope invalid.
+  float phaseResistanceOhm = 0.0f;  // uncommissioned
+  float kvRating = 0.0f;            // uncommissioned, rpm/V
+  float voltageLimitV = 0.0f;       // uncommissioned
+  float currentLimitA = 0.0f;       // uncommissioned
+  float sagMarginV = 0.0f;          // uncommissioned
+  float modulationFactor = 0.0f;    // uncommissioned, scales the usable bus voltage
+  int leftWheelSign = 0;            // uncommissioned, +1 or -1: motor speed = sign * forward speed
+  int rightWheelSign = 0;           // uncommissioned, +1 or -1
+  float busMinV = 0.0f;             // uncommissioned, commissioned model range
+  float busMaxV = 0.0f;             // uncommissioned, commissioned model range
+
   // Inputs supplied by the sketch from the stored trim record and pose check, not commissioning constants.
   bool trimValidated = false;
   float storedTrimDeg = 0.0f;
@@ -112,6 +129,7 @@ class BalanceController {
   void resetRunTracking();
   void checkRunning(const Measurements &measurements, const Config &config, uint32_t nowUs);
   void latchFault(FaultReason reason);
+  void checkEnvelopes(const Measurements &measurements, const Config &config);
 
   State state_ = State::Disabled;
   FaultReason fault_ = FaultReason::None;
@@ -125,6 +143,12 @@ class BalanceController {
   bool imuTimestampValid_ = false;  // false until the first processed sample after entering Run
   uint32_t lastImuReadTimeUs_ = 0;
   float dtSec_ = 0.0f;
+
+  // Forward-positive effort envelope of each wheel from the last Run or Commissioning tick.
+  float leftMinA_ = 0.0f;
+  float leftMaxA_ = 0.0f;
+  float rightMinA_ = 0.0f;
+  float rightMaxA_ = 0.0f;
 
   bool fallBeyond_ = false;
   uint32_t fallStartUs_ = 0;

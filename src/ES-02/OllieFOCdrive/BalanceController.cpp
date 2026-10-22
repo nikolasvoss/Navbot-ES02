@@ -1,10 +1,35 @@
 #include "BalanceController.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "MathConstants.h"
 
 namespace {
+// Equals SimpleFOC's _RPM_TO_RADS: radians per second per rpm.
+constexpr float kRpmToRadPerSec = 0.10471975512f;
+
+struct WheelInterval {
+  float minA;
+  float maxA;
+  bool finite;
+};
+
+bool isUnitSign(int sign) { return sign == 1 || sign == -1; }
+
+// Forward-positive current interval of one wheel. The motor sees sign * forward speed, and forward
+// current is sign * motor current, so a -1 wheel mirrors the motor-frame interval.
+WheelInterval wheelInterval(float forwardRadPerSec, int sign, float vMaxV, const Config &config) {
+  const float bemfV = (sign * forwardRadPerSec) / (config.kvRating * std::sqrt(3.0f)) / kRpmToRadPerSec;
+  const float maxMotorA = std::min(config.currentLimitA, (vMaxV - bemfV) / config.phaseResistanceOhm);
+  const float minMotorA = std::max(-config.currentLimitA, (-vMaxV - bemfV) / config.phaseResistanceOhm);
+  WheelInterval out = sign > 0 ? WheelInterval{minMotorA, maxMotorA, false}
+                               : WheelInterval{-maxMotorA, -minMotorA, false};
+  // std::min and std::max would hide a NaN back-EMF behind the current limit, so check it here.
+  out.finite = std::isfinite(bemfV) && std::isfinite(out.minA) && std::isfinite(out.maxA);
+  return out;
+}
+
 bool elapsedLongerThan(uint32_t nowUs, uint32_t startUs, uint32_t durationUs) {
   return static_cast<uint32_t>(nowUs - startUs) > durationUs;
 }
@@ -50,6 +75,7 @@ Output BalanceController::update(const Measurements &measurements, const Request
         if (armingConditionsMet(measurements, request, config, nowUs)) {
           state_ = State::Run;
           resetRunTracking();
+          checkEnvelopes(measurements, config);  // drivers must not be enabled on an invalid model
         } else if (elapsedLongerThan(nowUs, armingStartUs_, config.armingTimeoutUs)) {
           state_ = State::Disabled;
         }
@@ -63,10 +89,18 @@ Output BalanceController::update(const Measurements &measurements, const Request
     }
   }
 
+  if (state_ != State::Run && state_ != State::Commissioning) {
+    leftMinA_ = leftMaxA_ = rightMinA_ = rightMaxA_ = 0.0f;
+  }
+
   Output output;
   output.driveEnabled = state_ == State::Run;
   output.state = state_;
   output.fault = fault_;
+  output.diag.leftMinA = leftMinA_;
+  output.diag.leftMaxA = leftMaxA_;
+  output.diag.rightMinA = rightMinA_;
+  output.diag.rightMaxA = rightMaxA_;
   return output;
 }
 
@@ -79,6 +113,7 @@ void BalanceController::resetRunTracking() {
 void BalanceController::latchFault(FaultReason reason) {
   state_ = State::Fault;
   fault_ = reason;
+  leftMinA_ = leftMaxA_ = rightMinA_ = rightMaxA_ = 0.0f;
 }
 
 void BalanceController::checkRunning(const Measurements &measurements, const Config &config, uint32_t nowUs) {
@@ -138,5 +173,37 @@ void BalanceController::checkRunning(const Measurements &measurements, const Con
     overspeedStartUs_ = nowUs;
   } else if (elapsedLongerThan(nowUs, overspeedStartUs_, config.overspeedDurationUs)) {
     latchFault(FaultReason::Overspeed);
+    return;
+  }
+
+  checkEnvelopes(measurements, config);
+}
+
+void BalanceController::checkEnvelopes(const Measurements &measurements, const Config &config) {
+  const float usableV = (measurements.busVoltageV - config.sagMarginV) * config.modulationFactor;
+  const float vMaxV = std::min(config.voltageLimitV, usableV);
+  // Written so that a NaN input fails the check.
+  const bool modelValid = std::isfinite(usableV) && std::isfinite(vMaxV) && vMaxV > 0.0f &&
+                          measurements.busVoltageV >= config.busMinV &&
+                          measurements.busVoltageV <= config.busMaxV && config.kvRating > 0.0f &&
+                          config.phaseResistanceOhm > 0.0f && isUnitSign(config.leftWheelSign) &&
+                          isUnitSign(config.rightWheelSign);
+  if (!modelValid) {
+    latchFault(FaultReason::InvalidEnvelope);
+    return;
+  }
+
+  const WheelInterval left =
+      wheelInterval(measurements.leftWheelRadPerSec, config.leftWheelSign, vMaxV, config);
+  const WheelInterval right =
+      wheelInterval(measurements.rightWheelRadPerSec, config.rightWheelSign, vMaxV, config);
+  leftMinA_ = left.minA;
+  leftMaxA_ = left.maxA;
+  rightMinA_ = right.minA;
+  rightMaxA_ = right.maxA;
+
+  const bool valid = left.finite && right.finite && left.minA <= left.maxA && right.minA <= right.maxA;
+  if (!valid) {
+    latchFault(FaultReason::InvalidEnvelope);
   }
 }

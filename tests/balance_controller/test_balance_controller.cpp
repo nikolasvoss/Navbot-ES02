@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <initializer_list>
 #include <limits>
@@ -28,8 +29,21 @@ Config makeConfig() {
   config.trimValidated = true;
   config.storedTrimDeg = 10.0f;
   config.fixedPoseReachable = true;
+  // Envelope: R 22 ohm, KV 100 rpm/V, so bemf at 100 rad/s is 5.5133 V (100 / (100 * sqrt(3)) / 0.10472).
+  config.phaseResistanceOhm = 22.0f;
+  config.kvRating = 100.0f;
+  config.voltageLimitV = 8.4f;
+  config.currentLimitA = 5.0f;
+  config.sagMarginV = 0.4f;
+  config.modulationFactor = 1.0f;
+  config.leftWheelSign = 1;
+  config.rightWheelSign = 1;
+  config.busMinV = 6.0f;
+  config.busMaxV = 30.0f;
   return config;
 }
+
+bool closeTo(float actual, float expected) { return std::fabs(actual - expected) <= 1e-4f; }
 
 Measurements makeMeasurements() {
   Measurements m{};
@@ -463,17 +477,15 @@ int main() {
     assert(out.state == State::Fault && out.fault == FaultReason::Overspeed);
   }
 
-  // A NaN wheel speed counts as overspeed, even when the other wheel is normal.
+  // A NaN wheel speed makes its envelope non-finite, so it latches InvalidEnvelope on the first tick
+  // rather than waiting for the overspeed duration (step 3 rule).
   {
     BalanceController bc;
     enterRun(bc, config, 100000);
     Measurements bad = good;
     bad.leftWheelRadPerSec = std::numeric_limits<float>::quiet_NaN();
-    for (uint32_t j = 0; j <= 20; ++j) {
-      assert(tick(bc, bad, makeRequest(true), config, 110000u + 10000u * j).state == State::Run);
-    }
-    const Output out = tick(bc, bad, makeRequest(true), config, 110000u + 210000u);
-    assert(out.state == State::Fault && out.fault == FaultReason::Overspeed);
+    const Output out = tick(bc, bad, makeRequest(true), config, 110000u);
+    assert(out.state == State::Fault && out.fault == FaultReason::InvalidEnvelope && !out.driveEnabled);
   }
 
   // A tilt exactly at the fall angle is not a fall, however long it lasts.
@@ -518,6 +530,155 @@ int main() {
     // A new edge rearms through Arming, never straight into Run.
     assert(tick(bc, good, makeRequest(true), config, 302000).state == State::Arming);
     assert(tick(bc, good, makeRequest(true), config, 303000).state == State::Run);
+  }
+
+  // Step 3: per-wheel envelope. At rest with bus 8.4 V: Vmax = min(8.4, (8.4 - 0.4) * 1.0) = 8.0 V,
+  // Imax = min(5, 8.0 / 22) = 0.363636 A and Imin = max(-5, -8.0 / 22) = -0.363636 A.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    Measurements m = atTime(good, 110000);
+    m.busVoltageV = 8.4f;
+    const Output out = bc.update(m, makeRequest(true), config, 110000);
+    assert(out.state == State::Run && out.fault == FaultReason::None);
+    assert(closeTo(out.diag.leftMinA, -0.363636f) && closeTo(out.diag.leftMaxA, 0.363636f));
+    assert(closeTo(out.diag.rightMinA, -0.363636f) && closeTo(out.diag.rightMaxA, 0.363636f));
+  }
+
+  // Vmax limited by voltage_limit: bus 24 V gives 23.6 V usable, so Vmax = 8.4 V and Imax = 8.4 / 22 = 0.381818 A.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    const Output out = tick(bc, good, makeRequest(true), config, 110000);
+    assert(closeTo(out.diag.leftMaxA, 0.381818f) && closeTo(out.diag.leftMinA, -0.381818f));
+  }
+
+  // Vmax limited by the modulation factor: Vmax = min(8.4, 8.0 * 0.9) = 7.2 V, so Imax = 7.2 / 22 = 0.327273 A.
+  {
+    Config modulated = config;
+    modulated.modulationFactor = 0.9f;
+    BalanceController bc;
+    enterRun(bc, modulated, 100000);
+    Measurements m = atTime(good, 110000);
+    m.busVoltageV = 8.4f;
+    const Output out = bc.update(m, makeRequest(true), modulated, 110000);
+    assert(closeTo(out.diag.leftMaxA, 0.327273f) && closeTo(out.diag.leftMinA, -0.327273f));
+  }
+
+  // The current cap binds: with currentLimitA 0.2 A, both ends of the interval are capped at 0.2 A.
+  {
+    Config capped = config;
+    capped.currentLimitA = 0.2f;
+    BalanceController bc;
+    enterRun(bc, capped, 100000);
+    Measurements m = atTime(good, 110000);
+    m.busVoltageV = 8.4f;
+    const Output out = bc.update(m, makeRequest(true), capped, 110000);
+    assert(closeTo(out.diag.leftMaxA, 0.2f) && closeTo(out.diag.leftMinA, -0.2f));
+  }
+
+  // Left wheel forward at 100 rad/s, bus 8.4 V (Vmax 8.0 V): bemf = 100 / (100 * sqrt(3)) / 0.10472 = 5.513 V.
+  // Imax = (8.0 - 5.513) / 22 = 0.113032 A, Imin = (-8.0 - 5.513) / 22 = -0.614240 A. Back-EMF shifts the
+  // interval towards negative current. The right wheel at rest keeps the symmetric interval.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    Measurements m = atTime(good, 110000);
+    m.busVoltageV = 8.4f;
+    m.leftWheelRadPerSec = 100.0f;
+    const Output out = bc.update(m, makeRequest(true), config, 110000);
+    assert(out.state == State::Run);
+    assert(closeTo(out.diag.leftMinA, -0.614240f) && closeTo(out.diag.leftMaxA, 0.113032f));
+    assert(closeTo(out.diag.rightMinA, -0.363636f) && closeTo(out.diag.rightMaxA, 0.363636f));
+  }
+
+  // Left and right with opposite speeds: the right interval is the mirror of the left one.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    Measurements m = atTime(good, 110000);
+    m.busVoltageV = 8.4f;
+    m.leftWheelRadPerSec = 100.0f;
+    m.rightWheelRadPerSec = -100.0f;
+    const Output out = bc.update(m, makeRequest(true), config, 110000);
+    assert(closeTo(out.diag.leftMinA, -0.614240f) && closeTo(out.diag.leftMaxA, 0.113032f));
+    assert(closeTo(out.diag.rightMinA, -0.113032f) && closeTo(out.diag.rightMaxA, 0.614240f));
+  }
+
+  // Sign -1 left wheel. At forward -100 rad/s the motor sees +100 rad/s: motor interval [-0.614240, 0.113032]
+  // A, mirrored to forward [-0.113032, 0.614240] A, the mirror of the sign +1 interval at +100 rad/s.
+  // At forward +100 rad/s the motor sees -100 rad/s, so the forward interval equals the sign +1 one above.
+  {
+    Config mirrored = config;
+    mirrored.leftWheelSign = -1;
+    BalanceController bc;
+    enterRun(bc, mirrored, 100000);
+    Measurements m = atTime(good, 110000);
+    m.busVoltageV = 8.4f;
+    m.leftWheelRadPerSec = -100.0f;
+    const Output out = bc.update(m, makeRequest(true), mirrored, 110000);
+    assert(closeTo(out.diag.leftMinA, -0.113032f) && closeTo(out.diag.leftMaxA, 0.614240f));
+
+    m.leftWheelRadPerSec = 100.0f;
+    const Output same = bc.update(m, makeRequest(true), mirrored, 110000);
+    assert(closeTo(same.diag.leftMinA, -0.614240f) && closeTo(same.diag.leftMaxA, 0.113032f));
+  }
+
+  // Braking beyond back-EMF: left forward at 150 rad/s gives bemf 8.26993 V > Vmax 8.0 V, so the forward
+  // interval lies entirely below zero: Imax = (8.0 - 8.26993) / 22 = -0.012270 A, Imin = (-8.0 - 8.26993) / 22
+  // = -0.739542 A. It is a valid envelope, so the controller stays in Run.
+  {
+    Config fastWheel = config;
+    fastWheel.wheelOverspeedRadPerSec = 200.0f;
+    BalanceController bc;
+    enterRun(bc, fastWheel, 100000);
+    Measurements m = atTime(good, 110000);
+    m.busVoltageV = 8.4f;
+    m.leftWheelRadPerSec = 150.0f;
+    const Output out = bc.update(m, makeRequest(true), fastWheel, 110000);
+    assert(out.state == State::Run && out.fault == FaultReason::None);
+    assert(closeTo(out.diag.leftMinA, -0.739542f) && closeTo(out.diag.leftMaxA, -0.012270f));
+  }
+
+  // An invalid envelope model faults on the arming tick itself, so drivers are never enabled on it.
+  {
+    Config broken = config;
+    broken.kvRating = 0.0f;
+    BalanceController bc;
+    tick(bc, good, makeRequest(false), broken, 1000);
+    tick(bc, good, makeRequest(true), broken, 2000);
+    const Output armed = tick(bc, good, makeRequest(true), broken, 3000);
+    assert(armed.state == State::Fault && armed.fault == FaultReason::InvalidEnvelope && !armed.driveEnabled);
+  }
+
+  // Each invalid envelope input latches InvalidEnvelope with drivers off.
+  {
+    struct Case {
+      void (*apply)(Config &, Measurements &);
+    };
+    const Case cases[] = {
+        [](Config &, Measurements &m) { m.busVoltageV = 5.0f; },                 // below busMinV 6 V
+        [](Config &, Measurements &m) { m.busVoltageV = 31.0f; },                // above busMaxV 30 V
+        [](Config &, Measurements &m) { m.busVoltageV = std::numeric_limits<float>::quiet_NaN(); },
+        [](Config &c, Measurements &m) {  // usable 0.4 - 0.4 = 0 V, so Vmax = 0 V
+          c.busMinV = 0.0f;
+          m.busVoltageV = 0.4f;
+        },
+        [](Config &c, Measurements &) { c.kvRating = 0.0f; },
+        [](Config &c, Measurements &) { c.phaseResistanceOhm = 0.0f; },
+        [](Config &c, Measurements &) { c.leftWheelSign = 0; },
+        [](Config &, Measurements &m) { m.rightWheelRadPerSec = std::numeric_limits<float>::quiet_NaN(); },
+    };
+    for (const Case &c : cases) {
+      Config bad = config;
+      Measurements m = good;
+      c.apply(bad, m);
+      BalanceController bc;
+      enterRun(bc, config, 100000);
+      const Output out = tick(bc, m, makeRequest(true), bad, 110000);
+      assert(out.state == State::Fault && out.fault == FaultReason::InvalidEnvelope && !out.driveEnabled);
+      assert(out.leftA == 0.0f && out.rightA == 0.0f);
+    }
   }
 
   std::puts("balance controller passed");
