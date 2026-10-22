@@ -70,7 +70,6 @@ COMMAND_CALLBACK(selectDebugLog)
 COMMAND_CALLBACK(selectCalibration)
 COMMAND_CALLBACK(setBodyCommandFilterCutoffHz)
 COMMAND_CALLBACK(setBodyCommandFilteringEnabled)
-COMMAND_CALLBACK(setAnglePid)
 COMMAND_CALLBACK(setYawPid)
 COMMAND_CALLBACK(setTargetBodyHeight)
 #undef COMMAND_CALLBACK
@@ -84,20 +83,20 @@ int main() {
   commander.com_port = &output;
   SerialCommandRouter router;
 
-  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 16);
+  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 15);
   const char *expectedCallbacks[] = {"handleM1MotionCommand", "handleM1Command", "zeroBiasServo1", "zeroBiasServo2",
                                     "zeroBiasServo3", "zeroBiasServo4", "setImuLowPassCutoff", "setMahonyKp",
                                     "setMahonyKi", "selectDebugLog", "selectCalibration", "setBodyCommandFilterCutoffHz",
-                                    "setBodyCommandFilteringEnabled", "setAnglePid", "setYawPid",
+                                    "setBodyCommandFilteringEnabled", "setYawPid",
                                     "setTargetBodyHeight"};
-  const char ids[] = "TMABCDZQIKEFJPYO";
+  const char ids[] = "TMABCDZQIKEFJYO";
   for (size_t i = 0; ids[i]; ++i) {
     Stream input(std::string(1, ids[i]) + "\n");
     router.run(input, commander, commandEntries);
     assert(calls[i] == std::string(expectedCallbacks[i]) + ":\n");
   }
-  assert(calls.size() == 16);
-  assert(calls[14] == "setYawPid:\n");
+  assert(calls.size() == 15);
+  assert(calls[13] == "setYawPid:\n");
 
   calls.clear();
   Stream yawInput("YP?\nYI2\nYD\nYL\n");

@@ -358,7 +358,6 @@ Delete in the same change, with their callers, Commander entries, telemetry fiel
 
 | Remove | Where |
 | --- | --- |
-| Balance angle PID: `anglePid`, `anglePidSettings`, `balancePidNeedsPriming`, Commander `P` | `runPostureController()` |
 | Gain presets: `PidPreset`, `BalancePidPreset`, `kPidWithoutTouch`, `kPidWithTouch`, `applyPidParameters()`, `pidParameterTuning`, `kYawPid` | preset block and `runPostureController()` |
 | Height, pitch, roll, ball commands: `bodyHeightCommandM`, `bodyPitching`, `bodyRoll`, `topBallX/Y`, their filters in `filterRemoteControl()`, `targetBodyHeightOverrideM`, Commander `O`, `attitudeMode`, `postureOrMarkMode` | `applyRcChannels()`, `filterRemoteControl()`, `computeBodyPose()`, `writeServos()` |
 | `MyPIDController` in [OllieFOCdrive.h](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.h) and `tests/pid/` | only if no user remains after package 4 |

@@ -125,16 +125,11 @@ bool fillReceiver(const TelemetryInputs &in, Logging::DebugPayload &payload) {
   return true;
 }
 
-// Selectors 9, 22 and 33.
+// Selectors 9 and 33.
 bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 9:
-      payload.controllerGains = {{in.anglePid.Kp, in.anglePid.Ki, in.anglePid.Kd},
-                                 {in.yawPid.Kp, in.yawPid.Ki, in.yawPid.Kd},
-                                 in.controlTimestepSec};
-      return true;
-    case 22:
-      payload.pidIntegralState = {in.anglePid.iLimit, in.anglePid.integral, in.anglePid.outI, in.anglePid.output};
+      payload.controllerGains = {{in.yawPid.Kp, in.yawPid.Ki, in.yawPid.Kd}, in.controlTimestepSec};
       return true;
     case 33:
       payload.pidIntegralOutputState = {in.yawPid.iLimit, in.yawPid.integral, in.yawPid.outI, in.bodyPitchingFiltered,
@@ -186,7 +181,7 @@ bool fillStatus(int selection, const TelemetryInputs &in, Logging::DebugPayload 
       payload.tuningState = {static_cast<int32_t>(in.pidParameterTuning), in.targetBodyHeightOverrideM};
       return true;
     case 45:
-      payload.tumbleState = {in.robotTumble, in.imu.correctedRollDegrees, in.anglePid.error};
+      payload.tumbleState = {in.robotTumble, in.imu.correctedRollDegrees};
       return true;
     default:
       return false;
@@ -221,7 +216,6 @@ bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &paylo
     case 8:
       return fillReceiver(in, payload);
     case 9:
-    case 22:
     case 33:
       return fillPid(selection, in, payload);
     case 19:
@@ -304,8 +298,6 @@ void submitControl(const TelemetryInputs &in, const TraceRow &row) {
   sample.rollOk = in.imu.correctedRollDegrees;
   sample.yawRateRadPerSec = in.imu.angularVelocityRadPerSec.z;
   sample.bodyTurn = in.bodyTurn;
-  sample.angleError = whenActive(in, in.anglePid.error);
-  sample.angleOutput = whenActive(in, in.anglePid.output);
   sample.yawError = whenActive(in, in.yawPid.error);
   sample.yawOutput = whenActive(in, in.yawPid.output);
   sample.leftMotorTarget = in.motor1Target;
@@ -321,10 +313,6 @@ void submitBalance(const TelemetryInputs &in, const TraceRow &row) {
   sample.gainMode = in.pidGainsMode;
   sample.minimumBatteryRawV = row.minimumBatteryRawV;
   sample.rollOk = in.imu.correctedRollDegrees;
-  sample.angleError = whenActive(in, in.anglePid.error);
-  sample.angleProportional = whenActive(in, in.anglePid.outP);
-  sample.angleIntegral = whenActive(in, in.anglePid.outI);
-  sample.angleDerivative = whenActive(in, in.anglePid.outD);
   sample.leftMotorTarget = in.motor1Target;
   sample.rightMotorTarget = in.motor2Target;
   sample.maxServoRange = row.maxServoRange;
@@ -353,10 +341,6 @@ bool submitDrive(const TelemetryInputs &in, const TraceRow &row) {
   sample.controlDtSec = in.controlTimestepSec;
   sample.bodyPitchFiltered = in.bodyPitchingFiltered;
   sample.rollOk = in.imu.correctedRollDegrees;
-  sample.angleOutput = whenActive(in, in.anglePid.output);
-  sample.angleProportional = whenActive(in, in.anglePid.outP);
-  sample.angleIntegral = whenActive(in, in.anglePid.outI);
-  sample.angleDerivative = whenActive(in, in.anglePid.outD);
   sample.leftMotorTarget = in.motor1Target;
   sample.rightMotorTarget = in.motor2Target;
   sample.leftCurrentSetpoint = in.motor1CurrentSetpoint;

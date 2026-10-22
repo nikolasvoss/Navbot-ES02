@@ -53,7 +53,6 @@ struct TelemetryInputs {
   int16_t sbusChannels[18];
   int sbusFrameIntervalMs;
 
-  PidStatus anglePid;
   PidStatus yawPid;
 
   ServoTrimsDegrees servoTrims;

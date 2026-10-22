@@ -47,10 +47,8 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
           return -1;
       return appendf(buffer, capacity, length, " sbus_dt_ms:%.2f \n", p.receiverChannels.frameDtMs);
     case Logging::DebugSelector::K9:
-      return appendf(
-          buffer, capacity, length, " PP:%.2f PI:%.2f PD:%.2f YP:%.2f YI:%.2f YD:%.2fdt:%.6f\n",
-          p.controllerGains.angle.kp, p.controllerGains.angle.ki, p.controllerGains.angle.kd,
-          p.controllerGains.yaw.kp, p.controllerGains.yaw.ki, p.controllerGains.yaw.kd, p.controllerGains.dtSec);
+      return appendf(buffer, capacity, length, " YP:%.2f YI:%.2f YD:%.2fdt:%.6f\n", p.controllerGains.yaw.kp,
+                     p.controllerGains.yaw.ki, p.controllerGains.yaw.kd, p.controllerGains.dtSec);
     case Logging::DebugSelector::K10:
       return appendf(buffer, capacity, length, " twoKp:%.2f twoKi:%.2f Roll:%.2f Pitch:%.2fIMUdt:%.6f\n",
                      p.mahony.twoKp, p.mahony.twoKi, p.mahony.rollDeg, p.mahony.pitchDeg, p.mahony.imuDtSec);
@@ -86,9 +84,6 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
     case Logging::DebugSelector::K21:
       return appendf(buffer, capacity, length, " roll_ok:%.6f BodyPitching:%.6f\n", p.balanceState.rollOk,
                      p.balanceState.bodyPitch);
-    case Logging::DebugSelector::K22:
-      return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f out:%.5f\n", p.pidIntegralState.integralLimit,
-                     p.pidIntegralState.integral, p.pidIntegralState.integralOutput, p.pidIntegralState.output);
     case Logging::DebugSelector::K24:
       return appendf(buffer, capacity, length, " EN:%.2f HZ:%.5f\n", p.pair.first, p.pair.second);
     case Logging::DebugSelector::K25:
@@ -113,8 +108,8 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
       return appendf(buffer, capacity, length, " PidParameterTuning:%d TargetBodyHeightM:%.6f\n",
                      static_cast<int>(p.tuningState.enabled), p.tuningState.targetBodyHeightM);
     case Logging::DebugSelector::K45:
-      return appendf(buffer, capacity, length, " RobotTumble:%d roll_ok:%.6f Angle_Pid.error:%.6f\n",
-                     static_cast<int>(p.tumbleState.tumbled), p.tumbleState.rollOk, p.tumbleState.angleError);
+      return appendf(buffer, capacity, length, " RobotTumble:%d roll_ok:%.6f\n",
+                     static_cast<int>(p.tumbleState.tumbled), p.tumbleState.rollOk);
     case Logging::DebugSelector::K46:
       return appendf(buffer, capacity, length, "%lu,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f\n",
                      static_cast<unsigned long>(p.gyroFft.timestampUs), p.gyroFft.gyroX, p.gyroFft.gyroY,
@@ -176,19 +171,18 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
     case RecordKind::Control: {
       const Logging::ControlSample &s = record.payload.control;
       return snprintf(buffer, capacity,
-                      "CTRL,%lu,%d,%.3f,%.3f,%.2f,%.4f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
+                      "CTRL,%lu,%d,%.3f,%.3f,%.2f,%.4f,%.4f,%.2f,%.2f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
                       static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode), s.minimumBatteryRawV,
-                      s.batteryV, s.rollOk, s.yawRateRadPerSec, s.bodyTurn, s.angleError, s.angleOutput, s.yawError,
+                      s.batteryV, s.rollOk, s.yawRateRadPerSec, s.bodyTurn, s.yawError,
                       s.yawOutput, s.leftMotorTarget, s.rightMotorTarget, static_cast<int>(s.maxServoRange),
                       static_cast<unsigned long>(s.sequence), static_cast<unsigned long>(droppedRecords),
                       static_cast<unsigned long>(writeFailures));
     }
     case RecordKind::Balance: {
       const Logging::BalanceSample &s = record.payload.balance;
-      return snprintf(buffer, capacity, "BAL,%lu,%d,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
+      return snprintf(buffer, capacity, "BAL,%lu,%d,%.3f,%.2f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
                       static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode), s.minimumBatteryRawV,
-                      s.rollOk, s.angleError, s.angleProportional, s.angleIntegral, s.angleDerivative,
-                      s.leftMotorTarget, s.rightMotorTarget, static_cast<int>(s.maxServoRange),
+                      s.rollOk, s.leftMotorTarget, s.rightMotorTarget, static_cast<int>(s.maxServoRange),
                       static_cast<unsigned long>(s.sequence), static_cast<unsigned long>(droppedRecords),
                       static_cast<unsigned long>(writeFailures));
     }
@@ -207,14 +201,13 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
       // One conversion per argument, in DRIVE_COLUMNS order from index 13 (ch3_target) to uart_write_failures.
       return appendf(buffer, capacity, length,
                      ",%.3f,%.3f,%.3f,%.6f"                     // ch3_target, motor1/2 velocity_f, tick_dt
-                     ",%.4f,%.3f,%.4f,%.4f,%.4f,%.4f"           // body_pitching_f, roll_ok, angle_*
+                     ",%.4f,%.3f"                               // body_pitching_f, roll_ok
                      ",%.4f,%.4f,%.4f,%.4f,%.4f,%.4f"           // motor targets, current_sp, voltage_q
                      ",%.4f,%.4f,%.3f,%.3f"                     // shaft velocities, battery raw/filtered
                      ",%.3f,%.3f,%d"                            // top_ball_x, body_pitching, servo range
                      ",%lu,%lu,%lu\n",                          // sequence, logger_dropped, uart_write_failures
                      s.requestedSpeed, s.leftWheelVelocity, s.rightWheelVelocity, s.controlDtSec,
-                     s.bodyPitchFiltered, s.rollOk, s.angleOutput, s.angleProportional,
-                     s.angleIntegral, s.angleDerivative, s.leftMotorTarget,
+                     s.bodyPitchFiltered, s.rollOk, s.leftMotorTarget,
                      s.rightMotorTarget, s.leftCurrentSetpoint, s.rightCurrentSetpoint, s.leftVoltageQ, s.rightVoltageQ,
                      s.leftShaftVelocity, s.rightShaftVelocity, s.batteryInstantRawV, s.batteryInstantFilteredV,
                      s.ballX, s.bodyPitch, static_cast<int>(s.maxServoRange),

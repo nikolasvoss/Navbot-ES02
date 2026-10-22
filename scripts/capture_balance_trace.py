@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 
-TUNE_COMMAND = re.compile(r"(?:U[01]|[PY][PIDL](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|K(?:0|9|55|56|57|58))\Z")
+TUNE_COMMAND = re.compile(r"(?:U[01]|Y[PIDL](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|K(?:0|9|55|56|57|58))\Z")
 
 # Mirror the firmware caps in MotorDiagnostic.h; the firmware refuses anything larger too.
 # Wheel-clear runs only (default caps, lowered 2026-10-22): 2.0 V and 60 rad/s, 5000 ms lease, 0.35 A.
@@ -31,7 +31,7 @@ DRIVE_COLUMNS = (
     "control_start_us", "control_execution_us", "max_loop_entry_interval_us",
     "ch3_target", "motor1_velocity_f", "motor2_velocity_f", "tick_dt_s",
     "body_pitching_f",
-    "roll_ok", "angle_output", "angle_out_p", "angle_out_i", "angle_out_d",
+    "roll_ok",
     "motor1_target", "motor2_target",
     "motor1_current_sp", "motor2_current_sp", "motor1_voltage_q", "motor2_voltage_q",
     "motor1_shaft_velocity", "motor2_shaft_velocity",
@@ -41,8 +41,8 @@ DRIVE_COLUMNS = (
 )
 TRACE_HEADERS = {
     55: "TRACE,time_ms,ch5_mode,ch6_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,pitch_deg,servo1_cmd_deg,servo2_cmd_deg,servo3_cmd_deg,servo4_cmd_deg,servo1_range_deg,servo2_range_deg,servo3_range_deg,servo4_range_deg,motor1_target,motor2_target,sequence,logger_dropped,uart_write_failures",
-    56: "CTRL,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,gyro_z_rad_s,body_turn_command,angle_error_deg,angle_output,yaw_error,yaw_output,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures",
-    57: "BAL,time_ms,ch5_mode,voltage_min_raw_v,roll_deg,angle_error_deg,angle_out_p,angle_out_i,angle_out_d,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures",
+    56: "CTRL,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,gyro_z_rad_s,body_turn_command,yaw_error,yaw_output,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures",
+    57: "BAL,time_ms,ch5_mode,voltage_min_raw_v,roll_deg,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures",
     58: "DRIVE," + ",".join(DRIVE_COLUMNS),
 }
 
@@ -96,7 +96,7 @@ def main():
     parser.add_argument("--trace-mode", type=int, choices=(55, 56, 57, 58), default=55,
                         help="55: actuator trace (default); 56: angle/yaw; 57: balance P/I/D; 58: drive-stop trace")
     parser.add_argument("--interactive", action="store_true",
-                        help="send U/P/Y/K tuning commands and bounded T/M motor commands from stdin "
+                        help="send U/Y/K tuning commands and bounded T/M motor commands from stdin "
                              "while recording; prints every tenth trace row")
     args = parser.parse_args()
     if args.seconds <= 0:

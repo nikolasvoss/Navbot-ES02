@@ -24,8 +24,7 @@ def drive_row(time_ms, command, speed, *, roll=0, ch5=1, **fields):
                   ch3_target=command, effective_speed_target=command, motor1_velocity_f=speed,
                   motor2_velocity_f=speed, roll_ok=roll, motor1_target=2, motor2_target=-2,
                   motor1_current_sp=0.1, motor2_current_sp=-0.1, motor1_voltage_q=0.2,
-                  motor2_voltage_q=-0.2, battery_raw_instant_v=7.9, battery_filtered_instant_v=7.9,
-                  angle_out_i=3)
+                  motor2_voltage_q=-0.2, battery_raw_instant_v=7.9, battery_filtered_instant_v=7.9)
     values.update(fields)
     return "DRIVE," + ",".join(str(values[name]) for name in DRIVE_COLUMNS)
 

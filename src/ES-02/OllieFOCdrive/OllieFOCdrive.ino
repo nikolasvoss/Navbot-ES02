@@ -223,17 +223,13 @@ float calibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Ca
 
 float pidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
 
-PIDController anglePidSettings(kBalancePid.angle.p, kBalancePid.angle.i, kBalancePid.angle.d, 0,
-                               kBalancePid.angle.limit);
 PIDController yawPidSettings(kYawPid.p, kYawPid.i, kYawPid.d, 0, kYawPid.limit);
 
 
 float pidTimestepSec = 0.01;
 
-MyPIDController anglePid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);  // p i d iLimit outputLimit dt EnableDFilter cutoffFreq
 MyPIDController yawPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 
-bool balancePidNeedsPriming = true;  // Priming avoids a derivative kick when CH5 enables the balance loop.
 
 void setMahonyKp(char *cmd) {
   float value = 0.0f;
@@ -262,7 +258,6 @@ void selectDebugLog(char *cmd) {
 }
 
 // Cb prefix: Commander callback.
-void setAnglePid(char *cmd) { command.pid(&anglePidSettings, cmd); }
 void setYawPid(char *cmd) { command.pid(&yawPidSettings, cmd); }
 
 // Wheel Motors and Drivers
@@ -622,7 +617,6 @@ const SerialCommandEntry commandEntries[] = {
     {'E', selectCalibration, "my CalibrationSelect"},
     {'F', setBodyCommandFilterCutoffHz, "my CutoffFreq"},
     {'J', setBodyCommandFilteringEnabled, "my EnableDFilter"},
-    {'P', setAnglePid, "anglePidSettings"},
     {'Y', setYawPid, "yawPidSettings"},
     {'O', setTargetBodyHeight, "my Target_Body_Height"},
 };
@@ -840,7 +834,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   for (int i = 0; i < 18; ++i) in.sbusChannels[i] = sBus.channels[i];
   in.sbusFrameIntervalMs = sbusFrameIntervalMs;
 
-  in.anglePid = pidStatus(anglePid);
   in.yawPid = pidStatus(yawPid);
 
   in.servoTrims = servoTrims;
@@ -888,7 +881,6 @@ void applyPidPreset(PIDController &pid, const PidPreset &preset) {
 }
 
 void applyBalancePidPreset(const BalancePidPreset &preset) {
-  applyPidPreset(anglePidSettings, preset.angle);
 }
 
 /**
@@ -914,7 +906,6 @@ void applyPidParameters(void) {
  * This is the core control function for the two-wheeled mode. It orchestrates
  * multiple PID controllers to achieve stable balancing and respond to commands.
  * - It applies the S.BUS top-ball input to `bodyPitching` and the roll command.
- * - It runs a cascade PID for speed and balance control (Speed loop -> Angle loop).
  * - It runs a PID loop for yaw (turning) control.
  * The outputs are summed to produce the final `target` values for each motor.
  *
@@ -928,21 +919,6 @@ void runPostureController(float dt) {
     bodyPitching = -sbusTopBallXSmoothed;
   }
 
-  // Balance loop
-  anglePid.Kp = anglePidSettings.P;
-  anglePid.Ki = anglePidSettings.I;
-  anglePid.Kd = anglePidSettings.D;
-  anglePid.iLimit = anglePidSettings.limit;  // Integral limit
-
-  float angleError = imu::latest().correctedRollDegrees - (-bodyPitchingFiltered);  // Measured value minus target value
-  if (balancePidNeedsPriming) {
-    // Avoid a derivative kick when CH5 first enables the balance loop.
-    anglePid.previousError = angleError;
-    anglePid.integral = 0;
-    balancePidNeedsPriming = false;
-  }
-  float angleOutput = anglePid.compute(angleError, dt);
-
   // Yaw loop
   yawPid.Kp = yawPidSettings.P;
   yawPid.Ki = yawPidSettings.I;
@@ -954,8 +930,8 @@ void runPostureController(float dt) {
   float yawError = imu::latest().angularVelocityRadPerSec.z - bodyTurn;  // Measured value minus target value
   float yawOutput = yawPid.compute(yawError, dt);
 
-  float target1 = angleOutput - yawOutput;
-  float target2 = angleOutput + yawOutput;
+  float target1 = -yawOutput;
+  float target2 = yawOutput;
 
   // The wheel motors now take ampere targets, not the rad/s targets computed above. Until the new controller
   // (package 4) produces current commands, balance holds both wheels at 0 A.
@@ -1243,7 +1219,6 @@ BodyPose computeBodyPose() {
   BodyPose pose{kBodyHeightDefaultM, bodyRollFiltered};
 
   if ((pidGainsMode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (robotTumble == ROBOT_TUMBLING)) {
-    balancePidNeedsPriming = true;
     if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE && !motorDiagnosticState.active) {
       motor1.target = 0;
       motor2.target = 0;
@@ -1253,7 +1228,6 @@ BodyPose computeBodyPose() {
     pose.roll = 0;
     bodyPitchingFiltered = 0;
 
-    anglePid.integral = 0;
     yawPid.integral = 0;
 
   } else if ((isPidGainsModeEnabled(pidGainsMode)) && (robotTumble == ROBOT_NOT_TUMBLING)) {

@@ -35,7 +35,7 @@ The IMU sits on the MAIN board according to the PCB draft. Each wheel motor has 
 
 | Branch | Error from setpoint and actual value | Result in the active two-wheel path |
 | --- | --- | --- |
-| **Tilt / balance** | `angleError = correctedRollDegrees + bodyPitchingFiltered` | `anglePid` supplies the common part of both wheel targets. Since 2026-10-22 these values are still rad/s and are not sent to the wheels; see the interim note below. `correctedRollDegrees` is called "roll" in the code. Here it is the attitude angle in degrees used for forward/backward tilting. |
+| **Tilt / balance** | `angleError = correctedRollDegrees + bodyPitchingFiltered` | No balance controller since Package 3 row 6; both wheel targets are 0 A. See the interim note below. `correctedRollDegrees` is called "roll" in the code. Here it is the attitude angle in degrees used for forward/backward tilting. |
 | **Yaw / steering** | `yawError = attitude.gyro.z - bodyTurn` | `yawPid` supplies a differential part: wheel 1 gets `−yawOutput`, wheel 2 gets `+yawOutput`. The gyro Z value and the turn command are in rad/s. |
 | **Drive / wheel speed** | none | The speed loop was removed in Package 3, row 2. CH3 is still parsed into `movementSpeed`, but no controller uses it. |
 | **Ball pose** | CH9/10 | Changes `bodyPitching` and thereby indirectly the wheel or servo targets. See below. |
@@ -49,7 +49,7 @@ Core wheel motor logic: `target1 = angleOutput − yawOutput`, `target2 = angleO
 ### What happens on a drive command?
 
 1. CH3 is mapped to `movementSpeed`. No controller reads it since the speed loop was removed.
-2. The IMU supplies the tilt angle `correctedRollDegrees` via Mahony. `anglePid` changes **both** wheel target speeds together to regulate the tilt.
+2. The IMU supplies the tilt angle `correctedRollDegrees` via Mahony. No controller uses it since Package 3 row 6.
 3. CH4 sets `bodyTurn`. The yaw controller compares it with `gyro.z` and raises one wheel target speed while lowering the other.
 4. SimpleFOC receives each wheel's current target and computes the motor drive via FOC/PWM. Since Package 2 the motor mode is `torque` with `TorqueControlType::estimated_current`. The target in amperes is converted to `voltage.q = I · phase_resistance + back-EMF` and clamped to `voltage_limit` (4.2 V). The current is therefore an estimate, not a sensed value; the optional current sensing loops are compiled out. `current_limit` (about 0.73 A) is the derived stall current at the voltage ceiling, not a measured battery-current limit.
 

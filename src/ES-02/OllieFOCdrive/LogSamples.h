@@ -64,8 +64,6 @@ struct ControlSample {
   float rollOk;
   float yawRateRadPerSec;
   float bodyTurn;
-  float angleError;
-  float angleOutput;
   float yawError;
   float yawOutput;
   float leftMotorTarget;
@@ -79,10 +77,6 @@ struct BalanceSample {
   int32_t gainMode;
   float minimumBatteryRawV;
   float rollOk;
-  float angleError;
-  float angleProportional;
-  float angleIntegral;
-  float angleDerivative;
   float leftMotorTarget;
   float rightMotorTarget;
   int32_t maxServoRange;
@@ -109,10 +103,6 @@ struct DriveSample {
   float controlDtSec;
   float bodyPitchFiltered;
   float rollOk;
-  float angleOutput;
-  float angleProportional;
-  float angleIntegral;
-  float angleDerivative;
   float leftMotorTarget;
   float rightMotorTarget;
   float leftCurrentSetpoint;
@@ -150,7 +140,6 @@ enum class DebugSelector : uint8_t {
   K19,
   K20,
   K21,
-  K22,
   K24 = 24,
   K25,
   K28 = 28,
@@ -216,7 +205,6 @@ struct ControllerGains {
   float kd;
 };
 struct ControllerGainsSet {
-  ControllerGains angle;
   ControllerGains yaw;
   float dtSec;
 };
@@ -277,7 +265,6 @@ struct TuningState {
 struct TumbleState {
   int32_t tumbled;
   float rollOk;
-  float angleError;
 };
 struct ChannelState {
   float seconds;
@@ -290,12 +277,6 @@ struct BallBalanceGeometry {
   float ballX;
   float bodyRoll;
   float bodyHeightM;
-};
-struct PidIntegralState {
-  float integralLimit;
-  float integral;
-  float integralOutput;
-  float output;
 };
 struct PidIntegralOutputState {
   float integralLimit;
@@ -366,7 +347,6 @@ union DebugPayload {
   ChannelState channelState;
   CurrentSetpoint currentSetpoint;
   BallBalanceGeometry ballBalanceGeometry;
-  PidIntegralState pidIntegralState;
   PidIntegralOutputState pidIntegralOutputState;
   FilteredGeometry filteredGeometry;
   BodyPitchState bodyPitchState;

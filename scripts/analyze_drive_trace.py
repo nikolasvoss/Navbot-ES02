@@ -91,7 +91,6 @@ def analyze(path):
 
     total = len(rows) + malformed
     bad_fraction = malformed / total if total else 1.0
-    angle_i = [abs(row["angle_out_i"]) for row in active if "angle_out_i" in row]
     motor_targets = [abs(row[field]) for row in active
                      for field in ("motor1_target", "motor2_target")]
     imu_sequence_advance = int(rows[-1]["imu_sequence"] - rows[0]["imu_sequence"])
@@ -111,7 +110,6 @@ def analyze(path):
         "command_rows": sum(bool(direction(row)) for row in rows),
         "releases": releases,
         "opposite_speed_peak": max((item["opposite_speed_peak"] for item in releases), default=None),
-        "angle_i_abs_peak": rounded(max(angle_i)) if angle_i else None,
         "motor_target_abs_peak": rounded(max(motor_targets)) if motor_targets else None,
         "voltage_raw_min_v": rounded(min(row["voltage_min_raw_v"] for row in active)) if active else None,
         # IMU counters are cumulative since boot; per-row loop interval resets on each row.
@@ -141,12 +139,12 @@ def fmt(value):
 
 def markdown(results):
     lines = ["# DRIVE-Vergleich", "",
-             "| Log | gültig/defekt | aktiv | Startneigung | CH3-Zeilen | Stopps | Gegenlauf max. | Winkel-I max. | Motorziel max. | Board-ADC min. |",
-             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+             "| Log | gültig/defekt | aktiv | Startneigung | CH3-Zeilen | Stopps | Gegenlauf max. | Motorziel max. | Board-ADC min. |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for run in results:
         lines.append("| `{file}` | {valid_rows}/{malformed_rows} | {active_rows} | "
                      "{activation_roll} | {command_rows} | {stops} | "
-                     "{opposite_speed_peak} | {angle_i_abs_peak} | "
+                     "{opposite_speed_peak} | "
                      "{motor_target_abs_peak} | {voltage} |".format(
                          **{key: fmt(value) for key, value in run.items()},
                          activation_roll=(f"{run['activation_roll_deg']}°"

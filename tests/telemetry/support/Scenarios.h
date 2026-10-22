@@ -83,7 +83,6 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   for (int i = 0; i < 18; ++i) in.sbusChannels[i] = static_cast<int16_t>(172 + 41 * i + variant);
   in.sbusFrameIntervalMs = 14 + variant;
 
-  fill(g, in.anglePid);
   fill(g, in.yawPid);
 
   in.servoTrims = {g.f(), g.f(), g.f(), g.f()};

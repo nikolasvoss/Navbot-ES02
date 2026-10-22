@@ -22,18 +22,16 @@ REPORT_FIELDS = {
         "motor1_target", "motor2_target",
     ),
     "CTRL": (
-        "voltage_min_raw_v", "voltage_filtered_v", "roll_deg", "angle_error_deg",
-        "angle_output", "yaw_error", "yaw_output", "motor1_target", "motor2_target",
+        "voltage_min_raw_v", "voltage_filtered_v", "roll_deg",
+        "yaw_error", "yaw_output", "motor1_target", "motor2_target",
     ),
     "BAL": (
-        "voltage_min_raw_v", "roll_deg", "angle_error_deg", "angle_out_p",
-        "angle_out_i", "angle_out_d", "motor1_target", "motor2_target",
+        "voltage_min_raw_v", "roll_deg", "motor1_target", "motor2_target",
     ),
     "DRIVE": (
         "voltage_min_raw_v", "voltage_filtered_v", "imu_dt_s", "imu_long_gap_count", "imu_max_interval_us",
         "control_execution_us", "max_loop_entry_interval_us",
-        "body_pitching_f", "angle_output", "angle_out_p", "angle_out_i",
-        "angle_out_d", "motor1_target", "motor2_target", "motor1_current_sp", "motor2_current_sp",
+        "body_pitching_f", "motor1_target", "motor2_target", "motor1_current_sp", "motor2_current_sp",
         "motor1_voltage_q", "motor2_voltage_q", "motor1_shaft_velocity", "motor2_shaft_velocity",
         "battery_raw_instant_v", "battery_filtered_instant_v",
     ),

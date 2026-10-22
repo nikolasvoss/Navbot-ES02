@@ -45,15 +45,14 @@ void fillWidestDrive(Logging::DriveSample &d) {
   d.gainMode = d.maxServoRange = -999;
   d.minimumBatteryRawV = d.batteryV = d.imuDtSec = f;
   d.requestedSpeed = d.leftWheelVelocity = d.rightWheelVelocity = d.controlDtSec = f;
-  d.bodyPitchFiltered = d.rollOk = d.angleOutput = f;
-  d.angleProportional = d.angleIntegral = d.angleDerivative = f;
+  d.bodyPitchFiltered = d.rollOk = f;
   d.leftMotorTarget = d.rightMotorTarget = d.leftCurrentSetpoint = d.rightCurrentSetpoint = f;
   d.leftVoltageQ = d.rightVoltageQ = d.leftShaftVelocity = d.rightShaftVelocity = f;
   d.batteryInstantRawV = d.batteryInstantFilteredV = d.ballX = d.bodyPitch = f;
 }
 
 // Column i of the DRIVE row (0-based, after the tag, in DRIVE_COLUMNS order) holds the value i + 1.
-// logger_dropped (column 38) and uart_write_failures (column 39) are formatRecord arguments 38 and 39.
+// logger_dropped (column 34) and uart_write_failures (column 35) are formatRecord arguments 34 and 35.
 // scripts/capture_balance_trace.py reads these values back and checks each one against its column name.
 void fillDistinctDrive(Logging::DriveSample &d) {
   d.timestampMs = 1;                 // time_ms
@@ -65,34 +64,30 @@ void fillDistinctDrive(Logging::DriveSample &d) {
   d.imuDtSec = 7;                    // imu_dt_s
   d.imuAcceptedSamples = 8;          // imu_accepted_samples
   d.imuLongGapCount = 9;             // imu_long_gap_count
-  d.imuMaxIntervalUs = 10;           // imu_max_interval_us
-  d.controlStartUs = 11;             // control_start_us
-  d.controlExecutionUs = 12;         // control_execution_us
-  d.maxLoopEntryIntervalUs = 13;     // max_loop_entry_interval_us
-  d.requestedSpeed = 14;             // ch3_target
-  d.leftWheelVelocity = 15;          // motor1_velocity_f
-  d.rightWheelVelocity = 16;         // motor2_velocity_f
-  d.controlDtSec = 17;               // tick_dt_s
-  d.bodyPitchFiltered = 18;          // body_pitching_f
-  d.rollOk = 19;                     // roll_ok
-  d.angleOutput = 20;                // angle_output
-  d.angleProportional = 21;          // angle_out_p
-  d.angleIntegral = 22;              // angle_out_i
-  d.angleDerivative = 23;            // angle_out_d
-  d.leftMotorTarget = 24;            // motor1_target
-  d.rightMotorTarget = 25;           // motor2_target
-  d.leftCurrentSetpoint = 26;        // motor1_current_sp
-  d.rightCurrentSetpoint = 27;       // motor2_current_sp
-  d.leftVoltageQ = 28;               // motor1_voltage_q
-  d.rightVoltageQ = 29;              // motor2_voltage_q
-  d.leftShaftVelocity = 30;          // motor1_shaft_velocity
-  d.rightShaftVelocity = 31;         // motor2_shaft_velocity
-  d.batteryInstantRawV = 32;         // battery_raw_instant_v
-  d.batteryInstantFilteredV = 33;    // battery_filtered_instant_v
-  d.ballX = 34;                      // top_ball_x
-  d.bodyPitch = 35;                  // body_pitching
-  d.maxServoRange = 36;              // max_servo_range_deg
-  d.sequence = 37;                   // sequence
+  d.imuMaxIntervalUs = 10;            // imu_max_interval_us
+  d.controlStartUs = 11;              // control_start_us
+  d.controlExecutionUs = 12;          // control_execution_us
+  d.maxLoopEntryIntervalUs = 13;      // max_loop_entry_interval_us
+  d.requestedSpeed = 14;              // ch3_target
+  d.leftWheelVelocity = 15;           // motor1_velocity_f
+  d.rightWheelVelocity = 16;          // motor2_velocity_f
+  d.controlDtSec = 17;                // tick_dt_s
+  d.bodyPitchFiltered = 18;           // body_pitching_f
+  d.rollOk = 19;                      // roll_ok
+  d.leftMotorTarget = 20;             // motor1_target
+  d.rightMotorTarget = 21;            // motor2_target
+  d.leftCurrentSetpoint = 22;         // motor1_current_sp
+  d.rightCurrentSetpoint = 23;        // motor2_current_sp
+  d.leftVoltageQ = 24;                // motor1_voltage_q
+  d.rightVoltageQ = 25;               // motor2_voltage_q
+  d.leftShaftVelocity = 26;           // motor1_shaft_velocity
+  d.rightShaftVelocity = 27;          // motor2_shaft_velocity
+  d.batteryInstantRawV = 28;          // battery_raw_instant_v
+  d.batteryInstantFilteredV = 29;     // battery_filtered_instant_v
+  d.ballX = 30;                       // top_ball_x
+  d.bodyPitch = 31;                   // body_pitching
+  d.maxServoRange = 32;               // max_servo_range_deg
+  d.sequence = 33;                    // sequence
 }
 
 void printDistinctDrive() {
@@ -100,7 +95,7 @@ void printDistinctDrive() {
   record.kind = LoggingInternal::RecordKind::Drive;
   fillDistinctDrive(record.payload.drive);
   char line[LoggingInternal::kLineBufferSize];
-  const int length = LoggingInternal::formatRecord(record, line, sizeof(line), 38, 39);
+  const int length = LoggingInternal::formatRecord(record, line, sizeof(line), 34, 35);
   require(length > 0 && static_cast<size_t>(length) < sizeof(line), "distinct DRIVE row did not format");
   std::fwrite(line, 1, static_cast<size_t>(length), stdout);
 }
@@ -118,7 +113,7 @@ void verifyFormatters(const char *fixturePath) {
       value.replace(position, 2, "\n");
     fixtures[line.substr(0, separator)] = value;
   }
-  require(fixtures.size() == 54, "format fixture does not cover every active selector and profile");
+  require(fixtures.size() == 53, "format fixture does not cover every active selector and profile");
 
   const LoggingInternal::RecordKind kinds[] = {
       LoggingInternal::RecordKind::Diagnostic, LoggingInternal::RecordKind::Trace,
@@ -131,7 +126,7 @@ void verifyFormatters(const char *fixturePath) {
   }
 
   for (int selector = 1; selector <= 48; ++selector) {
-    if (selector == 23 || selector == 26 || selector == 27 || selector == 29 || selector == 30 || selector == 31 ||
+    if (selector == 22 || selector == 23 || selector == 26 || selector == 27 || selector == 29 || selector == 30 || selector == 31 ||
         selector == 32 || selector == 34 || selector == 35 || selector == 36 || selector == 38 || selector == 39 ||
         selector == 40 || selector == 41 || selector == 42)
       continue;  // Removed selectors have no formatter.
