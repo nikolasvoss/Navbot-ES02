@@ -33,7 +33,11 @@ struct Record {
   Payload payload;
 };
 
-static_assert(sizeof(Record) <= 168, "logging queue slot exceeds the 168-byte budget");
+static_assert(sizeof(Record) <= 224, "logging queue slot exceeds the 224-byte budget");
+
+// Sender line buffer. The widest DRIVE row (49 columns, floats at -9999.0, uint32 at 0xffffffff) is about 525
+// bytes; tests/serial_logger/test_serial_logger.cpp checks that row against this bound.
+constexpr size_t kLineBufferSize = 576;
 
 int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t droppedRecords, uint32_t writeFailures);
 

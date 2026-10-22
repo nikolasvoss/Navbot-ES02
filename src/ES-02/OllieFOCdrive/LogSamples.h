@@ -95,6 +95,15 @@ struct DriveSample {
   int32_t gainMode;
   float minimumBatteryRawV;
   float batteryV;
+  uint32_t imuSequence;
+  uint32_t imuReadTimeUs;
+  float imuDtSec;
+  uint32_t imuAcceptedSamples;
+  uint32_t imuLongGapCount;
+  uint32_t imuMaxIntervalUs;
+  uint32_t controlStartUs;
+  uint32_t controlExecutionUs;
+  uint32_t maxLoopEntryIntervalUs;
   float requestedSpeed;
   float effectiveSpeed;
   float leftWheelVelocity;
@@ -116,6 +125,14 @@ struct DriveSample {
   float wheelSpeedFeedbackOutput;
   float leftMotorTarget;
   float rightMotorTarget;
+  float leftCurrentSetpoint;
+  float rightCurrentSetpoint;
+  float leftVoltageQ;
+  float rightVoltageQ;
+  float leftShaftVelocity;
+  float rightShaftVelocity;
+  float batteryInstantRawV;
+  float batteryInstantFilteredV;
   float ballX;
   float touchXFiltered;
   float bodyPitch;
@@ -169,6 +186,8 @@ enum class DebugSelector : uint8_t {
   K44,
   K45,
   K46 = 46,
+  K47 = 47,
+  K48 = 48,
   K60 = 60,
   K61,
   K62,
@@ -188,7 +207,7 @@ enum class DebugSelector : uint8_t {
 };
 
 constexpr int kSelectedDebugFirst = 1;
-constexpr int kSelectedDebugLast = 46;
+constexpr int kSelectedDebugLast = 48;
 constexpr int kChannelDebugFirst = 60;
 constexpr int kChannelDebugLast = 75;
 
@@ -384,6 +403,26 @@ struct GyroFftSample {
   float gyroYFiltered;
   float gyroZFiltered;
 };
+struct ImuCadenceSample {
+  uint32_t sequence;
+  uint32_t readTimeUs;
+  float dtSec;
+  uint32_t acceptedSamples;
+  uint32_t longGapCount;
+  uint32_t maxIntervalUs;
+};
+struct MotorStateSample {
+  float leftTarget;
+  float rightTarget;
+  float leftCurrentSetpoint;
+  float rightCurrentSetpoint;
+  float leftVoltageQ;
+  float rightVoltageQ;
+  float leftShaftVelocity;
+  float rightShaftVelocity;
+  float batteryRawV;
+  float batteryFilteredV;
+};
 
 union DebugPayload {
   TimedVector3 timedVector3;
@@ -420,6 +459,8 @@ union DebugPayload {
   RollCorrection rollCorrection;
   BodyPitchState bodyPitchState;
   GyroFftSample gyroFft;
+  ImuCadenceSample imuCadence;
+  MotorStateSample motorState;
 };
 
 struct DebugSample {

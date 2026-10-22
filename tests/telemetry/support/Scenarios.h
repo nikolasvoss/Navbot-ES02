@@ -45,6 +45,8 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   s.sequence = 100 + tick;
   s.readTimeUs = 3000000u + 1000u * tick;
   s.dtSec = g.f();
+  in.imuTiming = {4000000u + static_cast<uint32_t>(tick), 20u + static_cast<uint32_t>(variant),
+                  2500u + static_cast<uint32_t>(tick)};
   fill(g, s.accelerationG);
   fill(g, s.angularVelocityRadPerSec);
   fill(g, s.filteredAccelerationG);
@@ -68,6 +70,11 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   in.motor1Target = g.f();
   in.motor2Target = g.f();
   in.motor2CurrentSetpoint = g.f();
+  in.motor1CurrentSetpoint = g.f();
+  in.motor1VoltageQ = g.f();
+  in.motor2VoltageQ = g.f();
+  in.motor1ShaftVelocity = g.f();
+  in.motor2ShaftVelocity = g.f();
   in.sensor1Angle = g.f();
   in.sensor1MechanicalAngle = g.f();
   in.sensor2Angle = g.f();
@@ -118,6 +125,11 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   in.voltageAdc = static_cast<uint16_t>(700 + 11 * tick + variant);
   in.voltageAdcFiltered = g.f();
   in.voltage = g.f();
+  in.batteryInstantRawV = g.f();
+  in.batteryInstantFilteredV = g.f();
+  in.controlStartUs = 5000000u + 1000u * tick;
+  in.controlExecutionUs = 800u + 20u * tick;
+  in.maxLoopEntryIntervalUs = 1200u + 50u * tick;
 
   in.pidGainsMode = variant == 2 ? 0 : (variant == 0 ? 2 : 1);
   in.postureOrMarkMode = 1 + variant;
@@ -138,7 +150,7 @@ std::string recordAll(Runner run) {
       for (int due = 1; due >= 0; --due) {
         Recording::reset();
         Recording::dueResult = due == 1;
-        DebugTelemetry::TelemetryState state{static_cast<uint16_t>(650 + variant), 0};
+        DebugTelemetry::TelemetryState state{static_cast<uint16_t>(650 + variant), 0, 0};
         for (int tick = 0; tick < 4; ++tick) {
           const DebugTelemetry::TelemetryInputs in = makeInputs(variant, selection, tick);
           const size_t before = Recording::events().size();

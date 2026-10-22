@@ -83,6 +83,10 @@ bool fillImu(int selection, const TelemetryInputs &in, Logging::DebugPayload &pa
                          snapshot.filteredAngularVelocityRadPerSec.x, snapshot.filteredAngularVelocityRadPerSec.y,
                          snapshot.filteredAngularVelocityRadPerSec.z};
       return true;
+    case 47:
+      payload.imuCadence = {snapshot.sequence, snapshot.readTimeUs, snapshot.dtSec, in.imuTiming.acceptedSamples,
+                            in.imuTiming.longGapCount, in.imuTiming.maxIntervalUs};
+      return true;
     default:
       return false;
   }
@@ -103,6 +107,11 @@ bool fillWheels(int selection, const TelemetryInputs &in, Logging::DebugPayload 
     case 18:
       payload.sensorAngles = {in.motor2Target, in.sensor1Angle, in.sensor1MechanicalAngle, in.sensor2Angle,
                               in.sensor2MechanicalAngle};
+      return true;
+    case 48:
+      payload.motorState = {in.motor1Target, in.motor2Target, in.motor1CurrentSetpoint, in.motor2CurrentSetpoint,
+                            in.motor1VoltageQ, in.motor2VoltageQ, in.motor1ShaftVelocity, in.motor2ShaftVelocity,
+                            in.batteryInstantRawV, in.batteryInstantFilteredV};
       return true;
     default:
       return false;
@@ -266,11 +275,13 @@ bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &paylo
     case 15:
     case 16:
     case 46:
+    case 47:
       return fillImu(selection, in, payload);
     case 6:
     case 7:
     case 17:
     case 18:
+    case 48:
       return fillWheels(selection, in, payload);
     case 8:
       return fillReceiver(in, payload);
@@ -402,13 +413,22 @@ void submitBalance(const TelemetryInputs &in, const TraceRow &row) {
   Logging::submit(sample);
 }
 
-void submitDrive(const TelemetryInputs &in, const TraceRow &row) {
+bool submitDrive(const TelemetryInputs &in, const TraceRow &row) {
   Logging::DriveSample sample{};
   sample.timestampMs = in.nowMs;
   sample.sequence = row.sequence;
   sample.gainMode = in.pidGainsMode;
   sample.minimumBatteryRawV = row.minimumBatteryRawV;
   sample.batteryV = in.voltage;
+  sample.imuSequence = in.imu.sequence;
+  sample.imuReadTimeUs = in.imu.readTimeUs;
+  sample.imuDtSec = in.imu.dtSec;
+  sample.imuAcceptedSamples = in.imuTiming.acceptedSamples;
+  sample.imuLongGapCount = in.imuTiming.longGapCount;
+  sample.imuMaxIntervalUs = in.imuTiming.maxIntervalUs;
+  sample.controlStartUs = in.controlStartUs;
+  sample.controlExecutionUs = in.controlExecutionUs;
+  sample.maxLoopEntryIntervalUs = in.maxLoopEntryIntervalUs;
   sample.requestedSpeed = in.movementSpeed;
   sample.effectiveSpeed = whenActive(in, in.driveEffectiveSpeed);
   sample.leftWheelVelocity = in.m1FilteredVelocityRadPerSec;
@@ -430,11 +450,19 @@ void submitDrive(const TelemetryInputs &in, const TraceRow &row) {
   sample.wheelSpeedFeedbackOutput = whenActive(in, in.wheelVelocityFeedbackCorrection);
   sample.leftMotorTarget = in.motor1Target;
   sample.rightMotorTarget = in.motor2Target;
+  sample.leftCurrentSetpoint = in.motor1CurrentSetpoint;
+  sample.rightCurrentSetpoint = in.motor2CurrentSetpoint;
+  sample.leftVoltageQ = in.motor1VoltageQ;
+  sample.rightVoltageQ = in.motor2VoltageQ;
+  sample.leftShaftVelocity = in.motor1ShaftVelocity;
+  sample.rightShaftVelocity = in.motor2ShaftVelocity;
+  sample.batteryInstantRawV = in.batteryInstantRawV;
+  sample.batteryInstantFilteredV = in.batteryInstantFilteredV;
   sample.ballX = in.topBallX;
   sample.touchXFiltered = in.touch.XPdatF;
   sample.bodyPitch = in.bodyPitching;
   sample.maxServoRange = row.maxServoRange;
-  Logging::submit(sample);
+  return Logging::submit(sample) == Logging::Result::Accepted;
 }
 
 void submitTraceProfile(const TelemetryInputs &in, TelemetryState &state) {
@@ -451,7 +479,7 @@ void submitTraceProfile(const TelemetryInputs &in, TelemetryState &state) {
       submitBalance(in, row);
       break;
     case 58:
-      submitDrive(in, row);
+      if (submitDrive(in, row)) state.maxLoopEntryIntervalUs = 0;
       break;
   }
   state.voltageAdcMin = in.voltageAdc;

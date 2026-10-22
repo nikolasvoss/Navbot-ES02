@@ -6,7 +6,8 @@
 namespace LoggingInternal {
 namespace {
 
-int appendf(char *buffer, size_t capacity, size_t &length, const char *format, ...) {
+__attribute__((format(printf, 4, 5))) int appendf(char *buffer, size_t capacity, size_t &length,
+                                                   const char *format, ...) {
   if (length >= capacity) return -1;
   va_list args;
   va_start(args, format);
@@ -175,6 +176,20 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
       return appendf(buffer, capacity, length, "%lu,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f\n",
                      static_cast<unsigned long>(p.gyroFft.timestampUs), p.gyroFft.gyroX, p.gyroFft.gyroY,
                      p.gyroFft.gyroZ, p.gyroFft.gyroXFiltered, p.gyroFft.gyroYFiltered, p.gyroFft.gyroZFiltered);
+    case Logging::DebugSelector::K47:
+      return appendf(buffer, capacity, length, "IMU_CADENCE,%lu,%lu,%.6f,%lu,%lu,%lu\n",
+                     static_cast<unsigned long>(p.imuCadence.sequence),
+                     static_cast<unsigned long>(p.imuCadence.readTimeUs), p.imuCadence.dtSec,
+                     static_cast<unsigned long>(p.imuCadence.acceptedSamples),
+                     static_cast<unsigned long>(p.imuCadence.longGapCount),
+                     static_cast<unsigned long>(p.imuCadence.maxIntervalUs));
+    case Logging::DebugSelector::K48:
+      return appendf(buffer, capacity, length,
+                     "MOTORS,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+                     p.motorState.leftTarget, p.motorState.rightTarget, p.motorState.leftCurrentSetpoint,
+                     p.motorState.rightCurrentSetpoint, p.motorState.leftVoltageQ, p.motorState.rightVoltageQ,
+                     p.motorState.leftShaftVelocity, p.motorState.rightShaftVelocity,
+                     p.motorState.batteryRawV, p.motorState.batteryFilteredV);
     default:
       if (Logging::isChannelDebugSelector(static_cast<int>(sample.selector)))
         return appendf(buffer, capacity, length, "%.3f,%d\n", p.channelState.seconds,
@@ -236,17 +251,34 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
     }
     case RecordKind::Drive: {
       const Logging::DriveSample &s = record.payload.drive;
-      return snprintf(buffer, capacity,
-                      "DRIVE,%lu,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.6f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%."
-                      "4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%d,%lu,%lu,%lu\n",
-                      static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode), s.minimumBatteryRawV,
-                      s.batteryV, s.requestedSpeed, s.effectiveSpeed, s.leftWheelVelocity, s.rightWheelVelocity,
-                      s.controlDtSec, s.speedError, s.speedProportional, s.speedIntegral, s.speedDerivative,
-                      s.speedOutput, s.driveBodyXRaw, s.bodyX, s.bodyPitchFiltered, s.rollOk, s.angleOutput,
-                      s.angleProportional, s.angleIntegral, s.angleDerivative, s.wheelSpeedFeedbackOutput,
-                      s.leftMotorTarget, s.rightMotorTarget, s.ballX, s.touchXFiltered, s.bodyPitch,
-                      static_cast<int>(s.maxServoRange), static_cast<unsigned long>(s.sequence),
-                      static_cast<unsigned long>(droppedRecords), static_cast<unsigned long>(writeFailures));
+      const int written = snprintf(buffer, capacity, "DRIVE,%lu,%d,%.3f,%.3f,%lu,%lu,%.6f,%lu,%lu,%lu,%lu,%lu,%lu",
+                           static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode),
+                           s.minimumBatteryRawV, s.batteryV, static_cast<unsigned long>(s.imuSequence),
+                           static_cast<unsigned long>(s.imuReadTimeUs), s.imuDtSec,
+                           static_cast<unsigned long>(s.imuAcceptedSamples),
+                           static_cast<unsigned long>(s.imuLongGapCount), static_cast<unsigned long>(s.imuMaxIntervalUs),
+                           static_cast<unsigned long>(s.controlStartUs), static_cast<unsigned long>(s.controlExecutionUs),
+                           static_cast<unsigned long>(s.maxLoopEntryIntervalUs));
+      if (written < 0 || static_cast<size_t>(written) >= capacity) return -1;
+      size_t length = static_cast<size_t>(written);
+      // One conversion per argument, in DRIVE_COLUMNS order from index 13 (ch3_target) to uart_write_failures.
+      return appendf(buffer, capacity, length,
+                     ",%.3f,%.3f,%.3f,%.3f,%.6f,%.3f"           // ch3_target .. speed_error
+                     ",%.4f,%.4f,%.4f,%.4f,%.4f,%.4f"           // speed_out_p/i/d, speed_output, body_x_raw, body_x
+                     ",%.4f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f"      // body_pitching_f, roll_ok, angle_* , wheel_feedback
+                     ",%.4f,%.4f,%.4f,%.4f,%.4f,%.4f"           // motor targets, current_sp, voltage_q
+                     ",%.4f,%.4f,%.3f,%.3f"                     // shaft velocities, battery raw/filtered
+                     ",%.3f,%.3f,%.3f,%d"                       // top_ball_x, touch_x, body_pitching, servo range
+                     ",%lu,%lu,%lu\n",                          // sequence, logger_dropped, uart_write_failures
+                     s.requestedSpeed, s.effectiveSpeed, s.leftWheelVelocity, s.rightWheelVelocity, s.controlDtSec,
+                     s.speedError, s.speedProportional, s.speedIntegral, s.speedDerivative, s.speedOutput,
+                     s.driveBodyXRaw, s.bodyX, s.bodyPitchFiltered, s.rollOk, s.angleOutput, s.angleProportional,
+                     s.angleIntegral, s.angleDerivative, s.wheelSpeedFeedbackOutput, s.leftMotorTarget,
+                     s.rightMotorTarget, s.leftCurrentSetpoint, s.rightCurrentSetpoint, s.leftVoltageQ, s.rightVoltageQ,
+                     s.leftShaftVelocity, s.rightShaftVelocity, s.batteryInstantRawV, s.batteryInstantFilteredV,
+                     s.ballX, s.touchXFiltered, s.bodyPitch, static_cast<int>(s.maxServoRange),
+                     static_cast<unsigned long>(s.sequence), static_cast<unsigned long>(droppedRecords),
+                     static_cast<unsigned long>(writeFailures));
     }
     case RecordKind::Debug:
       return formatDebug(record.payload.debug, buffer, capacity);
