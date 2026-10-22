@@ -135,7 +135,7 @@ Only the two wheel `R_pp` values are measured; every other value is pending or d
 
 | Item | Unit | Status |
 | --- | --- | --- |
-| Payload and leg-pose description | text | PENDING |
+| Payload and leg-pose description | text | Robot supported on the main body, wheels clear, legs hanging free at servo position 0, no load on the legs (operator, 2026-10-22). No payload other than the installed hardware was recorded. |
 | Firmware commit used for the run | hash | `c309861` (flashed from the clean tree; capture `lab/robot/captures/2026-10-22-package1-t7-voltage-sweep-2v.log`) |
 | Left wheel `R_pp`; `R_phase` | Ω | `R_pp` 11.5 Ω MEASURED 2026-10-22 by the operator (phase pair, meter and winding connection not recorded). `R_phase` 5.75 Ω if star (`R_pp / 2`): derived, winding unverified. |
 | Right wheel `R_pp`; `R_phase` | Ω | `R_pp` 11.5 Ω MEASURED 2026-10-22 by the operator (phase pair, meter and winding connection not recorded). `R_phase` 5.75 Ω if star (`R_pp / 2`): derived, winding unverified. |
@@ -146,7 +146,7 @@ Only the two wheel `R_pp` values are measured; every other value is pending or d
 | Motor sign convention, each wheel, verified against wheel motion | text | Positive q gave positive `shaft_velocity` on both wheels (motor-local SimpleFOC sign). The `T` current test agrees on each wheel independently (`T 0.02 0.02` gives +7.1/+7.3 rad/s, `T -0.02 -0.02` gives -7.4/-7.4, `T 0.02 -0.02` gives +7.0/-7.5; `lab/robot/captures/2026-10-22-package1-t8-current-test-signs.log`). The physical rolling direction was not observed. PENDING for the boundary sign. |
 | IMU sample rate and maximum interval from a supported capture | Hz; µs | Wheels-clear diagnostic run, no balance load: maximum IMU interval 7460 µs; the derived rate (424 Hz) and the long-gap counter (24577) disagree with the nominal 1 kHz and are not yet explained. |
 | Control execution time and maximum loop interval from a supported capture | µs | Peak control execution 690 µs; peak `loop()` entry interval 7342 µs; DRIVE rows about 62 per second (median 16 ms), `logger_dropped` 0, `uart_write_failures` 0 over 3512 rows. Taken without balance running. |
-| Leg pose used (fixed pose check) | text | PENDING |
+| Leg pose used (fixed pose check) | text | Free-hanging legs at servo position 0, unloaded. This is not a loaded fixed-pose check; that check stays PENDING for Package 2 stage 3. |
 
 The measured 11.5 Ω phase-to-phase value lies just below the published 12.5 to 16.4 Ω range. The firmware constant `kWheelPhaseResistanceOhm` (22 Ω) is about twice the measured value and about four times the star per-phase value. The constant is unchanged, so `T` current targets still scale with 22 Ω and the 0.02 A cap was derived from it. Package 2 decides which value the firmware uses and which convention SimpleFOC `phase_resistance` expects.
 
