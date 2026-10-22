@@ -28,3 +28,14 @@ Firmware with the 50 ms overspeed debounce, CH5 = 0 in every row, robot secured.
 - Voltage steps under K58 (`captures/2026-10-22-package1-t5-voltage-steps.log`), 1500 ms lease: motor 1 stays at rest at 0.2 V and 0.3 V and breaks away at 0.4 V; motor 2 stays at rest at 0.2 V and breaks away at 0.3 V. After breakaway the wheel passes 3 rad/s within a few rows (median 5.7 rad/s at 0.4 V and 8.2 rad/s at 0.5 V for motor 1; 5.5, 6.5, 8.9 rad/s at 0.3, 0.4, 0.5 V for motor 2) and the overspeed fault ends the step after 4 to 10 rows. Speed was still rising when the fault stopped it.
 
 Consequence: the filter removes the false overspeed trips, but the 3 rad/s limit ends every step above breakaway before a speed plateau exists, so the KV fit and usable q ceiling remain unmeasured. A higher diagnostic overspeed cap needs a reviewed recompile. The breakaway voltage (about 0.3 to 0.4 V per wheel) is a candidate friction finding and is recorded once, not yet repeated.
+
+## 2026-10-22 follow-up: 15 rad/s cap, voltage steps run to the end of the lease
+
+Firmware commit 241bd11 (overspeed cap 15 rad/s, 50 ms debounce), CH5 = 0 in every row, wheels clear. `M <motor> <V> 2000` under K58; every step ran its full 2000 ms lease with no overspeed fault (`captures/2026-10-22-package1-t6-voltage-steps-15rads.log`). Shaft velocity over the last third of each step, rad/s (median, min to max):
+
+| Motor | 0.3 V | 0.4 V | 0.5 V |
+| --- | --- | --- | --- |
+| 1 (left) | 0.62 (0.20 to 0.83), at rest | 5.42 (2.24 to 7.86) | 7.78 (4.95 to 10.52) |
+| 2 (right) | 3.45 (0.84 to 7.37) | 6.91 (3.59 to 9.30) | 8.81 (7.22 to 11.07) |
+
+Practical consequence: the speed does not settle. Within one step the velocity moves by several rad/s (stick-slip or cogging at these low voltages is a plausible cause, not established), so no step meets the plateau condition of the KV fit in [motor commissioning](../../docs/robot/software/motor-commissioning.md). A straight line through the medians gives roughly 24 rad/s per V on motor 1 (0.4 to 0.5 V) and 27 rad/s per V on motor 2 (0.3 to 0.5 V), about 230 to 260 rpm/V, which would put KV near 130 to 150 rpm/V under the plan's `rpm = KV·√3·V` convention. That is two or three unsteady points with a breakaway offset; it is indicative only and is not entered in the commissioning record. R, the usable q ceiling and the sign check remain pending. The 0.5 V cap is the highest voltage allowed, and speed was still rising with voltage there. Next decision: longer leases are capped at 2000 ms, so settling needs either a velocity filter in the analysis or a reviewed change to the lease or voltage cap.
