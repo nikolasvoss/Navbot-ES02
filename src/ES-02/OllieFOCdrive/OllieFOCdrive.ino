@@ -18,6 +18,7 @@
 #include "OllieFOCdrive.h"
 #include "RobotLogCapture.h"
 #include "ServoControl.h"
+#include "SerialCommandRouter.h"
 #include "ble.h"
 #include "filter.h"
 #include "imu.h"
@@ -466,42 +467,37 @@ void initDrivers() {
   motor2.linkDriver(&driver2);
 }
 
-void registerCommands() {
-  command.add('T', handleM1MotionCommand, "motion1 control");  // Set motor target value
-  command.add('M', handleM1Command, "motor1");
-
-  command.add('A', zeroBiasServo1, "my zeroBias_servo1");  // Set servo 1 bias
-  command.add('B', zeroBiasServo2, "my zeroBias_servo2");
-  command.add('C', zeroBiasServo3, "my zeroBias_servo3");
-  command.add('D', zeroBiasServo4, "my zeroBias_servo4");
-
-  command.add('Z', setImuLowPassCutoff, "my ImuLPF_CUTOFF_FREQ");
-
-  command.add('Q', setMahonyKp, "my TwoKp");  // MahonyFilter
-  command.add('I', setMahonyKi, "my TwoKi");  // MahonyFilter
-
-  command.add('K', selectDebugLog, "my Select");
-  command.add('E', selectCalibration, "my CalibrationSelect");
-
-  command.add('F', setBodyCommandFilterCutoffHz, "my CutoffFreq");
-  command.add('J', setBodyCommandFilteringEnabled, "my EnableDFilter");
-
+const SerialCommandEntry commandEntries[] = {
+    {'T', handleM1MotionCommand, "motion1 control"},
+    {'M', handleM1Command, "motor1"},
+    {'A', zeroBiasServo1, "my zeroBias_servo1"},
+    {'B', zeroBiasServo2, "my zeroBias_servo2"},
+    {'C', zeroBiasServo3, "my zeroBias_servo3"},
+    {'D', zeroBiasServo4, "my zeroBias_servo4"},
+    {'Z', setImuLowPassCutoff, "my ImuLPF_CUTOFF_FREQ"},
+    {'Q', setMahonyKp, "my TwoKp"},
+    {'I', setMahonyKi, "my TwoKi"},
+    {'K', selectDebugLog, "my Select"},
+    {'E', selectCalibration, "my CalibrationSelect"},
+    {'F', setBodyCommandFilterCutoffHz, "my CutoffFreq"},
+    {'J', setBodyCommandFilteringEnabled, "my EnableDFilter"},
 #if ADJUST_PARAMETER == ADJUST_BALANCE_SPEED_YAW_ROLL
-  command.add('P', setAnglePid, "anglePidSettings");
-  command.add('S', setSpeedPid, "speedPidSettings");
-  command.add('Y', setYawPid, "yawPidSettings");
-  command.add('R', setRollPid, "rollPidSettings");
-  command.add('O', setTargetBodyHeight, "my Target_Body_Height");
+    {'P', setAnglePid, "anglePidSettings"},
+    {'S', setSpeedPid, "speedPidSettings"},
+    {'Y', setYawPid, "yawPidSettings"},
+    {'R', setRollPid, "rollPidSettings"},
+    {'O', setTargetBodyHeight, "my Target_Body_Height"},
 #elif ADJUST_PARAMETER == ADJUST_BALL_PUSHING
-  command.add('L', setTouchXPid, "touchXPidSettings");
-  command.add('N', setTouchYPid, "touchYPidSettings");
-  command.add('G', setControlTorqueCompensation, "my ControlTorqueCompensation");
+    {'L', setTouchXPid, "touchXPidSettings"},
+    {'N', setTouchYPid, "touchYPidSettings"},
+    {'G', setControlTorqueCompensation, "my ControlTorqueCompensation"},
 #endif
+    {'U', handleUserCommand, "my User_command"},
+    {'V', setWheelSpeedFeedbackGain, "wheel speed feedback gain"},
+    {'W', setDriveTiltReductionGain, "drive tilt reduction gain"},
+};
 
-  command.add('U', handleUserCommand, "my User_command");
-  command.add('V', setWheelSpeedFeedbackGain, "wheel speed feedback gain");
-  command.add('W', setDriveTiltReductionGain, "drive tilt reduction gain");
-}
+SerialCommandRouter serialCommandRouter;
 
 void setAssemblyPosition() { servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1); }
 
@@ -582,7 +578,6 @@ void setup() {
   motor1.useMonitoring(Serial);  // TODO logger lib usable here?
   motor1.monitor_downsample = 10;
 
-  registerCommands();
 
   Serial.println("Motor ready.");
 
@@ -1209,7 +1204,7 @@ void updateMotorsAndCommands() {
   motor2.loopFOC();
 
   // user communication
-  command.run();
+  serialCommandRouter.run(commandStream, command, commandEntries);
 }
 
 /**
