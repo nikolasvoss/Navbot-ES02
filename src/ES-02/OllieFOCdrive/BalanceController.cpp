@@ -39,6 +39,26 @@ bool isStale(uint32_t nowUs, uint32_t readTimeUs, uint32_t maxAgeUs) {
   return static_cast<uint32_t>(nowUs - readTimeUs) > maxAgeUs;
 }
 
+// The motion request counts only while its source is valid and it is not stale. Shaping, the commissioning
+// switch and the save switch all read the request through this predicate.
+bool requestLost(const Request &request, const Config &config, uint32_t nowUs) {
+  return !request.sourceValid || isStale(nowUs, request.receivedTimeUs, config.requestMaxAgeUs);
+}
+
+// Moves value toward target by at most maxStep, landing exactly on target.
+float approach(float previous, float target, float maxStep) {
+  const float difference = target - previous;
+  if (std::fabs(difference) <= maxStep) {
+    return target;
+  }
+  return previous + (difference > 0.0f ? maxStep : -maxStep);
+}
+
+// Forward speed of the chassis from the mean of both wheels.
+float measuredSpeedMps(const Measurements &measurements, const Config &config) {
+  return 0.5f * (measurements.leftWheelRadPerSec + measurements.rightWheelRadPerSec) * config.wheelRadiusM;
+}
+
 bool armingConditionsMet(const Measurements &measurements, const Request &request, const Config &config,
                          uint32_t nowUs) {
   const float trimRad = config.storedTrimDeg * kDegreesToRadiansF;
@@ -64,8 +84,14 @@ bool configValid(const Config &config) {
          config.speedLoopPeriodUs > 0 && std::isfinite(config.speedKpRadPerMps) &&
          std::isfinite(config.speedKiRadPerMpsS) && std::isfinite(config.tiltRefLimitRad) &&
          config.tiltRefLimitRad >= 0.0f && std::isfinite(config.tiltRefSlewRadPerSec) &&
-         config.tiltRefSlewRadPerSec > 0.0f &&
-         std::fabs(config.storedTrimDeg * kDegreesToRadiansF) <= config.tiltRefLimitRad &&
+         config.tiltRefSlewRadPerSec > 0.0f && std::isfinite(config.trimEnvelopeRad) &&
+         config.trimEnvelopeRad > 0.0f && config.trimEnvelopeRad <= config.tiltRefLimitRad &&
+         std::isfinite(config.trimSlewRadPerSec) && config.trimSlewRadPerSec > 0.0f &&
+         std::isfinite(config.knobPickupBandRad) && config.knobPickupBandRad > 0.0f &&
+         std::isfinite(config.standstillWheelSpeedTolMps) && config.standstillWheelSpeedTolMps > 0.0f &&
+         std::isfinite(config.standstillTiltErrorTolRad) && config.standstillTiltErrorTolRad > 0.0f &&
+         std::isfinite(config.transferToleranceRad) && config.transferToleranceRad > 0.0f &&
+         std::fabs(config.storedTrimDeg * kDegreesToRadiansF) <= config.trimEnvelopeRad &&
          std::isfinite(config.tiltPAPerRad) && std::isfinite(config.gyroDampingAPerRadPerSec) &&
          std::isfinite(config.yawPAPerRadPerSec) && std::isfinite(config.reserveLowA) &&
          config.reserveLowA > 0.0f;
@@ -141,12 +167,7 @@ BalanceController::SpeedLoopResult BalanceController::speedLoopStep(float speedI
 }
 
 float BalanceController::slewTiltRef(float previousRad, float desiredRad, float dtSec, const Config &config) {
-  const float maxStepRad = config.tiltRefSlewRadPerSec * dtSec;
-  const float differenceRad = desiredRad - previousRad;
-  if (std::fabs(differenceRad) <= maxStepRad) {
-    return desiredRad;
-  }
-  return previousRad + (differenceRad > 0.0f ? maxStepRad : -maxStepRad);
+  return approach(previousRad, desiredRad, config.tiltRefSlewRadPerSec * dtSec);
 }
 
 Allocation BalanceController::allocateEffort(float balanceCommonA, float yawDifferentialA, float leftMinA,
@@ -177,6 +198,21 @@ Output BalanceController::update(const Measurements &measurements, const Request
   const bool enableEdge = enableLevelKnown_ && request.enableSwitch && !previousEnableSwitch_;
   enableLevelKnown_ = true;
   previousEnableSwitch_ = request.enableSwitch;
+  commissioningRefused_ = false;
+  // Level tracked on every call. The edge counts only when the state is Commissioning on this tick and was
+  // Commissioning on the previous one, so a level present at entry never counts.
+  const bool lost = requestLost(request, config, nowUs);
+  // Save edges come only from valid frames. A lost frame ends tracking; the first valid frame after it rebases the
+  // level, so a switch that moved while RC was lost does not save when RC returns.
+  bool saveEdge = false;
+  if (lost) {
+    saveTracked_ = false;
+  } else {
+    saveEdge = saveTracked_ && request.saveSwitch && !previousSaveSwitch_;
+    saveTracked_ = true;
+    previousSaveSwitch_ = request.saveSwitch;
+  }
+  const bool wasCommissioning = state_ == State::Commissioning;
 
   if (!request.enableSwitch) {
     state_ = State::Disabled;
@@ -184,13 +220,14 @@ Output BalanceController::update(const Measurements &measurements, const Request
   } else {
     switch (state_) {
       case State::Disabled:
-        if (enableEdge && config.trimValidated && config.fixedPoseReachable && fault_ == FaultReason::None) {
+        if (enableEdge && config.trimValidated && config.fixedPoseReachable && fault_ == FaultReason::None && !lost) {
           state_ = State::Arming;
           armingStartUs_ = nowUs;
         }
         break;
       case State::Arming:
-        if (armingConditionsMet(measurements, request, config, nowUs)) {
+        // A lost request holds Arming; the arming timeout below still applies.
+        if (!lost && armingConditionsMet(measurements, request, config, nowUs)) {
           state_ = State::Run;
           resetRunTracking(config, nowUs);
           checkEnvelopes(measurements, config);  // drivers must not be enabled on an invalid model
@@ -198,8 +235,17 @@ Output BalanceController::update(const Measurements &measurements, const Request
           state_ = State::Disabled;
         }
         break;
-      case State::Run:
-      case State::Commissioning:  // Run <-> Commissioning transitions arrive in package 4 step 7.
+      case State::Run:  // Run -> Commissioning is decided inside checkRunning, on a processed IMU sample.
+        checkRunning(measurements, request, config, nowUs);
+        break;
+      case State::Commissioning:
+        // Commissioning ends only with a live request, the switch off, a validated trim, and the working trim equal
+        // to the stored one. An unsaved change keeps Commissioning.
+        if (!lost && !request.commissioningSwitch && config.trimValidated &&
+            std::fabs(trimRad_ - config.storedTrimDeg * kDegreesToRadiansF) <= config.transferToleranceRad) {
+          state_ = State::Run;
+          knobEngaged_ = false;
+        }
         checkRunning(measurements, request, config, nowUs);
         break;
       case State::Fault:  // Only the switch leaves Fault, and it leads to Disabled, never to Run.
@@ -207,20 +253,27 @@ Output BalanceController::update(const Measurements &measurements, const Request
     }
   }
 
-  if (state_ != State::Run && state_ != State::Commissioning) {
+  // A save is granted or refused on the edge, on the tick it occurs. Only the pulse is output; storage is outside.
+  bool saveGranted = false;
+  bool saveRefused = false;
+  if (wasCommissioning && saveEdge && state_ == State::Commissioning) {
+    saveGranted = saveAllowed(measurements, request, config, lost);
+    saveRefused = !saveGranted;
+  }
+
+  if (!driving()) {
     leftMinA_ = leftMaxA_ = rightMinA_ = rightMaxA_ = 0.0f;
     shapedDemand_ = Demand{};
     trimRad_ = speedPRad_ = speedIRad_ = desiredTiltRad_ = tiltRefRad_ = 0.0f;
     tiltClipped_ = false;
     effortClippedPrev_ = reserveLowPrev_ = false;
     demandScale_ = 1.0f;
-  }
-  if (state_ != State::Run) {
-    allocation_ = Allocation{};  // wheel effort is only commanded in Run until step 7 wires Commissioning
+    knobEngaged_ = false;
+    allocation_ = Allocation{};
   }
 
   Output output;
-  output.driveEnabled = state_ == State::Run;
+  output.driveEnabled = driving();
   output.state = state_;
   output.fault = fault_;
   output.leftA = allocation_.leftA;
@@ -246,6 +299,11 @@ Output BalanceController::update(const Measurements &measurements, const Request
   output.diag.speedP = speedPRad_;
   output.diag.speedI = speedIRad_;
   output.diag.tiltClipped = tiltClipped_;
+  output.diag.knobEngaged = knobEngaged_;
+  output.diag.commissioningRefused = commissioningRefused_;
+  output.diag.saveRefused = saveRefused;
+  output.saveTrimRequested = saveGranted;
+  output.trimToSaveDeg = saveGranted ? trimRad_ * kRadiansToDegreesF : 0.0f;
   return output;
 }
 
@@ -267,6 +325,7 @@ void BalanceController::resetRunTracking(const Config &config, uint32_t nowUs) {
   haveEffortDemand_ = false;
   demandScale_ = 1.0f;
   authorityClipped_ = false;
+  knobEngaged_ = false;
 }
 
 void BalanceController::latchFault(FaultReason reason) {
@@ -295,6 +354,15 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
     return;
   }
 
+  // Request loss uses the same predicate as demand shaping. Losing it disengages the knob; the trim is held.
+  const bool rcLost = requestLost(request, config, nowUs);
+  const bool knobUsable = !rcLost && request.knobValid && std::isfinite(request.knobTrimDeg);
+  if (!knobUsable) {
+    knobEngaged_ = false;
+  }
+  // Commissioning, and the commissioning switch in Run, hold the requested speed and yaw at zero.
+  const bool zeroDemand = state_ == State::Commissioning || request.commissioningSwitch;
+
   // Only a new IMU sample feeds dt and the fall timer. An unchanged sequence is not a fresh sample.
   const bool newImuSample = !imuSequenceSeen_ || measurements.imuSequence != lastImuSequence_;
   if (newImuSample) {
@@ -311,7 +379,7 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
 
       // A stale or invalid motion request is treated as a zero request and ramps down at the brake cap.
       Demand requested;
-      if (request.sourceValid && !isStale(nowUs, request.receivedTimeUs, config.requestMaxAgeUs)) {
+      if (!zeroDemand && !rcLost) {
         requested.speedMps = request.speedMps;
         requested.yawRateRadPerSec = request.yawRateRadPerSec;
       }
@@ -320,11 +388,13 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
       // The loop runs on the first processed sample at or after its period, and integrates over that elapsed time.
       const uint32_t loopElapsedUs = nowUs - lastSpeedLoopUs_;
       if (loopElapsedUs >= config.speedLoopPeriodUs) {
-        const float measuredSpeedMps =
-            0.5f * (measurements.leftWheelRadPerSec + measurements.rightWheelRadPerSec) * config.wheelRadiusM;
-        const SpeedLoopResult loop = speedLoopStep(speedIRad_, shapedDemand_.speedMps - measuredSpeedMps,
-                                                   trimRad_, effortClippedPrev_ || reserveLowPrev_,
-                                                   static_cast<float>(loopElapsedUs) * 1e-6f, config);
+        // Commissioning holds the speed integral at zero; it runs only in Run.
+        Config loopConfig = config;
+        loopConfig.speedIntegralEnabled = config.speedIntegralEnabled && state_ == State::Run;
+        const SpeedLoopResult loop =
+            speedLoopStep(speedIRad_, shapedDemand_.speedMps - measuredSpeedMps(measurements, config), trimRad_,
+                          effortClippedPrev_ || reserveLowPrev_, static_cast<float>(loopElapsedUs) * 1e-6f,
+                          loopConfig);
         speedPRad_ = loop.speedPRad;
         speedIRad_ = loop.speedIRad;
         desiredTiltRad_ = loop.desiredTiltRad;
@@ -332,6 +402,15 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
         lastSpeedLoopUs_ = nowUs;
       }
       tiltRefRad_ = slewTiltRef(tiltRefRad_, desiredTiltRad_, dtSec_, config);
+
+      if (state_ == State::Run) {
+        // A lost request does not count as the commissioning switch, so Run stays and the entry is flagged refused.
+        if (request.commissioningSwitch && (rcLost || !tryEnterCommissioning(measurements, request, config))) {
+          commissioningRefused_ = true;
+        }
+      } else if (knobUsable && state_ == State::Commissioning) {
+        stepKnob(request, config);
+      }
     }
     imuTimestampValid_ = true;
     lastImuReadTimeUs_ = measurements.imuReadTimeUs;
@@ -361,13 +440,82 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
   }
 
   checkEnvelopes(measurements, config);
-  if (state_ == State::Run) {
+  if (driving()) {
     computeEffort(measurements, config, nowUs, newImuSample);
   }
   // Checked on every tick, so the authority timer runs while the held effort stays clipped.
-  if (state_ == State::Run && authorityClipped_ &&
+  if (driving() && authorityClipped_ &&
       elapsedLongerThan(nowUs, authorityStartUs_, config.authorityDurationUs)) {
     latchFault(FaultReason::AuthorityExhausted);
+  }
+}
+
+// Run -> Commissioning, on one processed IMU sample. Changes nothing unless every check holds.
+bool BalanceController::tryEnterCommissioning(const Measurements &measurements, const Request &request,
+                                              const Config &config) {
+  const float speedMps = measuredSpeedMps(measurements, config);
+  // The raw stick must be near neutral, not just the shaped demand: shaping ramps to zero under the switch.
+  // No ongoing clip or slew, and the previous tick had neither effort nor reserve limits.
+  const bool settled = std::fabs(request.speedMps) <= config.armingRequestSpeedMps &&
+                       std::fabs(request.yawRateRadPerSec) <= config.armingRequestYawRadPerSec && !knobEngaged_ &&
+                       shapedDemand_.speedMps == 0.0f && shapedDemand_.yawRateRadPerSec == 0.0f &&
+                       std::fabs(speedMps) <= config.standstillWheelSpeedTolMps &&
+                       std::fabs(measurements.tiltRad - tiltRefRad_) <= config.standstillTiltErrorTolRad &&
+                       !tiltClipped_ && !effortClippedPrev_ && !reserveLowPrev_ &&
+                       tiltRefRad_ == desiredTiltRad_;
+  if (!settled) {
+    return false;
+  }
+
+  const float trimCandidateRad = trimRad_ + speedIRad_;
+  // The speed P term is recomputed at this tick. A stored P from an earlier loop run would make the
+  // reference jump by its change since then, and the check below refuses that.
+  const float speedPRad = config.speedKpRadPerMps * (shapedDemand_.speedMps - speedMps);
+  const float unclampedRad = trimCandidateRad + speedPRad;
+  const float limitRad = config.tiltRefLimitRad;
+  const float proposedRad = std::max(-limitRad, std::min(limitRad, unclampedRad));
+  const bool holds = std::fabs(trimCandidateRad) <= config.trimEnvelopeRad && std::fabs(unclampedRad) <= limitRad &&
+                     std::fabs(proposedRad - tiltRefRad_) <= config.transferToleranceRad;
+  if (!holds) {
+    return false;
+  }
+
+  speedIRad_ = 0.0f;
+  trimRad_ = trimCandidateRad;
+  speedPRad_ = speedPRad;
+  desiredTiltRad_ = proposedRad;
+  knobEngaged_ = false;
+  state_ = State::Commissioning;
+  return true;
+}
+
+// Save check, run on a save edge in Commissioning. Every condition must hold. The trim is saved as it is now, so
+// a trim still slewing toward a knob target is refused.
+bool BalanceController::saveAllowed(const Measurements &measurements, const Request &request, const Config &config,
+                                    bool lost) const {
+  const float speedMps = measuredSpeedMps(measurements, config);
+  const float knobTargetRad = std::max(-config.trimEnvelopeRad,
+                                       std::min(config.trimEnvelopeRad, request.knobTrimDeg * kDegreesToRadiansF));
+  const bool knobPending = knobEngaged_ && knobTargetRad != trimRad_;
+  return !lost && speedIRad_ == 0.0f && shapedDemand_.speedMps == 0.0f &&
+         shapedDemand_.yawRateRadPerSec == 0.0f && std::fabs(request.speedMps) <= config.armingRequestSpeedMps &&
+         std::fabs(request.yawRateRadPerSec) <= config.armingRequestYawRadPerSec &&
+         std::fabs(speedMps) <= config.standstillWheelSpeedTolMps &&
+         std::fabs(measurements.tiltRad - tiltRefRad_) <= config.standstillTiltErrorTolRad && !tiltClipped_ &&
+         !allocation_.effortClipped && allocation_.reserve >= config.reserveLowA &&
+         tiltRefRad_ == desiredTiltRad_ && !knobPending;
+}
+
+// Commissioning only. Pickup needs the knob inside the band around the working trim; once engaged, the trim
+// follows the knob at the slew rate, clamped to the envelope.
+void BalanceController::stepKnob(const Request &request, const Config &config) {
+  const float knobRad = request.knobTrimDeg * kDegreesToRadiansF;
+  if (!knobEngaged_ && std::fabs(knobRad - trimRad_) < config.knobPickupBandRad) {
+    knobEngaged_ = true;
+  }
+  if (knobEngaged_) {
+    const float targetRad = std::max(-config.trimEnvelopeRad, std::min(config.trimEnvelopeRad, knobRad));
+    trimRad_ = approach(trimRad_, targetRad, config.trimSlewRadPerSec * dtSec_);
   }
 }
 

@@ -69,6 +69,9 @@ struct Diagnostics {
   float rightMaxA = 0.0f;
   float shapedSpeedMps = 0.0f;
   float shapedYawRateRadPerSec = 0.0f;
+  bool knobEngaged = false;
+  bool commissioningRefused = false;  // Run stayed, because the commissioning switch was on and the transfer failed or the request was lost
+  bool saveRefused = false;           // a save edge in Commissioning was refused on this tick; no pulse
 };
 
 struct Output {
@@ -78,6 +81,8 @@ struct Output {
   State state = State::Disabled;
   FaultReason fault = FaultReason::None;
   Diagnostics diag;
+  // One-tick pulse on a granted save. The module does not persist or validate the trim: storage and the 60 s
+  // hold happen outside it, and the caller stores trimToSaveDeg on this pulse.
   bool saveTrimRequested = false;
   float trimToSaveDeg = 0.0f;
 };
@@ -133,6 +138,14 @@ struct Config {
   bool speedIntegralEnabled = false;  // off until the speed integral is commissioned
   float tiltRefLimitRad = 0.0f;       // uncommissioned, bounds |trim + speed correction|
   float tiltRefSlewRadPerSec = 0.0f;  // uncommissioned
+
+  // Trim and standstill commissioning. Trim is the balance reference offset in radians, not a gain.
+  float trimEnvelopeRad = 0.0f;               // uncommissioned, max |trim|, at most tiltRefLimitRad
+  float trimSlewRadPerSec = 0.0f;             // uncommissioned, knob-driven trim change rate
+  float knobPickupBandRad = 0.0f;             // uncommissioned, knob engages inside this band around the trim
+  float standstillWheelSpeedTolMps = 0.0f;    // uncommissioned, measured speed allowed for the transfer
+  float standstillTiltErrorTolRad = 0.0f;     // uncommissioned, |tilt - applied reference| allowed for the transfer
+  float transferToleranceRad = 0.0f;          // uncommissioned, numerical tolerance for an unchanged reference
 
   // Balance and yaw law, in amperes. Gains may be negative; the stage-1 sign test checks the signs.
   float tiltPAPerRad = 0.0f;              // uncommissioned, A per rad of tilt error
@@ -203,9 +216,14 @@ class BalanceController {
                 uint32_t nowUs);
 
  private:
+  bool driving() const { return state_ == State::Run || state_ == State::Commissioning; }
   void resetRunTracking(const Config &config, uint32_t nowUs);
   void checkRunning(const Measurements &measurements, const Request &request, const Config &config,
                     uint32_t nowUs);
+  bool tryEnterCommissioning(const Measurements &measurements, const Request &request, const Config &config);
+  bool saveAllowed(const Measurements &measurements, const Request &request, const Config &config,
+                   bool lost) const;
+  void stepKnob(const Request &request, const Config &config);
   void latchFault(FaultReason reason);
   void checkEnvelopes(const Measurements &measurements, const Config &config);
   void computeEffort(const Measurements &measurements, const Config &config, uint32_t nowUs, bool newImuSample);
@@ -214,6 +232,10 @@ class BalanceController {
   FaultReason fault_ = FaultReason::None;
   bool enableLevelKnown_ = false;
   bool previousEnableSwitch_ = false;
+  // Save switch level of the previous update() call; a save is an edge of this level in Commissioning.
+  bool previousSaveSwitch_ = false;
+  // False after a lost request, so the first valid frame rebases the level without an edge.
+  bool saveTracked_ = false;
   uint32_t armingStartUs_ = 0;
 
   // IMU sequence and timestamp of the last processed sample. Sequence persists across arming.
@@ -249,6 +271,8 @@ class BalanceController {
 
   // Speed loop and tilt reference. Zero outside Run and Commissioning; the trim is fixed for this step.
   float trimRad_ = 0.0f;
+  bool knobEngaged_ = false;  // only in Commissioning; cleared on entry, on RC loss and on an invalid knob
+  bool commissioningRefused_ = false;  // set on the tick the Run -> Commissioning transfer was refused
   float speedPRad_ = 0.0f;
   float speedIRad_ = 0.0f;
   float desiredTiltRad_ = 0.0f;  // stored result of the last speed loop run

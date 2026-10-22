@@ -60,6 +60,14 @@ Config makeConfig() {
   // stays above it and demandScale stays 1.
   config.reserveLowA = 0.1f;
   config.authorityDurationUs = 100000;
+  // Trim (step 7): envelope 0.2 rad (above the 10 degree stored trim, below the 0.3 rad tilt limit), knob slew
+  // 0.1 rad/s, pickup band 0.02 rad, standstill tolerances 0.01 m/s and 0.01 rad, transfer tolerance 1e-4 rad.
+  config.trimEnvelopeRad = 0.2f;
+  config.trimSlewRadPerSec = 0.1f;
+  config.knobPickupBandRad = 0.02f;
+  config.standstillWheelSpeedTolMps = 0.01f;
+  config.standstillTiltErrorTolRad = 0.01f;
+  config.transferToleranceRad = 1e-4f;
   return config;
 }
 
@@ -120,10 +128,18 @@ Output sample(BalanceController &controller, const Measurements &m, const Config
 }
 
 // Off, then on (Arming), then Run once the arming conditions hold. Run is entered at startUs + 2000.
+// A request with the given switch, received at nowUs, so it is live at nowUs.
+Request liveSwitch(uint32_t nowUs, bool enableSwitch) {
+  Request r = makeRequest(enableSwitch);
+  r.receivedTimeUs = nowUs;
+  return r;
+}
+
 void enterRun(BalanceController &controller, const Config &config, uint32_t startUs) {
-  tick(controller, makeMeasurements(), makeRequest(false), config, startUs);
-  tick(controller, makeMeasurements(), makeRequest(true), config, startUs + 1000);
-  assert(tick(controller, makeMeasurements(), makeRequest(true), config, startUs + 2000).state == State::Run);
+  tick(controller, makeMeasurements(), liveSwitch(startUs, false), config, startUs);
+  tick(controller, makeMeasurements(), liveSwitch(startUs + 1000, true), config, startUs + 1000);
+  assert(tick(controller, makeMeasurements(), liveSwitch(startUs + 2000, true), config, startUs + 2000).state ==
+         State::Run);
 }
 
 Demand shape(Demand previous, float speedMps, float yawRadPerSec, float demandScale, float dtSec,
@@ -213,6 +229,70 @@ Output heldTick(BalanceController &controller, const Config &config, uint32_t no
   m.imuSequence = imuSequence;
   return controller.update(m, makeRequest(true), config, nowUs);
 }
+
+// Step 7. Degree and radian conversions for the test values, written out here rather than taken from the module.
+constexpr float kDegToRad = 0.0174532925f;
+constexpr float kRadToDeg = 57.2957795f;
+
+// Step 7 config: the balance config with the speed loop on (Kp 0.5 rad per m/s, Ki 2 rad per m/s per s).
+Config makeTrimConfig() {
+  Config config = makeBalanceConfig();
+  config.speedKpRadPerMps = 0.5f;
+  config.speedKiRadPerMpsS = 2.0f;
+  config.speedIntegralEnabled = true;
+  return config;
+}
+
+// A live zero-motion request received at requestTimeUs, with the commissioning switch and knob as given.
+Request trimRequest(uint32_t requestTimeUs, bool commissioningSwitch, bool knobValid = false, float knobDeg = 0.0f) {
+  Request r = liveRequest(requestTimeUs, 0.0f, 0.0f);
+  r.commissioningSwitch = commissioningSwitch;
+  r.knobValid = knobValid;
+  r.knobTrimDeg = knobDeg;
+  return r;
+}
+
+// A live zero-motion request received at requestTimeUs, with the save switch as given and the commissioning switch on.
+Request saveRequest(uint32_t requestTimeUs, bool saveSwitch) {
+  Request r = trimRequest(requestTimeUs, true);
+  r.saveSwitch = saveSwitch;
+  return r;
+}
+
+// A live request received at nowUs with the given speed and commissioning switch.
+Request motionRequest(uint32_t nowUs, float speedMps, bool commissioningSwitch) {
+  Request r = liveRequest(nowUs, speedMps, 0.0f);
+  r.commissioningSwitch = commissioningSwitch;
+  return r;
+}
+
+// A new IMU sample at nowUs with the knob given; the wheels are at rest and the request is fresh.
+Output knobSample(BalanceController &controller, const Config &config, uint32_t nowUs, uint32_t imuSequence,
+                  bool knobValid, float knobDeg) {
+  return imuSample(controller, config, nowUs, imuSequence, ImuValues{}, trimRequest(nowUs, true, knobValid, knobDeg));
+}
+
+// Run at baseUs, then Commissioning at baseUs + 22000 us. The 22000 us sample is the first loop run with the switch
+// on. With speed P and speed I at zero there, the transfer keeps the trim and the reference unchanged.
+void enterCommissioning(BalanceController &controller, const Config &config, uint32_t baseUs) {
+  enterRun(controller, config, baseUs);
+  imuSample(controller, config, baseUs + 12000u, 2, ImuValues{}, trimRequest(baseUs + 12000u, false));
+  assert(imuSample(controller, config, baseUs + 22000u, 3, ImuValues{}, trimRequest(baseUs + 22000u, true)).state ==
+         State::Commissioning);
+}
+
+// Run with a standstill speed error of -0.008 m/s, so speed I integrates to about 0.0074 rad. One transfer request
+// follows at 922000 us, on a loop run. Returns that tick.
+Output integralThenTransfer(const Config &config) {
+  BalanceController controller;
+  enterRun(controller, config, 0);
+  const ImuValues drift{0.0f, 0.0f, 0.0f, -0.08f, -0.08f};
+  for (uint32_t k = 0; k < 90; ++k) {
+    const uint32_t t = 12000u + 10000u * k;
+    imuSample(controller, config, t, 2 + k, drift, trimRequest(t, false));
+  }
+  return imuSample(controller, config, 922000u, 92, drift, trimRequest(922000u, true));
+}
 }  // namespace
 
 int main() {
@@ -223,7 +303,7 @@ int main() {
   {
     BalanceController bc;
     for (uint32_t t = 1000; t <= 4000; t += 1000) {
-      const Output out = tick(bc, good, makeRequest(false), config, t);
+      const Output out = tick(bc, good, liveSwitch(t, false), config, t);
       assert(out.state == State::Disabled && !out.driveEnabled);
     }
   }
@@ -231,17 +311,17 @@ int main() {
   // A switch that is already on at the first update does not arm.
   {
     BalanceController bc;
-    assert(tick(bc, good, makeRequest(true), config, 1000).state == State::Disabled);
-    assert(tick(bc, good, makeRequest(true), config, 2000).state == State::Disabled);
-    const Output out = tick(bc, good, makeRequest(true), config, 3000);
+    assert(tick(bc, good, liveSwitch(1000, true), config, 1000).state == State::Disabled);
+    assert(tick(bc, good, liveSwitch(2000, true), config, 2000).state == State::Disabled);
+    const Output out = tick(bc, good, liveSwitch(3000, true), config, 3000);
     assert(out.state == State::Disabled && !out.driveEnabled);
   }
 
   // An off-to-on edge enters Arming, and drivers stay off there.
   {
     BalanceController bc;
-    tick(bc, good, makeRequest(false), config, 1000);
-    const Output out = tick(bc, good, makeRequest(true), config, 2000);
+    tick(bc, good, liveSwitch(1000, false), config, 1000);
+    const Output out = tick(bc, good, liveSwitch(2000, true), config, 2000);
     assert(out.state == State::Arming && !out.driveEnabled);
   }
 
@@ -250,11 +330,11 @@ int main() {
     Config noTrim = config;
     noTrim.trimValidated = false;
     BalanceController bc;
-    tick(bc, good, makeRequest(false), noTrim, 1000);
-    assert(tick(bc, good, makeRequest(true), noTrim, 2000).state == State::Disabled);
-    assert(tick(bc, good, makeRequest(true), config, 3000).state == State::Disabled);  // no edge
-    tick(bc, good, makeRequest(false), config, 4000);
-    assert(tick(bc, good, makeRequest(true), config, 5000).state == State::Arming);
+    tick(bc, good, liveSwitch(1000, false), noTrim, 1000);
+    assert(tick(bc, good, liveSwitch(2000, true), noTrim, 2000).state == State::Disabled);
+    assert(tick(bc, good, liveSwitch(3000, true), config, 3000).state == State::Disabled);  // no edge
+    tick(bc, good, liveSwitch(4000, false), config, 4000);
+    assert(tick(bc, good, liveSwitch(5000, true), config, 5000).state == State::Arming);
   }
 
   // Without a reachable fixed pose, the edge is lost and a later level does not arm.
@@ -262,19 +342,19 @@ int main() {
     Config noPose = config;
     noPose.fixedPoseReachable = false;
     BalanceController bc;
-    tick(bc, good, makeRequest(false), noPose, 1000);
-    assert(tick(bc, good, makeRequest(true), noPose, 2000).state == State::Disabled);
-    assert(tick(bc, good, makeRequest(true), config, 3000).state == State::Disabled);  // no edge
-    tick(bc, good, makeRequest(false), config, 4000);
-    assert(tick(bc, good, makeRequest(true), config, 5000).state == State::Arming);
+    tick(bc, good, liveSwitch(1000, false), noPose, 1000);
+    assert(tick(bc, good, liveSwitch(2000, true), noPose, 2000).state == State::Disabled);
+    assert(tick(bc, good, liveSwitch(3000, true), config, 3000).state == State::Disabled);  // no edge
+    tick(bc, good, liveSwitch(4000, false), config, 4000);
+    assert(tick(bc, good, liveSwitch(5000, true), config, 5000).state == State::Arming);
   }
 
   // Arming moves to Run once every condition holds, with drivers enabled and zero phase current.
   {
     BalanceController bc;
-    tick(bc, good, makeRequest(false), config, 1000);
-    assert(tick(bc, good, makeRequest(true), config, 2000).state == State::Arming);
-    const Output out = tick(bc, good, makeRequest(true), config, 3000);
+    tick(bc, good, liveSwitch(1000, false), config, 1000);
+    assert(tick(bc, good, liveSwitch(2000, true), config, 2000).state == State::Arming);
+    const Output out = tick(bc, good, liveSwitch(3000, true), config, 3000);
     assert(out.state == State::Run && out.driveEnabled);
     assert(out.leftA == 0.0f && out.rightA == 0.0f);
     assert(!out.saveTrimRequested);
@@ -300,7 +380,7 @@ int main() {
       Request r = makeRequest(true);
       c.apply(m, r);
       BalanceController bc;
-      tick(bc, good, makeRequest(false), config, 1000);
+      tick(bc, good, liveSwitch(1000, false), config, 1000);
       tick(bc, m, r, config, 2000);
       assert(tick(bc, m, r, config, 3000).state == State::Arming);
     }
@@ -312,10 +392,10 @@ int main() {
     Measurements level = good;
     level.tiltRad = 0.0f;
     BalanceController bc;
-    tick(bc, level, makeRequest(false), config, 1000);
-    assert(tick(bc, level, makeRequest(true), config, 2000).state == State::Arming);
-    assert(tick(bc, level, makeRequest(true), config, 3000).state == State::Arming);
-    assert(tick(bc, good, makeRequest(true), config, 4000).state == State::Run);
+    tick(bc, level, liveSwitch(1000, false), config, 1000);
+    assert(tick(bc, level, liveSwitch(2000, true), config, 2000).state == State::Arming);
+    assert(tick(bc, level, liveSwitch(3000, true), config, 3000).state == State::Arming);
+    assert(tick(bc, good, liveSwitch(4000, true), config, 4000).state == State::Run);
   }
 
   // Arming times out after the configured duration, measured with elapsed time across micros() wrap.
@@ -324,10 +404,10 @@ int main() {
     Measurements unstable = good;
     unstable.tiltRateRadPerSec = 1.0f;
     BalanceController bc;
-    tick(bc, unstable, makeRequest(false), config, start - 1000);
-    assert(tick(bc, unstable, makeRequest(true), config, start).state == State::Arming);
-    assert(tick(bc, unstable, makeRequest(true), config, start + kTimeoutUs).state == State::Arming);
-    assert(tick(bc, unstable, makeRequest(true), config, start + kTimeoutUs + 1).state == State::Disabled);
+    tick(bc, unstable, liveSwitch(start - 1000, false), config, start - 1000);
+    assert(tick(bc, unstable, liveSwitch(start, true), config, start).state == State::Arming);
+    assert(tick(bc, unstable, liveSwitch(start + kTimeoutUs, true), config, start + kTimeoutUs).state == State::Arming);
+    assert(tick(bc, unstable, liveSwitch(start + kTimeoutUs + 1, true), config, start + kTimeoutUs + 1).state == State::Disabled);
   }
 
   // After a timeout, the switch held on cannot re-arm; a fresh edge is needed.
@@ -335,30 +415,30 @@ int main() {
     Measurements unstable = good;
     unstable.tiltRateRadPerSec = 1.0f;
     BalanceController bc;
-    tick(bc, unstable, makeRequest(false), config, 1000);
-    tick(bc, unstable, makeRequest(true), config, 2000);
-    assert(tick(bc, unstable, makeRequest(true), config, 2000 + kTimeoutUs + 1).state == State::Disabled);
-    assert(tick(bc, good, makeRequest(true), config, 2000 + kTimeoutUs + 2).state == State::Disabled);
-    tick(bc, good, makeRequest(false), config, 2000 + kTimeoutUs + 3);
-    assert(tick(bc, good, makeRequest(true), config, 2000 + kTimeoutUs + 4).state == State::Arming);
+    tick(bc, unstable, liveSwitch(1000, false), config, 1000);
+    tick(bc, unstable, liveSwitch(2000, true), config, 2000);
+    assert(tick(bc, unstable, liveSwitch(2000 + kTimeoutUs + 1, true), config, 2000 + kTimeoutUs + 1).state == State::Disabled);
+    assert(tick(bc, good, liveSwitch(2000 + kTimeoutUs + 2, true), config, 2000 + kTimeoutUs + 2).state == State::Disabled);
+    tick(bc, good, liveSwitch(2000 + kTimeoutUs + 3, false), config, 2000 + kTimeoutUs + 3);
+    assert(tick(bc, good, liveSwitch(2000 + kTimeoutUs + 4, true), config, 2000 + kTimeoutUs + 4).state == State::Arming);
   }
 
   // Switch off during Arming goes to Disabled.
   {
     BalanceController bc;
-    tick(bc, good, makeRequest(false), config, 1000);
-    assert(tick(bc, good, makeRequest(true), config, 2000).state == State::Arming);
-    const Output out = tick(bc, good, makeRequest(false), config, 2500);
+    tick(bc, good, liveSwitch(1000, false), config, 1000);
+    assert(tick(bc, good, liveSwitch(2000, true), config, 2000).state == State::Arming);
+    const Output out = tick(bc, good, liveSwitch(2500, false), config, 2500);
     assert(out.state == State::Disabled && !out.driveEnabled);
   }
 
   // Switch off during Run goes to Disabled with drivers disabled.
   {
     BalanceController bc;
-    tick(bc, good, makeRequest(false), config, 1000);
-    tick(bc, good, makeRequest(true), config, 2000);
-    assert(tick(bc, good, makeRequest(true), config, 3000).state == State::Run);
-    const Output out = tick(bc, good, makeRequest(false), config, 4000);
+    tick(bc, good, liveSwitch(1000, false), config, 1000);
+    tick(bc, good, liveSwitch(2000, true), config, 2000);
+    assert(tick(bc, good, liveSwitch(3000, true), config, 3000).state == State::Run);
+    const Output out = tick(bc, good, liveSwitch(4000, false), config, 4000);
     assert(out.state == State::Disabled && !out.driveEnabled);
     assert(out.leftA == 0.0f && out.rightA == 0.0f);
   }
@@ -368,21 +448,21 @@ int main() {
     Measurements tilted = good;
     tilted.tiltRad = 0.5f;
     BalanceController bc;
-    tick(bc, good, makeRequest(false), config, 1000);
-    tick(bc, good, makeRequest(true), config, 2000);
-    assert(tick(bc, good, makeRequest(true), config, 3000).state == State::Run);
-    const Output out = tick(bc, tilted, makeRequest(true), config, 4000);
+    tick(bc, good, liveSwitch(1000, false), config, 1000);
+    tick(bc, good, liveSwitch(2000, true), config, 2000);
+    assert(tick(bc, good, liveSwitch(3000, true), config, 3000).state == State::Run);
+    const Output out = tick(bc, tilted, liveSwitch(4000, true), config, 4000);
     assert(out.state == State::Run && out.driveEnabled);
   }
 
   // After Run is left by switch off, arming again needs a new edge.
   {
     BalanceController bc;
-    tick(bc, good, makeRequest(false), config, 1000);
-    tick(bc, good, makeRequest(true), config, 2000);
-    tick(bc, good, makeRequest(true), config, 3000);
-    tick(bc, good, makeRequest(false), config, 4000);
-    assert(tick(bc, good, makeRequest(true), config, 5000).state == State::Arming);
+    tick(bc, good, liveSwitch(1000, false), config, 1000);
+    tick(bc, good, liveSwitch(2000, true), config, 2000);
+    tick(bc, good, liveSwitch(3000, true), config, 3000);
+    tick(bc, good, liveSwitch(4000, false), config, 4000);
+    assert(tick(bc, good, liveSwitch(5000, true), config, 5000).state == State::Arming);
   }
 
   // Step 2: freshness. In Run, an age equal to the limit is fresh and one microsecond more faults.
@@ -427,14 +507,14 @@ int main() {
     noImu.imuValid = false;
     BalanceController bc;
     enterRun(bc, config, 100000);
-    const Output out = tick(bc, noImu, makeRequest(true), config, 112000);
+    const Output out = tick(bc, noImu, liveSwitch(112000, true), config, 112000);
     assert(out.state == State::Fault && out.fault == FaultReason::InvalidInput);
 
     Measurements noWheels = good;
     noWheels.wheelsValid = false;
     BalanceController bc2;
     enterRun(bc2, config, 100000);
-    const Output out2 = tick(bc2, noWheels, makeRequest(true), config, 112000);
+    const Output out2 = tick(bc2, noWheels, liveSwitch(112000, true), config, 112000);
     assert(out2.state == State::Fault && out2.fault == FaultReason::InvalidInput);
   }
 
@@ -453,8 +533,8 @@ int main() {
   // Arming needs fresh IMU, wheels and bus; stale inputs keep Arming until fresh ones arrive.
   {
     BalanceController bc;
-    tick(bc, good, makeRequest(false), config, 200000);
-    assert(tick(bc, good, makeRequest(true), config, 201000).state == State::Arming);
+    tick(bc, good, liveSwitch(200000, false), config, 200000);
+    assert(tick(bc, good, liveSwitch(201000, true), config, 201000).state == State::Arming);
 
     Measurements staleBus = atTime(good, 202000);
     staleBus.busReadTimeUs = 202000 - config.busMaxAgeUs - 1;
@@ -464,7 +544,7 @@ int main() {
     staleImu.imuReadTimeUs = 203000 - config.imuMaxAgeUs - 1;
     assert(bc.update(staleImu, makeRequest(true), config, 203000).state == State::Arming);
 
-    assert(tick(bc, good, makeRequest(true), config, 204000).state == State::Run);
+    assert(tick(bc, good, liveSwitch(204000, true), config, 204000).state == State::Run);
   }
 
   // An unchanged IMU sequence is not a new sample: it computes no dt and does not refresh the sample.
@@ -517,7 +597,7 @@ int main() {
     BalanceController bc;
     enterRun(bc, config, 100000);
     assert(sample(bc, good, config, 103000, 2).state == State::Run);
-    tick(bc, good, makeRequest(false), config, 104000);
+    tick(bc, good, liveSwitch(104000, false), config, 104000);
     enterRun(bc, config, 200000);
     assert(sample(bc, good, config, 302000, 3).state == State::Run);
     assert(sample(bc, good, config, 303000, 4).state == State::Run);
@@ -566,9 +646,9 @@ int main() {
     fast.leftWheelRadPerSec = 150.0f;
     // Overspeed starts at base; 200 ms elapsed is still allowed, 210 ms latches.
     for (uint32_t j = 0; j <= 20; ++j) {
-      assert(tick(bc, fast, makeRequest(true), config, base + 10000u * j).state == State::Run);
+      assert(tick(bc, fast, liveSwitch(base + 10000u * j, true), config, base + 10000u * j).state == State::Run);
     }
-    const Output out = tick(bc, fast, makeRequest(true), config, base + 210000u);
+    const Output out = tick(bc, fast, liveSwitch(base + 210000u, true), config, base + 210000u);
     assert(out.state == State::Fault && out.fault == FaultReason::Overspeed && !out.driveEnabled);
   }
 
@@ -580,10 +660,10 @@ int main() {
     fast.rightWheelRadPerSec = -150.0f;
     const Measurements still = good;
     const uint32_t base = 110000;
-    for (uint32_t j = 0; j <= 15; ++j) assert(tick(bc, fast, makeRequest(true), config, base + 10000u * j).state == State::Run);
-    assert(tick(bc, still, makeRequest(true), config, base + 10000u * 16).state == State::Run);
-    for (uint32_t j = 17; j <= 37; ++j) assert(tick(bc, fast, makeRequest(true), config, base + 10000u * j).state == State::Run);
-    const Output out = tick(bc, fast, makeRequest(true), config, base + 10000u * 38);
+    for (uint32_t j = 0; j <= 15; ++j) assert(tick(bc, fast, liveSwitch(base + 10000u * j, true), config, base + 10000u * j).state == State::Run);
+    assert(tick(bc, still, liveSwitch(base + 10000u * 16, true), config, base + 10000u * 16).state == State::Run);
+    for (uint32_t j = 17; j <= 37; ++j) assert(tick(bc, fast, liveSwitch(base + 10000u * j, true), config, base + 10000u * j).state == State::Run);
+    const Output out = tick(bc, fast, liveSwitch(base + 10000u * 38, true), config, base + 10000u * 38);
     assert(out.state == State::Fault && out.fault == FaultReason::Overspeed);
   }
 
@@ -594,7 +674,7 @@ int main() {
     enterRun(bc, config, 100000);
     Measurements bad = good;
     bad.leftWheelRadPerSec = std::numeric_limits<float>::quiet_NaN();
-    const Output out = tick(bc, bad, makeRequest(true), config, 110000u);
+    const Output out = tick(bc, bad, liveSwitch(110000u, true), config, 110000u);
     assert(out.state == State::Fault && out.fault == FaultReason::InvalidEnvelope && !out.driveEnabled);
   }
 
@@ -618,7 +698,7 @@ int main() {
     atLimit.leftWheelRadPerSec = 100.0f;
     atLimit.rightWheelRadPerSec = -100.0f;
     for (uint32_t j = 0; j <= 100; ++j) {
-      assert(tick(bc, atLimit, makeRequest(true), config, 110000u + 10000u * j).state == State::Run);
+      assert(tick(bc, atLimit, liveSwitch(110000u + 10000u * j, true), config, 110000u + 10000u * j).state == State::Run);
     }
   }
 
@@ -628,18 +708,18 @@ int main() {
     enterRun(bc, config, 100000);
     Measurements noImu = good;
     noImu.imuValid = false;
-    const Output faulted = tick(bc, noImu, makeRequest(true), config, 103000);
+    const Output faulted = tick(bc, noImu, liveSwitch(103000, true), config, 103000);
     assert(faulted.state == State::Fault && faulted.fault == FaultReason::InvalidInput);
     assert(!faulted.driveEnabled && faulted.leftA == 0.0f && faulted.rightA == 0.0f);
-    assert(tick(bc, good, makeRequest(true), config, 104000).state == State::Fault);
-    assert(tick(bc, good, makeRequest(true), config, 300000).state == State::Fault);
+    assert(tick(bc, good, liveSwitch(104000, true), config, 104000).state == State::Fault);
+    assert(tick(bc, good, liveSwitch(300000, true), config, 300000).state == State::Fault);
 
-    const Output off = tick(bc, good, makeRequest(false), config, 301000);
+    const Output off = tick(bc, good, liveSwitch(301000, false), config, 301000);
     assert(off.state == State::Disabled && off.fault == FaultReason::None && !off.driveEnabled);
 
     // A new edge rearms through Arming, never straight into Run.
-    assert(tick(bc, good, makeRequest(true), config, 302000).state == State::Arming);
-    assert(tick(bc, good, makeRequest(true), config, 303000).state == State::Run);
+    assert(tick(bc, good, liveSwitch(302000, true), config, 302000).state == State::Arming);
+    assert(tick(bc, good, liveSwitch(303000, true), config, 303000).state == State::Run);
   }
 
   // Step 3: per-wheel envelope. At rest with bus 8.4 V: Vmax = min(8.4, (8.4 - 0.4) * 1.0) = 8.0 V,
@@ -659,7 +739,7 @@ int main() {
   {
     BalanceController bc;
     enterRun(bc, config, 100000);
-    const Output out = tick(bc, good, makeRequest(true), config, 110000);
+    const Output out = tick(bc, good, liveSwitch(110000, true), config, 110000);
     assert(closeTo(out.diag.leftMaxA, 0.381818f) && closeTo(out.diag.leftMinA, -0.381818f));
   }
 
@@ -768,9 +848,9 @@ int main() {
       if (which == 1) broken.accelCapMps2 = -2.0f;
       if (which == 2) broken.speedCapMps = std::numeric_limits<float>::quiet_NaN();
       BalanceController bc;
-      tick(bc, good, makeRequest(false), broken, 1000);
-      tick(bc, good, makeRequest(true), broken, 2000);
-      const Output armed = tick(bc, good, makeRequest(true), broken, 3000);
+      tick(bc, good, liveSwitch(1000, false), broken, 1000);
+      tick(bc, good, liveSwitch(2000, true), broken, 2000);
+      const Output armed = tick(bc, good, liveSwitch(3000, true), broken, 3000);
       assert(armed.state == State::Fault && armed.fault == FaultReason::InvalidConfig && !armed.driveEnabled);
     }
   }
@@ -795,11 +875,11 @@ int main() {
     Config bigTrim = config;
     bigTrim.storedTrimDeg = 20.0f;  // 0.349 rad > tiltRefLimitRad 0.3
     BalanceController bc;
-    tick(bc, good, makeRequest(false), bigTrim, 1000);
-    tick(bc, good, makeRequest(true), bigTrim, 2000);
+    tick(bc, good, liveSwitch(1000, false), bigTrim, 1000);
+    tick(bc, good, liveSwitch(2000, true), bigTrim, 2000);
     Measurements tilted = good;
     tilted.tiltRad = 20.0f * 3.14159265f / 180.0f;
-    const Output armed = tick(bc, tilted, makeRequest(true), bigTrim, 3000);
+    const Output armed = tick(bc, tilted, liveSwitch(3000, true), bigTrim, 3000);
     assert(armed.state == State::Fault && armed.fault == FaultReason::InvalidConfig);
   }
 
@@ -808,9 +888,9 @@ int main() {
     Config broken = config;
     broken.kvRating = 0.0f;
     BalanceController bc;
-    tick(bc, good, makeRequest(false), broken, 1000);
-    tick(bc, good, makeRequest(true), broken, 2000);
-    const Output armed = tick(bc, good, makeRequest(true), broken, 3000);
+    tick(bc, good, liveSwitch(1000, false), broken, 1000);
+    tick(bc, good, liveSwitch(2000, true), broken, 2000);
+    const Output armed = tick(bc, good, liveSwitch(3000, true), broken, 3000);
     assert(armed.state == State::Fault && armed.fault == FaultReason::InvalidEnvelope && !armed.driveEnabled);
   }
 
@@ -838,7 +918,7 @@ int main() {
       c.apply(bad, m);
       BalanceController bc;
       enterRun(bc, config, 100000);
-      const Output out = tick(bc, m, makeRequest(true), bad, 110000);
+      const Output out = tick(bc, m, liveSwitch(110000, true), bad, 110000);
       assert(out.state == State::Fault && out.fault == FaultReason::InvalidEnvelope && !out.driveEnabled);
       assert(out.leftA == 0.0f && out.rightA == 0.0f);
     }
@@ -1077,9 +1157,9 @@ int main() {
   {
     const auto armedWith = [&](const Config &bad) {
       BalanceController bc;
-      tick(bc, good, makeRequest(false), config, 1000);
-      tick(bc, good, makeRequest(true), config, 2000);
-      return tick(bc, good, makeRequest(true), bad, 3000);
+      tick(bc, good, liveSwitch(1000, false), config, 1000);
+      tick(bc, good, liveSwitch(2000, true), config, 2000);
+      return tick(bc, good, liveSwitch(3000, true), bad, 3000);
     };
     Config noPeriod = config;
     noPeriod.speedLoopPeriodUs = 0;
@@ -1101,9 +1181,9 @@ int main() {
     Config integ = config;
     integ.speedIntegralEnabled = true;
     BalanceController bc;
-    tick(bc, good, makeRequest(false), integ, 0);
-    tick(bc, good, makeRequest(true), integ, 1000);
-    const Output entry = tick(bc, good, makeRequest(true), integ, 2000);
+    tick(bc, good, liveSwitch(0, false), integ, 0);
+    tick(bc, good, liveSwitch(1000, true), integ, 1000);
+    const Output entry = tick(bc, good, liveSwitch(2000, true), integ, 2000);
     assert(entry.state == State::Run);
     // Tilt reference starts at the stored trim of 10 degrees.
     assert(nearlyTo(entry.diag.tiltRefRad, kTrimTiltRad, 1e-6f) && nearlyTo(entry.diag.trimDeg, 10.0f, 1e-3f));
@@ -1130,9 +1210,9 @@ int main() {
 
     // Switching the enable off and on again re-enters Run. The speed loop state starts from zero and the
     // reference restarts at the trim.
-    tick(bc, good, makeRequest(false), integ, 50000);
-    tick(bc, good, makeRequest(true), integ, 51000);
-    const Output reentry = tick(bc, good, makeRequest(true), integ, 52000);
+    tick(bc, good, liveSwitch(50000, false), integ, 50000);
+    tick(bc, good, liveSwitch(51000, true), integ, 51000);
+    const Output reentry = tick(bc, good, liveSwitch(52000, true), integ, 52000);
     assert(reentry.state == State::Run);
     assert(nearlyTo(reentry.diag.speedI, 0.0f, 1e-6f) && nearlyTo(reentry.diag.speedP, 0.0f, 1e-6f));
     assert(nearlyTo(reentry.diag.tiltRefRad, kTrimTiltRad, 1e-6f));
@@ -1297,7 +1377,7 @@ int main() {
   // Step 6, outputs: zero in Disabled, Arming, and Fault. The output is also zero for a fault latched by a stale IMU.
   {
     BalanceController bc;
-    tick(bc, good, makeRequest(false), balance, 1000);
+    tick(bc, good, liveSwitch(1000, false), balance, 1000);
     // Tilt error 0.5 is outside the 0.05 rad arming window, so the controller stays in Arming.
     const Output arming = imuSample(bc, balance, 2000, 1, ImuValues{0.5f, 0.0f, 0.0f, 0.0f, 0.0f}, makeRequest(true));
     assert(arming.state == State::Arming && !arming.driveEnabled);
@@ -1308,7 +1388,7 @@ int main() {
     const Output live = imuSample(running, balance, 12000, 2, ImuValues{0.01f, 0.2f, 0.0f, 0.0f, 0.0f},
                                   makeRequest(true));
     assert(live.driveEnabled && live.leftA > 0.0f);
-    const Output off = tick(running, good, makeRequest(false), balance, 30000);
+    const Output off = tick(running, good, liveSwitch(30000, false), balance, 30000);
     assert(off.state == State::Disabled && !off.driveEnabled);
     assert(off.leftA == 0.0f && off.rightA == 0.0f);
 
@@ -1441,6 +1521,721 @@ int main() {
 
   // Step 6, configuration: a NaN and an infinite gain are refused at entry. A zero reserveLowA is refused too.
   // Covered in the block above.
+
+  // Step 7, transfer: speed I of about -0.006 rad is moved into the trim at one tick. Speed P is -0.0025 rad and the
+  // tilt error is 0.0085 rad, inside the 0.01 rad tolerance. The stored and applied references do not change.
+  {
+    const Config cfg = makeTrimConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    const ImuValues creeping{0.0f, 0.0f, 0.0f, 0.05f, 0.05f};  // measured 0.005 m/s
+    Output last;
+    // Loop runs fall on 22000 + 20000 j us; the last of these samples is at 602000 us.
+    for (uint32_t k = 0; k < 60; ++k) {
+      const uint32_t t = 12000u + 10000u * k;
+      last = imuSample(bc, cfg, t, 2 + k, creeping, trimRequest(t, false));
+    }
+    assert(last.state == State::Run && last.diag.speedI < -0.001f);
+    // 612000 us is not a loop run, so speed I and speed P are the values of the last loop.
+    const Output moved = imuSample(bc, cfg, 612000u, 62, creeping, trimRequest(612000u, true));
+    assert(moved.state == State::Commissioning && moved.driveEnabled && !moved.diag.commissioningRefused);
+    assert(moved.diag.speedI == 0.0f);
+    assert(nearlyTo(moved.diag.trimDeg, 10.0f + last.diag.speedI * kRadToDeg, 1e-3f));
+    assert(nearlyTo(moved.diag.tiltRefRad, last.diag.tiltRefRad, 1e-4f));
+    // Speed I stays zero in Commissioning: the 622000 us loop run does not integrate.
+    const Output later = imuSample(bc, cfg, 622000u, 63, creeping, trimRequest(622000u, true));
+    assert(later.state == State::Commissioning && later.diag.speedI == 0.0f);
+    assert(nearlyTo(later.diag.tiltRefRad, last.diag.tiltRefRad, 1e-4f));
+  }
+
+  // Step 7, Commissioning keeps the balance law: a 0.02 rad tilt error and 0.1 rad/s tilt rate give
+  // 2 * 0.02 + 0.5 * 0.1 = 0.09 A on each wheel, and the drivers stay enabled.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    const Output out = imuSample(bc, cfg, 32000, 4, ImuValues{0.02f, 0.1f, 0.0f, 0.0f, 0.0f}, trimRequest(32000, true));
+    assert(out.state == State::Commissioning && out.driveEnabled);
+    assert(nearlyTo(out.leftA, 0.09f, 1e-4f) && nearlyTo(out.rightA, 0.09f, 1e-4f));
+  }
+
+  // Step 7, Commissioning -> Run: the switch off and a validated trim are both needed. The knob first moves the trim
+  // to 10.5 deg, so a return to the stored 10 deg would show up.
+  {
+    const Config cfg = makeBalanceConfig();
+    Config unvalidated = cfg;
+    unvalidated.trimValidated = false;
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    Output out;
+    for (uint32_t i = 0; i < 9; ++i) {
+      out = knobSample(bc, cfg, 32000u + 10000u * i, 4 + i, true, 10.5f);
+    }
+    assert(nearlyTo(out.diag.trimDeg, 10.5f, 1e-3f));
+    // Switch off with an unvalidated trim: stays in Commissioning, drivers on.
+    const Output stays = imuSample(bc, unvalidated, 122000u, 13, ImuValues{}, trimRequest(122000u, false));
+    assert(stays.state == State::Commissioning && stays.driveEnabled && nearlyTo(stays.diag.trimDeg, 10.5f, 1e-3f));
+    // Switch off with a validated trim, but the working 10.5 deg differs from the stored 10 deg: stays in
+    // Commissioning, so an unsaved change cannot enter Run.
+    const Output unsaved = imuSample(bc, cfg, 132000u, 14, ImuValues{}, trimRequest(132000u, false));
+    assert(unsaved.state == State::Commissioning && unsaved.driveEnabled && !unsaved.diag.knobEngaged);
+    assert(nearlyTo(unsaved.diag.trimDeg, 10.5f, 1e-3f));
+  }
+  // Working trim equal to the stored trim, validated, switch off: Run.
+  {
+    Config matched = makeBalanceConfig();
+    matched.storedTrimDeg = 10.2f;
+    BalanceController bc;
+    enterCommissioning(bc, matched, 0);
+    const Output back = imuSample(bc, matched, 32000u, 4, ImuValues{}, trimRequest(32000u, false));
+    assert(back.state == State::Run && back.driveEnabled && !back.diag.knobEngaged);
+    assert(nearlyTo(back.diag.trimDeg, 10.2f, 1e-3f));
+  }
+
+  // Step 7 refusals. Each block changes one condition and checks that Run stays, with the refusal flagged. The
+  // balance and yaw gains are zero unless a block sets them, so the tilt reference stays at the trim.
+
+  // Refused: nonzero shaped demand. The request ramps to 0.2 m/s; then the switch comes on and the shaped speed
+  // ramps down at 4 m/s^2, 0.04 m/s per sample. The transfer waits for it to reach zero.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    uint32_t seq = 2;
+    for (uint32_t k = 0; k <= 10; ++k) {
+      const uint32_t t = 12000u + 10000u * k;
+      imuSample(bc, cfg, t, seq++, ImuValues{}, motionRequest(t, 0.2f, false));
+    }
+    Output out;
+    uint32_t t = 122000u;
+    // Samples at 122000, 132000, 142000, 152000 hold 0.16, 0.12, 0.08, 0.04 m/s: refused each time.
+    for (uint32_t k = 0; k < 4; ++k) {
+      out = imuSample(bc, cfg, t, seq++, ImuValues{}, motionRequest(t, 0.0f, true));
+      assert(out.state == State::Run && out.diag.commissioningRefused && out.diag.shapedSpeedMps > 0.0f);
+      t += 10000u;
+    }
+    assert(nearlyTo(out.diag.shapedSpeedMps, 0.04f, 1e-4f));
+    // The next sample reaches zero and the transfer goes through on that sample.
+    out = imuSample(bc, cfg, t, seq++, ImuValues{}, motionRequest(t, 0.0f, true));
+    assert(out.state == State::Commissioning && !out.diag.commissioningRefused);
+    assert(nearlyTo(out.diag.shapedSpeedMps, 0.0f, 1e-6f));
+  }
+
+  // Refused: measured wheel speed beyond 0.01 m/s. Both wheels at 0.2 rad/s give 0.02 m/s.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    const Output out = imuSample(bc, cfg, 22000, 3, ImuValues{0.0f, 0.0f, 0.0f, 0.2f, 0.2f}, trimRequest(22000, true));
+    assert(out.state == State::Run && out.diag.commissioningRefused);
+  }
+
+  // Refused: tilt error 0.02 rad, beyond the 0.01 rad tolerance.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    const Output out = imuSample(bc, cfg, 22000, 3, ImuValues{0.02f, 0.0f, 0.0f, 0.0f, 0.0f}, trimRequest(22000, true));
+    assert(out.state == State::Run && out.diag.commissioningRefused);
+  }
+
+  // Refused: the speed correction clips the tilt reference at +0.3 rad. Speed P is 20 * 0.0075 = 0.15 rad, so the
+  // reference reaches 0.3 rad and the tilt error stays at zero once the slew has landed on it.
+  {
+    Config cfg = makeBalanceConfig();
+    cfg.speedKpRadPerMps = 20.0f;
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    const ImuValues clipping{0.3f - kTrimTiltRad, 0.0f, 0.0f, -0.075f, -0.075f};  // measured -0.0075 m/s
+    uint32_t seq = 2;
+    for (uint32_t t = 12000u; t <= 212000u; t += 10000u) {
+      imuSample(bc, cfg, t, seq++, clipping, trimRequest(t, false));
+    }
+    const Output out = imuSample(bc, cfg, 222000u, seq, clipping, trimRequest(222000u, true));
+    assert(out.state == State::Run && out.diag.commissioningRefused);
+    assert(out.diag.tiltClipped && nearlyTo(out.diag.tiltRefRad, 0.3f, 1e-4f));
+  }
+
+  // Refused: the stored reference is clipped at 0.3 rad, but the fresh speed P now puts trim + P at 0.29995 rad, just
+  // inside the limit. The applied reference is within the transfer tolerance of that, so only the stored clip check
+  // refuses the transfer.
+  {
+    Config cfg = makeBalanceConfig();
+    cfg.speedKpRadPerMps = 20.0f;
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    const ImuValues clipping{0.3f - kTrimTiltRad, 0.0f, 0.0f, -0.075f, -0.075f};  // measured -0.0075 m/s
+    uint32_t seq = 2;
+    for (uint32_t t = 12000u; t <= 202000u; t += 10000u) {
+      imuSample(bc, cfg, t, seq++, clipping, trimRequest(t, false));
+    }
+    // 212000 us is not a loop run. Measured -0.00627 m/s gives P = 0.12542 rad.
+    const ImuValues nearLimit{0.3f - kTrimTiltRad, 0.0f, 0.0f, -0.0627086f, -0.0627086f};
+    const Output out = imuSample(bc, cfg, 212000u, seq, nearLimit, trimRequest(212000u, true));
+    assert(out.state == State::Run && out.diag.commissioningRefused && out.diag.tiltClipped);
+  }
+
+  // Refused: effort clip. Tilt rate 20 rad/s gives 0.5 * 20 = 10 A, beyond the 8.4 A envelope, so c clips on that
+  // sample. The next sample has no balance demand and the switch on; the refusal reads the previous tick's clip.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    const Output clipped =
+        imuSample(bc, cfg, 22000, 3, ImuValues{0.0f, 20.0f, 0.0f, 0.0f, 0.0f}, trimRequest(22000, false));
+    assert(clipped.state == State::Run && clipped.diag.effortClipped);
+    const Output out = imuSample(bc, cfg, 32000, 4, ImuValues{}, trimRequest(32000, true));
+    assert(out.state == State::Run && out.diag.commissioningRefused);
+  }
+
+  // Refused: low reserve, without an effort clip. Tilt rate 15.8 rad/s gives 0.5 * 15.8 = 7.9 A; the reserve is
+  // 8.4 - 7.9 = 0.5 A, below reserveLowA 1.0 A.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    const Output low =
+        imuSample(bc, cfg, 22000, 3, ImuValues{0.0f, 15.8f, 0.0f, 0.0f, 0.0f}, trimRequest(22000, false));
+    assert(!low.diag.effortClipped && nearlyTo(low.diag.reserve, 0.5f, 1e-3f));
+    const Output out = imuSample(bc, cfg, 32000, 4, ImuValues{}, trimRequest(32000, true));
+    assert(out.state == State::Run && out.diag.commissioningRefused);
+  }
+
+  // Refused while the reference slews. Speed P becomes 2 * 0.00503 = 0.01006 rad at the 42000 us loop run. That
+  // exceeds the 0.01 rad slew step by 0.00006 rad, which is inside the 1e-4 rad transfer tolerance, so only the
+  // slew check refuses. The reference lands on the next sample, and the transfer goes through there.
+  {
+    Config cfg = makeBalanceConfig();
+    cfg.speedKpRadPerMps = 2.0f;
+    cfg.standstillTiltErrorTolRad = 0.05f;
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    imuSample(bc, cfg, 22000, 3, ImuValues{}, trimRequest(22000, false));  // loop run: P 0
+    const ImuValues moving{0.0f, 0.0f, 0.0f, -0.0503f, -0.0503f};        // measured -0.00503 m/s
+    imuSample(bc, cfg, 32000, 4, moving, trimRequest(32000, false));       // no loop run
+    const Output slewing = imuSample(bc, cfg, 42000, 5, moving, trimRequest(42000, true));
+    assert(slewing.state == State::Run && slewing.diag.commissioningRefused);
+    const Output landed = imuSample(bc, cfg, 52000, 6, moving, trimRequest(52000, true));
+    assert(landed.state == State::Commissioning && !landed.diag.commissioningRefused);
+    assert(nearlyTo(landed.diag.trimDeg, 10.0f, 1e-3f));
+  }
+
+  // Refused: reference jump. Speed P is 0 in the stored value, but a fresh P at 32000 us (no loop run) is
+  // 0.5 * 0.008 = 0.004 rad. The 42000 us loop run stores that P, and the transfer then goes through.
+  {
+    Config cfg = makeBalanceConfig();
+    cfg.speedKpRadPerMps = 0.5f;
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    imuSample(bc, cfg, 22000, 3, ImuValues{}, trimRequest(22000, false));
+    const ImuValues moving{0.0f, 0.0f, 0.0f, -0.08f, -0.08f};
+    const Output jump = imuSample(bc, cfg, 32000, 4, moving, trimRequest(32000, true));
+    assert(jump.state == State::Run && jump.diag.commissioningRefused);
+    const Output transferred = imuSample(bc, cfg, 42000, 5, moving, trimRequest(42000, true));
+    assert(transferred.state == State::Commissioning && !transferred.diag.commissioningRefused);
+  }
+
+  // Refused: the fresh speed P takes trim + P past the limit. The stored reference is 0.2999829 rad, just inside the
+  // 0.3 rad limit, so the jump check passes (1.7e-5 rad) and only the new clamp check refuses. The loop runs with
+  // measured -0.0062725 m/s (P 0.12545 rad); the transition tick measures -0.006275 m/s (P 0.1255 rad).
+  {
+    Config cfg = makeBalanceConfig();
+    cfg.speedKpRadPerMps = 20.0f;
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    const ImuValues stored{0.12545f, 0.0f, 0.0f, -0.062725f, -0.062725f};  // tilt tracks the reference
+    uint32_t seq = 2;
+    for (uint32_t t = 12000u; t <= 202000u; t += 10000u) {
+      imuSample(bc, cfg, t, seq++, stored, trimRequest(t, false));
+    }
+    const ImuValues fresh{0.12545f, 0.0f, 0.0f, -0.06275f, -0.06275f};
+    const Output out = imuSample(bc, cfg, 212000u, seq, fresh, trimRequest(212000u, true));
+    assert(out.state == State::Run && out.diag.commissioningRefused && !out.diag.tiltClipped);
+    assert(nearlyTo(out.diag.tiltRefRad, 0.2999829f, 1e-5f));
+  }
+
+  // Refused: trim plus speed I beyond the envelope. Both cases integrate the same speed error. With a 0.18 rad
+  // envelope the sum 0.1745 + 0.0074 is refused; with 0.2 rad the same state transfers.
+  {
+    Config tight = makeBalanceConfig();
+    tight.speedKiRadPerMpsS = 1.0f;
+    tight.speedIntegralEnabled = true;
+    tight.standstillTiltErrorTolRad = 0.05f;
+    tight.trimEnvelopeRad = 0.18f;
+    const Output refused = integralThenTransfer(tight);
+    assert(refused.state == State::Run && refused.diag.commissioningRefused);
+    assert(refused.diag.speedI > 0.0055f);
+
+    Config wide = tight;
+    wide.trimEnvelopeRad = 0.2f;
+    const Output moved = integralThenTransfer(wide);
+    assert(moved.state == State::Commissioning && !moved.diag.commissioningRefused);
+    assert(nearlyTo(moved.diag.trimDeg, 10.0f + refused.diag.speedI * kRadToDeg, 1e-3f));
+  }
+
+  // Step 7, knob. Commissioning from 22000 us; the trim starts at 10 deg (0.174533 rad).
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    // 12 deg is 0.0349 rad from the trim, outside the 0.02 rad band: no pickup, no movement.
+    Output out;
+    for (uint32_t i = 0; i < 3; ++i) {
+      out = knobSample(bc, cfg, 32000u + 10000u * i, 4 + i, true, 12.0f);
+    }
+    assert(out.state == State::Commissioning && !out.diag.knobEngaged && nearlyTo(out.diag.trimDeg, 10.0f, 1e-4f));
+
+    // 10.5 deg is 0.00873 rad from the trim, inside the band: the pickup and the first 0.001 rad step come together.
+    const float targetRad = 10.5f * kDegToRad;
+    const Output first = knobSample(bc, cfg, 62000u, 7, true, 10.5f);
+    assert(first.diag.knobEngaged && nearlyTo(first.diag.trimDeg * kDegToRad, kTrimTiltRad + 0.001f, 1e-5f));
+    float previousRad = first.diag.trimDeg * kDegToRad;
+    // Slew at 0.1 rad/s over 0.01 s: 0.001 rad per sample. The eighth step after pickup (142000 us) would be the
+    // ninth sample; the remaining 0.000727 rad is less than a step, so the trim lands exactly on the knob there.
+    for (uint32_t i = 1; i <= 7; ++i) {
+      const Output step = knobSample(bc, cfg, 62000u + 10000u * i, 7 + i, true, 10.5f);
+      const float rad = step.diag.trimDeg * kDegToRad;
+      assert(nearlyTo(rad - previousRad, 0.001f, 1e-5f));
+      previousRad = rad;
+    }
+    const Output landed = knobSample(bc, cfg, 132000u + 10000u, 15, true, 10.5f);
+    assert(landed.diag.knobEngaged && nearlyTo(landed.diag.trimDeg * kDegToRad - previousRad, 0.000727f, 1e-5f));
+    assert(nearlyTo(landed.diag.trimDeg * kDegToRad, targetRad, 1e-6f));
+
+    // Clamp at the envelope: a 20 deg knob is engaged, so no pickup is needed. The target is clamped to 0.2 rad, and
+    // the trim slews there and stops, 0.01674 rad away, in 17 steps.
+    for (uint32_t i = 0; i < 20; ++i) {
+      out = knobSample(bc, cfg, 152000u + 10000u * i, 16 + i, true, 20.0f);
+    }
+    assert(out.diag.knobEngaged && nearlyTo(out.diag.trimDeg * kDegToRad, 0.2f, 1e-5f));
+    assert(nearlyTo(out.diag.trimDeg, 0.2f * kRadToDeg, 1e-3f));
+
+    // Invalid knob disengages and holds the trim. Re-engaging needs a knob inside the band; 20 deg is not.
+    const Output invalid = knobSample(bc, cfg, 352000u, 36, false, 20.0f);
+    assert(!invalid.diag.knobEngaged && nearlyTo(invalid.diag.trimDeg, 0.2f * kRadToDeg, 1e-3f));
+    const Output still = knobSample(bc, cfg, 362000u, 37, true, 20.0f);
+    assert(!still.diag.knobEngaged && nearlyTo(still.diag.trimDeg, 0.2f * kRadToDeg, 1e-3f));
+    // A knob at 0.2 rad (11.459 deg) is inside the band, so it engages again. Then a NaN knob disengages it.
+    const Output reengaged = knobSample(bc, cfg, 372000u, 38, true, 0.2f * kRadToDeg);
+    assert(reengaged.diag.knobEngaged);
+    const Output nanKnob = knobSample(bc, cfg, 382000u, 39, true, std::numeric_limits<float>::quiet_NaN());
+    assert(!nanKnob.diag.knobEngaged && nearlyTo(nanKnob.diag.trimDeg, 0.2f * kRadToDeg, 1e-3f));
+  }
+
+  // Step 7, RC loss with a source that is invalid: the knob disengages and the trim is held. After the source
+  // returns, a knob outside the band of the held trim does not move it, and one inside the band engages again.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    Output out;
+    for (uint32_t i = 0; i < 9; ++i) {
+      out = knobSample(bc, cfg, 32000u + 10000u * i, 4 + i, true, 10.5f);
+    }
+    assert(out.diag.knobEngaged && nearlyTo(out.diag.trimDeg, 10.5f, 1e-3f));
+
+    Request lost = trimRequest(122000u, true, true, 10.5f);
+    lost.sourceValid = false;
+    const Output held = imuSample(bc, cfg, 122000u, 13, ImuValues{}, lost);
+    assert(!held.diag.knobEngaged && held.state == State::Commissioning && held.driveEnabled);
+    assert(nearlyTo(held.diag.trimDeg, 10.5f, 1e-3f));
+
+    Request lostFar = trimRequest(132000u, true, true, 20.0f);
+    lostFar.sourceValid = false;
+    const Output stillHeld = imuSample(bc, cfg, 132000u, 14, ImuValues{}, lostFar);
+    assert(!stillHeld.diag.knobEngaged && nearlyTo(stillHeld.diag.trimDeg, 10.5f, 1e-3f));
+
+    const Output returnedFar = imuSample(bc, cfg, 142000u, 15, ImuValues{}, trimRequest(142000u, true, true, 20.0f));
+    assert(!returnedFar.diag.knobEngaged && nearlyTo(returnedFar.diag.trimDeg, 10.5f, 1e-3f));
+    const Output returnedNear = imuSample(bc, cfg, 152000u, 16, ImuValues{}, trimRequest(152000u, true, true, 10.5f));
+    assert(returnedNear.diag.knobEngaged && nearlyTo(returnedNear.diag.trimDeg, 10.5f, 1e-3f));
+  }
+
+  // Step 7, RC loss by a request that goes stale across the micros() wrap. The request is received at base + 32000 us,
+  // 8000 us before the wrap. It is 50000 us old at base + 82000 us, still fresh, and 60000 us old at base + 92000 us,
+  // after the wrap, so it is stale there. The knob at 20 deg would move the trim if the request were used.
+  {
+    const Config cfg = makeBalanceConfig();
+    const uint32_t base = 0xFFFFFFFFu - 40000u;
+    const uint32_t received = base + 32000u;
+    BalanceController bc;
+    enterCommissioning(bc, cfg, base);
+    Output out = knobSample(bc, cfg, received, 4, true, 10.5f);
+    assert(out.diag.knobEngaged);
+    uint32_t seq = 5;
+    for (uint32_t t = received + 10000u; t <= received + 50000u; t += 10000u) {
+      Request fresh = trimRequest(t, true, true, 10.5f);
+      fresh.receivedTimeUs = received;
+      out = imuSample(bc, cfg, t, seq++, ImuValues{}, fresh);
+    }
+    assert(out.diag.knobEngaged);
+    const float heldDeg = out.diag.trimDeg;
+
+    Request stale = trimRequest(received + 60000u, true, true, 20.0f);
+    stale.receivedTimeUs = received;
+    out = imuSample(bc, cfg, received + 60000u, seq, ImuValues{}, stale);
+    assert(!out.diag.knobEngaged && nearlyTo(out.diag.trimDeg, heldDeg, 1e-4f));
+    assert(out.state == State::Commissioning && out.driveEnabled);
+  }
+
+  // Step 7, the knob is ignored in Run. A knob 0.00873 rad from the trim (inside the band) does not engage.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false, true, 10.5f));
+    const Output out = imuSample(bc, cfg, 22000, 3, ImuValues{}, trimRequest(22000, false, true, 10.5f));
+    assert(out.state == State::Run && !out.diag.knobEngaged && nearlyTo(out.diag.trimDeg, 10.0f, 1e-3f));
+  }
+
+  // Step 7, faults latch from Commissioning, and the enable switch off returns to Disabled.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    Measurements old = atTime(makeMeasurements(), 32000u);
+    old.imuSequence = 4;
+    old.imuReadTimeUs = 0;  // 32000 us old: stale
+    const Output fault = bc.update(old, trimRequest(32000u, true), cfg, 32000u);
+    assert(fault.state == State::Fault && fault.fault == FaultReason::StaleImu && !fault.driveEnabled);
+    assert(fault.leftA == 0.0f && fault.rightA == 0.0f);
+  }
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    const Output off = tick(bc, good, liveSwitch(32000u, false), cfg, 32000u);
+    assert(off.state == State::Disabled && !off.driveEnabled && off.diag.trimDeg == 0.0f);
+  }
+
+  // Step 7, configuration: the trim envelope must lie within the tilt limit, the stored trim within the envelope,
+  // and each new value must be positive.
+  {
+    auto armedWith = [&good](const Config &c) {
+      BalanceController bc;
+      tick(bc, good, liveSwitch(1000u, false), c, 1000u);
+      tick(bc, good, liveSwitch(2000u, true), c, 2000u);
+      return tick(bc, good, liveSwitch(3000u, true), c, 3000u);
+    };
+    Config beyondLimit = makeBalanceConfig();
+    beyondLimit.trimEnvelopeRad = 0.31f;
+    const Output a = armedWith(beyondLimit);
+    assert(a.state == State::Fault && a.fault == FaultReason::InvalidConfig && !a.driveEnabled);
+
+    Config noBand = makeBalanceConfig();
+    noBand.knobPickupBandRad = 0.0f;
+    const Output b = armedWith(noBand);
+    assert(b.state == State::Fault && b.fault == FaultReason::InvalidConfig);
+
+    Config storedOutside = makeBalanceConfig();
+    storedOutside.trimEnvelopeRad = 0.17f;  // the stored 10 deg (0.1745 rad) lies outside
+    const Output c = armedWith(storedOutside);
+    assert(c.state == State::Fault && c.fault == FaultReason::InvalidConfig);
+  }
+
+  // Step 7b, granted save: one pulse with the working trim in degrees, then the switch must go off and on again.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);  // Commissioning at 22000 us, save switch off
+    const Output saved = imuSample(bc, cfg, 32000, 4, ImuValues{}, saveRequest(32000, true));
+    assert(saved.state == State::Commissioning && saved.saveTrimRequested && !saved.diag.saveRefused);
+    assert(nearlyTo(saved.trimToSaveDeg, 10.0f, 1e-3f));
+    // The switch held on gives no second save, and the pulse is gone on the next tick.
+    const Output held = imuSample(bc, cfg, 42000, 5, ImuValues{}, saveRequest(42000, true));
+    assert(!held.saveTrimRequested && held.trimToSaveDeg == 0.0f && !held.diag.saveRefused);
+    imuSample(bc, cfg, 52000, 6, ImuValues{}, saveRequest(52000, false));
+    const Output again = imuSample(bc, cfg, 62000, 7, ImuValues{}, saveRequest(62000, true));
+    assert(again.saveTrimRequested && nearlyTo(again.trimToSaveDeg, 10.0f, 1e-3f));
+    const Output after = imuSample(bc, cfg, 72000, 8, ImuValues{}, saveRequest(72000, true));
+    assert(!after.saveTrimRequested && after.trimToSaveDeg == 0.0f);
+  }
+
+  // Step 7b, working trim: a knob at 10.5 deg lands in nine 0.001 rad steps from 32000 us. The save edge at 122000 us
+  // is granted with 10.5 deg. Before that, the save edge at 32000 us is refused while the trim is still slewing.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    Request firstEdge = trimRequest(32000u, true, true, 10.5f);
+    firstEdge.saveSwitch = true;
+    const Output slewing = imuSample(bc, cfg, 32000u, 4, ImuValues{}, firstEdge);
+    assert(slewing.state == State::Commissioning && slewing.diag.saveRefused && !slewing.saveTrimRequested);
+    assert(slewing.trimToSaveDeg == 0.0f);
+    Output out;
+    for (uint32_t i = 1; i < 9; ++i) {
+      Request step = trimRequest(32000u + 10000u * i, true, true, 10.5f);
+      step.saveSwitch = true;
+      out = imuSample(bc, cfg, 32000u + 10000u * i, 4 + i, ImuValues{}, step);
+      assert(!out.saveTrimRequested && !out.diag.saveRefused);
+    }
+    assert(nearlyTo(out.diag.trimDeg, 10.5f, 1e-3f));
+    imuSample(bc, cfg, 122000u, 13, ImuValues{}, trimRequest(122000u, true, true, 10.5f));
+    Request edge = trimRequest(132000u, true, true, 10.5f);
+    edge.saveSwitch = true;
+    const Output saved = imuSample(bc, cfg, 132000u, 14, ImuValues{}, edge);
+    assert(saved.saveTrimRequested && !saved.diag.saveRefused);
+    assert(nearlyTo(saved.trimToSaveDeg, 10.5f, 1e-3f));
+  }
+
+  // Step 7b, the save level already on at Commissioning entry does not save. Only an off-to-on edge does.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    Request entry = trimRequest(22000, true);
+    entry.saveSwitch = true;
+    const Output in = imuSample(bc, cfg, 22000, 3, ImuValues{}, entry);
+    assert(in.state == State::Commissioning && !in.saveTrimRequested && !in.diag.saveRefused);
+    const Output still = imuSample(bc, cfg, 32000, 4, ImuValues{}, saveRequest(32000, true));
+    assert(!still.saveTrimRequested && !still.diag.saveRefused);
+    imuSample(bc, cfg, 42000, 5, ImuValues{}, saveRequest(42000, false));
+    const Output on = imuSample(bc, cfg, 52000, 6, ImuValues{}, saveRequest(52000, true));
+    assert(on.saveTrimRequested && nearlyTo(on.trimToSaveDeg, 10.0f, 1e-3f));
+  }
+
+  // Step 7b, the save switch is ignored in Run: an edge there is neither a save nor a refusal.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    Request saveOn = trimRequest(22000, false);
+    saveOn.saveSwitch = true;
+    const Output on = imuSample(bc, cfg, 22000, 3, ImuValues{}, saveOn);
+    assert(on.state == State::Run && !on.saveTrimRequested && !on.diag.saveRefused);
+    const Output off = imuSample(bc, cfg, 32000, 4, ImuValues{}, trimRequest(32000, false));
+    assert(off.state == State::Run && !off.saveTrimRequested && !off.diag.saveRefused);
+    Request saveAgain = trimRequest(42000, false);
+    saveAgain.saveSwitch = true;
+    const Output again = imuSample(bc, cfg, 42000, 5, ImuValues{}, saveAgain);
+    assert(again.state == State::Run && !again.saveTrimRequested && !again.diag.saveRefused);
+  }
+
+  // Step 7b, each refusal: one condition is violated on the save edge. The output shows saveRefused, no pulse, and
+  // stays in Commissioning. Commissioning is entered at 22000 us, so the edge is on the next sample at 32000 us.
+  {
+    const Config cfg = makeBalanceConfig();
+    // Demand: the request speed beyond the 0.05 m/s arming band. Commissioning ignores it for motion.
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    Request fast = saveRequest(32000, true);
+    fast.speedMps = 0.2f;
+    const Output demand = imuSample(bc, cfg, 32000, 4, ImuValues{}, fast);
+    assert(demand.state == State::Commissioning && demand.diag.saveRefused && !demand.saveTrimRequested);
+    assert(demand.trimToSaveDeg == 0.0f);
+  }
+  {
+    const Config cfg = makeBalanceConfig();
+    // Demand: the request yaw beyond the 0.05 rad/s arming band.
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    Request turning = saveRequest(32000, true);
+    turning.yawRateRadPerSec = 0.2f;
+    const Output demand = imuSample(bc, cfg, 32000, 4, ImuValues{}, turning);
+    assert(demand.state == State::Commissioning && demand.diag.saveRefused && !demand.saveTrimRequested);
+  }
+  {
+    const Config cfg = makeBalanceConfig();
+    // Wheel speed: both wheels at 0.2 rad/s give 0.02 m/s, beyond the 0.01 m/s tolerance.
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    const Output moving =
+        imuSample(bc, cfg, 32000, 4, ImuValues{0.0f, 0.0f, 0.0f, 0.2f, 0.2f}, saveRequest(32000, true));
+    assert(moving.state == State::Commissioning && moving.diag.saveRefused && !moving.saveTrimRequested);
+  }
+  {
+    const Config cfg = makeBalanceConfig();
+    // Tilt error: 0.02 rad beyond the 0.01 rad tolerance.
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    const Output tilted =
+        imuSample(bc, cfg, 32000, 4, ImuValues{0.02f, 0.0f, 0.0f, 0.0f, 0.0f}, saveRequest(32000, true));
+    assert(tilted.state == State::Commissioning && tilted.diag.saveRefused && !tilted.saveTrimRequested);
+  }
+  {
+    const Config cfg = makeBalanceConfig();
+    // Effort clip: a tilt rate of 20 rad/s gives 10 A, beyond the 8.4 A envelope.
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    const Output clipped =
+        imuSample(bc, cfg, 32000, 4, ImuValues{0.0f, 20.0f, 0.0f, 0.0f, 0.0f}, saveRequest(32000, true));
+    assert(clipped.state == State::Commissioning && clipped.diag.effortClipped);
+    assert(clipped.diag.saveRefused && !clipped.saveTrimRequested);
+  }
+  {
+    const Config cfg = makeBalanceConfig();
+    // Low reserve without an effort clip: 7.9 A on the balance leaves 0.5 A of reserve, below 1.0 A.
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    const Output low =
+        imuSample(bc, cfg, 32000, 4, ImuValues{0.0f, 15.8f, 0.0f, 0.0f, 0.0f}, saveRequest(32000, true));
+    assert(!low.diag.effortClipped && nearlyTo(low.diag.reserve, 0.5f, 1e-3f));
+    assert(low.diag.saveRefused && !low.saveTrimRequested);
+  }
+  {
+    const Config cfg = makeBalanceConfig();
+    // Knob pending: the knob at 10.5 deg engages on this sample, so the trim is still slewing toward it.
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    Request pending = trimRequest(32000u, true, true, 10.5f);
+    pending.saveSwitch = true;
+    const Output out = imuSample(bc, cfg, 32000u, 4, ImuValues{}, pending);
+    assert(out.diag.knobEngaged && out.diag.saveRefused && !out.saveTrimRequested);
+  }
+  {
+    const Config cfg = makeBalanceConfig();
+    // Request lost: a switch level on a lost frame is not an edge, so it is neither a save nor a refusal.
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    Request lost = saveRequest(32000, true);
+    lost.sourceValid = false;
+    const Output out = imuSample(bc, cfg, 32000, 4, ImuValues{}, lost);
+    assert(out.state == State::Commissioning && !out.diag.saveRefused && !out.saveTrimRequested);
+  }
+
+  // Step 7b, a refused edge does not wait for the conditions: they hold on the next tick, but the switch level has not
+  // changed, so there is no save until it goes off and on.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    const Output refused =
+        imuSample(bc, cfg, 32000, 4, ImuValues{0.02f, 0.0f, 0.0f, 0.0f, 0.0f}, saveRequest(32000, true));
+    assert(refused.diag.saveRefused);
+    const Output settled = imuSample(bc, cfg, 42000, 5, ImuValues{}, saveRequest(42000, true));
+    assert(!settled.saveTrimRequested && !settled.diag.saveRefused);
+    imuSample(bc, cfg, 52000, 6, ImuValues{}, saveRequest(52000, false));
+    const Output retried = imuSample(bc, cfg, 62000, 7, ImuValues{}, saveRequest(62000, true));
+    assert(retried.saveTrimRequested && nearlyTo(retried.trimToSaveDeg, 10.0f, 1e-3f));
+  }
+
+  // Step 7b, a lost request refuses entry from Run with the switch on. Run stays, and the refusal is flagged.
+  // A valid request with the switch on then enters Commissioning.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    Request lost = trimRequest(22000, true);
+    lost.sourceValid = false;
+    const Output refused = imuSample(bc, cfg, 22000, 3, ImuValues{}, lost);
+    assert(refused.state == State::Run && refused.driveEnabled && refused.diag.commissioningRefused);
+    const Output entered = imuSample(bc, cfg, 32000, 4, ImuValues{}, trimRequest(32000, true));
+    assert(entered.state == State::Commissioning && !entered.diag.commissioningRefused);
+  }
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    // Stale rather than a bad source: received at 0 us, 60000 us old at 60000 us, beyond the 50000 us age.
+    Request stale = trimRequest(60000u, true);
+    stale.receivedTimeUs = 0;
+    const Output refused = imuSample(bc, cfg, 60000u, 3, ImuValues{}, stale);
+    assert(refused.state == State::Run && refused.diag.commissioningRefused);
+  }
+
+  // Step 7b, a lost request does not leave Commissioning, even with the switch off. A valid request with the switch off
+  // leaves it.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    Request lost = trimRequest(32000u, false);
+    lost.sourceValid = false;
+    const Output held = imuSample(bc, cfg, 32000u, 4, ImuValues{}, lost);
+    assert(held.state == State::Commissioning && held.driveEnabled);
+    Request stillLost = trimRequest(42000u, false);
+    stillLost.sourceValid = false;
+    const Output stillHeld = imuSample(bc, cfg, 42000u, 5, ImuValues{}, stillLost);
+    assert(stillHeld.state == State::Commissioning && stillHeld.driveEnabled);
+    const Output back = imuSample(bc, cfg, 52000u, 6, ImuValues{}, trimRequest(52000u, false));
+    assert(back.state == State::Run && back.driveEnabled);
+  }
+
+  // Review fix 2: a lost request blocks arming. The switch edge on a lost frame is consumed, so holding it on does not
+  // arm later; a live off-to-on edge does.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    tick(bc, good, liveSwitch(1000u, false), cfg, 1000u);
+    Request lostOn = liveSwitch(2000u, true);
+    lostOn.sourceValid = false;
+    assert(tick(bc, good, lostOn, cfg, 2000u).state == State::Disabled);
+    assert(tick(bc, good, liveSwitch(3000u, true), cfg, 3000u).state == State::Disabled);
+    tick(bc, good, liveSwitch(4000u, false), cfg, 4000u);
+    assert(tick(bc, good, liveSwitch(5000u, true), cfg, 5000u).state == State::Arming);
+  }
+  // Review fix 2: a lost request holds Arming, and the arming timeout still applies while it is lost.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    tick(bc, good, liveSwitch(1000u, false), cfg, 1000u);
+    assert(tick(bc, good, liveSwitch(2000u, true), cfg, 2000u).state == State::Arming);
+    Request lost = liveSwitch(3000u, true);
+    lost.sourceValid = false;
+    assert(tick(bc, good, lost, cfg, 3000u).state == State::Arming);
+    assert(tick(bc, good, lost, cfg, 4000u).state == State::Arming);
+    assert(tick(bc, good, liveSwitch(5000u, true), cfg, 5000u).state == State::Run);
+  }
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    tick(bc, good, liveSwitch(1000u, false), cfg, 1000u);
+    assert(tick(bc, good, liveSwitch(2000u, true), cfg, 2000u).state == State::Arming);
+    // Past the 1000000 us arming timeout from 2000 us, with the request still lost: Disabled.
+    Request lost = liveSwitch(1002001u, true);
+    lost.sourceValid = false;
+    assert(tick(bc, good, lost, cfg, 1002001u).state == State::Disabled);
+  }
+
+  // Review fix 3: lost frames end save tracking. The switch high when RC returns is a level, not an edge: no pulse.
+  // A fresh off-to-on edge afterwards saves.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);  // Commissioning at 22000 us, save switch off
+    Request lostLow = trimRequest(32000u, true);
+    lostLow.sourceValid = false;
+    const Output lostTick = imuSample(bc, cfg, 32000u, 4, ImuValues{}, lostLow);
+    assert(lostTick.state == State::Commissioning && !lostTick.saveTrimRequested && !lostTick.diag.saveRefused);
+    const Output returned = imuSample(bc, cfg, 42000u, 5, ImuValues{}, saveRequest(42000u, true));
+    assert(returned.state == State::Commissioning && !returned.saveTrimRequested && !returned.diag.saveRefused);
+    imuSample(bc, cfg, 52000u, 6, ImuValues{}, saveRequest(52000u, false));
+    const Output saved = imuSample(bc, cfg, 62000u, 7, ImuValues{}, saveRequest(62000u, true));
+    assert(saved.saveTrimRequested && nearlyTo(saved.trimToSaveDeg, 10.0f, 1e-3f));
+  }
+
+  // Review fix 4: a deflected stick blocks the Run -> Commissioning transfer, even when shaping has zeroed the demand
+  // under the switch. Neutral afterwards transfers. Yaw is checked the same way.
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    const Output deflected = imuSample(bc, cfg, 22000, 3, ImuValues{}, motionRequest(22000, 0.2f, true));
+    assert(deflected.state == State::Run && deflected.diag.commissioningRefused);
+    const Output neutral = imuSample(bc, cfg, 32000, 4, ImuValues{}, trimRequest(32000, true));
+    assert(neutral.state == State::Commissioning && !neutral.diag.commissioningRefused);
+  }
+  {
+    const Config cfg = makeBalanceConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    imuSample(bc, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+    Request turning = trimRequest(22000u, true);
+    turning.yawRateRadPerSec = 0.2f;
+    const Output deflected = imuSample(bc, cfg, 22000, 3, ImuValues{}, turning);
+    assert(deflected.state == State::Run && deflected.diag.commissioningRefused);
+  }
 
   std::puts("balance controller passed");
   return 0;
