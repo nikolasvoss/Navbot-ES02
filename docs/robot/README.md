@@ -22,3 +22,4 @@ The robot is the ESP32-S3 controller board and everything attached to it: wheel 
 ## Plans
 
 - [Roadmap](plans/roadmap.md)
+- [Robust standing and driving control](plans/robust-control-system.md): proposed control chain, payload trim, vibration checks, and staged tuning.
