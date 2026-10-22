@@ -25,7 +25,7 @@ FIRMWARE_DRIVE_ORDER = [
     "angle_out_i", "angle_out_d", "wheel_speed_feedback", "motor1_target", "motor2_target",
     "motor1_current_sp", "motor2_current_sp", "motor1_voltage_q", "motor2_voltage_q",
     "motor1_shaft_velocity", "motor2_shaft_velocity", "battery_raw_instant_v",
-    "battery_filtered_instant_v", "top_ball_x", "touch_x", "body_pitching", "max_servo_range_deg",
+    "battery_filtered_instant_v", "top_ball_x", "body_pitching", "max_servo_range_deg",
     "sequence", "logger_dropped", "uart_write_failures",
 ]
 
@@ -41,7 +41,7 @@ def drive_line(time_ms, **overrides):
 class DriveSchemaTest(unittest.TestCase):
     def test_drive_columns_match_firmware_order_exactly(self):
         self.assertEqual(list(DRIVE_COLUMNS), FIRMWARE_DRIVE_ORDER)
-        self.assertEqual(len(DRIVE_COLUMNS), 49)
+        self.assertEqual(len(DRIVE_COLUMNS), 48)
 
     def test_capture_writes_the_same_drive_header(self):
         self.assertEqual(TRACE_HEADERS[58], "DRIVE," + ",".join(FIRMWARE_DRIVE_ORDER))

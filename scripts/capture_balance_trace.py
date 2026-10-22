@@ -37,7 +37,7 @@ DRIVE_COLUMNS = (
     "motor1_current_sp", "motor2_current_sp", "motor1_voltage_q", "motor2_voltage_q",
     "motor1_shaft_velocity", "motor2_shaft_velocity",
     "battery_raw_instant_v", "battery_filtered_instant_v",
-    "top_ball_x", "touch_x", "body_pitching", "max_servo_range_deg",
+    "top_ball_x", "body_pitching", "max_servo_range_deg",
     "sequence", "logger_dropped", "uart_write_failures",
 )
 TRACE_HEADERS = {

@@ -134,7 +134,6 @@ struct DriveSample {
   float batteryInstantRawV;
   float batteryInstantFilteredV;
   float ballX;
-  float touchXFiltered;
   float bodyPitch;
   int32_t maxServoRange;
 };

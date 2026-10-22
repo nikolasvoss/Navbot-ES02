@@ -433,7 +433,6 @@ bool submitDrive(const TelemetryInputs &in, const TraceRow &row) {
   sample.batteryInstantRawV = in.batteryInstantRawV;
   sample.batteryInstantFilteredV = in.batteryInstantFilteredV;
   sample.ballX = in.topBallX;
-  sample.touchXFiltered = in.touch.XPdatF;
   sample.bodyPitch = in.bodyPitching;
   sample.maxServoRange = row.maxServoRange;
   return Logging::submit(sample) == Logging::Result::Accepted;

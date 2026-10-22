@@ -252,7 +252,7 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
                      ",%.4f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f"      // body_pitching_f, roll_ok, angle_* , wheel_feedback
                      ",%.4f,%.4f,%.4f,%.4f,%.4f,%.4f"           // motor targets, current_sp, voltage_q
                      ",%.4f,%.4f,%.3f,%.3f"                     // shaft velocities, battery raw/filtered
-                     ",%.3f,%.3f,%.3f,%d"                       // top_ball_x, touch_x, body_pitching, servo range
+                     ",%.3f,%.3f,%d"                            // top_ball_x, body_pitching, servo range
                      ",%lu,%lu,%lu\n",                          // sequence, logger_dropped, uart_write_failures
                      s.requestedSpeed, s.effectiveSpeed, s.leftWheelVelocity, s.rightWheelVelocity, s.controlDtSec,
                      s.speedError, s.speedProportional, s.speedIntegral, s.speedDerivative, s.speedOutput,
@@ -260,7 +260,7 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
                      s.angleIntegral, s.angleDerivative, s.wheelSpeedFeedbackOutput, s.leftMotorTarget,
                      s.rightMotorTarget, s.leftCurrentSetpoint, s.rightCurrentSetpoint, s.leftVoltageQ, s.rightVoltageQ,
                      s.leftShaftVelocity, s.rightShaftVelocity, s.batteryInstantRawV, s.batteryInstantFilteredV,
-                     s.ballX, s.touchXFiltered, s.bodyPitch, static_cast<int>(s.maxServoRange),
+                     s.ballX, s.bodyPitch, static_cast<int>(s.maxServoRange),
                      static_cast<unsigned long>(s.sequence), static_cast<unsigned long>(droppedRecords),
                      static_cast<unsigned long>(writeFailures));
     }

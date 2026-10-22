@@ -50,11 +50,11 @@ void fillWidestDrive(Logging::DriveSample &d) {
   d.angleProportional = d.angleIntegral = d.angleDerivative = d.wheelSpeedFeedbackOutput = f;
   d.leftMotorTarget = d.rightMotorTarget = d.leftCurrentSetpoint = d.rightCurrentSetpoint = f;
   d.leftVoltageQ = d.rightVoltageQ = d.leftShaftVelocity = d.rightShaftVelocity = f;
-  d.batteryInstantRawV = d.batteryInstantFilteredV = d.ballX = d.touchXFiltered = d.bodyPitch = f;
+  d.batteryInstantRawV = d.batteryInstantFilteredV = d.ballX = d.bodyPitch = f;
 }
 
 // Column i of the DRIVE row (0-based, after the tag, in DRIVE_COLUMNS order) holds the value i + 1.
-// logger_dropped (column 47) and uart_write_failures (column 48) are formatRecord arguments 48 and 49.
+// logger_dropped (column 46) and uart_write_failures (column 47) are formatRecord arguments 47 and 48.
 // scripts/capture_balance_trace.py reads these values back and checks each one against its column name.
 void fillDistinctDrive(Logging::DriveSample &d) {
   d.timestampMs = 1;                 // time_ms
@@ -100,10 +100,9 @@ void fillDistinctDrive(Logging::DriveSample &d) {
   d.batteryInstantRawV = 41;         // battery_raw_instant_v
   d.batteryInstantFilteredV = 42;    // battery_filtered_instant_v
   d.ballX = 43;                      // top_ball_x
-  d.touchXFiltered = 44;             // touch_x
-  d.bodyPitch = 45;                  // body_pitching
-  d.maxServoRange = 46;              // max_servo_range_deg
-  d.sequence = 47;                   // sequence
+  d.bodyPitch = 44;                  // body_pitching
+  d.maxServoRange = 45;              // max_servo_range_deg
+  d.sequence = 46;                   // sequence
 }
 
 void printDistinctDrive() {
@@ -111,7 +110,7 @@ void printDistinctDrive() {
   record.kind = LoggingInternal::RecordKind::Drive;
   fillDistinctDrive(record.payload.drive);
   char line[LoggingInternal::kLineBufferSize];
-  const int length = LoggingInternal::formatRecord(record, line, sizeof(line), 48, 49);
+  const int length = LoggingInternal::formatRecord(record, line, sizeof(line), 47, 48);
   require(length > 0 && static_cast<size_t>(length) < sizeof(line), "distinct DRIVE row did not format");
   std::fwrite(line, 1, static_cast<size_t>(length), stdout);
 }
