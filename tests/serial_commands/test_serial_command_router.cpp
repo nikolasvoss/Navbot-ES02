@@ -175,7 +175,7 @@ int main() {
   assert(parsedMotorCommands.size() == 1 && parsedMotorCommands[0]);
   calls.clear();
   parsedMotorCommands.clear();
-  Stream voltageDiagnostic("M 2 2.0 5000\r\n");
+  Stream voltageDiagnostic("M 2 6.0 5000\r\n");
   router.run(voltageDiagnostic, commander, commandEntries);
   assert(parsedMotorCommands.size() == 1 && parsedMotorCommands[0]);
   calls.clear();

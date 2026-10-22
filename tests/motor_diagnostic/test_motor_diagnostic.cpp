@@ -39,12 +39,12 @@ int main() {
   assert(!parseCurrentRequest("0 0 500.5", parsed));
   assert(parseVoltageRequest("2 -0.5 1250", parsed));
   assert(parsed.selectedMotor == 2 && parsed.voltageV == -0.5f && parsed.leaseMs == 1250);
-  assert(parseVoltageRequest("1 2.0 5000", parsed));
-  assert(parsed.voltageV == 2.0f && parsed.leaseMs == 5000);
-  assert(parseVoltageRequest("2 -2.0 5000", parsed));
-  assert(parsed.voltageV == -2.0f);
+  assert(parseVoltageRequest("1 6.0 5000", parsed));
+  assert(parsed.voltageV == 6.0f && parsed.leaseMs == 5000);
+  assert(parseVoltageRequest("2 -6.0 5000", parsed));
+  assert(parsed.voltageV == -6.0f);
   assert(!parseVoltageRequest("0 0.1 500", parsed));
-  assert(!parseVoltageRequest("1 2.01 500", parsed));
+  assert(!parseVoltageRequest("1 6.01 500", parsed));
   assert(!parseVoltageRequest("1 0.1 5001", parsed));
   assert(!parseVoltageRequest("1 nan 500", parsed));
   assert(!parseVoltageRequest("1 0.1 500 1", parsed));
@@ -109,9 +109,9 @@ int main() {
   assert(update(state, velocityInputs(8082, 0.0f, overLimit)) == Fault::Overspeed);  // 50 ms
   assert(resetFault(state, safeInputs(8083)));
 
-  // A single -65 rad/s sample, then an in-limit sample at a 1 kHz update rate, does not fault.
+  // A single -125 rad/s sample (above the 120 rad/s cap), then an in-limit sample, does not fault.
   assert(start(state, voltage, safeInputs(9000)) == RequestResult::Accepted);
-  assert(update(state, velocityInputs(9001, 0.8f, -65.0f)) == Fault::None);
+  assert(update(state, velocityInputs(9001, 0.8f, -125.0f)) == Fault::None);
   assert(update(state, velocityInputs(9002, 0.8f, -0.8f)) == Fault::None);
   assert(update(state, velocityInputs(9003, -40.0f, 0.8f)) == Fault::None);
   assert(update(state, velocityInputs(9004, 0.8f, 0.8f)) == Fault::None);

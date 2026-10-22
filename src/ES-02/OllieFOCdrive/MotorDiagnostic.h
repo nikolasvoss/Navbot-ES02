@@ -12,10 +12,12 @@ constexpr uint32_t kMaximumLeaseMs = 5000;
 // Estimate-based bound on the T current target, not derived from kMaximumVoltageV. It rests on the 22 ohm
 // kWheelPhaseResistanceOhm estimate, which is not measured (the measured phase-to-phase value is 11.5 ohm).
 constexpr float kMaximumCurrentA = 0.02f;
-constexpr float kMaximumVoltageV = 2.0f;
-// Wheel-clear runs only. Raised from 15 rad/s by operator approval on 2026-10-22. The earlier 3 rad/s cap
-// ended identification before any speed plateau.
-constexpr float kMaximumSpeedRadPerSec = 60.0f;
+// Wheel-clear runs only. Raised from 2.0 V by operator approval on 2026-10-22. The request reaches
+// voltage.q unclamped up to this value; the SpaceVectorPWM modulator saturates near supply/sqrt(3).
+constexpr float kMaximumVoltageV = 6.0f;
+// Wheel-clear runs only. Raised from 60 rad/s by operator approval on 2026-10-22 (earlier 15 and 3 rad/s
+// caps ended identification before any speed plateau).
+constexpr float kMaximumSpeedRadPerSec = 120.0f;
 // Overspeed latches only after a wheel has stayed above the limit for this long (measured with Inputs::nowMs).
 constexpr uint32_t kOverspeedDebounceMs = 50;
 
