@@ -41,6 +41,6 @@ Current conversion of the drive channels:
 | CH4 turn | `bodyTurn = -mapf(raw, 192, 1792, -11, 11)`; left gives +11 | none | Yaw-rate setpoint compared with gyro Z in rad/s |
 | CH9 ball X | `topBallX = mapf(raw, 192, 1792, -5, 5)` | biquad low-pass at 50 Hz (`sbusTopBallXSmoothed`) | Added to `bodyPitching` in ball-balance or roll-auto mode |
 
-On RC loss (no frame for 100 ms or receiver failsafe), `movementSpeed` and `bodyTurn` become 0; all other values keep their last received value. A BLE connection replaces SBUS with its own channel ranges (`BLE_CH*` in `ble.h`).
+On RC loss (no frame for 100 ms or receiver failsafe), `movementSpeed` and `bodyTurn` become 0; all other values keep their last received value.
 
 This description matches the current SBUS handling in `src/ES-02/OllieFOCdrive/OllieFOCdrive.ino` and the mode constants in `OllieFOCdrive.h`.

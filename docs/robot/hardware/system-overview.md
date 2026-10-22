@@ -16,8 +16,7 @@ ESP32-S3-WROOM-1 (MAIN)
   ├─ 6 PWM + 2 enable → 2 motor power stages; 4 PWM → leg servos
   ├─ UART2 → inverted SBUS receiver; UART1 → touch TTL
   ├─ UART0 → CH340X → USB-C for flash and serial
-  ├─ GPIO17/ADC → 2S battery voltage via 10-kΩ/1-kΩ divider
-  └─ BLE → control without an additional radio chip
+  └─ GPIO17/ADC → 2S battery voltage via 10-kΩ/1-kΩ divider
 ```
 
 The EasyEDA project contains **MAIN** (control, power, motor drivers, connectors) and **CODER** (AS5600 encoder board; two units according to the BOM). The mechanics have two brushless wheel motors and four leg servos. According to the BOM, the resistive touch surface is connected through a separate TTL driver board. RC control uses an external receiver and its SBUS output.

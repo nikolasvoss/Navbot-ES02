@@ -1,6 +1,6 @@
 # Use the sensor diagnostic mode
 
-The sensor diagnostic mode reads the IMU, battery ADC, and SBUS receiver without initializing motor or servo control. It holds the two motor-driver enable pins low and returns from normal setup before initializing BLE, FOC, servos, or balance control. The source currently sets `SENSOR_DIAGNOSTIC_MODE` to `0`. Set it to `1` and rebuild to enable this procedure.
+The sensor diagnostic mode reads the IMU, battery ADC, and SBUS receiver without initializing motor or servo control. It holds the two motor-driver enable pins low and returns from normal setup before initializing FOC, servos, or balance control. The source currently sets `SENSOR_DIAGNOSTIC_MODE` to `0`. Set it to `1` and rebuild to enable this procedure.
 
 Support the robot mechanically during this check. The legs do not move in diagnostic mode. This mode does not establish safe or stable behavior under motor load.
 

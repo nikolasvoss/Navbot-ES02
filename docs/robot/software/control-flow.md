@@ -13,7 +13,6 @@ A **setpoint** is the desired behavior, and an **actual value** is the measureme
 ```mermaid
 flowchart LR
     RC[SBUS remote control<br/>CH3 drive · CH4 turn<br/>CH5 enable · CH7/8 posture] --> CMD[Setpoints and operating mode]
-    BLE[BLE commands] --> CMD
     IMU[ICM-42688P<br/>acceleration + angular rate] --> MAH[Filter + Mahony<br/>tilt correctedRollDegrees / correctedPitchDegrees]
     ENC[2 × AS5600<br/>wheel angle] --> VEL[Wheel speed estimate]
     CMD --> CTRL[Two-wheel control]
@@ -75,7 +74,7 @@ The behavior is coupled through the mechanics: a servo movement changes the posi
 
 **Important for comparisons:** `bodyPitching` is not explicitly set to zero everywhere in standard posture. After a mode change, a previous value in RAM can keep acting until it is overwritten or reset in the CH5-off path for `bodyPitchingFiltered`. `Touch.XPdatF` is not established as a measured zero without a connected touchscreen. For a test, log CH7/CH8/CH9 and the touch value together.
 
-BLE has its own mapping of the control channels. `readControlInput()` reads only BLE when BLE is connected, otherwise SBUS. SBUS is read exactly once per loop, so BLE setpoints are not overwritten.
+SBUS is the only remote-control source and is read exactly once per loop.
 
 ## Timing, units and filters
 
@@ -117,7 +116,7 @@ The yaw I start value is zero in both CH5 modes. The ±0.1 limit is the limit of
 - CH5=0 or a detected fall: wheel setpoints zero, `bodyX` and the PID integrators reset. SimpleFOC keeps running. "Setpoint zero" here does not mean the output stage is switched off.
 - `updateTumbleState()` sets the fall flag after 20 consecutive control calls with `|correctedRollDegrees| >= 35°`. To re-enable, the angle must be `<= 5°` again and the internal counter must count back down. The time depends on the real control rate.
 - The battery voltage comes via GPIO17 from the **2S battery line**, not from the 3.3 V rail. Below 7.4 V, the status LED blinks faster, and the firmware logs a warning at most once per second in the control loop. There is no shutdown. A voltage dip can have further hardware effects, but this threshold does not actively prevent them.
-- As long as SBUS is the active source (BLE not connected), `readSbus()` sets `movementSpeed` and `bodyTurn` to zero if no valid frame has arrived for more than 100 ms or `sBus.Failsafe()` does not report OK. The switch modes and the body height, pitch, and roll commands keep their last received value. The robot continues balancing in place. With BLE connected, this check does not apply.
+- `readSbus()` sets `movementSpeed` and `bodyTurn` to zero if no valid frame has arrived for more than 100 ms or `sBus.Failsafe()` does not report OK. The switch modes and the body height, pitch, and roll commands keep their last received value. The robot continues balancing in place.
 - The gyro calibration (`E1`) blocks the control loop for several seconds. It is refused while balance is active (CH5 on and not fallen). `calibrationSelect` is reset to 0, and `gyro calibration refused: balance active` is logged.
 
 ## Where developers should look
@@ -128,7 +127,7 @@ The yaw I start value is zero in both CH5 modes. The ±0.1 limit is the limit of
 | Start configuration, SimpleFOC, gains | `OllieFOCdrive.ino`: defines at the top, `setup()`, `applyPidParameters()` |
 | Active flow, enable, servo output | `OllieFOCdrive.ino`: `loop()` |
 | Two-wheel PID and motor mixing | `OllieFOCdrive.ino`: `runPostureController()` |
-| Remote control and modes | `OllieFOCdrive.ino`: `readSbus()`, `readControlInput()` |
+| Remote control and modes | `OllieFOCdrive.ino`: `readSbus()` |
 | IMU fusion and posture offsets | `imu.cpp`: `imu::service()`; `MahonyFilter.cpp` |
 | PID calculation rule | `OllieFOCdrive.h`: `MyPIDController::compute()` |
 | Leg kinematics | `LegKinematics.cpp`: `LegKinematics::solveRight()`, `solveLeft()` |
