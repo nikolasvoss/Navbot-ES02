@@ -124,6 +124,15 @@ struct Config {
   float yawRateCapRadPerSec = 0.0f;  // uncommissioned
   uint32_t requestMaxAgeUs = 0;      // uncommissioned, older motion requests count as zero
 
+  // Speed loop. The provisional 50 Hz rate is 20000 us; it is set by the commissioning record, not here.
+  float wheelRadiusM = 0.0f;          // uncommissioned
+  uint32_t speedLoopPeriodUs = 0;     // uncommissioned
+  float speedKpRadPerMps = 0.0f;      // uncommissioned
+  float speedKiRadPerMpsS = 0.0f;     // uncommissioned
+  bool speedIntegralEnabled = false;  // off until the speed integral is commissioned
+  float tiltRefLimitRad = 0.0f;       // uncommissioned, bounds |trim + speed correction|
+  float tiltRefSlewRadPerSec = 0.0f;  // uncommissioned
+
   // Inputs supplied by the sketch from the stored trim record and pose check, not commissioning constants.
   bool trimValidated = false;
   float storedTrimDeg = 0.0f;
@@ -143,11 +152,25 @@ class BalanceController {
   static Demand shapeDemand(Demand previous, Demand requested, float demandScale, float dtSec,
                             const Config &config);
 
+  // Angles are radians. Speed I is held in speedIRad; the tilt reference is clamped to +/-tiltRefLimitRad.
+  struct SpeedLoopResult {
+    float speedPRad;
+    float speedIRad;
+    float desiredTiltRad;
+    bool tiltClipped;
+  };
+  // Applies the anti-windup precedence: freeze on downstream limits, unwind-only when the tilt reference
+  // is clipped, otherwise integrate.
+  static SpeedLoopResult speedLoopStep(float speedIPrevRad, float speedErrorMps, float trimRad,
+                                       bool downstreamLimited, float dtSec, const Config &config);
+  // Moves previousRad toward desiredRad by at most tiltRefSlewRadPerSec * dtSec, landing exactly on it.
+  static float slewTiltRef(float previousRad, float desiredRad, float dtSec, const Config &config);
+
   Output update(const Measurements &measurements, const Request &request, const Config &config,
                 uint32_t nowUs);
 
  private:
-  void resetRunTracking();
+  void resetRunTracking(const Config &config, uint32_t nowUs);
   void checkRunning(const Measurements &measurements, const Request &request, const Config &config,
                     uint32_t nowUs);
   void latchFault(FaultReason reason);
@@ -181,4 +204,16 @@ class BalanceController {
   uint32_t fallStartUs_ = 0;
   bool overspeedActive_ = false;
   uint32_t overspeedStartUs_ = 0;
+
+  // Speed loop and tilt reference. Zero outside Run and Commissioning; the trim is fixed for this step.
+  float trimRad_ = 0.0f;
+  float speedPRad_ = 0.0f;
+  float speedIRad_ = 0.0f;
+  float desiredTiltRad_ = 0.0f;  // stored result of the last speed loop run
+  float tiltRefRad_ = 0.0f;      // applied reference, slewed toward desiredTiltRad_ every processed sample
+  bool tiltClipped_ = false;
+  uint32_t lastSpeedLoopUs_ = 0;
+  // Set by the effort allocator in a later step; both stay false until then.
+  bool effortClippedPrev_ = false;
+  bool reserveLowPrev_ = false;
 };

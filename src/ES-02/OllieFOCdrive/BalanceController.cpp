@@ -53,12 +53,19 @@ bool armingConditionsMet(const Measurements &measurements, const Request &reques
 }
 
 // Demand caps must be usable: a zero brake cap would hold the last speed when the request times out,
-// and a negative or NaN rate would move speed the wrong way.
-bool demandConfigValid(const Config &config) {
+// and a negative or NaN rate would move speed the wrong way. A zero slew rate would freeze the tilt
+// reference, and a zero wheel radius or loop period would divide by zero or never run the loop.
+bool configValid(const Config &config) {
   return std::isfinite(config.speedCapMps) && config.speedCapMps >= 0.0f &&
          std::isfinite(config.accelCapMps2) && config.accelCapMps2 > 0.0f &&
          std::isfinite(config.brakeCapMps2) && config.brakeCapMps2 > 0.0f &&
-         std::isfinite(config.yawRateCapRadPerSec) && config.yawRateCapRadPerSec >= 0.0f;
+         std::isfinite(config.yawRateCapRadPerSec) && config.yawRateCapRadPerSec >= 0.0f &&
+         std::isfinite(config.wheelRadiusM) && config.wheelRadiusM > 0.0f &&
+         config.speedLoopPeriodUs > 0 && std::isfinite(config.speedKpRadPerMps) &&
+         std::isfinite(config.speedKiRadPerMpsS) && std::isfinite(config.tiltRefLimitRad) &&
+         config.tiltRefLimitRad >= 0.0f && std::isfinite(config.tiltRefSlewRadPerSec) &&
+         config.tiltRefSlewRadPerSec > 0.0f &&
+         std::fabs(config.storedTrimDeg * kDegreesToRadiansF) <= config.tiltRefLimitRad;
 }
 
 float nanToZero(float value) { return std::isnan(value) ? 0.0f : value; }
@@ -104,6 +111,41 @@ Demand BalanceController::shapeDemand(Demand previous, Demand requested, float d
   return shaped;
 }
 
+BalanceController::SpeedLoopResult BalanceController::speedLoopStep(float speedIPrevRad, float speedErrorMps,
+                                                                    float trimRad, bool downstreamLimited,
+                                                                    float dtSec, const Config &config) {
+  SpeedLoopResult out;
+  out.speedPRad = config.speedKpRadPerMps * speedErrorMps;
+  if (!config.speedIntegralEnabled) {
+    out.speedIRad = 0.0f;
+  } else if (downstreamLimited) {
+    out.speedIRad = speedIPrevRad;
+  } else {
+    const float candidate = speedIPrevRad + config.speedKiRadPerMpsS * speedErrorMps * dtSec;
+    const float sum = trimRad + out.speedPRad + candidate;
+    // Once the tilt reference is clipped, only an integral step toward the feasible band is accepted, even
+    // when one step does not reach it; requiring a full return would deadlock with small steps.
+    const bool movesFurtherOut = (sum > config.tiltRefLimitRad && candidate > speedIPrevRad) ||
+                                 (sum < -config.tiltRefLimitRad && candidate < speedIPrevRad);
+    out.speedIRad = movesFurtherOut ? speedIPrevRad : candidate;
+  }
+
+  const float unlimitedRad = trimRad + out.speedPRad + out.speedIRad;
+  out.tiltClipped = std::fabs(unlimitedRad) > config.tiltRefLimitRad;
+  // Clamping the sum rather than the correction keeps |desired| within the limit exactly, even in float.
+  out.desiredTiltRad = std::max(-config.tiltRefLimitRad, std::min(config.tiltRefLimitRad, unlimitedRad));
+  return out;
+}
+
+float BalanceController::slewTiltRef(float previousRad, float desiredRad, float dtSec, const Config &config) {
+  const float maxStepRad = config.tiltRefSlewRadPerSec * dtSec;
+  const float differenceRad = desiredRad - previousRad;
+  if (std::fabs(differenceRad) <= maxStepRad) {
+    return desiredRad;
+  }
+  return previousRad + (differenceRad > 0.0f ? maxStepRad : -maxStepRad);
+}
+
 Output BalanceController::update(const Measurements &measurements, const Request &request, const Config &config,
                                  uint32_t nowUs) {
   // The first call only records the switch level, so a switch that is already on at boot is not an edge.
@@ -125,7 +167,7 @@ Output BalanceController::update(const Measurements &measurements, const Request
       case State::Arming:
         if (armingConditionsMet(measurements, request, config, nowUs)) {
           state_ = State::Run;
-          resetRunTracking();
+          resetRunTracking(config, nowUs);
           checkEnvelopes(measurements, config);  // drivers must not be enabled on an invalid model
         } else if (elapsedLongerThan(nowUs, armingStartUs_, config.armingTimeoutUs)) {
           state_ = State::Disabled;
@@ -143,6 +185,9 @@ Output BalanceController::update(const Measurements &measurements, const Request
   if (state_ != State::Run && state_ != State::Commissioning) {
     leftMinA_ = leftMaxA_ = rightMinA_ = rightMaxA_ = 0.0f;
     shapedDemand_ = Demand{};
+    trimRad_ = speedPRad_ = speedIRad_ = desiredTiltRad_ = tiltRefRad_ = 0.0f;
+    tiltClipped_ = false;
+    effortClippedPrev_ = reserveLowPrev_ = false;
   }
 
   Output output;
@@ -156,14 +201,28 @@ Output BalanceController::update(const Measurements &measurements, const Request
   output.diag.demandScale = demandScale_;
   output.diag.shapedSpeedMps = shapedDemand_.speedMps;
   output.diag.shapedYawRateRadPerSec = shapedDemand_.yawRateRadPerSec;
+  output.diag.tiltRefRad = tiltRefRad_;
+  output.diag.trimDeg = trimRad_ * kRadiansToDegreesF;
+  output.diag.speedP = speedPRad_;
+  output.diag.speedI = speedIRad_;
+  output.diag.tiltClipped = tiltClipped_;
   return output;
 }
 
-void BalanceController::resetRunTracking() {
+void BalanceController::resetRunTracking(const Config &config, uint32_t nowUs) {
   imuTimestampValid_ = false;
   fallBeyond_ = false;
   overspeedActive_ = false;
   shapedDemand_ = Demand{};
+
+  trimRad_ = config.storedTrimDeg * kDegreesToRadiansF;
+  speedPRad_ = 0.0f;
+  speedIRad_ = 0.0f;
+  desiredTiltRad_ = trimRad_;
+  tiltRefRad_ = trimRad_;
+  tiltClipped_ = false;
+  lastSpeedLoopUs_ = nowUs;
+  effortClippedPrev_ = reserveLowPrev_ = false;
 }
 
 void BalanceController::latchFault(FaultReason reason) {
@@ -213,6 +272,22 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
         requested.yawRateRadPerSec = request.yawRateRadPerSec;
       }
       shapedDemand_ = shapeDemand(shapedDemand_, requested, demandScale_, dtSec_, config);
+
+      // The loop runs on the first processed sample at or after its period, and integrates over that elapsed time.
+      const uint32_t loopElapsedUs = nowUs - lastSpeedLoopUs_;
+      if (loopElapsedUs >= config.speedLoopPeriodUs) {
+        const float measuredSpeedMps =
+            0.5f * (measurements.leftWheelRadPerSec + measurements.rightWheelRadPerSec) * config.wheelRadiusM;
+        const SpeedLoopResult loop = speedLoopStep(speedIRad_, shapedDemand_.speedMps - measuredSpeedMps,
+                                                   trimRad_, effortClippedPrev_ || reserveLowPrev_,
+                                                   static_cast<float>(loopElapsedUs) * 1e-6f, config);
+        speedPRad_ = loop.speedPRad;
+        speedIRad_ = loop.speedIRad;
+        desiredTiltRad_ = loop.desiredTiltRad;
+        tiltClipped_ = loop.tiltClipped;
+        lastSpeedLoopUs_ = nowUs;
+      }
+      tiltRefRad_ = slewTiltRef(tiltRefRad_, desiredTiltRad_, dtSec_, config);
     }
     imuTimestampValid_ = true;
     lastImuReadTimeUs_ = measurements.imuReadTimeUs;
@@ -245,7 +320,7 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
 }
 
 void BalanceController::checkEnvelopes(const Measurements &measurements, const Config &config) {
-  if (!demandConfigValid(config)) {
+  if (!configValid(config)) {
     latchFault(FaultReason::InvalidConfig);
     return;
   }

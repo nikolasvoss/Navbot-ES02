@@ -46,10 +46,21 @@ Config makeConfig() {
   config.brakeCapMps2 = 4.0f;
   config.yawRateCapRadPerSec = 0.5f;
   config.requestMaxAgeUs = 50000;
+  // Speed loop: 0.1 m wheel radius, 50 Hz, Kp 0.5 rad per m/s, integral off by default, tilt limit 0.3 rad
+  // (above the 10 degree trim), slew 1 rad/s.
+  config.wheelRadiusM = 0.1f;
+  config.speedLoopPeriodUs = 20000;
+  config.speedKpRadPerMps = 0.5f;
+  config.speedKiRadPerMpsS = 0.2f;
+  config.speedIntegralEnabled = false;
+  config.tiltRefLimitRad = 0.3f;
+  config.tiltRefSlewRadPerSec = 1.0f;
   return config;
 }
 
 bool closeTo(float actual, float expected) { return std::fabs(actual - expected) <= 1e-4f; }
+
+bool nearlyTo(float actual, float expected, float tolerance) { return std::fabs(actual - expected) <= tolerance; }
 
 Measurements makeMeasurements() {
   Measurements m{};
@@ -129,6 +140,16 @@ Output liveSample(BalanceController &controller, const Config &config, uint32_t 
   Measurements s = atTime(makeMeasurements(), nowUs);
   s.imuSequence = imuSequence;
   return controller.update(s, request, config, nowUs);
+}
+
+// A new IMU sample at nowUs with the given wheel speeds and a zero request; the other sensors are fresh.
+Output wheelSample(BalanceController &controller, const Config &config, uint32_t nowUs, uint32_t imuSequence,
+                   float leftRadPerSec, float rightRadPerSec) {
+  Measurements s = atTime(makeMeasurements(), nowUs);
+  s.imuSequence = imuSequence;
+  s.leftWheelRadPerSec = leftRadPerSec;
+  s.rightWheelRadPerSec = rightRadPerSec;
+  return controller.update(s, makeRequest(true), config, nowUs);
 }
 
 // Enters Run at baseUs, then samples a 1 m/s and 2 rad/s request every 50 ms. The first sample only
@@ -706,6 +727,34 @@ int main() {
     }
   }
 
+  // A sum exactly at the tilt limit is not clipped and still integrates; the next step past it is refused.
+  {
+    Config edge = config;
+    edge.speedIntegralEnabled = true;
+    edge.speedKpRadPerMps = 0.0f;
+    edge.speedKiRadPerMpsS = 1.0f;
+    edge.tiltRefLimitRad = 0.5f;
+    // candidate = 0.25 + 1.0 * 0.5 * 0.5 = 0.5, sum = 0.5 == limit.
+    const auto atLimit = BalanceController::speedLoopStep(0.25f, 0.5f, 0.0f, false, 0.5f, edge);
+    assert(atLimit.speedIRad == 0.5f && !atLimit.tiltClipped);
+    // candidate would be 0.75 > limit and moves further out: refused.
+    const auto past = BalanceController::speedLoopStep(0.5f, 0.5f, 0.0f, false, 0.5f, edge);
+    assert(past.speedIRad == 0.5f);
+  }
+
+  // A stored trim beyond the tilt limit is rejected instead of being silently clamped.
+  {
+    Config bigTrim = config;
+    bigTrim.storedTrimDeg = 20.0f;  // 0.349 rad > tiltRefLimitRad 0.3
+    BalanceController bc;
+    tick(bc, good, makeRequest(false), bigTrim, 1000);
+    tick(bc, good, makeRequest(true), bigTrim, 2000);
+    Measurements tilted = good;
+    tilted.tiltRad = 20.0f * 3.14159265f / 180.0f;
+    const Output armed = tick(bc, tilted, makeRequest(true), bigTrim, 3000);
+    assert(armed.state == State::Fault && armed.fault == FaultReason::InvalidConfig);
+  }
+
   // An invalid envelope model faults on the arming tick itself, so drivers are never enabled on it.
   {
     Config broken = config;
@@ -859,6 +908,186 @@ int main() {
     assert(first.state == State::Run && closeTo(first.diag.shapedSpeedMps, 0.0f));
     const Output second = liveSample(bc, config, 660000u, 9, liveRequest(660000u, 1.0f, 0.0f));
     assert(closeTo(second.diag.shapedSpeedMps, 0.1f));
+  }
+
+  // Step 5: P-only correction. Kp 0.5 * 0.2 m/s = 0.1 rad; the integral is zero even when a previous value
+  // is passed in, because it is disabled.
+  {
+    const BalanceController::SpeedLoopResult r =
+        BalanceController::speedLoopStep(0.05f, 0.2f, 0.0f, false, 0.02f, config);
+    assert(nearlyTo(r.speedPRad, 0.1f, 1e-6f));
+    assert(nearlyTo(r.speedIRad, 0.0f, 1e-6f));
+    assert(nearlyTo(r.desiredTiltRad, 0.1f, 1e-6f) && !r.tiltClipped);
+  }
+
+  // Step 5: the integral accumulates Ki * e * dt. With Ki 0.2, e 0.2 m/s and dt 0.02 s it adds 0.0008 per
+  // step, so ten steps give 0.008.
+  {
+    Config integ = config;
+    integ.speedIntegralEnabled = true;
+    integ.speedKpRadPerMps = 0.0f;
+    float speedI = 0.0f;
+    for (int k = 0; k < 10; ++k) {
+      speedI = BalanceController::speedLoopStep(speedI, 0.2f, 0.0f, false, 0.02f, integ).speedIRad;
+      if (k == 0) {
+        assert(nearlyTo(speedI, 0.0008f, 1e-7f));
+      }
+    }
+    assert(nearlyTo(speedI, 0.008f, 1e-6f));
+  }
+
+  // Step 5: the tilt reference is clamped with the trim offset. Trim 0.1 + P 0.3 = 0.4 clamps to the 0.15
+  // limit, so the speed correction is 0.05 and the clip flag is set.
+  {
+    Config limited = config;
+    limited.tiltRefLimitRad = 0.15f;
+    const BalanceController::SpeedLoopResult r =
+        BalanceController::speedLoopStep(0.0f, 0.6f, 0.1f, false, 0.02f, limited);
+    assert(nearlyTo(r.desiredTiltRad, 0.15f, 1e-6f) && r.tiltClipped);
+    assert(nearlyTo(r.desiredTiltRad - 0.1f, 0.05f, 1e-6f));
+  }
+
+  // Step 5: downstream limits freeze the integral for this update; otherwise it integrates normally.
+  {
+    Config integ = config;
+    integ.speedIntegralEnabled = true;
+    integ.speedKpRadPerMps = 0.0f;
+    const BalanceController::SpeedLoopResult frozen =
+        BalanceController::speedLoopStep(0.02f, 0.1f, 0.0f, true, 0.02f, integ);
+    assert(nearlyTo(frozen.speedIRad, 0.02f, 1e-6f));
+    const BalanceController::SpeedLoopResult free =
+        BalanceController::speedLoopStep(0.02f, 0.1f, 0.0f, false, 0.02f, integ);
+    assert(nearlyTo(free.speedIRad, 0.0204f, 1e-6f));
+  }
+
+  // Step 5: tilt-clipped anti-windup, both signs. Trim 0.1 with integral 0.06 is already above the 0.15
+  // limit: a further rise is refused, while a fall back is accepted. The mirror case behaves the same way.
+  {
+    Config integ = config;
+    integ.speedIntegralEnabled = true;
+    integ.speedKpRadPerMps = 0.0f;
+    integ.tiltRefLimitRad = 0.15f;
+    const BalanceController::SpeedLoopResult up =
+        BalanceController::speedLoopStep(0.06f, 0.5f, 0.1f, false, 0.02f, integ);
+    assert(nearlyTo(up.speedIRad, 0.06f, 1e-6f) && up.tiltClipped);
+    const BalanceController::SpeedLoopResult upBack =
+        BalanceController::speedLoopStep(0.06f, -0.5f, 0.1f, false, 0.02f, integ);
+    assert(nearlyTo(upBack.speedIRad, 0.058f, 1e-6f));
+
+    const BalanceController::SpeedLoopResult low =
+        BalanceController::speedLoopStep(-0.06f, -0.5f, -0.1f, false, 0.02f, integ);
+    assert(nearlyTo(low.speedIRad, -0.06f, 1e-6f) && low.tiltClipped);
+    const BalanceController::SpeedLoopResult lowBack =
+        BalanceController::speedLoopStep(-0.06f, 0.5f, -0.1f, false, 0.02f, integ);
+    assert(nearlyTo(lowBack.speedIRad, -0.058f, 1e-6f));
+  }
+
+  // Step 5: recovery after saturation, both signs. An integral of 0.2 wound up against the 0.15 limit with
+  // trim 0.1 unwinds by 0.002 per step. After 80 steps it is 0.04, the sum 0.14 is back inside the band,
+  // and the next step integrates normally.
+  {
+    Config integ = config;
+    integ.speedIntegralEnabled = true;
+    integ.speedKpRadPerMps = 0.0f;
+    integ.tiltRefLimitRad = 0.15f;
+
+    float speedI = 0.2f;
+    for (int k = 0; k < 80; ++k) {
+      speedI = BalanceController::speedLoopStep(speedI, -0.5f, 0.1f, false, 0.02f, integ).speedIRad;
+    }
+    assert(nearlyTo(speedI, 0.04f, 1e-5f));
+    const BalanceController::SpeedLoopResult inside =
+        BalanceController::speedLoopStep(speedI, -0.5f, 0.1f, false, 0.02f, integ);
+    assert(!inside.tiltClipped && nearlyTo(inside.speedIRad, 0.038f, 1e-5f));
+
+    float speedNegI = -0.2f;
+    for (int k = 0; k < 80; ++k) {
+      speedNegI = BalanceController::speedLoopStep(speedNegI, 0.5f, -0.1f, false, 0.02f, integ).speedIRad;
+    }
+    assert(nearlyTo(speedNegI, -0.04f, 1e-5f));
+    const BalanceController::SpeedLoopResult insideNeg =
+        BalanceController::speedLoopStep(speedNegI, 0.5f, -0.1f, false, 0.02f, integ);
+    assert(!insideNeg.tiltClipped && nearlyTo(insideNeg.speedIRad, -0.038f, 1e-5f));
+  }
+
+  // Step 5: the slew moves 1 rad/s * 0.25 s per step and lands exactly on the desired value.
+  {
+    float ref = 0.0f;
+    ref = BalanceController::slewTiltRef(ref, 1.0f, 0.25f, config);
+    assert(nearlyTo(ref, 0.25f, 1e-6f));
+    ref = BalanceController::slewTiltRef(ref, 1.0f, 0.25f, config);
+    ref = BalanceController::slewTiltRef(ref, 1.0f, 0.25f, config);
+    assert(nearlyTo(ref, 0.75f, 1e-6f));
+    ref = BalanceController::slewTiltRef(ref, 1.0f, 0.25f, config);
+    assert(ref == 1.0f);
+    assert(nearlyTo(BalanceController::slewTiltRef(0.0f, -0.5f, 0.25f, config), -0.25f, 1e-6f));
+    assert(BalanceController::slewTiltRef(0.7f, 0.8f, 0.25f, config) == 0.8f);
+  }
+
+  // Step 5: a speed loop period, wheel radius, slew rate or tilt limit that is unusable is an invalid
+  // configuration, and the controller faults before drivers can be enabled.
+  {
+    const auto armedWith = [&](const Config &bad) {
+      BalanceController bc;
+      tick(bc, good, makeRequest(false), config, 1000);
+      tick(bc, good, makeRequest(true), config, 2000);
+      return tick(bc, good, makeRequest(true), bad, 3000);
+    };
+    Config noPeriod = config;
+    noPeriod.speedLoopPeriodUs = 0;
+    Config noRadius = config;
+    noRadius.wheelRadiusM = 0.0f;
+    Config noSlew = config;
+    noSlew.tiltRefSlewRadPerSec = 0.0f;
+    for (const Config *bad : {&noPeriod, &noRadius, &noSlew}) {
+      const Output out = armedWith(*bad);
+      assert(out.state == State::Fault && out.fault == FaultReason::InvalidConfig && !out.driveEnabled);
+    }
+  }
+
+  // Step 5, update(): the loop runs every 20 ms (50 Hz) on processed IMU samples and integrates with the
+  // elapsed time. The measured speed is the mean of both wheels times the radius: (4 + 0) / 2 * 0.1 = 0.2 m/s.
+  // With a zero request, the error is -0.2 m/s, so P = 0.5 * -0.2 = -0.1 rad and each run adds
+  // 0.2 * -0.2 * 0.02 = -0.0008 to the integral.
+  {
+    Config integ = config;
+    integ.speedIntegralEnabled = true;
+    BalanceController bc;
+    tick(bc, good, makeRequest(false), integ, 0);
+    tick(bc, good, makeRequest(true), integ, 1000);
+    const Output entry = tick(bc, good, makeRequest(true), integ, 2000);
+    assert(entry.state == State::Run);
+    // Tilt reference starts at the stored trim of 10 degrees.
+    assert(nearlyTo(entry.diag.tiltRefRad, kTrimTiltRad, 1e-6f) && nearlyTo(entry.diag.trimDeg, 10.0f, 1e-3f));
+
+    // First processed sample after entry only records its timestamp, so the loop does not run yet.
+    const Output first = wheelSample(bc, integ, 12000, 2, 4.0f, 0.0f);
+    assert(nearlyTo(first.diag.speedP, 0.0f, 1e-6f) && nearlyTo(first.diag.speedI, 0.0f, 1e-6f));
+
+    // 20 ms after entry the loop runs: the reference slews by 0.01 rad (1 rad/s * 10 ms) toward its target.
+    const Output run = wheelSample(bc, integ, 22000, 3, 4.0f, 0.0f);
+    assert(nearlyTo(run.diag.speedP, -0.1f, 1e-6f));
+    assert(nearlyTo(run.diag.speedI, -0.0008f, 1e-7f));
+    assert(nearlyTo(run.diag.tiltRefRad, kTrimTiltRad - 0.01f, 1e-6f));
+
+    // 10 ms later the loop is not due: the integral is unchanged and the reference slews one more step.
+    const Output between = wheelSample(bc, integ, 32000, 4, 4.0f, 0.0f);
+    assert(nearlyTo(between.diag.speedI, -0.0008f, 1e-7f));
+    assert(nearlyTo(between.diag.tiltRefRad, kTrimTiltRad - 0.02f, 1e-6f));
+
+    // Next due sample: a second run adds the same -0.0008 over its 20 ms.
+    const Output next = wheelSample(bc, integ, 42000, 5, 4.0f, 0.0f);
+    assert(nearlyTo(next.diag.speedI, -0.0016f, 1e-7f));
+    assert(nearlyTo(next.diag.speedP, -0.1f, 1e-6f));
+
+    // Switching the enable off and on again re-enters Run. The speed loop state starts from zero and the
+    // reference restarts at the trim.
+    tick(bc, good, makeRequest(false), integ, 50000);
+    tick(bc, good, makeRequest(true), integ, 51000);
+    const Output reentry = tick(bc, good, makeRequest(true), integ, 52000);
+    assert(reentry.state == State::Run);
+    assert(nearlyTo(reentry.diag.speedI, 0.0f, 1e-6f) && nearlyTo(reentry.diag.speedP, 0.0f, 1e-6f));
+    assert(nearlyTo(reentry.diag.tiltRefRad, kTrimTiltRad, 1e-6f));
   }
 
   std::puts("balance controller passed");
