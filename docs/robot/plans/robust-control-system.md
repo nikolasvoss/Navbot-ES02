@@ -381,6 +381,7 @@ struct Measurements {
   uint32_t wheelReadTimeUs; bool wheelsValid;
   float leftWheelRadPerSec; float rightWheelRadPerSec;   // forward positive
   uint32_t busReadTimeUs; float busVoltageV;
+  bool voltageClipped; bool currentClipped;              // effort-path clip flags from the sketch: SimpleFOC voltage clamp, current_limit
 };
 struct Request {
   uint32_t receivedTimeUs; bool sourceValid;

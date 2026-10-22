@@ -15,6 +15,10 @@ struct Measurements {
   float rightWheelRadPerSec;  // forward positive
   uint32_t busReadTimeUs;
   float busVoltageV;
+  // Sketch-supplied clip flags of the effort path, from the SimpleFOC estimated-current voltage clamp and the
+  // current_limit clamp. Either one freezes the speed integral on the next loop run.
+  bool voltageClipped = false;
+  bool currentClipped = false;
 };
 
 struct Request {
@@ -43,6 +47,7 @@ enum class FaultReason : uint8_t {
   InvalidEnvelope,
   InvalidConfig,
   AuthorityExhausted,
+  TiltSaturated,
 };
 
 struct Diagnostics {
@@ -138,6 +143,8 @@ struct Config {
   bool speedIntegralEnabled = false;  // off until the speed integral is commissioned
   float tiltRefLimitRad = 0.0f;       // uncommissioned, bounds |trim + speed correction|
   float tiltRefSlewRadPerSec = 0.0f;  // uncommissioned
+  // Applied-unclipped tilt reference beyond tiltRefLimitRad for longer than this faults with TiltSaturated.
+  uint32_t tiltClipDurationUs = 0;    // uncommissioned, must be > 0 in configValid
 
   // Trim and standstill commissioning. Trim is the balance reference offset in radians, not a gain.
   float trimEnvelopeRad = 0.0f;               // uncommissioned, max |trim|, at most tiltRefLimitRad
@@ -282,4 +289,8 @@ class BalanceController {
   // From the last processed sample in Run; they gate the speed integral on the next loop run.
   bool effortClippedPrev_ = false;
   bool reserveLowPrev_ = false;
+  bool voltageOrCurrentClippedPrev_ = false;
+  // Start of the current run of clipped tilt reference, valid while tiltClipRunning_ is set. Checked every tick.
+  bool tiltClipRunning_ = false;
+  uint32_t tiltClipStartUs_ = 0;
 };

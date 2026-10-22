@@ -55,6 +55,8 @@ Config makeConfig() {
   config.speedIntegralEnabled = false;
   config.tiltRefLimitRad = 0.3f;
   config.tiltRefSlewRadPerSec = 1.0f;
+  // Tilt clip duration: 1 s, longer than any test in this file holds a clipped tilt reference.
+  config.tiltClipDurationUs = 1000000;
   // Balance and reserve. The balance and yaw gains stay zero here, so the earlier steps see no effort.
   // reserveLowA is a test value: at standstill the envelope is about +/-0.381 A, so the reserve (0.381 A)
   // stays above it and demandScale stays 1.
@@ -228,6 +230,19 @@ Output heldTick(BalanceController &controller, const Config &config, uint32_t no
   Measurements m = atTime(makeMeasurements(), nowUs);
   m.imuSequence = imuSequence;
   return controller.update(m, makeRequest(true), config, nowUs);
+}
+
+// A sample (newSample) or a held tick at nowUs with the wheels at wheelRadPerSec on both sides, a live zero request
+// and the given effort-path clip flags.
+Output wheelTick(BalanceController &controller, const Config &config, uint32_t nowUs, uint32_t imuSequence,
+                 float wheelRadPerSec, bool voltageClipped = false, bool currentClipped = false) {
+  Measurements m = atTime(makeMeasurements(), nowUs);
+  m.imuSequence = imuSequence;
+  m.leftWheelRadPerSec = wheelRadPerSec;
+  m.rightWheelRadPerSec = wheelRadPerSec;
+  m.voltageClipped = voltageClipped;
+  m.currentClipped = currentClipped;
+  return controller.update(m, liveRequest(nowUs, 0.0f, 0.0f), config, nowUs);
 }
 
 // Step 7. Degree and radian conversions for the test values, written out here rather than taken from the module.
@@ -1167,7 +1182,9 @@ int main() {
     noRadius.wheelRadiusM = 0.0f;
     Config noSlew = config;
     noSlew.tiltRefSlewRadPerSec = 0.0f;
-    for (const Config *bad : {&noPeriod, &noRadius, &noSlew}) {
+    Config noTiltClip = config;
+    noTiltClip.tiltClipDurationUs = 0;
+    for (const Config *bad : {&noPeriod, &noRadius, &noSlew, &noTiltClip}) {
       const Output out = armedWith(*bad);
       assert(out.state == State::Fault && out.fault == FaultReason::InvalidConfig && !out.driveEnabled);
     }
@@ -2235,6 +2252,144 @@ int main() {
     turning.yawRateRadPerSec = 0.2f;
     const Output deflected = imuSample(bc, cfg, 22000, 3, ImuValues{}, turning);
     assert(deflected.state == State::Run && deflected.diag.commissioningRefused);
+  }
+
+  // Clip flags: a voltage clip or a current clip on the sample at 32000 us freezes the speed integral on the next
+  // loop run at 42000 us. Wheels at -1 rad/s give a 0.004 rad step per loop run, so the integral reads 0.004 when
+  // frozen and 0.008 when it moves. Each flag is tested alone, and neither effort nor reserve is clipped.
+  {
+    const auto speedIAfterFlags = [](bool voltageClipped, bool currentClipped) {
+      const Config cfg = makeTrimConfig();
+      BalanceController bc;
+      enterRun(bc, cfg, 0);
+      wheelTick(bc, cfg, 12000, 2, -1.0f);
+      assert(nearlyTo(wheelTick(bc, cfg, 22000, 3, -1.0f).diag.speedI, 0.004f, 1e-6f));
+      wheelTick(bc, cfg, 32000, 4, -1.0f, voltageClipped, currentClipped);
+      return wheelTick(bc, cfg, 42000, 5, -1.0f);
+    };
+    const Output none = speedIAfterFlags(false, false);
+    assert(nearlyTo(none.diag.speedI, 0.008f, 1e-6f));
+    const Output voltage = speedIAfterFlags(true, false);
+    assert(nearlyTo(voltage.diag.speedI, 0.004f, 1e-6f) && !voltage.diag.effortClipped);
+    assert(voltage.diag.reserve >= makeTrimConfig().reserveLowA);
+    const Output current = speedIAfterFlags(false, true);
+    assert(nearlyTo(current.diag.speedI, 0.004f, 1e-6f) && !current.diag.effortClipped);
+    assert(current.diag.reserve >= makeTrimConfig().reserveLowA);
+  }
+
+  // Clip flags are reported in diagnostics in Run, as measured, and are false once the controller is Disabled.
+  {
+    const Config cfg = makeTrimConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    wheelTick(bc, cfg, 12000, 2, 0.0f);
+    const Output voltage = wheelTick(bc, cfg, 22000, 3, 0.0f, true, false);
+    assert(voltage.state == State::Run && voltage.diag.voltageClipped && !voltage.diag.currentClipped);
+    const Output both = wheelTick(bc, cfg, 32000, 4, 0.0f, true, true);
+    assert(both.diag.voltageClipped && both.diag.currentClipped);
+    Measurements off = atTime(makeMeasurements(), 42000);
+    off.imuSequence = 5;
+    off.voltageClipped = true;
+    off.currentClipped = true;
+    const Output disabled = bc.update(off, liveSwitch(42000, false), cfg, 42000);
+    assert(disabled.state == State::Disabled && !disabled.diag.voltageClipped && !disabled.diag.currentClipped);
+  }
+
+  // A clip flag held on the last Run tick does not freeze the integral after re-entering Run: the first loop run
+  // after entry integrates as usual, so the integral reads 0.004 at 62000 us.
+  {
+    const Config cfg = makeTrimConfig();
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    wheelTick(bc, cfg, 12000, 2, -1.0f);
+    wheelTick(bc, cfg, 22000, 3, -1.0f);
+    wheelTick(bc, cfg, 32000, 4, -1.0f, true, false);
+    assert(bc.update(atTime(makeMeasurements(), 33000), liveSwitch(33000, false), cfg, 33000).state ==
+           State::Disabled);
+    enterRun(bc, cfg, 40000);
+    wheelTick(bc, cfg, 52000, 5, -1.0f);
+    const Output rerun = wheelTick(bc, cfg, 62000, 6, -1.0f);
+    assert(rerun.state == State::Run && nearlyTo(rerun.diag.speedI, 0.004f, 1e-6f));
+  }
+
+  // Tilt clip timer: the wheels at -12 rad/s give a speed P of +0.6 rad and the reference clips at +0.3 rad; +12 rad/s
+  // clips at -0.3 rad. The clip starts on the loop run at 22000 us, with a 100000 us duration: 122000 us is not over,
+  // 122001 us faults. Held ticks in between keep the clip.
+  {
+    for (const float wheel : {-12.0f, 12.0f}) {
+      Config cfg = makeBalanceConfig();
+      cfg.speedKpRadPerMps = 0.5f;
+      cfg.tiltClipDurationUs = 100000;
+      BalanceController bc;
+      enterRun(bc, cfg, 0);
+      wheelTick(bc, cfg, 12000, 2, wheel);
+      assert(wheelTick(bc, cfg, 22000, 3, wheel).diag.tiltClipped);
+      assert(wheelTick(bc, cfg, 121999, 3, wheel).state == State::Run);
+      assert(wheelTick(bc, cfg, 122000, 3, wheel).state == State::Run);
+      const Output over = wheelTick(bc, cfg, 122001, 3, wheel);
+      assert(over.state == State::Fault && over.fault == FaultReason::TiltSaturated && !over.driveEnabled);
+    }
+  }
+
+  // Tilt clip timer restarts when the clip recovers, for both signs. The first clip runs from 22000 to 62000 us
+  // (40000 us). It is clipped again from 82000 us, so 122001 us is still Run: the first clip's start would have
+  // faulted there. The second clip faults at 182001 us.
+  {
+    for (const float wheel : {-12.0f, 12.0f}) {
+      Config cfg = makeBalanceConfig();
+      cfg.speedKpRadPerMps = 0.5f;
+      cfg.tiltClipDurationUs = 100000;
+      BalanceController bc;
+      enterRun(bc, cfg, 0);
+      wheelTick(bc, cfg, 12000, 2, wheel);
+      assert(wheelTick(bc, cfg, 22000, 3, wheel).diag.tiltClipped);
+      const Output recovered = wheelTick(bc, cfg, 62000, 4, 0.0f);
+      assert(!recovered.diag.tiltClipped && recovered.state == State::Run);
+      wheelTick(bc, cfg, 72000, 5, wheel);
+      assert(wheelTick(bc, cfg, 82000, 6, wheel).diag.tiltClipped);
+      assert(wheelTick(bc, cfg, 122001, 6, wheel).state == State::Run);
+      assert(wheelTick(bc, cfg, 182000, 6, wheel).state == State::Run);
+      const Output over = wheelTick(bc, cfg, 182001, 6, wheel);
+      assert(over.state == State::Fault && over.fault == FaultReason::TiltSaturated);
+    }
+  }
+
+  // Tilt clip timer across micros() wraparound. The clip starts at base + 22000 us, which is 28000 us before the
+  // wrap; 122000 us after the start is not over and 122001 us is.
+  {
+    const uint32_t base = 0xFFFFFFFFu - 50000u;
+    Config cfg = makeBalanceConfig();
+    cfg.speedKpRadPerMps = 0.5f;
+    cfg.tiltClipDurationUs = 100000;
+    BalanceController bc;
+    enterRun(bc, cfg, base);
+    wheelTick(bc, cfg, base + 12000u, 2, -12.0f);
+    assert(wheelTick(bc, cfg, base + 22000u, 3, -12.0f).diag.tiltClipped);
+    // 8000 us after the start and before the wrap: the end time has already wrapped to a small value, but this is Run.
+    assert(wheelTick(bc, cfg, base + 30000u, 3, -12.0f).state == State::Run);
+    assert(wheelTick(bc, cfg, base + 122000u, 3, -12.0f).state == State::Run);
+    const Output over = wheelTick(bc, cfg, base + 122001u, 3, -12.0f);
+    assert(over.state == State::Fault && over.fault == FaultReason::TiltSaturated);
+  }
+
+  // Tilt clip timer resets on re-entering Run. The clip starts at 22000 us, Run is left at 82000 us with the clip
+  // 60000 us old, and after re-entry the clip starts at 122000 us. It faults at 222001 us, not at 122001 us.
+  {
+    Config cfg = makeBalanceConfig();
+    cfg.speedKpRadPerMps = 0.5f;
+    cfg.tiltClipDurationUs = 100000;
+    BalanceController bc;
+    enterRun(bc, cfg, 0);
+    wheelTick(bc, cfg, 12000, 2, -12.0f);
+    assert(wheelTick(bc, cfg, 22000, 3, -12.0f).diag.tiltClipped);
+    assert(bc.update(atTime(makeMeasurements(), 82000), liveSwitch(82000, false), cfg, 82000).state ==
+           State::Disabled);
+    enterRun(bc, cfg, 100000);
+    wheelTick(bc, cfg, 112000, 4, -12.0f);
+    assert(wheelTick(bc, cfg, 122000, 5, -12.0f).diag.tiltClipped);
+    assert(wheelTick(bc, cfg, 222000, 5, -12.0f).state == State::Run);
+    const Output over = wheelTick(bc, cfg, 222001, 5, -12.0f);
+    assert(over.state == State::Fault && over.fault == FaultReason::TiltSaturated);
   }
 
   std::puts("balance controller passed");

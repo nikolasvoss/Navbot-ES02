@@ -84,7 +84,8 @@ bool configValid(const Config &config) {
          config.speedLoopPeriodUs > 0 && std::isfinite(config.speedKpRadPerMps) &&
          std::isfinite(config.speedKiRadPerMpsS) && std::isfinite(config.tiltRefLimitRad) &&
          config.tiltRefLimitRad >= 0.0f && std::isfinite(config.tiltRefSlewRadPerSec) &&
-         config.tiltRefSlewRadPerSec > 0.0f && std::isfinite(config.trimEnvelopeRad) &&
+         config.tiltRefSlewRadPerSec > 0.0f && config.tiltClipDurationUs > 0 &&
+         std::isfinite(config.trimEnvelopeRad) &&
          config.trimEnvelopeRad > 0.0f && config.trimEnvelopeRad <= config.tiltRefLimitRad &&
          std::isfinite(config.trimSlewRadPerSec) && config.trimSlewRadPerSec > 0.0f &&
          std::isfinite(config.knobPickupBandRad) && config.knobPickupBandRad > 0.0f &&
@@ -266,7 +267,7 @@ Output BalanceController::update(const Measurements &measurements, const Request
     shapedDemand_ = Demand{};
     trimRad_ = speedPRad_ = speedIRad_ = desiredTiltRad_ = tiltRefRad_ = 0.0f;
     tiltClipped_ = false;
-    effortClippedPrev_ = reserveLowPrev_ = false;
+    effortClippedPrev_ = reserveLowPrev_ = voltageOrCurrentClippedPrev_ = false;
     demandScale_ = 1.0f;
     knobEngaged_ = false;
     allocation_ = Allocation{};
@@ -286,6 +287,8 @@ Output BalanceController::update(const Measurements &measurements, const Request
   output.diag.dMax = allocation_.dMax;
   output.diag.effortClipped = allocation_.effortClipped;
   output.diag.forcedDifferential = allocation_.forcedDifferential;
+  output.diag.voltageClipped = driving() && measurements.voltageClipped;
+  output.diag.currentClipped = driving() && measurements.currentClipped;
   output.diag.reserve = allocation_.reserve;
   output.diag.leftMinA = leftMinA_;
   output.diag.leftMaxA = leftMaxA_;
@@ -320,7 +323,7 @@ void BalanceController::resetRunTracking(const Config &config, uint32_t nowUs) {
   tiltRefRad_ = trimRad_;
   tiltClipped_ = false;
   lastSpeedLoopUs_ = nowUs;
-  effortClippedPrev_ = reserveLowPrev_ = false;
+  effortClippedPrev_ = reserveLowPrev_ = voltageOrCurrentClippedPrev_ = false;
   allocation_ = Allocation{};
   haveEffortDemand_ = false;
   demandScale_ = 1.0f;
@@ -393,8 +396,8 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
         loopConfig.speedIntegralEnabled = config.speedIntegralEnabled && state_ == State::Run;
         const SpeedLoopResult loop =
             speedLoopStep(speedIRad_, shapedDemand_.speedMps - measuredSpeedMps(measurements, config), trimRad_,
-                          effortClippedPrev_ || reserveLowPrev_, static_cast<float>(loopElapsedUs) * 1e-6f,
-                          loopConfig);
+                          effortClippedPrev_ || reserveLowPrev_ || voltageOrCurrentClippedPrev_,
+                          static_cast<float>(loopElapsedUs) * 1e-6f, loopConfig);
         speedPRad_ = loop.speedPRad;
         speedIRad_ = loop.speedIRad;
         desiredTiltRad_ = loop.desiredTiltRad;
@@ -447,6 +450,16 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
   if (driving() && authorityClipped_ &&
       elapsedLongerThan(nowUs, authorityStartUs_, config.authorityDurationUs)) {
     latchFault(FaultReason::AuthorityExhausted);
+  }
+  // Same timing for a tilt reference held beyond its limit. Not driving means a fault was latched on this tick,
+  // and that fault keeps its reason.
+  if (!driving() || !tiltClipped_) {
+    tiltClipRunning_ = false;
+  } else if (!tiltClipRunning_) {
+    tiltClipRunning_ = true;
+    tiltClipStartUs_ = nowUs;
+  } else if (elapsedLongerThan(nowUs, tiltClipStartUs_, config.tiltClipDurationUs)) {
+    latchFault(FaultReason::TiltSaturated);
   }
 }
 
@@ -541,6 +554,7 @@ void BalanceController::computeEffort(const Measurements &measurements, const Co
   allocation_ = allocateEffort(balanceCommonA_, yawDifferentialA_, leftMinA_, leftMaxA_, rightMinA_, rightMaxA_);
   effortClippedPrev_ = allocation_.effortClipped;
   reserveLowPrev_ = allocation_.reserve < config.reserveLowA;
+  voltageOrCurrentClippedPrev_ = measurements.voltageClipped || measurements.currentClipped;
   demandScale_ = std::clamp(allocation_.reserve / config.reserveLowA, 0.0f, 1.0f);
 
   if (!allocation_.effortClipped) {
