@@ -100,3 +100,17 @@ Observation: Package 2 is in the working tree and was flashed for a test. The wh
 - After a diagnostic lease expires, the fault latches and needs `T RESET` or `M RESET` before the next request. This is existing Package 1 behavior, observed again.
 
 Consequence: the guard works as designed at 20 rad/s, and the wheels follow the commissioned torque-mode settings. The 0.02 A diagnostic cap was sized for the old 22 Ω estimate, so it now commands about a quarter of the voltage it was sized for (0.115 V instead of 0.44 V). Raising the cap (about 0.08 A restores the old drive) needs operator authorization and has NOT been done, so current commands are too weak to test the sign of `toMotorTargets()` for now. Not yet checked: the forward/backward sign under a real current command; loaded or standing behavior; the guard at the real 60 rad/s limit; the star winding of the 5.75 Ω value.
+
+## 2026-10-22 Package 2: current-command sign check and speed sign fix
+
+Observation: with the robot supported on the main body, wheels clear, legs free at position 0, and no load, the final 60 rad/s build ran with the current cap raised to 0.35 A by the operator.
+
+Evidence:
+
+- `T 0.35 0.35 1500`: q saturated at the 2.0 V voltage limit (the estimated-current mode adds back-EMF to I*R). `shaft_velocity` +33 to +36 rad/s on both wheels. The forward-positive columns read -34 and -37 rad/s, so both wheels roll backward for positive motor-local current. This matches the earlier `M` observation of the same day.
+- `T -0.35 -0.35`: `shaft_velocity` -37 and -35 rad/s; forward-positive +37.8 and +36.2 rad/s. Both wheels roll forward.
+- An earlier build with `T 0.35 -0.35` gave opposite shaft directions, as expected.
+- The overspeed guard at 60 rad/s never tripped; peak wheel speed about 38 rad/s.
+- The first Package 2 build computed wheel speed from raw sensor angles. Motor 2's sensor_direction is CW (motor 1 is CCW), so its raw sensor angle moved opposite to `shaft_velocity`. For the same command the forward-positive speeds were +31 rad/s left and -37 rad/s right, so the right wheel had the wrong sign. The legacy code's negation on sensor 2 had been compensating for this.
+
+Consequence: the fix reads speed from `motor.shaftAngle()`, which applies sensor_direction, and the forward-positive speeds of both wheels now agree with the boundary sign. The current-command sign check is closed. Still open: the star winding of the 5.75 Ω phase resistance, loaded or standing behavior, and the 60 rad/s overspeed fault at its real limit, which was not reached. Documented in [motor commissioning](../../docs/robot/software/motor-commissioning.md#commissioning-record) and the [robust control plan](../../docs/robot/plans/robust-control-system.md).
