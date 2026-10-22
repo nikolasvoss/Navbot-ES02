@@ -58,3 +58,7 @@ Plateau (median of the last second, rad/s; sd about 1 rad/s) and the 500 ms bin 
 | 2.0 V | 30.4 | 29.7 |
 
 Linear fit over the four points with the plan's convention (`KV = slope / √3`): motor 1 79.5 rpm/V, motor 2 76.7 rpm/V, intercept about 2.6 to 3.1 rad/s, residual up to 1.5 rad/s. The curve flattens with voltage (slope 19, 14, 10 rad/s per V between successive points), so the linear KV depends on the range; it is below the 90 rpm/V rating. The cause of the flattening is not established (load, friction and resistive drop at higher current are candidates). Both wheels agree within 4 %. The usable q ceiling is not reached at the 2.0 V cap. Peak control execution was 690 µs and the peak loop interval 7.3 ms, taken without balance load.
+
+## 2026-10-22 follow-up: current command sign check
+
+Firmware `c309861`, CH5 = 0, wheels clear, `T <left_A> <right_A> 3000` under K58 (`captures/2026-10-22-package1-t8-current-test-signs.log`). Each run held its target for the full lease; `voltage_q` was ±0.44 V (0.02 A × the 22 Ω firmware constant). Median shaft velocity, left/right: `T 0.02 0.02` +7.09/+7.34 rad/s; `T -0.02 -0.02` -7.35/-7.44; `T 0.02 -0.02` +7.04/-7.49. Consequence: the current command produces the expected motor-local sign on each wheel independently, and its speed matches the voltage sweep (0.5 V gave 8.7 rad/s). The earlier runs with the 3 rad/s cap showed `fault=5` (overspeed) disabling both drivers, which covers the overspeed gating. The physical rolling direction was still not observed.
