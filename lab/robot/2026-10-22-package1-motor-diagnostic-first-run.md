@@ -114,3 +114,12 @@ Evidence:
 - The first Package 2 build computed wheel speed from raw sensor angles. Motor 2's sensor_direction is CW (motor 1 is CCW), so its raw sensor angle moved opposite to `shaft_velocity`. For the same command the forward-positive speeds were +31 rad/s left and -37 rad/s right, so the right wheel had the wrong sign. The legacy code's negation on sensor 2 had been compensating for this.
 
 Consequence: the fix reads speed from `motor.shaftAngle()`, which applies sensor_direction, and the forward-positive speeds of both wheels now agree with the boundary sign. The current-command sign check is closed. Still open: the star winding of the 5.75 Ω phase resistance, loaded or standing behavior, and the 60 rad/s overspeed fault at its real limit, which was not reached. Documented in [motor commissioning](../../docs/robot/software/motor-commissioning.md#commissioning-record) and the [robust control plan](../../docs/robot/plans/robust-control-system.md).
+
+## 2026-10-22 Package 2: overspeed limit versus no-load speed at 4.2 V
+
+Observation: With the diagnostic voltage cap temporarily raised to 4.2 V (operator-authorized, temporary build, reverted and reflashed with 2.0 V; robot supported, wheels clear), `M 1 4.2 2000` ended at 53.0 rad/s and `M 2 4.2 2000` at 56.6 rad/s. The 60 rad/s wheel overspeed fault did not trigger on either wheel; both runs ended by lease expiry.
+
+Evidence: `MOTOR_ID_RESULT` lines of the runs (actual_q 4.200 V, shaft_velocity 53.009 and 56.589 rad/s, result=stopped).
+
+Practical consequence: The no-load speed at the usable voltage ceiling (4.2 V) is about 53 to 57 rad/s, so the 60 rad/s limit sits only about 6 % above the faster wheel's free speed. It cannot be reached by a voltage command within the ceiling, and the trip logic has been verified only at a lowered 20 rad/s limit. A real overspeed needs an external drive (falling or rolling robot) or a higher bus voltage. Whether 60 rad/s is the right operating limit remains a Package 4 decision tied to the permitted travel speed.
+
