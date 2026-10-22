@@ -2650,6 +2650,161 @@ int main() {
     assert(over.state == State::Fault && over.fault == FaultReason::TiltSaturated);
   }
 
+  // Refused transfer changes nothing. Two controllers share a standstill drift, so speed I builds at the 22000 us loop
+  // run. At 32000 us one controller gets the commissioning switch with a disturbance that refuses the transfer; the twin
+  // has the switch off, so any difference from it is a side effect of the refusal. A transfer at 42000 us, a loop run
+  // with the drift back, then gives trim + speed I of the twin's values.
+  {
+    const Config cfg = makeTrimConfig();
+    const ImuValues drift{0.0f, 0.0f, 0.0f, -0.08f, -0.08f};
+    const ImuValues disturbances[] = {
+        ImuValues{0.02f, 0.0f, 0.0f, -0.08f, -0.08f},   // tilt error 0.02 rad, beyond 0.01 rad
+        ImuValues{0.0f, 0.0f, 0.0f, -0.2f, -0.2f},      // wheel speed 0.02 m/s, beyond 0.01 m/s
+        ImuValues{0.0f, 0.0f, 0.0f, -0.099f, -0.099f},  // speed P 0.00495 rad against the stored 0.004 rad: a jump
+    };
+    for (const ImuValues &disturbance : disturbances) {
+      BalanceController ctl;
+      BalanceController twin;
+      enterRun(ctl, cfg, 0);
+      enterRun(twin, cfg, 0);
+      imuSample(ctl, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+      imuSample(twin, cfg, 12000, 2, ImuValues{}, trimRequest(12000, false));
+      imuSample(ctl, cfg, 22000, 3, drift, trimRequest(22000, false));
+      imuSample(twin, cfg, 22000, 3, drift, trimRequest(22000, false));
+      const Output twinAt32 = imuSample(twin, cfg, 32000, 4, disturbance, trimRequest(32000, false));
+      const Output refused = imuSample(ctl, cfg, 32000, 4, disturbance, trimRequest(32000, true));
+      assert(refused.state == State::Run && refused.diag.commissioningRefused);
+      assert(refused.diag.speedI > 0.0f);
+      assert(refused.diag.speedI == twinAt32.diag.speedI);
+      assert(refused.diag.trimDeg == twinAt32.diag.trimDeg);
+      assert(refused.diag.tiltRefRad == twinAt32.diag.tiltRefRad);
+
+      const Output twinAt42 = imuSample(twin, cfg, 42000, 5, drift, trimRequest(42000, false));
+      const Output moved = imuSample(ctl, cfg, 42000, 5, drift, trimRequest(42000, true));
+      assert(moved.state == State::Commissioning && !moved.diag.commissioningRefused && moved.driveEnabled);
+      assert(moved.diag.speedI == 0.0f);
+      assert(nearlyTo(moved.diag.trimDeg, twinAt42.diag.trimDeg + twinAt42.diag.speedI * kRadToDeg, 1e-3f));
+    }
+  }
+
+  // Commissioning -> Run needs a validated trim on its own. The working trim equals the stored 10 deg and the switch is
+  // off, so only trimValidated decides.
+  {
+    const Config cfg = makeBalanceConfig();
+    Config unvalidated = cfg;
+    unvalidated.trimValidated = false;
+    BalanceController bc;
+    enterCommissioning(bc, cfg, 0);
+    const Output stays = imuSample(bc, unvalidated, 32000u, 4, ImuValues{}, trimRequest(32000u, false));
+    assert(stays.state == State::Commissioning && stays.driveEnabled);
+    assert(nearlyTo(stays.diag.trimDeg, 10.0f, 1e-3f));
+    const Output back = imuSample(bc, cfg, 42000u, 5, ImuValues{}, trimRequest(42000u, false));
+    assert(back.state == State::Run && back.driveEnabled);
+  }
+
+  // Right wheel sign -1 with the left at +1. The envelope is in forward terms, so a right wheel at forward +100 rad/s
+  // (its motor sees -100 rad/s) gets the same interval as the left wheel at +100 rad/s. At -100 rad/s the right
+  // interval is the left one at -100 rad/s. Removing the mirror would swap the interval ends and fail both cases.
+  {
+    Config mirrored = config;
+    mirrored.rightWheelSign = -1;
+    BalanceController bc;
+    enterRun(bc, mirrored, 100000);
+    Measurements m = atTime(good, 110000);
+    m.busVoltageV = 8.4f;
+    m.leftWheelRadPerSec = 100.0f;
+    m.rightWheelRadPerSec = 100.0f;
+    const Output forward = bc.update(m, makeRequest(true), mirrored, 110000);
+    assert(forward.state == State::Run && forward.fault == FaultReason::None);
+    assert(closeTo(forward.diag.leftMinA, -0.614240f) && closeTo(forward.diag.leftMaxA, 0.113032f));
+    assert(closeTo(forward.diag.rightMinA, -0.614240f) && closeTo(forward.diag.rightMaxA, 0.113032f));
+
+    m.rightWheelRadPerSec = -100.0f;
+    const Output opposite = bc.update(m, makeRequest(true), mirrored, 110000);
+    assert(closeTo(opposite.diag.leftMinA, -0.614240f) && closeTo(opposite.diag.leftMaxA, 0.113032f));
+    assert(closeTo(opposite.diag.rightMinA, -0.113032f) && closeTo(opposite.diag.rightMaxA, 0.614240f));
+  }
+
+  // A right wheel sign of 0 is not a direction: the arming tick faults InvalidEnvelope with drivers off.
+  {
+    Config broken = config;
+    broken.rightWheelSign = 0;
+    BalanceController bc;
+    tick(bc, good, liveSwitch(1000, false), broken, 1000);
+    tick(bc, good, liveSwitch(2000, true), broken, 2000);
+    const Output armed = tick(bc, good, liveSwitch(3000, true), broken, 3000);
+    assert(armed.state == State::Fault && armed.fault == FaultReason::InvalidEnvelope && !armed.driveEnabled);
+  }
+
+  // Speed integral freezes on low reserve without an effort clip. A balance of 7.9 A (tilt rate 15.8 rad/s, gain 0.5)
+  // leaves about 0.55 A of reserve below reserveLowA 1.0 A, with c not clipped, so the loop at 42000 us holds speed I
+  // at 0.004 rad. A balance of 6.4 A (tilt rate 12.8 rad/s) leaves about 2 A of reserve and speed I moves to 0.008 rad.
+  {
+    const auto tiltRateTick = [](BalanceController &bc, const Config &cfg, uint32_t nowUs, uint32_t seq,
+                                 float tiltRate) {
+      Measurements m = atTime(makeMeasurements(), nowUs);
+      m.imuSequence = seq;
+      m.tiltRateRadPerSec = tiltRate;
+      m.leftWheelRadPerSec = -1.0f;
+      m.rightWheelRadPerSec = -1.0f;
+      return bc.update(m, liveRequest(nowUs, 0.0f, 0.0f), cfg, nowUs);
+    };
+    const Config cfg = makeTrimConfig();
+    BalanceController low;
+    enterRun(low, cfg, 0);
+    wheelTick(low, cfg, 12000, 2, -1.0f);
+    assert(nearlyTo(wheelTick(low, cfg, 22000, 3, -1.0f).diag.speedI, 0.004f, 1e-6f));
+    const Output lowReserve = tiltRateTick(low, cfg, 32000, 4, 15.8f);
+    assert(!lowReserve.diag.effortClipped && lowReserve.diag.reserve < cfg.reserveLowA);
+    assert(nearlyTo(wheelTick(low, cfg, 42000, 5, -1.0f).diag.speedI, 0.004f, 1e-6f));
+
+    BalanceController high;
+    enterRun(high, cfg, 0);
+    wheelTick(high, cfg, 12000, 2, -1.0f);
+    assert(nearlyTo(wheelTick(high, cfg, 22000, 3, -1.0f).diag.speedI, 0.004f, 1e-6f));
+    const Output highReserve = tiltRateTick(high, cfg, 32000, 4, 12.8f);
+    assert(!highReserve.diag.effortClipped && highReserve.diag.reserve >= cfg.reserveLowA);
+    assert(nearlyTo(wheelTick(high, cfg, 42000, 5, -1.0f).diag.speedI, 0.008f, 1e-6f));
+  }
+
+  // Knob pickup boundary. The band is the float difference of the knob (11 deg) and trim (10 deg) angles, so a knob
+  // exactly one band from the trim is on the boundary and must not engage. A knob 0.001 deg inside does.
+  {
+    const float trimRad = 10.0f * kDegToRad;
+    const float knobRad = 11.0f * kDegToRad;
+    Config cfg = makeBalanceConfig();
+    cfg.knobPickupBandRad = knobRad - trimRad;
+    BalanceController onBoundary;
+    enterCommissioning(onBoundary, cfg, 0);
+    const Output edge = knobSample(onBoundary, cfg, 32000u, 4, true, 11.0f);
+    assert(edge.state == State::Commissioning && !edge.diag.knobEngaged && nearlyTo(edge.diag.trimDeg, 10.0f, 1e-4f));
+
+    BalanceController inside;
+    enterCommissioning(inside, cfg, 0);
+    const Output near = knobSample(inside, cfg, 32000u, 4, true, 10.999f);
+    assert(near.diag.knobEngaged);
+  }
+
+  // Each of the three timing and tolerance values must be finite and positive. Zero or NaN faults InvalidConfig on the
+  // arming tick, with drivers off.
+  {
+    const auto armedWith = [&good](const Config &c) {
+      BalanceController bc;
+      tick(bc, good, liveSwitch(1000u, false), c, 1000u);
+      tick(bc, good, liveSwitch(2000u, true), c, 2000u);
+      return tick(bc, good, liveSwitch(3000u, true), c, 3000u);
+    };
+    for (float Config::*field : {&Config::transferToleranceRad, &Config::standstillWheelSpeedTolMps,
+                                 &Config::trimSlewRadPerSec}) {
+      for (const float bad : {0.0f, std::numeric_limits<float>::quiet_NaN()}) {
+        Config c = makeBalanceConfig();
+        c.*field = bad;
+        const Output out = armedWith(c);
+        assert(out.state == State::Fault && out.fault == FaultReason::InvalidConfig && !out.driveEnabled);
+      }
+    }
+  }
+
   std::puts("balance controller passed");
   return 0;
 }
