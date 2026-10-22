@@ -13,7 +13,6 @@ The robot is the ESP32-S3 controller board and everything attached to it: wheel 
 
 - [Control flow](software/control-flow.md): how the balance and drive control works.
 - [RC channel map](software/rc-channel-map.md): SBUS channel assignment in the firmware.
-- [Tuned control defaults](software/tuned-defaults.md): startup gains and how they were chosen.
 - [Trace capture and live tuning](software/trace-capture.md): serial trace modes, capture scripts, and live gain commands.
 - [Motor commissioning](software/motor-commissioning.md): bounded per-wheel current and voltage identification, manual resistance method, KV fit, and the pending commissioning record.
 - [Sensor diagnostic mode](software/sensor-diagnostic-mode.md): motor-free sensor streaming.

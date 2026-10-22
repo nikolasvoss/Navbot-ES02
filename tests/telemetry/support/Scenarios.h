@@ -117,7 +117,6 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   in.pidGainsMode = variant == 2 ? 0 : (variant == 0 ? 2 : 1);
   in.postureOrMarkMode = 1 + variant;
   in.robotTumble = variant == 1 ? 2 : 0;
-  in.pidParameterTuning = 1.0f + variant;
   in.targetBodyHeightOverrideM = g.f();
   return in;
 }

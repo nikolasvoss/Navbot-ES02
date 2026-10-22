@@ -146,8 +146,7 @@ enum class DebugSelector : uint8_t {
   K33 = 33,
   K37 = 37,
   K43 = 43,
-  K44,
-  K45,
+  K45 = 45,
   K46 = 46,
   K47 = 47,
   K48 = 48,
@@ -258,10 +257,6 @@ struct VoltageState {
   float filteredV;
   float voltageV;
 };
-struct TuningState {
-  int32_t enabled;
-  float targetBodyHeightM;
-};
 struct TumbleState {
   int32_t tumbled;
   float rollOk;
@@ -342,7 +337,6 @@ union DebugPayload {
   BalanceState balanceState;
   BallPosition ballPosition;
   VoltageState voltageState;
-  TuningState tuningState;
   TumbleState tumbleState;
   ChannelState channelState;
   CurrentSetpoint currentSetpoint;

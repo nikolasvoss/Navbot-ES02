@@ -30,7 +30,6 @@ debug.28	  P:0.00  R:0.00000  H:0.00000  S:0.00  vra:0.00  vra:0.00\n
 debug.33	 it:0.00000 il:0.00000 oI:0.00000 A:0.00000 out:0.00000\n
 debug.37	 sbus_vra:0.00 sbus_vraf:0.00 sbus_vrb:0.00 sbus_vrbf:0.00\n
 debug.43	 Vdat:0 Vdatf:0.00 V:0.00000\n
-debug.44	 PidParameterTuning:0 TargetBodyHeightM:0.000000\n
 debug.45	 RobotTumble:0 roll_ok:0.000000\n
 debug.46	0,0.0000000,0.0000000,0.0000000,0.0000000,0.0000000,0.0000000\n
 debug.47	IMU_CADENCE,0,0,0.000000,0,0,0\n

@@ -59,28 +59,6 @@ CalibrationStore calibrationStore;
 // Set to 0 only after the diagnostic readings and power supply are checked.
 #define SENSOR_DIAGNOSTIC_MODE 0
 
-// Tuned two-wheel drive defaults, including corrected wheel-speed timing and
-// CH3 scaling. Apply them at startup and through a CH5 switch transition.
-// Set to 0 to restore the repository's mode-dependent defaults.
-#define DIAGNOSTIC_LIVE_TUNING_DEFAULTS 1
-
-struct PidPreset {
-  float p;
-  float i;
-  float d;
-  float limit;  // Integral limit
-};
-
-struct BalancePidPreset {
-  PidPreset roll;
-  PidPreset speed;
-  PidPreset angle;
-};
-
-// Two-wheel PID gains for remote control mode.
-constexpr BalancePidPreset kBalancePid{{0.08, 1.5, 0.005, 2}, {0.045, 0.005, 0, 50}, {5, 200, 0.11, 0.1}};
-constexpr PidPreset kYawPid{4, 0, 0, 0};
-
 #define SBUS_CHANNEL_MAX 1792
 #define SBUS_CHANNEL_MIN 192
 constexpr uint32_t kRcFrameTimeoutMs = 100;
@@ -221,9 +199,7 @@ float debugLogSelector = 0;   // Selects debug data and the log profile.
 float calibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Calibrate gyroscope  2: Calibrate Euler
                               // angle  3: Calibrate servo
 
-float pidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
-
-PIDController yawPidSettings(kYawPid.p, kYawPid.i, kYawPid.d, 0, kYawPid.limit);
+PIDController yawPidSettings(4, 0, 0, 0, 0);
 
 
 float pidTimestepSec = 0.01;
@@ -528,7 +504,6 @@ void readSbus();
 void runPostureController(float dt);
 void filterRemoteControl(void);
 void readBatteryVoltage(void);
-void applyPidParameters(void);
 void updateTumbleState(void);
 void diagnosticLoop(void);
 bool diagnosticImuReady = false;
@@ -781,8 +756,6 @@ void readSbus() {
     sBus.toChannels = 0;
 
     applyRcChannels(sBus.channels);
-    if (DIAGNOSTIC_LIVE_TUNING_DEFAULTS)
-      movementSpeed *= 2.0f;  // Keep drive-command authority near the previous 0.03 x 3.3 setting.
   }
 
   const bool lost =
@@ -868,35 +841,8 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.pidGainsMode = pidGainsMode;
   in.postureOrMarkMode = postureOrMarkMode;
   in.robotTumble = robotTumble;
-  in.pidParameterTuning = pidParameterTuning;
   in.targetBodyHeightOverrideM = targetBodyHeightOverrideM;
   return in;
-}
-
-void applyPidPreset(PIDController &pid, const PidPreset &preset) {
-  pid.P = preset.p;
-  pid.I = preset.i;
-  pid.D = preset.d;
-  pid.limit = preset.limit;
-}
-
-void applyBalancePidPreset(const BalancePidPreset &preset) {
-}
-
-/**
- * @brief Sets the PID gains for the main controllers based on the S.BUS switch `pidGainsMode`.
- *
- * Applies the balance gains while the remote controller's PID switch is on.
- */
-void applyPidParameters(void) {
-#if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
-  const int gainMode = REMOTE_CONTROL_PID_GAINS_MODE_ON;
-#else
-  const int gainMode = pidGainsMode;
-#endif
-  if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON) applyBalancePidPreset(kBalancePid);
-
-  applyPidPreset(yawPidSettings, kYawPid);
 }
 
 
@@ -912,8 +858,6 @@ void applyPidParameters(void) {
  * @param dt The time delta since the last call, in seconds.
  */
 void runPostureController(float dt) {
-  if ((int)pidParameterTuning == 0) applyPidParameters();
-
   // S.BUS top-ball input: pitch in top-ball mode.
   if (attitudeMode == REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE) {
     bodyPitching = -sbusTopBallXSmoothed;

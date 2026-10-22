@@ -87,7 +87,6 @@ struct TelemetryInputs {
   int pidGainsMode;
   int postureOrMarkMode;
   int robotTumble;
-  float pidParameterTuning;
   float targetBodyHeightOverrideM;
 };
 

@@ -358,7 +358,6 @@ Delete in the same change, with their callers, Commander entries, telemetry fiel
 
 | Remove | Where |
 | --- | --- |
-| Gain presets: `PidPreset`, `BalancePidPreset`, `kPidWithoutTouch`, `kPidWithTouch`, `applyPidParameters()`, `pidParameterTuning`, `kYawPid` | preset block and `runPostureController()` |
 | Height, pitch, roll, ball commands: `bodyHeightCommandM`, `bodyPitching`, `bodyRoll`, `topBallX/Y`, their filters in `filterRemoteControl()`, `targetBodyHeightOverrideM`, Commander `O`, `attitudeMode`, `postureOrMarkMode` | `applyRcChannels()`, `filterRemoteControl()`, `computeBodyPose()`, `writeServos()` |
 | `MyPIDController` in [OllieFOCdrive.h](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.h) and `tests/pid/` | only if no user remains after package 4 |
 
@@ -474,7 +473,7 @@ Existing suites to rerun: `tests/imu`, `tests/filter`, `tests/kinematics`, `test
 
 - Rewrite [control-flow.md](../software/control-flow.md) to describe the implemented chain, states, RC map, and Commander letters.
 - Update [rc-channel-map.md](../software/rc-channel-map.md) to the new map, including the CH9 trim scaling.
-- Remove BLE and touchscreen behavior from [trace-capture.md](../software/trace-capture.md), [sensor-diagnostic-mode.md](../software/sensor-diagnostic-mode.md), [tuned-defaults.md](../software/tuned-defaults.md), and the robot [system overview](../hardware/system-overview.md) and [electronics reference](../hardware/electronics-reference.md). Mark the [touchscreen stand](../hardware/touchscreenstand.md) as not used by the firmware, or delete the page if the hardware is removed from the robot.
+- Remove BLE and touchscreen behavior from [trace-capture.md](../software/trace-capture.md), [sensor-diagnostic-mode.md](../software/sensor-diagnostic-mode.md), and the robot [system overview](../hardware/system-overview.md) and [electronics reference](../hardware/electronics-reference.md). Mark the [touchscreen stand](../hardware/touchscreenstand.md) as not used by the firmware, or delete the page if the hardware is removed from the robot.
 - Move the measured motor parameters to the robot hardware docs, and the commissioning procedure to `docs/robot/software/`.
 - Record each commissioning session as a dated note in `lab/robot/`, with cited captures in `lab/robot/captures/`.
 - Delete this plan once its content lives in `hardware/` and `software/`, and remove its line from [docs/robot/README.md](../README.md).

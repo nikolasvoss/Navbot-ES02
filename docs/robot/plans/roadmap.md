@@ -19,7 +19,6 @@ Filtering runs digitally on the ESP32 and partly in the ICM42688. Gyro and accel
 
 ## Clean up controller start values and diagnostic switches
 
-- `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` bundles behavior for normal driving: gain selection and live tuning, CH3 scaling, and the time base of the wheel speed. During the later cleanup, make these responsibilities explicit. Keep the existing driving behavior until comparison measurements support changes. This switch is independent of `SENSOR_DIAGNOSTIC_MODE`.
 
 ## IMU diagnostic measurements
 
@@ -37,7 +36,7 @@ At high speed the robot still tips over. Record the failure pattern in a safe, r
 
 ## Clean up the RC value conversion chain
 
-A remote value passes through several hidden conversions before a controller uses it: transmitter µs to raw SBUS, a per-channel `mapf()` range and sign in `applyRcChannels()`, a ×2.0 speed factor in `readSbus()` tied to `DIAGNOSTIC_LIVE_TUNING_DEFAULTS`, a negation for turn, and for some channels a biquad filter. The resulting units (for example ±30 "speed" compared with wheel rad/s) are not physical, and the signs are spread across several functions. The [RC channel map](../software/rc-channel-map.md#from-transmitter-to-firmware-value) documents the current chain.
+A remote value passes through several hidden conversions before a controller uses it: transmitter µs to raw SBUS, a per-channel `mapf()` range and sign in `applyRcChannels()`, a negation for turn, and for some channels a biquad filter. The resulting units (for example ±30 "speed" compared with wheel rad/s) are not physical, and the signs are spread across several functions. The [RC channel map](../software/rc-channel-map.md#from-transmitter-to-firmware-value) documents the current chain.
 
 Replace it with one conversion per channel from raw SBUS to a physical unit (m/s, rad/s, degrees, or a switch state), with all scaling and signs in one place and covered by host tests with the measured values 192, 992, and 1792. Reject or clip raw values outside the valid range. The [robust control plan](robust-control-system.md) already defines the new mapping (CH3 speed in m/s, CH4 yaw rate in rad/s, CH9 trim in degrees) and removes the BLE path; do this cleanup as part of that implementation.
 

@@ -104,9 +104,6 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
     case Logging::DebugSelector::K43:
       return appendf(buffer, capacity, length, " Vdat:%d Vdatf:%.2f V:%.5f\n", static_cast<int>(p.voltageState.adc),
                      p.voltageState.filteredV, p.voltageState.voltageV);
-    case Logging::DebugSelector::K44:
-      return appendf(buffer, capacity, length, " PidParameterTuning:%d TargetBodyHeightM:%.6f\n",
-                     static_cast<int>(p.tuningState.enabled), p.tuningState.targetBodyHeightM);
     case Logging::DebugSelector::K45:
       return appendf(buffer, capacity, length, " RobotTumble:%d roll_ok:%.6f\n",
                      static_cast<int>(p.tumbleState.tumbled), p.tumbleState.rollOk);

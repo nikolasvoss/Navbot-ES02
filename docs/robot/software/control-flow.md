@@ -77,7 +77,7 @@ SBUS is the only remote-control source and is read exactly once per loop.
 
 - On every `loop()` pass, `motor.move()` and `motor.loopFOC()` run. The outer control block runs from `controlTimestepSec >= 0.001 s`. This is a **minimum threshold**, not a guaranteed 1 kHz rate. A stored standstill trace measured a median tick of about 1.66 ms. Under other load, it can differ. The 2026-10-22 voltage-sweep capture ([2 V log](../../../lab/robot/captures/2026-10-22-package1-t7-voltage-sweep-2v.log)) measured 424 loop passes per second, with a mean accepted IMU read interval of 2.36 ms (`imu_mean_interval_s` 0.002358 s). With the 1024-byte serial TX buffer (capture `lab/robot/captures/2026-10-22-package1-t10-after-tx-buffer.log`, wheels clear, balance off) the loop runs about 521 passes per second, the mean accepted IMU interval is 1.92 ms, and the maximum loop-entry interval is 2.5 ms instead of 7.3 ms. The remaining pass time of about 1.9 ms is not profiled, so the outer control block still does not run at 1 kHz.
 - The IMU is read over SPI in the main pass. Acceleration and gyro are low-pass filtered and fused with Mahony into the attitude angle. The yaw controller uses `attitude.gyro.z`, which is the scaled raw gyro value, not `gyrof.z`.
-- Since Package 2 (2026-10-22), the wheel speed is computed as encoder angle difference divided by the **measured interval between encoder reads** (`micros()`), in both live-tuning states, then smoothed with a SimpleFOC low-pass filter. It is forward-positive; the motor sign is applied only in `WheelBoundary`. Before this change, the divisor was the control tick only with `DIAGNOSTIC_LIVE_TUNING_DEFAULTS`, and a fixed `0.01 s` otherwise. That scaled the speed too small by about 5.6 at a 1.8 ms tick, so gains from the two states were not comparable.
+- The wheel speed is computed as encoder angle difference divided by the **measured interval between encoder reads** (`micros()`), in every state, then smoothed with a SimpleFOC low-pass filter. It is forward-positive; the motor sign is applied only in `WheelBoundary`.
 - `correctedRollDegrees`/`correctedPitchDegrees` are angles in degrees after subtracting stored zero points. The gyro supplies rad/s. `bodyX` is a kinematic shift in meters. The wheel targets are SimpleFOC target speeds in rad/s. The named PID gains therefore carry different implicit units. Numbers from different controllers cannot be compared directly.
 
 ### Biquad filters and sample rates
@@ -96,7 +96,7 @@ This recording confirms the diagnostic telemetry clock and stationary smoothing.
 
 ## Current parameters: start values and CH5 modes
 
-`DIAGNOSTIC_LIVE_TUNING_DEFAULTS=1` is currently set in the local sketch. At start, the firmware loads the balance gain set, overrides parts of it, and leaves live tuning enabled. This also applies after briefly cycling CH5=1. The start set matches the live values read back on 2026-10-01, with which the user no longer reported vibration. Later serial changes remain valid until restart and do not change this start set.
+At start, the yaw gain is `YP4`, `YI0`, `YD0`, `YL0`. Later serial changes remain valid until restart.
 
 | Quantity | Current diagnostic start value | CH5=1 or CH5=2 |
 | --- | ---: | ---: |
@@ -121,7 +121,7 @@ The yaw I start value is zero in both CH5 modes. The ±0.1 limit is the limit of
 | Question | Code / documentation location |
 | --- | --- |
 | Hardware, connectors, evidence level | [Hardware overview](../hardware/system-overview.md), [Electronics reference](../hardware/electronics-reference.md) |
-| Start configuration, SimpleFOC, gains | `OllieFOCdrive.ino`: defines at the top, `setup()`, `applyPidParameters()` |
+| Start configuration, SimpleFOC, gains | `OllieFOCdrive.ino`: defines at the top, `setup()` |
 | Active flow, enable, servo output | `OllieFOCdrive.ino`: `loop()` |
 | Two-wheel PID and motor mixing | `OllieFOCdrive.ino`: `runPostureController()` |
 | Remote control and modes | `OllieFOCdrive.ino`: `readSbus()` |

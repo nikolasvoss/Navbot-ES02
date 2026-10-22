@@ -171,14 +171,11 @@ bool fillPose(int selection, const TelemetryInputs &in, Logging::DebugPayload &p
   }
 }
 
-// Selectors 43..45.
+// Selectors 43 and 45.
 bool fillStatus(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 43:
       payload.voltageState = {in.voltageAdc, in.voltageAdcFiltered, in.voltage};
-      return true;
-    case 44:
-      payload.tuningState = {static_cast<int32_t>(in.pidParameterTuning), in.targetBodyHeightOverrideM};
       return true;
     case 45:
       payload.tumbleState = {in.robotTumble, in.imu.correctedRollDegrees};
@@ -227,7 +224,6 @@ bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &paylo
     case 37:
       return fillPose(selection, in, payload);
     case 43:
-    case 44:
     case 45:
       return fillStatus(selection, in, payload);
     default:
