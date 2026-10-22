@@ -358,7 +358,6 @@ Delete in the same change, with their callers, Commander entries, telemetry fiel
 
 | Remove | Where |
 | --- | --- |
-| Tilt-based drive reduction: `driveTiltReductionGain`, `kDriveTiltReductionStartDeg/FullDeg`, Commander `W` | replaced by the reserve policy in package 4 |
 | Balance angle PID: `anglePid`, `anglePidSettings`, `balancePidNeedsPriming`, Commander `P` | `runPostureController()` |
 | Gain presets: `PidPreset`, `BalancePidPreset`, `kPidWithoutTouch`, `kPidWithTouch`, `applyPidParameters()`, `pidParameterTuning`, `kYawPid` | preset block and `runPostureController()` |
 | Height, pitch, roll, ball commands: `bodyHeightCommandM`, `bodyPitching`, `bodyRoll`, `topBallX/Y`, their filters in `filterRemoteControl()`, `targetBodyHeightOverrideM`, Commander `O`, `attitudeMode`, `postureOrMarkMode` | `applyRcChannels()`, `filterRemoteControl()`, `computeBodyPose()`, `writeServos()` |

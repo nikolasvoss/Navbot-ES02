@@ -90,9 +90,6 @@ constexpr unsigned long kSerialBaudRate = 576000;
 constexpr size_t kSerialTxBufferBytes = 1024;
 #define DIAGNOSTIC_LOG_INTERVAL_US 5000  // Diagnostic CSV rows are emitted at 200 Hz.
 constexpr unsigned int kDiagnosticLogSampleRateHz = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
-// Conservative drive tuning parameters; verify the wheel feedback sign on hardware.
-constexpr float kDriveTiltReductionStartDeg = 5.0f;
-constexpr float kDriveTiltReductionFullDeg = 10.0f;
 // -------------------------------------
 
 struct BodyPose {
@@ -230,8 +227,6 @@ PIDController anglePidSettings(kBalancePid.angle.p, kBalancePid.angle.i, kBalanc
                                kBalancePid.angle.limit);
 PIDController yawPidSettings(kYawPid.p, kYawPid.i, kYawPid.d, 0, kYawPid.limit);
 
-float driveTiltReductionGain =
-    1.0f;  // Scales the speed reduction applied as tilt approaches kDriveTiltReductionFullDeg.
 
 float pidTimestepSec = 0.01;
 
@@ -239,8 +234,6 @@ MyPIDController anglePid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);  // p i d iLimit 
 MyPIDController yawPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
 
 bool balancePidNeedsPriming = true;  // Priming avoids a derivative kick when CH5 enables the balance loop.
-
-void setDriveTiltReductionGain(char *cmd) { command.scalar(&driveTiltReductionGain, cmd); }
 
 void setMahonyKp(char *cmd) {
   float value = 0.0f;
@@ -632,7 +625,6 @@ const SerialCommandEntry commandEntries[] = {
     {'P', setAnglePid, "anglePidSettings"},
     {'Y', setYawPid, "yawPidSettings"},
     {'O', setTargetBodyHeight, "my Target_Body_Height"},
-    {'W', setDriveTiltReductionGain, "drive tilt reduction gain"},
 };
 
 SerialCommandRouter serialCommandRouter;

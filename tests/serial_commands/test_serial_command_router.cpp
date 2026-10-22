@@ -73,7 +73,6 @@ COMMAND_CALLBACK(setBodyCommandFilteringEnabled)
 COMMAND_CALLBACK(setAnglePid)
 COMMAND_CALLBACK(setYawPid)
 COMMAND_CALLBACK(setTargetBodyHeight)
-COMMAND_CALLBACK(setDriveTiltReductionGain)
 #undef COMMAND_CALLBACK
 
 #include "../../src/ES-02/OllieFOCdrive/SerialCommandRouter.h"
@@ -85,33 +84,29 @@ int main() {
   commander.com_port = &output;
   SerialCommandRouter router;
 
-  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 17);
+  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 16);
   const char *expectedCallbacks[] = {"handleM1MotionCommand", "handleM1Command", "zeroBiasServo1", "zeroBiasServo2",
                                     "zeroBiasServo3", "zeroBiasServo4", "setImuLowPassCutoff", "setMahonyKp",
                                     "setMahonyKi", "selectDebugLog", "selectCalibration", "setBodyCommandFilterCutoffHz",
                                     "setBodyCommandFilteringEnabled", "setAnglePid", "setYawPid",
-                                    "setTargetBodyHeight",
-                                    "setDriveTiltReductionGain"};
-  const char ids[] = "TMABCDZQIKEFJPYOW";
+                                    "setTargetBodyHeight"};
+  const char ids[] = "TMABCDZQIKEFJPYO";
   for (size_t i = 0; ids[i]; ++i) {
     Stream input(std::string(1, ids[i]) + "\n");
     router.run(input, commander, commandEntries);
     assert(calls[i] == std::string(expectedCallbacks[i]) + ":\n");
   }
-  assert(calls.size() == 17);
+  assert(calls.size() == 16);
   assert(calls[14] == "setYawPid:\n");
-  assert(calls[16] == "setDriveTiltReductionGain:\n");
 
   calls.clear();
-  Stream yawInput("YP?\nYI2\nYD\nYL\nW\nW2\n");
+  Stream yawInput("YP?\nYI2\nYD\nYL\n");
   router.run(yawInput, commander, commandEntries);
-  assert((calls == std::vector<std::string>{"setYawPid:P?\n", "setYawPid:I2\n", "setYawPid:D\n", "setYawPid:L\n",
-                                             "setDriveTiltReductionGain:\n", "setDriveTiltReductionGain:2\n"}));
+  assert((calls == std::vector<std::string>{"setYawPid:P?\n", "setYawPid:I2\n", "setYawPid:D\n", "setYawPid:L\n"}));
 
   Stream helpInput("?\n");
   router.run(helpInput, commander, commandEntries);
   assert(output.output().find("Y:yawPidSettings\n") != std::string::npos);
-  assert(output.output().find("W:drive tilt reduction gain\n") != std::string::npos);
 
   const int builtinCalls = commander.builtins;
   Stream builtinInput("@3\n#5\n");
