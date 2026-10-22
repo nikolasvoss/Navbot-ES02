@@ -50,10 +50,6 @@ Calibration calibration;
 CalibrationStore calibrationStore;
 
 // ----- Editable Constants
-#define COMMUNICATION_OBJECT \
-  COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE  // 0: two-wheel balance  1: simpleFOC Studio host computer  2: control dual
-                                          // motors
-
 // Safe bring-up: read sensors and receiver without energizing wheels or servos.
 // Set to 0 only after the diagnostic readings and power supply are checked.
 #define SENSOR_DIAGNOSTIC_MODE 0
@@ -620,9 +616,6 @@ void setup() {
   motor1.target = 0;
   motor2.target = 0;
 
-  motor1.useMonitoring(Serial);  // TODO logger lib usable here?
-  motor1.monitor_downsample = 10;
-
 
   Serial.println("Motor ready.");
 
@@ -869,13 +862,6 @@ void updateMotorsAndCommands() {
   // iterative function setting the outer loop target
   if (motorDiagnosticState.active) readSbus();
   serviceMotorDiagnostic();
-  if (!motorDiagnosticState.active) {
-    if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO) {
-      if (Logging::profile() == Logging::Profile::Idle) motor1.monitor();
-    } else if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS) {
-      motor2.target = motor1.target;
-    }
-  }
 
   motor1.move();
   motor2.move();

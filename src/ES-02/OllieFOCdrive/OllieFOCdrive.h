@@ -5,10 +5,6 @@
 
 #include "filter.h"
 
-#define COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE 0    // Two-wheel balance mode
-#define COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO 1     // SimpleFOC Studio host computer
-#define COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS 2  // Control dual motors
-
 #define ROBOT_NOT_TUMBLING 0  // Robot is not tumbling
 #define ROBOT_TUMBLING 1      // Robot is tumbling
 
