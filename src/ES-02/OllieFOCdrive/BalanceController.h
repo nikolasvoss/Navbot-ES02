@@ -31,7 +31,16 @@ struct Request {
 
 enum class State : uint8_t { Disabled, Arming, Run, Commissioning, Fault };
 
-enum class FaultReason : uint8_t { None };
+enum class FaultReason : uint8_t {
+  None,
+  StaleImu,
+  StaleWheels,
+  StaleBus,
+  InvalidInput,
+  BadDt,
+  Fall,
+  Overspeed,
+};
 
 struct Diagnostics {
   float c = 0.0f;
@@ -72,6 +81,22 @@ struct Config {
   float armingRequestSpeedMps = 0.0f;    // uncommissioned
   float armingRequestYawRadPerSec = 0.0f;  // uncommissioned
 
+  // Measurement freshness: maximum age of each acquisition timestamp. Uncommissioned.
+  uint32_t imuMaxAgeUs = 0;    // uncommissioned
+  uint32_t wheelMaxAgeUs = 0;  // uncommissioned
+  uint32_t busMaxAgeUs = 0;    // uncommissioned
+
+  // Largest allowed gap between consecutive processed IMU samples. Uncommissioned.
+  uint32_t dtMaxUs = 0;  // uncommissioned
+
+  // Fall: tilt beyond fallAngleRad for longer than fallDurationUs. Uncommissioned.
+  float fallAngleRad = 0.0f;     // uncommissioned
+  uint32_t fallDurationUs = 0;   // uncommissioned
+
+  // Overspeed: either wheel beyond wheelOverspeedRadPerSec for longer than overspeedDurationUs. Uncommissioned.
+  float wheelOverspeedRadPerSec = 0.0f;  // uncommissioned
+  uint32_t overspeedDurationUs = 0;      // uncommissioned
+
   // Inputs supplied by the sketch from the stored trim record and pose check, not commissioning constants.
   bool trimValidated = false;
   float storedTrimDeg = 0.0f;
@@ -84,9 +109,25 @@ class BalanceController {
                 uint32_t nowUs);
 
  private:
+  void resetRunTracking();
+  void checkRunning(const Measurements &measurements, const Config &config, uint32_t nowUs);
+  void latchFault(FaultReason reason);
+
   State state_ = State::Disabled;
   FaultReason fault_ = FaultReason::None;
   bool enableLevelKnown_ = false;
   bool previousEnableSwitch_ = false;
   uint32_t armingStartUs_ = 0;
+
+  // IMU sequence and timestamp of the last processed sample. Sequence persists across arming.
+  bool imuSequenceSeen_ = false;
+  uint32_t lastImuSequence_ = 0;
+  bool imuTimestampValid_ = false;  // false until the first processed sample after entering Run
+  uint32_t lastImuReadTimeUs_ = 0;
+  float dtSec_ = 0.0f;
+
+  bool fallBeyond_ = false;
+  uint32_t fallStartUs_ = 0;
+  bool overspeedActive_ = false;
+  uint32_t overspeedStartUs_ = 0;
 };

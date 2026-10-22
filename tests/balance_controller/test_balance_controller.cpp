@@ -1,5 +1,7 @@
 #include <cassert>
 #include <cstdio>
+#include <initializer_list>
+#include <limits>
 
 #include "../../src/ES-02/OllieFOCdrive/BalanceController.h"
 
@@ -15,6 +17,14 @@ Config makeConfig() {
   config.armingTiltRateRadPerSec = 0.1f;
   config.armingRequestSpeedMps = 0.05f;
   config.armingRequestYawRadPerSec = 0.05f;
+  config.imuMaxAgeUs = 20000;
+  config.wheelMaxAgeUs = 20000;
+  config.busMaxAgeUs = 100000;
+  config.dtMaxUs = 50000;
+  config.fallAngleRad = 0.6f;
+  config.fallDurationUs = 500000;
+  config.wheelOverspeedRadPerSec = 100.0f;
+  config.overspeedDurationUs = 200000;
   config.trimValidated = true;
   config.storedTrimDeg = 10.0f;
   config.fixedPoseReachable = true;
@@ -38,6 +48,14 @@ Measurements makeMeasurements() {
   return m;
 }
 
+// Sets every acquisition timestamp to nowUs, as fresh sensors would.
+Measurements atTime(Measurements m, uint32_t nowUs) {
+  m.imuReadTimeUs = nowUs;
+  m.wheelReadTimeUs = nowUs;
+  m.busReadTimeUs = nowUs;
+  return m;
+}
+
 Request makeRequest(bool enableSwitch) {
   Request r{};
   r.receivedTimeUs = 0;
@@ -54,7 +72,22 @@ Request makeRequest(bool enableSwitch) {
 
 Output tick(BalanceController &controller, const Measurements &m, const Request &r, const Config &c,
             uint32_t nowUs) {
-  return controller.update(m, r, c, nowUs);
+  return controller.update(atTime(m, nowUs), r, c, nowUs);
+}
+
+// A new IMU sample taken at nowUs with the given sequence; the other sensors are fresh.
+Output sample(BalanceController &controller, const Measurements &m, const Config &c, uint32_t nowUs,
+              uint32_t imuSequence) {
+  Measurements s = atTime(m, nowUs);
+  s.imuSequence = imuSequence;
+  return controller.update(s, makeRequest(true), c, nowUs);
+}
+
+// Off, then on (Arming), then Run once the arming conditions hold. Run is entered at startUs + 2000.
+void enterRun(BalanceController &controller, const Config &config, uint32_t startUs) {
+  tick(controller, makeMeasurements(), makeRequest(false), config, startUs);
+  tick(controller, makeMeasurements(), makeRequest(true), config, startUs + 1000);
+  assert(tick(controller, makeMeasurements(), makeRequest(true), config, startUs + 2000).state == State::Run);
 }
 }  // namespace
 
@@ -228,7 +261,265 @@ int main() {
     assert(tick(bc, good, makeRequest(true), config, 5000).state == State::Arming);
   }
 
-  // Not tested in step 1: entry into Fault. Faults are first produced in step 2.
+  // Step 2: freshness. In Run, an age equal to the limit is fresh and one microsecond more faults.
+  {
+    const Measurements fresh = good;
+    struct Case {
+      uint32_t Measurements::*readTime;
+      uint32_t Config::*maxAge;
+      FaultReason reason;
+    };
+    const Case cases[] = {
+        {&Measurements::imuReadTimeUs, &Config::imuMaxAgeUs, FaultReason::StaleImu},
+        {&Measurements::wheelReadTimeUs, &Config::wheelMaxAgeUs, FaultReason::StaleWheels},
+        {&Measurements::busReadTimeUs, &Config::busMaxAgeUs, FaultReason::StaleBus},
+    };
+    for (const Case &c : cases) {
+      BalanceController bc;
+      enterRun(bc, config, 100000);
+      const uint32_t now = 112000;
+      Measurements m = atTime(fresh, now);
+      m.*(c.readTime) = now - config.*(c.maxAge);
+      assert(bc.update(m, makeRequest(true), config, now).state == State::Run);
+      m.*(c.readTime) = now - config.*(c.maxAge) - 1;
+      const Output out = bc.update(m, makeRequest(true), config, now);
+      assert(out.state == State::Fault && out.fault == c.reason && !out.driveEnabled);
+    }
+  }
+
+  // A timestamp ahead of nowUs is not fresh.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    Measurements m = atTime(good, 112000);
+    m.imuReadTimeUs = 112005;
+    const Output out = bc.update(m, makeRequest(true), config, 112000);
+    assert(out.state == State::Fault && out.fault == FaultReason::StaleImu);
+  }
+
+  // Invalid IMU or wheel data in Run latches InvalidInput.
+  {
+    Measurements noImu = good;
+    noImu.imuValid = false;
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    const Output out = tick(bc, noImu, makeRequest(true), config, 112000);
+    assert(out.state == State::Fault && out.fault == FaultReason::InvalidInput);
+
+    Measurements noWheels = good;
+    noWheels.wheelsValid = false;
+    BalanceController bc2;
+    enterRun(bc2, config, 100000);
+    const Output out2 = tick(bc2, noWheels, makeRequest(true), config, 112000);
+    assert(out2.state == State::Fault && out2.fault == FaultReason::InvalidInput);
+  }
+
+  // Freshness across micros() wraparound: the sensor time is before the wrap, now is after it.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 0xFFFFFFF0u - 10000u);
+    const uint32_t now = 0xFFFFFFF0u + 5000u;  // wraps to 4984
+    Measurements m = atTime(good, now);
+    m.imuReadTimeUs = now - config.imuMaxAgeUs;  // wraps backwards, age is exactly the limit
+    assert(bc.update(m, makeRequest(true), config, now).state == State::Run);
+    m.imuReadTimeUs = now - config.imuMaxAgeUs - 1;
+    assert(bc.update(m, makeRequest(true), config, now).fault == FaultReason::StaleImu);
+  }
+
+  // Arming needs fresh IMU, wheels and bus; stale inputs keep Arming until fresh ones arrive.
+  {
+    BalanceController bc;
+    tick(bc, good, makeRequest(false), config, 200000);
+    assert(tick(bc, good, makeRequest(true), config, 201000).state == State::Arming);
+
+    Measurements staleBus = atTime(good, 202000);
+    staleBus.busReadTimeUs = 202000 - config.busMaxAgeUs - 1;
+    assert(bc.update(staleBus, makeRequest(true), config, 202000).state == State::Arming);
+
+    Measurements staleImu = atTime(good, 203000);
+    staleImu.imuReadTimeUs = 203000 - config.imuMaxAgeUs - 1;
+    assert(bc.update(staleImu, makeRequest(true), config, 203000).state == State::Arming);
+
+    assert(tick(bc, good, makeRequest(true), config, 204000).state == State::Run);
+  }
+
+  // An unchanged IMU sequence is not a new sample: it computes no dt and does not refresh the sample.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    assert(sample(bc, good, config, 103000, 2).state == State::Run);
+
+    Measurements repeated = atTime(good, 103000);
+    repeated.imuSequence = 2;
+    // Same timestamp with an unchanged sequence: a dt of zero would fault if it were computed.
+    assert(bc.update(repeated, makeRequest(true), config, 104000).state == State::Run);
+
+    // Stalled IMU: the sequence stays at 2, so the sample goes stale by age alone.
+    repeated.imuReadTimeUs = 103000;
+    assert(bc.update(repeated, makeRequest(true), config, 103000 + config.imuMaxAgeUs + 1).fault ==
+           FaultReason::StaleImu);
+  }
+
+  // dt window: a gap equal to the limit passes; one microsecond more faults.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    assert(sample(bc, good, config, 103000, 2).state == State::Run);
+    assert(sample(bc, good, config, 103000 + config.dtMaxUs, 3).state == State::Run);
+    const Output out = sample(bc, good, config, 103000 + 2 * config.dtMaxUs + 1, 4);
+    assert(out.state == State::Fault && out.fault == FaultReason::BadDt && !out.driveEnabled);
+  }
+
+  // A dt of zero (a new sequence with the same timestamp) faults.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    assert(sample(bc, good, config, 103000, 2).state == State::Run);
+    assert(sample(bc, good, config, 103000, 3).fault == FaultReason::BadDt);
+  }
+
+  // dt across micros() wraparound is the elapsed 1000 us and passes.
+  {
+    const uint32_t first = 0xFFFFFFF0u;
+    BalanceController bc;
+    enterRun(bc, config, first - 10000u);
+    assert(sample(bc, good, config, first, 2).state == State::Run);
+    assert(sample(bc, good, config, first + 1000u, 3).state == State::Run);
+  }
+
+  // The first processed sample after re-entering Run only records its timestamp. The gap from the
+  // previous session is far beyond dtMaxUs and must not fault.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    assert(sample(bc, good, config, 103000, 2).state == State::Run);
+    tick(bc, good, makeRequest(false), config, 104000);
+    enterRun(bc, config, 200000);
+    assert(sample(bc, good, config, 302000, 3).state == State::Run);
+    assert(sample(bc, good, config, 303000, 4).state == State::Run);
+  }
+
+  // Fall: tilt beyond the fall angle for longer than the fall duration. Samples come every 10 ms, the
+  // first sample past the angle starts the clock, and the fault is latched at 510 ms (500 ms elapsed).
+  for (uint32_t base : {110000u, 0xFFFFFFF0u}) {
+    for (float tilt : {0.7f, -0.7f}) {
+      BalanceController bc;
+      enterRun(bc, config, base - 8000u);
+      Measurements tilted = good;
+      tilted.tiltRad = tilt;
+      uint32_t seq = 2;
+      for (uint32_t j = 0; j <= 50; ++j) {
+        assert(sample(bc, tilted, config, base + 10000u * j, seq++).state == State::Run);
+      }
+      const Output out = sample(bc, tilted, config, base + 10000u * 51, seq++);
+      assert(out.state == State::Fault && out.fault == FaultReason::Fall && !out.driveEnabled);
+    }
+  }
+
+  // Fall: a sample back inside the angle restarts the clock.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    Measurements beyond = good;
+    beyond.tiltRad = 0.7f;
+    Measurements level = good;
+    level.tiltRad = 0.0f;
+    const uint32_t base = 110000;
+    uint32_t seq = 2;
+    for (uint32_t j = 0; j <= 40; ++j) assert(sample(bc, beyond, config, base + 10000u * j, seq++).state == State::Run);
+    assert(sample(bc, level, config, base + 10000u * 41, seq++).state == State::Run);
+    // Without the restart the fault would come at j = 51; with it, only at j = 93.
+    for (uint32_t j = 42; j <= 92; ++j) assert(sample(bc, beyond, config, base + 10000u * j, seq++).state == State::Run);
+    const Output out = sample(bc, beyond, config, base + 10000u * 93, seq++);
+    assert(out.state == State::Fault && out.fault == FaultReason::Fall);
+  }
+
+  // Overspeed: a wheel beyond the limit for longer than the duration faults.
+  for (uint32_t base : {100000u, 0xFFFFFFF0u}) {
+    BalanceController bc;
+    enterRun(bc, config, base - 8000u);
+    Measurements fast = good;
+    fast.leftWheelRadPerSec = 150.0f;
+    // Overspeed starts at base; 200 ms elapsed is still allowed, 210 ms latches.
+    for (uint32_t j = 0; j <= 20; ++j) {
+      assert(tick(bc, fast, makeRequest(true), config, base + 10000u * j).state == State::Run);
+    }
+    const Output out = tick(bc, fast, makeRequest(true), config, base + 210000u);
+    assert(out.state == State::Fault && out.fault == FaultReason::Overspeed && !out.driveEnabled);
+  }
+
+  // Overspeed on the right wheel in reverse counts too, and a dip below the limit restarts the clock.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    Measurements fast = good;
+    fast.rightWheelRadPerSec = -150.0f;
+    const Measurements still = good;
+    const uint32_t base = 110000;
+    for (uint32_t j = 0; j <= 15; ++j) assert(tick(bc, fast, makeRequest(true), config, base + 10000u * j).state == State::Run);
+    assert(tick(bc, still, makeRequest(true), config, base + 10000u * 16).state == State::Run);
+    for (uint32_t j = 17; j <= 37; ++j) assert(tick(bc, fast, makeRequest(true), config, base + 10000u * j).state == State::Run);
+    const Output out = tick(bc, fast, makeRequest(true), config, base + 10000u * 38);
+    assert(out.state == State::Fault && out.fault == FaultReason::Overspeed);
+  }
+
+  // A NaN wheel speed counts as overspeed, even when the other wheel is normal.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    Measurements bad = good;
+    bad.leftWheelRadPerSec = std::numeric_limits<float>::quiet_NaN();
+    for (uint32_t j = 0; j <= 20; ++j) {
+      assert(tick(bc, bad, makeRequest(true), config, 110000u + 10000u * j).state == State::Run);
+    }
+    const Output out = tick(bc, bad, makeRequest(true), config, 110000u + 210000u);
+    assert(out.state == State::Fault && out.fault == FaultReason::Overspeed);
+  }
+
+  // A tilt exactly at the fall angle is not a fall, however long it lasts.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    Measurements atAngle = good;
+    atAngle.tiltRad = 0.6f;
+    uint32_t seq = 2;
+    for (uint32_t j = 0; j <= 100; ++j) {
+      assert(sample(bc, atAngle, config, 110000u + 10000u * j, seq++).state == State::Run);
+    }
+  }
+
+  // A wheel exactly at the limit is not overspeed, however long it lasts.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    Measurements atLimit = good;
+    atLimit.leftWheelRadPerSec = 100.0f;
+    atLimit.rightWheelRadPerSec = -100.0f;
+    for (uint32_t j = 0; j <= 100; ++j) {
+      assert(tick(bc, atLimit, makeRequest(true), config, 110000u + 10000u * j).state == State::Run);
+    }
+  }
+
+  // A latched fault does not clear into Run while the switch stays on; the switch off returns to Disabled.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 100000);
+    Measurements noImu = good;
+    noImu.imuValid = false;
+    const Output faulted = tick(bc, noImu, makeRequest(true), config, 103000);
+    assert(faulted.state == State::Fault && faulted.fault == FaultReason::InvalidInput);
+    assert(!faulted.driveEnabled && faulted.leftA == 0.0f && faulted.rightA == 0.0f);
+    assert(tick(bc, good, makeRequest(true), config, 104000).state == State::Fault);
+    assert(tick(bc, good, makeRequest(true), config, 300000).state == State::Fault);
+
+    const Output off = tick(bc, good, makeRequest(false), config, 301000);
+    assert(off.state == State::Disabled && off.fault == FaultReason::None && !off.driveEnabled);
+
+    // A new edge rearms through Arming, never straight into Run.
+    assert(tick(bc, good, makeRequest(true), config, 302000).state == State::Arming);
+    assert(tick(bc, good, makeRequest(true), config, 303000).state == State::Run);
+  }
+
   std::puts("balance controller passed");
   return 0;
 }
