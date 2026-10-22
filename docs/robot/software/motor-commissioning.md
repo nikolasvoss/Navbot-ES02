@@ -123,14 +123,16 @@ Increase the voltage in steps while speed still rises. The usable ceiling is the
 
 ## Commissioning record
 
-No value below is measured. Record each value with its date, firmware commit, and operator, and keep the source log for each one.
+Only the phase-to-phase resistance row below is measured; every other value is pending or derived. Record each value with its date, firmware commit, and operator, and keep the source log for each one.
 
 | Item | Unit | Status |
 | --- | --- | --- |
 | Payload and leg-pose description | text | PENDING |
 | Firmware commit used for the run | hash | PENDING |
-| Left wheel `R_pp` and `R_phase` (convention stated) | Ω | PENDING |
-| Right wheel `R_pp` and `R_phase` (convention stated) | Ω | PENDING |
+| Wheel motor `R_pp` (phase to phase) | Ω | MEASURED 2026-10-22 by the operator: 11.5 Ω. Which wheel, which phase pair, the meter and the winding connection were not recorded. |
+| Wheel motor `R_phase` | Ω | 5.75 Ω if the winding is star (`R_pp / 2`). The winding connection is not verified, so treat this as derived, not measured. |
+| Left wheel `R_pp`, per-wheel confirmation | Ω | PENDING |
+| Right wheel `R_pp`, per-wheel confirmation | Ω | PENDING |
 | Left wheel `KV_rating` and fit residual | rpm/V | PENDING |
 | Right wheel `KV_rating` and fit residual | rpm/V | PENDING |
 | Left wheel usable `q` ceiling | V | PENDING |
@@ -139,5 +141,7 @@ No value below is measured. Record each value with its date, firmware commit, an
 | IMU sample rate and maximum interval from a supported capture | Hz; µs | PENDING |
 | Control execution time and maximum loop interval from a supported capture | µs | PENDING |
 | Leg pose used (fixed pose check) | text | PENDING |
+
+The measured 11.5 Ω phase-to-phase value lies just below the published 12.5 to 16.4 Ω range. The firmware constant `kWheelPhaseResistanceOhm` (22 Ω) is about twice the measured value and about four times the star per-phase value. The constant is unchanged, so `T` current targets still scale with 22 Ω and the 0.02 A cap was derived from it. Package 2 decides which value the firmware uses and which convention SimpleFOC `phase_resistance` expects.
 
 Until these rows are filled from supported runs, the firmware caps stay in force and no loaded control is commissioned.
