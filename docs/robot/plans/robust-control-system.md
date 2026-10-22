@@ -294,7 +294,7 @@ Decided by the user on 2026-10-22:
 
 | Decision | Result |
 | --- | --- |
-| Trim knob | CH9 (`ch[8]`). The transmitter sends 1000-2000 µs with 1500 µs default. With the usual SBUS scaling these arrive as raw 192-1792 with 992 at centre, which matches `SBUS_CHANNEL_MIN`, `SBUS_CHANNEL_MAX`, and `kSbusBodyHeightCenter`. Map `knobTrimDeg = (raw - 992) / 800 * trimRangeDeg`, so 1500 µs is zero trim and the end stops are ± the commissioned trim range. Confirm the three raw values (1000, 1500, 2000 µs) with the serial monitor in stage 1; a frame with a raw value outside 172-1811 marks the knob invalid. |
+| Trim knob | CH9 (`ch[8]`). The transmitter sends 1000-2000 µs with 1500 µs default. With the usual SBUS scaling these arrive as raw 192-1792 with 992 at centre, which matches `SBUS_CHANNEL_MIN`, `SBUS_CHANNEL_MAX`, and `kSbusBodyHeightCenter`. Map `knobTrimDeg = (raw - 992) / 800 * trimRangeDeg`, so 1500 µs is zero trim and the end stops are ± the commissioned trim range. Measured on 2026-10-22: 1000 µs gives 192, 1500 µs gives 992, 2000 µs gives 1792 ([lab note](../../../lab/robot/2026-10-22-rc-transmitter-raw-values.md)). A frame with a raw value outside 172-1811 marks the knob invalid. |
 | Fixed leg pose | All joint angles 0: the calibrated servo-zero position. In `writeServos()` terms each servo receives `-servoTrims.servoNDegrees`, which is what servo-calibration mode (`calibrationSelect` 3) writes today. No IK runs at runtime. Stage 1 checks that this pose is usable: both wheels on the ground, chassis near level, ground clearance, and no servo at a mechanical stop or drawing stall current. If it fails, fall back to the IK pose at `kBodyHeightDefaultM` with `bodyX = 0`, and record that here. |
 | Bluetooth | Removed completely; see package 3. SBUS is the only motion and command input besides the USB serial console. |
 | Touchscreen | Removed completely, including the driver files; see package 3. |
@@ -313,8 +313,8 @@ RC map (1-based channel names as in the existing comments; array index is one lo
 | --- | --- | --- |
 | CH1 `ch[0]` | body roll | unused |
 | CH2 `ch[1]` | height or pitch | unused |
-| CH3 `ch[2]` | `movementSpeed` ±15 | requested speed, m/s, mapped to ± the commissioned speed cap |
-| CH4 `ch[3]` | `bodyTurn` ±11 | requested yaw rate, rad/s, mapped to ± the commissioned turn cap |
+| CH3 `ch[2]` | `movementSpeed` ±15 | requested speed, m/s, mapped to ± the commissioned speed cap; stick forward gives raw 1792 (measured), mapped to forward speed |
+| CH4 `ch[3]` | `bodyTurn` ±11 | requested yaw rate, rad/s, mapped to ± the commissioned turn cap; stick left gives raw 192 (measured), mapped to a left turn |
 | CH5 `ch[4]` | `pidGainsMode` 0..2 | balance enable; arming needs an off-to-on edge, a level present at boot is ignored |
 | CH6 `ch[5]` | `postureOrMarkMode` | trim save trigger, edge only, commissioning state only |
 | CH7 `ch[6]` | `rollMode` | commissioning state select (off = RUN path, on = standstill commissioning) |

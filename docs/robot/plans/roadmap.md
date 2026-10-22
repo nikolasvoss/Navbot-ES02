@@ -34,3 +34,17 @@ Measure the actual IMU update rate in normal control operation and compare the c
 ## Driving stability at high speed
 
 At high speed the robot still tips over. Record the failure pattern in a safe, reproducible driving test, covering roll angle, target and actual wheel speed, effective speed setpoint, and the balance controller output. Check whether the existing tilt reduction takes effect in the observed case and engages early enough. Change thresholds and controller tuning only after this evaluation.
+
+## Clean up the RC value conversion chain
+
+A remote value passes through several hidden conversions before a controller uses it: transmitter µs to raw SBUS, a per-channel `mapf()` range and sign in `applyRcChannels()`, a ×2.0 speed factor in `readSbus()` tied to `DIAGNOSTIC_LIVE_TUNING_DEFAULTS`, a negation for turn, and for some channels a biquad filter. The resulting units (for example ±30 "speed" compared with wheel rad/s) are not physical, and the signs are spread across several functions. The [RC channel map](../software/rc-channel-map.md#from-transmitter-to-firmware-value) documents the current chain.
+
+Replace it with one conversion per channel from raw SBUS to a physical unit (m/s, rad/s, degrees, or a switch state), with all scaling and signs in one place and covered by host tests with the measured values 192, 992, and 1792. Reject or clip raw values outside the valid range. The [robust control plan](robust-control-system.md) already defines the new mapping (CH3 speed in m/s, CH4 yaw rate in rad/s, CH9 trim in degrees) and removes the BLE path; do this cleanup as part of that implementation.
+
+## Fix the sensor diagnostic mode
+
+The diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) streams its CSV continuously from boot and never runs the serial command router, so `K0`, `K8`, and `K60`-`K75` have no effect and the stream cannot be stopped. Its 17 fields contain only the receiver frame age and failsafe flag, not the channel values, so it cannot check transmitter switches with the drivers held off.
+
+- Run the serial command router in `diagnosticLoop()`, so that the stream can be stopped and selected.
+- Add the ten raw SBUS channel values to the diagnostic output, or allow `K8` and `K60`-`K75` in diagnostic mode, update [sensor_monitor.py](../../../scripts/sensor_monitor.py), and add a test for its parser in `tests/scripts/`.
+- Correct the [sensor diagnostic guide](../software/sensor-diagnostic-mode.md): its RC-plot section says 115200 baud, but the firmware uses 576000 (`kSerialBaudRate`).

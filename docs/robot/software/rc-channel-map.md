@@ -17,4 +17,30 @@ The remote control is connected to the NavBot through the receiver over **SBUS**
 
 **Note on the HT-10A:** The table describes the SBUS channels the robot expects, not the fixed wiring of particular HT-10A switches. Which sticks, switches, or dials send CH1–CH10 depends on the transmitter configuration. After any change to the transmitter, check the channel assignment in the receiver/servo monitor.
 
+## From transmitter to firmware value
+
+Each proportional channel passes through three conversions before a controller uses it.
+
+1. **Transmitter to SBUS.** The transmitter shows 1000-2000 µs, with 1500 µs as default. The receiver sends these as raw SBUS values `raw = (µs - 880) * 1.6`.
+2. **SBUS range in the firmware.** `SBUS_CHANNEL_MIN = 192` and `SBUS_CHANNEL_MAX = 1792` bound the mapping; centre is 992 (`kSbusBodyHeightCenter`). The firmware does not clip raw values outside this range.
+3. **Scaling to controller units in `applyRcChannels()`.** Each channel has its own `mapf()` range and sign. `readSbus()` then changes some values again.
+
+| Transmitter | Raw SBUS | Measured |
+| --- | --- | --- |
+| 1000 µs | 192 | yes (CH9) |
+| 1500 µs | 992 | yes (CH1-CH4, CH9, CH10) |
+| 2000 µs | 1792 | yes (CH9) |
+
+Direction on the HT-10A as configured on 2026-10-22: CH3 stick forward gives 1792, CH4 stick left gives 192. The switches CH5-CH8 read 192 in their tested position. See the [lab note](../../../lab/robot/2026-10-22-rc-transmitter-raw-values.md).
+
+Current conversion of the drive channels:
+
+| Channel | `applyRcChannels()` | Later change | Controller use |
+| --- | --- | --- | --- |
+| CH3 speed | `movementSpeed = mapf(raw, 192, 1792, -15, 15)`; forward gives +15 | `readSbus()` multiplies by 2.0 when `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` is set, so ±30 in the current build | Compared with the average filtered wheel speed in wheel rad/s (motor 2 sign inverted in `updateWheelVelocities()`) |
+| CH4 turn | `bodyTurn = -mapf(raw, 192, 1792, -11, 11)`; left gives +11 | none | Yaw-rate setpoint compared with gyro Z in rad/s |
+| CH9 ball X | `topBallX = mapf(raw, 192, 1792, -5, 5)` | biquad low-pass at 50 Hz (`sbusTopBallXSmoothed`) | Added to `bodyPitching` in ball-balance or roll-auto mode |
+
+On RC loss (no frame for 100 ms or receiver failsafe), `movementSpeed` and `bodyTurn` become 0; all other values keep their last received value. A BLE connection replaces SBUS with its own channel ranges (`BLE_CH*` in `ble.h`).
+
 This description matches the current SBUS handling in `src/ES-02/OllieFOCdrive/OllieFOCdrive.ino` and the mode constants in `OllieFOCdrive.h`.
