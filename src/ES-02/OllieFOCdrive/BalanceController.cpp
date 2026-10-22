@@ -208,14 +208,17 @@ Allocation BalanceController::allocateEffort(float balanceCommonA, float yawDiff
 
 Output BalanceController::update(const Measurements &measurements, const Request &request, const Config &config,
                                  uint32_t nowUs) {
-  // The first call only records the switch level, so a switch that is already on at boot is not an edge.
-  const bool enableEdge = enableLevelKnown_ && request.enableSwitch && !previousEnableSwitch_;
-  enableLevelKnown_ = true;
-  previousEnableSwitch_ = request.enableSwitch;
   commissioningRefused_ = false;
-  // Level tracked on every call. The edge counts only when the state is Commissioning on this tick and was
-  // Commissioning on the previous one, so a level present at entry never counts.
   const bool lost = requestLost(request, config, nowUs);
+  // The enable level is tracked only from a live request. A request loss ends tracking, so a switch position present
+  // at boot, or moved while the request was lost, never produces an edge: the first live tick rebases the level.
+  const bool enableEdge = !lost && enableLevelKnown_ && request.enableSwitch && !previousEnableSwitch_;
+  if (lost) {
+    enableLevelKnown_ = false;
+  } else {
+    enableLevelKnown_ = true;
+    previousEnableSwitch_ = request.enableSwitch;
+  }
   // Save edges come only from valid frames. A lost frame ends tracking; the first valid frame after it rebases the
   // level, so a switch that moved while RC was lost does not save when RC returns.
   bool saveEdge = false;
@@ -226,6 +229,8 @@ Output BalanceController::update(const Measurements &measurements, const Request
     saveTracked_ = true;
     previousSaveSwitch_ = request.saveSwitch;
   }
+  // The save edge counts only when the state is Commissioning on this tick and was Commissioning on the previous one,
+  // so a level present at entry never counts.
   const bool wasCommissioning = state_ == State::Commissioning;
 
   if (!request.enableSwitch) {

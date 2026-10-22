@@ -143,6 +143,13 @@ Request liveSwitch(uint32_t nowUs, bool enableSwitch) {
   return r;
 }
 
+// A request with the given switch received at nowUs, but with its source invalid, so it is lost at nowUs.
+Request lostSwitch(uint32_t nowUs, bool enableSwitch) {
+  Request r = liveSwitch(nowUs, enableSwitch);
+  r.sourceValid = false;
+  return r;
+}
+
 void enterRun(BalanceController &controller, const Config &config, uint32_t startUs) {
   tick(controller, makeMeasurements(), liveSwitch(startUs, false), config, startUs);
   tick(controller, makeMeasurements(), liveSwitch(startUs + 1000, true), config, startUs + 1000);
@@ -366,6 +373,38 @@ int main() {
     assert(tick(bc, good, liveSwitch(1000, true), config, 1000).state == State::Disabled);
     assert(tick(bc, good, liveSwitch(2000, true), config, 2000).state == State::Disabled);
     const Output out = tick(bc, good, liveSwitch(3000, true), config, 3000);
+    assert(out.state == State::Disabled && !out.driveEnabled);
+  }
+
+  // Boot with the switch on and the RC source not yet valid: the lost ticks read the channels as off. The first live
+  // frame with the switch on records the level without an edge, so the controller stays Disabled. An off-to-on edge
+  // on live frames then arms.
+  {
+    BalanceController bc;
+    assert(tick(bc, good, lostSwitch(1000, false), config, 1000).state == State::Disabled);
+    assert(tick(bc, good, lostSwitch(2000, false), config, 2000).state == State::Disabled);
+    assert(tick(bc, good, liveSwitch(3000, true), config, 3000).state == State::Disabled);
+    assert(tick(bc, good, liveSwitch(4000, true), config, 4000).state == State::Disabled);
+    tick(bc, good, liveSwitch(5000, false), config, 5000);
+    assert(tick(bc, good, liveSwitch(6000, true), config, 6000).state == State::Arming);
+  }
+
+  // Lost ticks with the switch on do not latch it: the first live frame with the switch on still records the level
+  // without an edge, and a later off-to-on edge arms.
+  {
+    BalanceController bc;
+    assert(tick(bc, good, lostSwitch(1000, true), config, 1000).state == State::Disabled);
+    assert(tick(bc, good, lostSwitch(2000, true), config, 2000).state == State::Disabled);
+    assert(tick(bc, good, liveSwitch(3000, true), config, 3000).state == State::Disabled);
+    tick(bc, good, liveSwitch(4000, false), config, 4000);
+    assert(tick(bc, good, liveSwitch(5000, true), config, 5000).state == State::Arming);
+  }
+
+  // A switch off on a lost request still disables a running controller.
+  {
+    BalanceController bc;
+    enterRun(bc, config, 0);
+    const Output out = tick(bc, good, lostSwitch(3000, false), config, 3000);
     assert(out.state == State::Disabled && !out.driveEnabled);
   }
 
@@ -2381,8 +2420,8 @@ int main() {
     assert(back.state == State::Run && back.driveEnabled);
   }
 
-  // Review fix 2: a lost request blocks arming. The switch edge on a lost frame is consumed, so holding it on does not
-  // arm later; a live off-to-on edge does.
+  // Review fix 2: a lost request blocks arming. A switch moved on during the loss is no edge: the first live frame
+  // rebases the level and stays Disabled; a deliberate off then on arms.
   {
     const Config cfg = makeBalanceConfig();
     BalanceController bc;
@@ -2391,7 +2430,7 @@ int main() {
     lostOn.sourceValid = false;
     assert(tick(bc, good, lostOn, cfg, 2000u).state == State::Disabled);
     assert(tick(bc, good, liveSwitch(3000u, true), cfg, 3000u).state == State::Disabled);
-    tick(bc, good, liveSwitch(4000u, false), cfg, 4000u);
+    assert(tick(bc, good, liveSwitch(4000u, false), cfg, 4000u).state == State::Disabled);
     assert(tick(bc, good, liveSwitch(5000u, true), cfg, 5000u).state == State::Arming);
   }
   // Review fix 2: a lost request holds Arming, and the arming timeout still applies while it is lost.
