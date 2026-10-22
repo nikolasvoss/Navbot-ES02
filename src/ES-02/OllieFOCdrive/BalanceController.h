@@ -267,7 +267,8 @@ class BalanceController {
   float rightMinA_ = 0.0f;
   float rightMaxA_ = 0.0f;
 
-  // Scales both demand caps. Set from the reserve on each processed IMU sample in Run; 1.0 on entering Run.
+  // Scales acceleration, yaw and the cruise cap (see shapeDemand). Set from the reserve on every Run or
+  // Commissioning tick; 1.0 on entering Run.
   float demandScale_ = 1.0f;
   // Balance and yaw outputs of the last processed sample in Run; zero outside Run.
   Allocation allocation_;
@@ -285,7 +286,7 @@ class BalanceController {
   bool overspeedActive_ = false;
   uint32_t overspeedStartUs_ = 0;
 
-  // Speed loop and tilt reference. Zero outside Run and Commissioning; the trim is fixed for this step.
+  // Speed loop and tilt reference. Zero outside Run and Commissioning; the trim changes only by the knob or the commissioning transfer.
   float trimRad_ = 0.0f;
   bool knobEngaged_ = false;  // only in Commissioning; cleared on entry, on RC loss and on an invalid knob
   bool commissioningRefused_ = false;  // set on the tick the Run -> Commissioning transfer was refused
