@@ -8,7 +8,7 @@ Run these steps only on a supported robot. Support the body so that a fall canno
 
 - Balance is off: CH5 at position 0. The firmware refuses `T` and `M` requests while balance is enabled, and it latches a fault if balance is enabled during a request.
 - Calibration is inactive (`E` not running).
-- Both wheels are below the overspeed limit (120 rad/s shaft velocity, wheel-clear runs; see the caps table). A request is refused otherwise.
+- Both wheels are below the overspeed limit (60 rad/s shaft velocity, wheel-clear runs; see the caps table). A request is refused otherwise.
 - The robot is connected over the USB serial console at 576000 baud. Use [trace capture](trace-capture.md) for logs.
 
 ## Commands
@@ -33,13 +33,13 @@ These caps are in `MotorDiagnostic.h` and mirrored in `scripts/capture_balance_t
 | Quantity | Cap |
 | --- | --- |
 | Current per wheel, `T` | ±0.02 A |
-| Voltage `q`, `M` | ±6.0 V |
+| Voltage `q`, `M` | ±2.0 V |
 | Lease | integer 1 to 5000 ms |
-| Shaft velocity overspeed | 120 rad/s per wheel, latched after 50 ms continuously over the limit. Wheel-clear runs only. |
+| Shaft velocity overspeed | 60 rad/s per wheel, latched after 50 ms continuously over the limit. Wheel-clear runs only. |
 
-The 120 rad/s overspeed cap, the 6.0 V voltage cap, and the 5000 ms lease cap apply only to runs with the wheels clear of the surface. On 2026-10-22 the operator confirmed the wheels are clear and approved raising the voltage cap from 2.0 V to 6.0 V and the overspeed cap from 60 rad/s to 120 rad/s; the lease cap (5000 ms) and the current cap (0.02 A) are unchanged. The earlier history: the 3 rad/s cap ended every identification step, because the wheels break away near 0.3 to 0.4 V and pass 3 rad/s before any speed plateau exists. The 15 rad/s cap then let the steps run their full lease, but speed still did not settle. See [the first Package 1 hardware run](../../../lab/robot/2026-10-22-package1-motor-diagnostic-first-run.md). These caps are diagnostic bounds, not commissioned limits.
+The default 60 rad/s overspeed cap, 2.0 V voltage cap, and 5000 ms lease cap apply only to runs with the wheels clear of the surface. On 2026-10-22 the operator lowered the voltage cap back to 2.0 V and the overspeed cap back to 60 rad/s; the lease cap (5000 ms) and the current cap (0.02 A) are unchanged. The ceiling sweep to 6 V ran earlier the same day with a temporary recompile at 6.0 V and 120 rad/s (firmware commit `54c04ca`). Repeating that sweep needs the same reviewed recompile, and the default caps must be restored afterwards. The earlier history: the 3 rad/s cap ended every identification step, because the wheels break away near 0.3 to 0.4 V and pass 3 rad/s before any speed plateau exists. The 15 rad/s cap then let the steps run their full lease, but speed still did not settle. See [the first Package 1 hardware run](../../../lab/robot/2026-10-22-package1-motor-diagnostic-first-run.md). These caps are diagnostic bounds, not commissioned limits.
 
-The 0.02 A current cap is an estimate-based bound, not a measured limit, and it is not derived from the voltage cap. It rests on the 22 ohm `kWheelPhaseResistanceOhm` estimate, which is not measured. At 0.02 A that estimate gives about 0.44 V, below the 6.0 V voltage cap. The value is unchanged.
+The 0.02 A current cap is an estimate-based bound, not a measured limit, and it is not derived from the voltage cap. It rests on the 22 ohm `kWheelPhaseResistanceOhm` estimate, which is not measured. At 0.02 A that estimate gives about 0.44 V, below the 2.0 V voltage cap. The value is unchanged.
 
 A `T` request sets both wheel currents. A 0 A target is not an off state: in estimated-current mode the wheel still follows the back-EMF voltage. A `M` request disables the other wheel's driver.
 
@@ -47,7 +47,7 @@ A `T` request sets both wheel currents. A 0 A target is not an off state: in est
 
 Each request runs until its lease expires, `STOP` is received, or a fault occurs. Faults include lease expiry, invalid or overspeed velocity, balance enabled, and calibration active. Every fault disables both drivers, zeroes both targets, and stays latched.
 
-Overspeed is debounced by time. A wheel counts as over the limit when its shaft velocity magnitude is above 120 rad/s, on either wheel. The fault latches once that condition has lasted 50 ms, measured with the millisecond clock. A sample at or below the limit clears the timer, so a spike shorter than 50 ms is ignored. The −40 and −65 rad/s single-row spikes from the first hardware run were seen one trace row (about 17 ms) apart. Both are below the 120 rad/s cap, so they no longer count as over the limit under the current cap; under the earlier 60 rad/s cap the −65 rad/s spike was over it. Their true duration is not measured. A non-finite velocity still latches `InvalidVelocity` at once. The timer restarts on each new request and clears on `STOP`, `RESET`, and any latched fault.
+Overspeed is debounced by time. A wheel counts as over the limit when its shaft velocity magnitude is above 60 rad/s, on either wheel. The fault latches once that condition has lasted 50 ms, measured with the millisecond clock. A sample at or below the limit clears the timer, so a spike shorter than 50 ms is ignored. The −40 and −65 rad/s single-row spikes from the first hardware run were seen one trace row (about 17 ms) apart. Under the 60 rad/s cap the −65 rad/s spike is over the limit and the −40 rad/s spike is not. Their true duration is not measured. A non-finite velocity still latches `InvalidVelocity` at once. The timer restarts on each new request and clears on `STOP`, `RESET`, and any latched fault.
 
 - A lease that runs out **latches** a `LeaseExpired` fault. Send `T RESET` or `M RESET` before the next request. `STOP` ends a request without a fault.
 - `RESET` clears a latched fault only when balance is off, calibration is inactive, and both wheels are within the overspeed limit. A reset never enables output; a new request is needed.
@@ -119,14 +119,14 @@ Use voltage identification with wheels clear. Repeat the steps for each wheel at
 
 ### Usable voltage ceiling
 
-Increase the voltage in steps while speed still rises. The usable ceiling is the highest voltage before the speed stops rising. It is a candidate for `voltage_limit` in Package 2. It must stay within the 6.0 V cap (`kMaximumVoltageV`) until a reviewed recompile changes the cap.
+Increase the voltage in steps while speed still rises. The usable ceiling is the highest voltage before the speed stops rising. It is a candidate for `voltage_limit` in Package 2. It must stay within the 2.0 V cap (`kMaximumVoltageV`) until a reviewed recompile changes the cap.
 
 How the request is limited, traced through the sketch and the vendored SimpleFOC 2.4.0 source:
 
 - `M` sets the motor target unchanged. In torque mode the target is copied to `current_sp` without a clamp.
-- Voltage torque mode clamps `voltage.q` to `motor.voltage_limit`, which the diagnostic sets to `kMaximumVoltageV`. This is the cap clamp. Any request up to 6.0 V passes it.
+- Voltage torque mode clamps `voltage.q` to `motor.voltage_limit`, which the diagnostic sets to `kMaximumVoltageV`. This is the cap clamp. Any request up to 2.0 V passes it (up to 6.0 V in the temporary sweep build).
 - The SpaceVectorPWM modulator does not clamp `voltage.q`. It centers the phases on `driver.voltage_limit / 2` and removes the zero-sequence offset. The phase voltages then have to fit between 0 and `voltage_power_supply`. A pure sine above `supply / √3` cannot fit, so the duty cycles saturate at 0 or 1 without a flag.
-- At the 8.4 V setting, the largest `voltage.q` the modulator reproduces is about 8.4 / √3 ≈ 4.85 V. A 6.0 V request is therefore clipped to a distorted waveform, not applied as 6.0 V. The duty cycle is computed for 8.4 V whatever the real bus voltage is, so a lower real supply (2S, 7.4 V nominal) scales the applied voltage by about 0.88. The applied amplitude at saturation is then about 4.3 V.
+- At the 8.4 V setting, the largest `voltage.q` the modulator reproduces is about 8.4 / √3 ≈ 4.85 V. A 6.0 V request (possible only in the temporary sweep build) is therefore clipped to a distorted waveform, not applied as 6.0 V. The duty cycle is computed for 8.4 V whatever the real bus voltage is, so a lower real supply (2S, 7.4 V nominal) scales the applied voltage by about 0.88. The applied amplitude at saturation is then about 4.3 V.
 - Speed above the saturation point can still rise, so a plateau search can run past the linear range without a visible limit. Measured speed above about 4.8 V is not a clean KV point.
 
 ## Commissioning record
