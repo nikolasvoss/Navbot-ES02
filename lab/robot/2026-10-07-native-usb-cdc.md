@@ -9,7 +9,7 @@ Native ESP32-S3 USB CDC is unavailable through the existing USB-C connector with
 ## Evidence
 
 - [PCB netlist](../../docs/robot/hardware/netlist.md): `USB1` D+/D− connect to CH340X `U3` UD+/UD−. ESP32 module `U4` GPIO19/20 connect to `RX1`/`TX1` instead.
-- [Touch firmware](../../src/ES-02/OllieFOCdrive/touchscreen.h) uses GPIO20 as UART1 RX and GPIO19 as UART1 TX.
+- Touch firmware (`touchscreen.h`, removed later) uses GPIO20 as UART1 RX and GPIO19 as UART1 TX.
 - [Espressif hardware requirements](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/usb-serial-jtag-console.html#hardware-requirements) assign native USB D− to GPIO19 and D+ to GPIO20.
 - [Existing board observations](../../docs/robot/software/usb-serial-flashing.md): USB-C enumerated as CH340; enabling USB CDC did not expose a native CDC port and routed sketch output away from the observed UART connection.
 
