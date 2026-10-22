@@ -1549,9 +1549,10 @@ void runCalibrationStep(bool imuUpdated) {
 }
 
 void updateWheelVelocities() {
+  // shaftAngle() applies each sensor_direction, so the angles share the sign of positive voltage.q.
   const uint32_t readTimeUs = micros();
   WheelBoundary::WheelValues rawForward;
-  if (!wheelSpeedEstimator.update(sensor1.getAngle(), sensor2.getAngle(), readTimeUs, rawForward)) return;
+  if (!wheelSpeedEstimator.update(motor1.shaftAngle(), motor2.shaftAngle(), readTimeUs, rawForward)) return;
   m1VelocityRadPerSec = rawForward.left;
   m2VelocityRadPerSec = rawForward.right;
   m1FilteredVelocityRadPerSec = m1VelocityFilter(m1VelocityRadPerSec);
