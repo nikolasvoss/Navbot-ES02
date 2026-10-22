@@ -64,9 +64,6 @@ CalibrationStore calibrationStore;
 // Set to 0 to restore the repository's mode-dependent defaults.
 #define DIAGNOSTIC_LIVE_TUNING_DEFAULTS 1
 
-#define ADJUST_PARAMETER \
-  ADJUST_BALANCE_SPEED_YAW_ROLL  // 0: balance, speed, yaw, roll parameter tuning   1: ball pushing
-
 struct PidPreset {
   float p;
   float i;
@@ -81,11 +78,8 @@ struct BalancePidPreset {
 };
 
 // Two-wheel PID gains for remote control mode.
-constexpr BalancePidPreset kPidWithoutTouch{{0.06, 0.0, 0.0, 2}, {0.045, 0.005, 0, 50}, {5, 200, 0.11, 0.1}};
-constexpr BalancePidPreset kPidWithTouch{{0.08, 1.5, 0.005, 2}, {0.045, 0.005, 0, 50}, {5, 200, 0.11, 0.1}};
+constexpr BalancePidPreset kBalancePid{{0.08, 1.5, 0.005, 2}, {0.045, 0.005, 0, 50}, {5, 200, 0.11, 0.1}};
 constexpr PidPreset kYawPid{4, 0, 0, 0};
-constexpr PidPreset kTouchXPid{0.2, 0, 0.04, 0};
-constexpr PidPreset kTouchYPid{0.2, 170, 0.08, 0};
 
 #define SBUS_CHANNEL_MAX 1792
 #define SBUS_CHANNEL_MIN 192
@@ -210,8 +204,7 @@ void zeroBiasServo3(char *cmd) { command.scalar(&servoTrims.servo3Degrees, cmd);
 void zeroBiasServo4(char *cmd) { command.scalar(&servoTrims.servo4Degrees, cmd); }
 
 bool isPidGainsModeEnabled(int mode) {
-  return (mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH ||
-          mode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH);
+  return mode == REMOTE_CONTROL_PID_GAINS_MODE_ON;
 }
 
 //  Create ServoControl object
@@ -238,17 +231,15 @@ float calibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Ca
 
 float pidParameterTuning = DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? 1 : 0;  // 0: auto gains  1: live tuning
 
-PIDController anglePidSettings(kPidWithTouch.angle.p, kPidWithTouch.angle.i, kPidWithTouch.angle.d, 0,
-                               kPidWithTouch.angle.limit);
-PIDController speedPidSettings(kPidWithTouch.speed.p, kPidWithTouch.speed.i, kPidWithTouch.speed.d, 0,
-                               kPidWithTouch.speed.limit);
+PIDController anglePidSettings(kBalancePid.angle.p, kBalancePid.angle.i, kBalancePid.angle.d, 0,
+                               kBalancePid.angle.limit);
+PIDController speedPidSettings(kBalancePid.speed.p, kBalancePid.speed.i, kBalancePid.speed.d, 0,
+                               kBalancePid.speed.limit);
 PIDController yawPidSettings(kYawPid.p, kYawPid.i, kYawPid.d, 0, kYawPid.limit);
-PIDController rollPidSettings(DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.p : 0.06,
-                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.i : 1.5,
-                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.d : 0.003, 0,
-                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kPidWithTouch.roll.limit : 2);
-PIDController touchXPidSettings(kTouchXPid.p, kTouchXPid.i, kTouchXPid.d, 0, kTouchXPid.limit);
-PIDController touchYPidSettings(kTouchYPid.p, kTouchYPid.i, kTouchYPid.d, 0, kTouchYPid.limit);
+PIDController rollPidSettings(DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kBalancePid.roll.p : 0.06,
+                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kBalancePid.roll.i : 1.5,
+                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kBalancePid.roll.d : 0.003, 0,
+                              DIAGNOSTIC_LIVE_TUNING_DEFAULTS ? kBalancePid.roll.limit : 2);
 
 float controlTorqueCompensation = 0;  // Control torque compensation
 float wheelSpeedFeedbackGain = 0.0f;
@@ -273,7 +264,6 @@ void setWheelSpeedFeedbackGain(char *cmd) { command.scalar(&wheelSpeedFeedbackGa
 
 void setDriveTiltReductionGain(char *cmd) { command.scalar(&driveTiltReductionGain, cmd); }
 
-void setPidParameterTuning(char *cmd) { command.scalar(&pidParameterTuning, cmd); }
 void setMahonyKp(char *cmd) {
   float value = 0.0f;
   imu::Settings candidate = imu::settings();
@@ -300,20 +290,12 @@ void selectDebugLog(char *cmd) {
   RobotLogCapture::setProfileForSelector(static_cast<int>(debugLogSelector));
 }
 
-#if ADJUST_PARAMETER == ADJUST_BALANCE_SPEED_YAW_ROLL
 // Cb prefix: Commander callback.
 void setAnglePid(char *cmd) { command.pid(&anglePidSettings, cmd); }
 void setSpeedPid(char *cmd) { command.pid(&speedPidSettings, cmd); }
 void setYawPid(char *cmd) { command.pid(&yawPidSettings, cmd); }
 
 void setRollPid(char *cmd) { command.pid(&rollPidSettings, cmd); }
-
-#elif ADJUST_PARAMETER == ADJUST_BALL_PUSHING
-
-void setTouchXPid(char *cmd) { command.pid(&touchXPidSettings, cmd); }
-
-void setTouchYPid(char *cmd) { command.pid(&touchYPidSettings, cmd); }
-#endif
 
 // Wheel Motors and Drivers
 // m1 is the left wheel and m2 the right wheel; speeds are forward positive (see WheelBoundary.h).
@@ -673,17 +655,11 @@ const SerialCommandEntry commandEntries[] = {
     {'E', selectCalibration, "my CalibrationSelect"},
     {'F', setBodyCommandFilterCutoffHz, "my CutoffFreq"},
     {'J', setBodyCommandFilteringEnabled, "my EnableDFilter"},
-#if ADJUST_PARAMETER == ADJUST_BALANCE_SPEED_YAW_ROLL
     {'P', setAnglePid, "anglePidSettings"},
     {'S', setSpeedPid, "speedPidSettings"},
     {'Y', setYawPid, "yawPidSettings"},
     {'R', setRollPid, "rollPidSettings"},
     {'O', setTargetBodyHeight, "my Target_Body_Height"},
-#elif ADJUST_PARAMETER == ADJUST_BALL_PUSHING
-    {'L', setTouchXPid, "touchXPidSettings"},
-    {'N', setTouchYPid, "touchYPidSettings"},
-    {'G', setControlTorqueCompensation, "my ControlTorqueCompensation"},
-#endif
     {'V', setWheelSpeedFeedbackGain, "wheel speed feedback gain"},
     {'W', setDriveTiltReductionGain, "drive tilt reduction gain"},
 };
@@ -807,7 +783,8 @@ float sbusBodyHeightM(long raw, float maxHeightM) {
 void applyRcChannels(const int16_t *ch) {
   movementSpeed = mapf(ch[2], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -15, 15);
   bodyTurn = -mapf(ch[3], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, -11, 11);
-  pidGainsMode = map(ch[4], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
+  pidGainsMode = min(static_cast<int>(map(ch[4], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2)),
+                     REMOTE_CONTROL_PID_GAINS_MODE_ON);
   postureOrMarkMode = map(ch[5], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
   rollMode = map(ch[6], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 1);
   attitudeMode = map(ch[7], SBUS_CHANNEL_MIN, SBUS_CHANNEL_MAX, 0, 2);
@@ -978,25 +955,17 @@ void applyBalancePidPreset(const BalancePidPreset &preset) {
 /**
  * @brief Sets the PID gains for the main controllers based on the S.BUS switch `pidGainsMode`.
  *
- * This allows for switching between two sets of PID parameters on the fly using the
- * remote controller. One set is tuned for operation without the touchscreen, and
- * the other for operation with the touchscreen, which may change the robot's
- * weight distribution and dynamics.
+ * Applies the balance gains while the remote controller's PID switch is on.
  */
 void applyPidParameters(void) {
 #if DIAGNOSTIC_LIVE_TUNING_DEFAULTS
-  const int gainMode = REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH;
+  const int gainMode = REMOTE_CONTROL_PID_GAINS_MODE_ON;
 #else
   const int gainMode = pidGainsMode;
 #endif
-  if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH)
-    applyBalancePidPreset(kPidWithoutTouch);
-  else if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH)
-    applyBalancePidPreset(kPidWithTouch);
+  if (gainMode == REMOTE_CONTROL_PID_GAINS_MODE_ON) applyBalancePidPreset(kBalancePid);
 
   applyPidPreset(yawPidSettings, kYawPid);
-  applyPidPreset(touchXPidSettings, kTouchXPid);
-  applyPidPreset(touchYPidSettings, kTouchYPid);
 }
 
 

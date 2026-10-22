@@ -25,7 +25,7 @@ BAUD_RATE = 576_000
 CHANNEL_PATTERN = re.compile(r"\bch:(\d+)")
 INTERVAL_PATTERN = re.compile(r"\bsbus_dt_ms:(\d+)")
 SWITCH_NAMES = {
-    5: ("pid_control", ("off", "on_without_touch", "on_with_touch")),
+    5: ("pid_control", ("off", "on")),
     6: ("posture_or_mark", ("posture", "mark")),
     7: ("roll_control", ("manual", "auto")),
     8: ("attitude", ("default", "pitching_adjust", "ball_balance")),
