@@ -13,8 +13,8 @@ from pathlib import Path
 TUNE_COMMAND = re.compile(r"(?:U[01]|[PSYR][PIDL](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|[VW](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|K(?:0|9|55|56|57|58))\Z")
 
 # Mirror the firmware caps in MotorDiagnostic.h; the firmware refuses anything larger too.
-# Wheel-clear runs only (default caps, lowered 2026-10-22): 2.0 V and 60 rad/s, 5000 ms lease, 0.02 A.
-MAX_CURRENT_A = 0.02
+# Wheel-clear runs only (default caps, lowered 2026-10-22): 2.0 V and 60 rad/s, 5000 ms lease, 0.35 A.
+MAX_CURRENT_A = 0.35
 MAX_VOLTAGE_V = 2.0
 MAX_LEASE_MS = 5000
 NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"

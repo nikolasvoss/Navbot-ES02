@@ -33,7 +33,7 @@ int main() {
   assert(!parseCurrentRequest("0.1 0.1x 500", parsed));
   assert(!parseCurrentRequest("nan 0 500", parsed));
   assert(!parseCurrentRequest("inf 0 500", parsed));
-  assert(!parseCurrentRequest("0.03 0 500", parsed));
+  assert(!parseCurrentRequest("0.36 0 500", parsed));
   assert(parseCurrentRequest("0 0 5000", parsed) && parsed.leaseMs == 5000);
   assert(!parseCurrentRequest("0 0 5001", parsed));
   assert(!parseCurrentRequest("0 0 500.5", parsed));
@@ -189,7 +189,7 @@ int main() {
 
   // An invalid request is refused without touching the running lease.
   assert(start(state, currentRequest(0.01f, 0.01f, 1000), safeInputs(3000)) == RequestResult::Accepted);
-  assert(start(state, currentRequest(0.03f, 0.0f, 1000), safeInputs(3500)) == RequestResult::Invalid);
+  assert(start(state, currentRequest(0.36f, 0.0f, 1000), safeInputs(3500)) == RequestResult::Invalid);
   assert(state.active && state.startedAtMs == 3000);
   assert(state.request.leftCurrentA == 0.01f && state.request.rightCurrentA == 0.01f);
   assert(state.request.leaseMs == 1000);

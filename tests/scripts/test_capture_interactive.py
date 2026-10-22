@@ -11,7 +11,7 @@ from capture_balance_trace import (MAX_CURRENT_A, MAX_LEASE_MS, MAX_VOLTAGE_V, i
 
 class InteractiveWhitelistTest(unittest.TestCase):
     def test_firmware_caps_are_mirrored(self):
-        self.assertEqual(MAX_CURRENT_A, 0.02)
+        self.assertEqual(MAX_CURRENT_A, 0.35)
         self.assertEqual(MAX_VOLTAGE_V, 2.0)
         self.assertEqual(MAX_LEASE_MS, 5000)
 
@@ -34,7 +34,7 @@ class InteractiveWhitelistTest(unittest.TestCase):
                 self.assertEqual(interactive_command(command), command.strip().upper())
 
     def test_current_over_cap_is_rejected(self):
-        for command in ("T 0.03 0 500", "T 0 -0.021 500"):
+        for command in ("T 0.36 0 500", "T 0 -0.351 500"):
             with self.subTest(command=command):
                 self.assertIsNone(interactive_command(command))
 
