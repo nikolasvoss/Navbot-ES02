@@ -30,9 +30,12 @@ REPORT_FIELDS = {
         "angle_out_i", "angle_out_d", "body_x", "motor1_target", "motor2_target",
     ),
     "DRIVE": (
-        "voltage_min_raw_v", "voltage_filtered_v", "speed_error", "speed_output",
+        "voltage_min_raw_v", "voltage_filtered_v", "imu_dt_s", "imu_long_gap_count", "imu_max_interval_us",
+        "control_execution_us", "max_loop_entry_interval_us", "speed_error", "speed_output",
         "body_x", "body_pitching_f", "angle_output", "angle_out_p", "angle_out_i",
-        "angle_out_d", "motor1_target", "motor2_target",
+        "angle_out_d", "motor1_target", "motor2_target", "motor1_current_sp", "motor2_current_sp",
+        "motor1_voltage_q", "motor2_voltage_q", "motor1_shaft_velocity", "motor2_shaft_velocity",
+        "battery_raw_instant_v", "battery_filtered_instant_v",
     ),
 }
 
@@ -107,6 +110,18 @@ def fmt(value):
     return f"{value:.3f}".rstrip("0").rstrip(".")
 
 
+def missing_sequence_count(data, name):
+    sequence = [int(row[name]) for row in data]
+    return sum(max(0, current - previous - 1) for previous, current in zip(sequence, sequence[1:]))
+
+
+def imu_sample_rate(data):
+    """IMU samples per second between the first and last DRIVE row, or None if not measurable."""
+    elapsed_s = (data[-1]["time_ms"] - data[0]["time_ms"]) / 1000
+    advanced = int(data[-1]["imu_sequence"]) - int(data[0]["imu_sequence"])
+    return advanced / elapsed_s if elapsed_s > 0 and advanced > 0 else None
+
+
 def summarize(path):
     kind, header, rows, malformed = read_trace(path)
     actual_kinds = Counter(row_kind for row_kind, _ in rows)
@@ -128,9 +143,13 @@ def summarize(path):
                      + (f"; Medianabstand zwischen gültigen Datensätzen: **{statistics.median(intervals):.1f} ms**"
                         if intervals else ""))
     if header and "sequence" in header:
-        sequence = [int(row["sequence"]) for row in data]
-        missing = sum(max(0, current - previous - 1) for previous, current in zip(sequence, sequence[1:]))
+        missing = missing_sequence_count(data, "sequence")
         lines.append(f"- Sequenzlücken: **{missing}**; Gerätezeitstempel: `time_ms`, nicht PC-Empfangszeit")
+    if header and "imu_sequence" in header:
+        rate = imu_sample_rate(data)
+        lines.append("- IMU-Abtastrate aus `imu_sequence`: **"
+                     + (f"{rate:.1f} Hz" if rate is not None else "—")
+                     + "**; Zeilen überspringen IMU-Samples, daher keine Lückenzählung")
     if header and "logger_dropped" in header:
         dropped = max(int(row["logger_dropped"]) for row in data)
         write_failures = max(int(row["uart_write_failures"]) for row in data)

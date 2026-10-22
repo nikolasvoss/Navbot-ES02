@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture K55/K56/K57 traces with CH340 DTR/RTS inactive."""
+"""Capture K55/K56/K57/K58 traces with CH340 DTR/RTS inactive."""
 
 import argparse
 import re
@@ -9,10 +9,75 @@ import sys
 import time
 from pathlib import Path
 
-import serial
-
 
 TUNE_COMMAND = re.compile(r"(?:U[01]|[PSYR][PIDL](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|[VW](?:[-+]?(?:\d+(?:\.\d*)?|\.\d+))?|K(?:0|9|55|56|57|58))\Z")
+
+# Mirror the firmware caps in MotorDiagnostic.h; the firmware refuses anything larger too.
+MAX_CURRENT_A = 0.02
+MAX_VOLTAGE_V = 0.5
+MAX_LEASE_MS = 2000
+NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
+CURRENT_COMMAND = re.compile(rf"T ({NUMBER}) ({NUMBER}) (\d+)")
+VOLTAGE_COMMAND = re.compile(rf"M ([12]) ({NUMBER}) (\d+)")
+MOTOR_STOP_OR_RESET = re.compile(r"[TM] (?:STOP|RESET)")
+
+# Field order of the firmware DRIVE row (LogFormat.cpp) after the tag. The
+# analysis scripts read this header; they reject rows whose field count differs.
+DRIVE_COLUMNS = (
+    "time_ms", "ch5_mode", "voltage_min_raw_v", "voltage_filtered_v",
+    "imu_sequence", "imu_read_time_us", "imu_dt_s", "imu_accepted_samples",
+    "imu_long_gap_count", "imu_max_interval_us",
+    "control_start_us", "control_execution_us", "max_loop_entry_interval_us",
+    "ch3_target", "effective_speed_target", "motor1_velocity_f", "motor2_velocity_f", "tick_dt_s",
+    "speed_error", "speed_out_p", "speed_out_i", "speed_out_d", "speed_output",
+    "speed_body_x_raw", "body_x", "body_pitching_f",
+    "roll_ok", "angle_output", "angle_out_p", "angle_out_i", "angle_out_d", "wheel_speed_feedback",
+    "motor1_target", "motor2_target",
+    "motor1_current_sp", "motor2_current_sp", "motor1_voltage_q", "motor2_voltage_q",
+    "motor1_shaft_velocity", "motor2_shaft_velocity",
+    "battery_raw_instant_v", "battery_filtered_instant_v",
+    "top_ball_x", "touch_x", "body_pitching", "max_servo_range_deg",
+    "sequence", "logger_dropped", "uart_write_failures",
+)
+TRACE_HEADERS = {
+    55: "TRACE,time_ms,ch5_mode,ch6_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,pitch_deg,servo1_cmd_deg,servo2_cmd_deg,servo3_cmd_deg,servo4_cmd_deg,servo1_range_deg,servo2_range_deg,servo3_range_deg,servo4_range_deg,motor1_target,motor2_target,sequence,logger_dropped,uart_write_failures",
+    56: "CTRL,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,gyro_z_rad_s,body_turn_command,angle_error_deg,angle_output,yaw_error,yaw_output,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures",
+    57: "BAL,time_ms,ch5_mode,voltage_min_raw_v,roll_deg,angle_error_deg,angle_out_p,angle_out_i,angle_out_d,body_x,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures",
+    58: "DRIVE," + ",".join(DRIVE_COLUMNS),
+}
+
+
+def motion_command_allowed(command):
+    """Accept only the bounded T/M grammar of the firmware diagnostic commands."""
+    if MOTOR_STOP_OR_RESET.fullmatch(command):
+        return True
+    match = CURRENT_COMMAND.fullmatch(command)
+    if match:
+        left, right, lease = float(match[1]), float(match[2]), int(match[3])
+        return abs(left) <= MAX_CURRENT_A and abs(right) <= MAX_CURRENT_A and 1 <= lease <= MAX_LEASE_MS
+    match = VOLTAGE_COMMAND.fullmatch(command)
+    if match:
+        voltage, lease = float(match[2]), int(match[3])
+        return abs(voltage) <= MAX_VOLTAGE_V and 1 <= lease <= MAX_LEASE_MS
+    return False
+
+
+def interactive_command(text):
+    """Return the command to send for one line of stdin, or None if it is not whitelisted."""
+    command = text.strip().upper()
+    if TUNE_COMMAND.fullmatch(command) or motion_command_allowed(command):
+        return command
+    return None
+
+
+def drain(connection, log, seconds):
+    """Log firmware replies for a short time after K0; result text is printed only in Idle."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        line = connection.readline().decode("ascii", errors="replace").rstrip()
+        if line:
+            log.write(line + "\n")
+            print(line, flush=True)
 
 
 def main():
@@ -31,10 +96,13 @@ def main():
     parser.add_argument("--trace-mode", type=int, choices=(55, 56, 57, 58), default=55,
                         help="55: actuator trace (default); 56: angle/yaw; 57: balance P/I/D; 58: drive-stop trace")
     parser.add_argument("--interactive", action="store_true",
-                        help="send U/P/S/Y/R/V/W/K tuning commands from stdin while recording; prints every tenth trace row")
+                        help="send U/P/S/Y/R/V/W/K tuning commands and bounded T/M motor commands from stdin "
+                             "while recording; prints every tenth trace row")
     args = parser.parse_args()
     if args.seconds <= 0:
         parser.error("--seconds must be positive")
+
+    import serial  # Deferred so --help and the command whitelist work without pyserial.
 
     connection = serial.Serial(baudrate=args.baud_rate, timeout=0.2)
     connection.port = args.port
@@ -43,14 +111,7 @@ def main():
 
     try:
         with connection, args.output.open("w", encoding="utf-8") as log:
-            if args.trace_mode == 55:
-                log.write("# TRACE,time_ms,ch5_mode,ch6_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,pitch_deg,servo1_cmd_deg,servo2_cmd_deg,servo3_cmd_deg,servo4_cmd_deg,servo1_range_deg,servo2_range_deg,servo3_range_deg,servo4_range_deg,motor1_target,motor2_target,sequence,logger_dropped,uart_write_failures\n")
-            elif args.trace_mode == 56:
-                log.write("# CTRL,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,gyro_z_rad_s,body_turn_command,angle_error_deg,angle_output,yaw_error,yaw_output,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures\n")
-            elif args.trace_mode == 57:
-                log.write("# BAL,time_ms,ch5_mode,voltage_min_raw_v,roll_deg,angle_error_deg,angle_out_p,angle_out_i,angle_out_d,body_x,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures\n")
-            else:
-                log.write("# DRIVE,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,ch3_target,effective_speed_target,motor1_velocity_f,motor2_velocity_f,tick_dt_s,speed_error,speed_out_p,speed_out_i,speed_out_d,speed_output,speed_body_x_raw,body_x,body_pitching_f,roll_ok,angle_output,angle_out_p,angle_out_i,angle_out_d,wheel_speed_feedback,motor1_target,motor2_target,top_ball_x,touch_x,body_pitching,max_servo_range_deg,sequence,logger_dropped,uart_write_failures\n")
+            log.write("# " + TRACE_HEADERS[args.trace_mode] + "\n")
             print(f"Waiting for firmware startup on {args.port}...", flush=True)
             startup_deadline = time.monotonic() + 12
             while time.monotonic() < startup_deadline:
@@ -66,23 +127,24 @@ def main():
             else:
                 print(f"Recording for {args.seconds:g} s. Switch CH5 once while the robot is supported.", flush=True)
             if args.interactive:
-                print("Type tuning commands and press Enter (for example U1, YP10, V0.2, V, K0).", flush=True)
+                print("Type tuning commands and press Enter (for example U1, YP10, V0.2, V, K0). "
+                      "Motor commands (T/M) need balance off.", flush=True)
             deadline = time.monotonic() + args.seconds
             trace_count = 0
             input_open = True
             while time.monotonic() < deadline:
                 if args.interactive and input_open and select.select([sys.stdin], [], [], 0)[0]:
-                    command = sys.stdin.readline()
-                    if not command:
+                    raw = sys.stdin.readline()
+                    if not raw:
                         input_open = False
                     else:
-                        command = command.strip().upper()
-                        if TUNE_COMMAND.fullmatch(command):
+                        command = interactive_command(raw)
+                        if command:
                             connection.write((command + "\n").encode("ascii"))
                             log.write("# CMD " + command + "\n")
                             print("Sent " + command, flush=True)
-                        elif command:
-                            print("Ignored unsupported command: " + command, flush=True)
+                        elif raw.strip():
+                            print("Ignored unsupported command: " + raw.strip().upper(), flush=True)
                 line = connection.readline().decode("ascii", errors="replace").rstrip()
                 if line:
                     log.write(line + "\n")
@@ -93,6 +155,7 @@ def main():
                     if args.interactive or line.startswith(("TRACE,", "CTRL,", "BAL,", "DRIVE,")) or "Voltage:" in line or "Brownout" in line or "system run." in line:
                         print(line, flush=True)
             connection.write(b"K0\n")
+            drain(connection, log, 2.0)
             print(f"Saved {args.output.resolve()}", flush=True)
             print("Summarize this run with: python3 scripts/summarize_balance_trace.py "
                   + shlex.quote(str(args.output)), flush=True)

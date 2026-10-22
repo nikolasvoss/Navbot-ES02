@@ -10,13 +10,16 @@ import statistics
 import sys
 from pathlib import Path
 
-from summarize_balance_trace import read_trace
+from summarize_balance_trace import imu_sample_rate, read_trace
 
 
 REQUIRED = {
     "time_ms", "ch5_mode", "ch3_target", "motor1_velocity_f",
     "motor2_velocity_f", "roll_ok", "motor1_target", "motor2_target",
-    "voltage_min_raw_v",
+    "voltage_min_raw_v", "imu_sequence", "imu_dt_s", "imu_accepted_samples",
+    "imu_long_gap_count", "imu_max_interval_us", "control_execution_us",
+    "max_loop_entry_interval_us", "motor1_current_sp", "motor2_current_sp",
+    "motor1_voltage_q", "motor2_voltage_q", "battery_raw_instant_v",
 }
 MIN_ROWS = 20
 MAX_BAD_FRACTION = 0.02
@@ -90,6 +93,7 @@ def analyze(path):
     angle_i = [abs(row["angle_out_i"]) for row in active if "angle_out_i" in row]
     motor_targets = [abs(row[field]) for row in active
                      for field in ("motor1_target", "motor2_target")]
+    imu_dts = [row["imu_dt_s"] for row in rows if row["imu_dt_s"] > 0]
     result = {
         "file": str(path),
         "valid_rows": len(rows),
@@ -106,6 +110,18 @@ def analyze(path):
         "angle_i_abs_peak": rounded(max(angle_i)) if angle_i else None,
         "motor_target_abs_peak": rounded(max(motor_targets)) if motor_targets else None,
         "voltage_raw_min_v": rounded(min(row["voltage_min_raw_v"] for row in active)) if active else None,
+        # IMU counters are cumulative since boot; per-row loop interval resets on each row.
+        "imu_rate_hz": rounded(imu_sample_rate(rows), 1),
+        "imu_dt_median_s": rounded(statistics.median(imu_dts), 6) if imu_dts else None,
+        "imu_long_gaps": int(rows[-1]["imu_long_gap_count"] - rows[0]["imu_long_gap_count"]),
+        "imu_max_interval_us": int(rows[-1]["imu_max_interval_us"]),
+        "control_execution_us_peak": int(max(row["control_execution_us"] for row in rows)),
+        "loop_entry_interval_us_peak": int(max(row["max_loop_entry_interval_us"] for row in rows)),
+        "motor_current_sp_abs_peak": rounded(max(abs(row[name]) for row in rows
+                                                 for name in ("motor1_current_sp", "motor2_current_sp"))),
+        "motor_voltage_q_abs_peak": rounded(max(abs(row[name]) for row in rows
+                                                for name in ("motor1_voltage_q", "motor2_voltage_q"))),
+        "battery_raw_instant_min_v": rounded(min(row["battery_raw_instant_v"] for row in rows)),
     }
     result["stop_available"] = bool(result["capture_ok"] and releases
                                     and first_active is not None
@@ -148,6 +164,20 @@ def markdown(results):
         if not issues:
             issues.append("Stoppereignis vorhanden; für einen Vergleich Impulsstärke und -dauer beachten")
         lines.append(f"- `{run['file']}`: " + "; ".join(issues) + ".")
+    lines.extend(["", "## Zeit- und Motorgrößen", "",
+                  "| Log | IMU-Rate | IMU-dt Median | IMU-Lücken | IMU-Intervall max. (seit Start) "
+                  "| Regelzeit max. | Schleifenintervall max. | Strom-Soll max. | Spannung q max. "
+                  "| Bus roh min. (momentan) |",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"])
+    for run in results:
+        lines.append(f"| `{run['file']}` | {fmt(run['imu_rate_hz'])} Hz | {fmt(run['imu_dt_median_s'])} s "
+                     f"| {run['imu_long_gaps']} | {run['imu_max_interval_us']} µs "
+                     f"| {run['control_execution_us_peak']} µs | {run['loop_entry_interval_us_peak']} µs "
+                     f"| {fmt(run['motor_current_sp_abs_peak'])} A | {fmt(run['motor_voltage_q_abs_peak'])} V "
+                     f"| {fmt(run['battery_raw_instant_min_v'])} V |")
+    lines.extend(["", "Strom-Soll und Spannung q sind Motorbetrag-Maxima je Rad (`motor1`/`motor2`, motor-lokales Vorzeichen). "
+                  "IMU-Lücken zählt den Zuwachs seit Capture-Start; das Intervall-Maximum ist seit Firmware-Start kumulativ. "
+                  "Regelzeit und Schleifenintervall gelten je Zeile; ihr Maximum ist über alle Zeilen gebildet.", ""])
     if any(run["releases"] for run in results):
         lines.extend(["", "## Einzelne Stopps", "",
                       "| Log | Richtung | CH3 max. | Impulsdauer | Tempo vor Loslassen | Gegenlauf max. |",
