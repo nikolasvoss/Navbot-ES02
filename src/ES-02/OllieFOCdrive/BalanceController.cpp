@@ -51,7 +51,58 @@ bool armingConditionsMet(const Measurements &measurements, const Request &reques
          std::fabs(request.speedMps) <= config.armingRequestSpeedMps &&
          std::fabs(request.yawRateRadPerSec) <= config.armingRequestYawRadPerSec;
 }
+
+// Demand caps must be usable: a zero brake cap would hold the last speed when the request times out,
+// and a negative or NaN rate would move speed the wrong way.
+bool demandConfigValid(const Config &config) {
+  return std::isfinite(config.speedCapMps) && config.speedCapMps >= 0.0f &&
+         std::isfinite(config.accelCapMps2) && config.accelCapMps2 > 0.0f &&
+         std::isfinite(config.brakeCapMps2) && config.brakeCapMps2 > 0.0f &&
+         std::isfinite(config.yawRateCapRadPerSec) && config.yawRateCapRadPerSec >= 0.0f;
+}
+
+float nanToZero(float value) { return std::isnan(value) ? 0.0f : value; }
+
+// Moves speed toward target within one step. Growing the magnitude uses accelRate; shrinking it uses
+// brakeRate. A reversal brakes to zero and spends the rest of the step accelerating the other way.
+float shapeSpeed(float previous, float target, float accelRate, float brakeRate, float dtSec) {
+  float speed = previous;
+  float timeLeftSec = dtSec;
+  const bool shrinking = (speed > 0.0f && target < speed) || (speed < 0.0f && target > speed);
+  if (shrinking) {
+    // Brake to the target when it lies on this side of zero, otherwise to zero.
+    const float goal = speed > 0.0f ? std::max(target, 0.0f) : std::min(target, 0.0f);
+    if (brakeRate <= 0.0f) {
+      return speed;
+    }
+    const float brakeTimeSec = std::fabs(speed - goal) / brakeRate;
+    if (brakeTimeSec > timeLeftSec) {
+      return speed + (goal > speed ? brakeRate : -brakeRate) * timeLeftSec;
+    }
+    speed = goal;
+    timeLeftSec -= brakeTimeSec;
+  }
+  const float stepSpeed = std::min(std::fabs(target - speed), accelRate * timeLeftSec);
+  return speed + (target > speed ? stepSpeed : -stepSpeed);
+}
 }  // namespace
+
+Demand BalanceController::shapeDemand(Demand previous, Demand requested, float demandScale, float dtSec,
+                                      const Config &config) {
+  const float scale = std::isnan(demandScale) ? 0.0f : std::clamp(demandScale, 0.0f, 1.0f);
+  const float speedCapMps = config.speedCapMps * scale;
+  const float yawCapRadPerSec = config.yawRateCapRadPerSec * scale;
+
+  const float speedTarget = std::max(-speedCapMps, std::min(speedCapMps, nanToZero(requested.speedMps)));
+  const float yawRate =
+      std::max(-yawCapRadPerSec, std::min(yawCapRadPerSec, nanToZero(requested.yawRateRadPerSec)));
+
+  Demand shaped;
+  shaped.speedMps = shapeSpeed(previous.speedMps, speedTarget, config.accelCapMps2 * scale,
+                               config.brakeCapMps2, dtSec);
+  shaped.yawRateRadPerSec = yawRate;
+  return shaped;
+}
 
 Output BalanceController::update(const Measurements &measurements, const Request &request, const Config &config,
                                  uint32_t nowUs) {
@@ -82,7 +133,7 @@ Output BalanceController::update(const Measurements &measurements, const Request
         break;
       case State::Run:
       case State::Commissioning:  // Run <-> Commissioning transitions arrive in package 4 step 7.
-        checkRunning(measurements, config, nowUs);
+        checkRunning(measurements, request, config, nowUs);
         break;
       case State::Fault:  // Only the switch leaves Fault, and it leads to Disabled, never to Run.
         break;
@@ -91,6 +142,7 @@ Output BalanceController::update(const Measurements &measurements, const Request
 
   if (state_ != State::Run && state_ != State::Commissioning) {
     leftMinA_ = leftMaxA_ = rightMinA_ = rightMaxA_ = 0.0f;
+    shapedDemand_ = Demand{};
   }
 
   Output output;
@@ -101,6 +153,9 @@ Output BalanceController::update(const Measurements &measurements, const Request
   output.diag.leftMaxA = leftMaxA_;
   output.diag.rightMinA = rightMinA_;
   output.diag.rightMaxA = rightMaxA_;
+  output.diag.demandScale = demandScale_;
+  output.diag.shapedSpeedMps = shapedDemand_.speedMps;
+  output.diag.shapedYawRateRadPerSec = shapedDemand_.yawRateRadPerSec;
   return output;
 }
 
@@ -108,6 +163,7 @@ void BalanceController::resetRunTracking() {
   imuTimestampValid_ = false;
   fallBeyond_ = false;
   overspeedActive_ = false;
+  shapedDemand_ = Demand{};
 }
 
 void BalanceController::latchFault(FaultReason reason) {
@@ -116,7 +172,8 @@ void BalanceController::latchFault(FaultReason reason) {
   leftMinA_ = leftMaxA_ = rightMinA_ = rightMaxA_ = 0.0f;
 }
 
-void BalanceController::checkRunning(const Measurements &measurements, const Config &config, uint32_t nowUs) {
+void BalanceController::checkRunning(const Measurements &measurements, const Request &request,
+                                    const Config &config, uint32_t nowUs) {
   // Freshness is checked on every tick, so a stalled IMU goes stale even though its sequence does not change.
   if (isStale(nowUs, measurements.imuReadTimeUs, config.imuMaxAgeUs)) {
     latchFault(FaultReason::StaleImu);
@@ -148,6 +205,14 @@ void BalanceController::checkRunning(const Measurements &measurements, const Con
         return;
       }
       dtSec_ = static_cast<float>(dtUs) * 1e-6f;
+
+      // A stale or invalid motion request is treated as a zero request and ramps down at the brake cap.
+      Demand requested;
+      if (request.sourceValid && !isStale(nowUs, request.receivedTimeUs, config.requestMaxAgeUs)) {
+        requested.speedMps = request.speedMps;
+        requested.yawRateRadPerSec = request.yawRateRadPerSec;
+      }
+      shapedDemand_ = shapeDemand(shapedDemand_, requested, demandScale_, dtSec_, config);
     }
     imuTimestampValid_ = true;
     lastImuReadTimeUs_ = measurements.imuReadTimeUs;
@@ -180,6 +245,10 @@ void BalanceController::checkRunning(const Measurements &measurements, const Con
 }
 
 void BalanceController::checkEnvelopes(const Measurements &measurements, const Config &config) {
+  if (!demandConfigValid(config)) {
+    latchFault(FaultReason::InvalidConfig);
+    return;
+  }
   const float usableV = (measurements.busVoltageV - config.sagMarginV) * config.modulationFactor;
   const float vMaxV = std::min(config.voltageLimitV, usableV);
   // Written so that a NaN input fails the check.

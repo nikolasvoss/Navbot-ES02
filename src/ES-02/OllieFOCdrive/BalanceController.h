@@ -41,6 +41,7 @@ enum class FaultReason : uint8_t {
   Fall,
   Overspeed,
   InvalidEnvelope,
+  InvalidConfig,
 };
 
 struct Diagnostics {
@@ -65,6 +66,8 @@ struct Diagnostics {
   float leftMaxA = 0.0f;
   float rightMinA = 0.0f;
   float rightMaxA = 0.0f;
+  float shapedSpeedMps = 0.0f;
+  float shapedYawRateRadPerSec = 0.0f;
 };
 
 struct Output {
@@ -114,20 +117,39 @@ struct Config {
   float busMinV = 0.0f;             // uncommissioned, commissioned model range
   float busMaxV = 0.0f;             // uncommissioned, commissioned model range
 
+  // Demand shaping. Speed cap, yaw cap and acceleration are scaled by demandScale; the brake ramp is not.
+  float speedCapMps = 0.0f;          // uncommissioned
+  float accelCapMps2 = 0.0f;         // uncommissioned
+  float brakeCapMps2 = 0.0f;         // uncommissioned, rate of speed magnitude decrease
+  float yawRateCapRadPerSec = 0.0f;  // uncommissioned
+  uint32_t requestMaxAgeUs = 0;      // uncommissioned, older motion requests count as zero
+
   // Inputs supplied by the sketch from the stored trim record and pose check, not commissioning constants.
   bool trimValidated = false;
   float storedTrimDeg = 0.0f;
   bool fixedPoseReachable = false;
 };
 
+// Requested motion after shaping. Speed is forward positive.
+struct Demand {
+  float speedMps = 0.0f;
+  float yawRateRadPerSec = 0.0f;
+};
+
 class BalanceController {
  public:
+  // Ramps the requested speed toward the capped target and clamps the requested yaw rate. A NaN
+  // request counts as zero, and a NaN demandScale counts as zero.
+  static Demand shapeDemand(Demand previous, Demand requested, float demandScale, float dtSec,
+                            const Config &config);
+
   Output update(const Measurements &measurements, const Request &request, const Config &config,
                 uint32_t nowUs);
 
  private:
   void resetRunTracking();
-  void checkRunning(const Measurements &measurements, const Config &config, uint32_t nowUs);
+  void checkRunning(const Measurements &measurements, const Request &request, const Config &config,
+                    uint32_t nowUs);
   void latchFault(FaultReason reason);
   void checkEnvelopes(const Measurements &measurements, const Config &config);
 
@@ -149,6 +171,11 @@ class BalanceController {
   float leftMaxA_ = 0.0f;
   float rightMinA_ = 0.0f;
   float rightMaxA_ = 0.0f;
+
+  // Scales both demand caps. Stays 1.0 until the reserve logic sets it.
+  float demandScale_ = 1.0f;
+  // Shaped demand of the last processed IMU sample; zero outside Run and on entering Run.
+  Demand shapedDemand_;
 
   bool fallBeyond_ = false;
   uint32_t fallStartUs_ = 0;

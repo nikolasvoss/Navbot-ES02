@@ -40,6 +40,12 @@ Config makeConfig() {
   config.rightWheelSign = 1;
   config.busMinV = 6.0f;
   config.busMaxV = 30.0f;
+  // Demand shaping: 1 m/s cap, 2 m/s^2 accel, 4 m/s^2 brake, 0.5 rad/s yaw cap, 50 ms request age.
+  config.speedCapMps = 1.0f;
+  config.accelCapMps2 = 2.0f;
+  config.brakeCapMps2 = 4.0f;
+  config.yawRateCapRadPerSec = 0.5f;
+  config.requestMaxAgeUs = 50000;
   return config;
 }
 
@@ -102,6 +108,41 @@ void enterRun(BalanceController &controller, const Config &config, uint32_t star
   tick(controller, makeMeasurements(), makeRequest(false), config, startUs);
   tick(controller, makeMeasurements(), makeRequest(true), config, startUs + 1000);
   assert(tick(controller, makeMeasurements(), makeRequest(true), config, startUs + 2000).state == State::Run);
+}
+
+Demand shape(Demand previous, float speedMps, float yawRadPerSec, float demandScale, float dtSec,
+             const Config &config) {
+  return BalanceController::shapeDemand(previous, Demand{speedMps, yawRadPerSec}, demandScale, dtSec, config);
+}
+
+Request liveRequest(uint32_t nowUs, float speedMps, float yawRadPerSec) {
+  Request r = makeRequest(true);
+  r.receivedTimeUs = nowUs;
+  r.speedMps = speedMps;
+  r.yawRateRadPerSec = yawRadPerSec;
+  return r;
+}
+
+// A new IMU sample at nowUs with the given sequence; the other sensors are fresh.
+Output liveSample(BalanceController &controller, const Config &config, uint32_t nowUs, uint32_t imuSequence,
+                  const Request &request) {
+  Measurements s = atTime(makeMeasurements(), nowUs);
+  s.imuSequence = imuSequence;
+  return controller.update(s, request, config, nowUs);
+}
+
+// Enters Run at baseUs, then samples a 1 m/s and 2 rad/s request every 50 ms. The first sample only
+// records its timestamp. Each of the next five raises the shaped speed by 0.1 m/s and clamps yaw to 0.5,
+// so the last sample (at baseUs + 360000 us, IMU sequence 7) shows 0.5 m/s.
+Output rampToHalfMps(BalanceController &controller, const Config &config, uint32_t baseUs) {
+  enterRun(controller, config, baseUs);
+  liveSample(controller, config, baseUs + 110000u, 2, liveRequest(baseUs + 110000u, 1.0f, 2.0f));
+  Output last;
+  for (uint32_t k = 1; k <= 5; ++k) {
+    const uint32_t t = baseUs + 110000u + 50000u * k;
+    last = liveSample(controller, config, t, 2 + k, liveRequest(t, 1.0f, 2.0f));
+  }
+  return last;
 }
 }  // namespace
 
@@ -640,6 +681,31 @@ int main() {
     assert(closeTo(out.diag.leftMinA, -0.739542f) && closeTo(out.diag.leftMaxA, -0.012270f));
   }
 
+  // Demand shaping, negative side: braking from reverse, reversal to forward, exact landing when accelerating.
+  {
+    Config c = config;
+    assert(closeTo(shape(Demand{-0.5f, 0.0f}, 0.0f, 0.0f, 1.0f, 0.01f, c).speedMps, -0.46f));
+    // -0.01 brakes to zero in 0.0025 s, then accelerates 0.0075 s at 2 m/s^2 -> +0.015.
+    assert(closeTo(shape(Demand{-0.01f, 0.0f}, 1.0f, 0.0f, 1.0f, 0.01f, c).speedMps, 0.015f));
+    // 0.49 is 0.01 below the target 0.5; a 0.02 step lands exactly on it.
+    assert(closeTo(shape(Demand{0.49f, 0.0f}, 0.5f, 0.0f, 1.0f, 0.01f, c).speedMps, 0.5f));
+  }
+
+  // Unusable demand caps fault instead of holding speed or moving it the wrong way.
+  {
+    for (int which = 0; which < 3; ++which) {
+      Config broken = config;
+      if (which == 0) broken.brakeCapMps2 = 0.0f;
+      if (which == 1) broken.accelCapMps2 = -2.0f;
+      if (which == 2) broken.speedCapMps = std::numeric_limits<float>::quiet_NaN();
+      BalanceController bc;
+      tick(bc, good, makeRequest(false), broken, 1000);
+      tick(bc, good, makeRequest(true), broken, 2000);
+      const Output armed = tick(bc, good, makeRequest(true), broken, 3000);
+      assert(armed.state == State::Fault && armed.fault == FaultReason::InvalidConfig && !armed.driveEnabled);
+    }
+  }
+
   // An invalid envelope model faults on the arming tick itself, so drivers are never enabled on it.
   {
     Config broken = config;
@@ -679,6 +745,120 @@ int main() {
       assert(out.state == State::Fault && out.fault == FaultReason::InvalidEnvelope && !out.driveEnabled);
       assert(out.leftA == 0.0f && out.rightA == 0.0f);
     }
+  }
+
+  // Step 4: shapeDemand with caps 1 m/s, accel 2 m/s^2, brake 4 m/s^2, yaw 0.5 rad/s and dt 0.01 s.
+  {
+    const Config &c = config;
+    const Demand zero{};
+
+    // Ramp up at the accel cap: 2 m/s^2 over 0.01 s is 0.02 m/s per step.
+    Demand d = zero;
+    for (int k = 1; k <= 3; ++k) {
+      d = shape(d, 1.0f, 0.0f, 1.0f, 0.01f, c);
+      assert(closeTo(d.speedMps, 0.02f * k));
+    }
+
+    // The speed cap clamps the target; the ramp is limited on the way there.
+    assert(closeTo(shape(Demand{0.5f, 0.0f}, 5.0f, 0.0f, 1.0f, 0.01f, c).speedMps, 0.52f));
+    Demand capped{0.5f, 0.0f};
+    for (int k = 0; k < 100; ++k) capped = shape(capped, 5.0f, 0.0f, 1.0f, 0.01f, c);
+    assert(closeTo(capped.speedMps, 1.0f));
+    Demand reversedCap{-0.5f, 0.0f};
+    for (int k = 0; k < 100; ++k) reversedCap = shape(reversedCap, -5.0f, 0.0f, 1.0f, 0.01f, c);
+    assert(closeTo(reversedCap.speedMps, -1.0f));
+
+    // Braking shrinks the magnitude at 4 m/s^2, twice the accel rate: 0.04 m/s per step.
+    const Demand start{0.5f, 0.0f};
+    assert(closeTo(shape(start, 0.0f, 0.0f, 1.0f, 0.01f, c).speedMps, 0.46f));
+    assert(closeTo(shape(start, 0.49f, 0.0f, 1.0f, 0.01f, c).speedMps, 0.49f));  // target reached in one step
+
+    // Reversal from +0.01 m/s to -1 m/s: braking to zero takes 0.0025 s at 4 m/s^2, then the remaining
+    // 0.0075 s accelerates at 2 m/s^2 to -0.015 m/s within the same step.
+    assert(closeTo(shape(Demand{0.01f, 0.0f}, -1.0f, 0.0f, 1.0f, 0.01f, c).speedMps, -0.015f));
+
+    // demandScale 0.5 halves the speed cap and the accel, but not the brake.
+    assert(closeTo(shape(zero, 5.0f, 0.0f, 0.5f, 0.01f, c).speedMps, 0.01f));
+    Demand half = zero;
+    for (int k = 0; k < 100; ++k) half = shape(half, 5.0f, 0.0f, 0.5f, 0.01f, c);
+    assert(closeTo(half.speedMps, 0.5f));
+    assert(closeTo(shape(start, 0.0f, 0.0f, 0.5f, 0.01f, c).speedMps, 0.46f));
+
+    // demandScale above 1 counts as 1, below 0 as 0.
+    assert(closeTo(shape(zero, 5.0f, 0.0f, 3.0f, 0.01f, c).speedMps, 0.02f));
+    assert(closeTo(shape(zero, 5.0f, 0.0f, -1.0f, 0.01f, c).speedMps, 0.0f));
+    assert(closeTo(shape(zero, 0.0f, 2.0f, -1.0f, 0.01f, c).yawRateRadPerSec, 0.0f));
+
+    // Yaw is clamped symmetrically and has no slew: a request inside the cap passes at once.
+    assert(closeTo(shape(zero, 0.0f, 2.0f, 1.0f, 0.01f, c).yawRateRadPerSec, 0.5f));
+    assert(closeTo(shape(zero, 0.0f, -2.0f, 1.0f, 0.01f, c).yawRateRadPerSec, -0.5f));
+    assert(closeTo(shape(zero, 0.0f, 0.3f, 1.0f, 0.01f, c).yawRateRadPerSec, 0.3f));
+    assert(closeTo(shape(zero, 0.0f, 2.0f, 0.5f, 0.01f, c).yawRateRadPerSec, 0.25f));
+
+    // NaN requests count as zero, and a NaN demand scale counts as zero.
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const Demand fromNan = shape(Demand{0.5f, 0.3f}, nan, nan, 1.0f, 0.01f, c);
+    assert(closeTo(fromNan.speedMps, 0.46f) && closeTo(fromNan.yawRateRadPerSec, 0.0f));
+    assert(closeTo(shape(zero, 5.0f, 0.0f, nan, 0.01f, c).speedMps, 0.0f));
+  }
+
+  // Step 4: update() shapes a valid request over IMU samples. The last sample of the ramp shows 0.5 m/s
+  // and yaw clamped to 0.5 rad/s.
+  {
+    BalanceController bc;
+    const Output last = rampToHalfMps(bc, config, 100000u);
+    assert(last.state == State::Run);
+    assert(closeTo(last.diag.shapedSpeedMps, 0.5f) && closeTo(last.diag.shapedYawRateRadPerSec, 0.5f));
+  }
+
+  // Step 4: motion request age across micros() wraparound. Age equal to requestMaxAgeUs is fresh; one
+  // microsecond more counts as a zero request, which ramps the speed down at 4 m/s^2 (0.2 m/s per 50 ms).
+  {
+    const uint32_t base = 0xFFFFFFF0u - 200000u;
+    const uint32_t now = base + 410000u;  // wraps past micros() overflow
+
+    BalanceController fresh;
+    rampToHalfMps(fresh, config, base);
+    const Output ok = liveSample(fresh, config, now, 8, liveRequest(now - 50000u, 1.0f, 0.0f));
+    assert(ok.state == State::Run && closeTo(ok.diag.shapedSpeedMps, 0.6f));
+
+    BalanceController stale;
+    rampToHalfMps(stale, config, base);
+    const Output old = liveSample(stale, config, now, 8, liveRequest(now - 50001u, 1.0f, 2.0f));
+    assert(old.state == State::Run && closeTo(old.diag.shapedSpeedMps, 0.3f));
+    assert(closeTo(old.diag.shapedYawRateRadPerSec, 0.0f));
+
+    // A request with sourceValid false ramps to zero at the brake cap: 0.3, 0.1, then 0 with no overshoot.
+    BalanceController invalid;
+    rampToHalfMps(invalid, config, base);
+    Request invalidRequest = liveRequest(now, 1.0f, 2.0f);
+    invalidRequest.sourceValid = false;
+    assert(closeTo(liveSample(invalid, config, now, 8, invalidRequest).diag.shapedSpeedMps, 0.3f));
+    assert(closeTo(liveSample(invalid, config, now + 50000u, 9, invalidRequest).diag.shapedSpeedMps, 0.1f));
+    const Output stopped = liveSample(invalid, config, now + 100000u, 10, invalidRequest);
+    assert(closeTo(stopped.diag.shapedSpeedMps, 0.0f) && closeTo(stopped.diag.shapedYawRateRadPerSec, 0.0f));
+  }
+
+  // Step 4: an unchanged IMU sequence is not a new sample, so the ramp does not advance.
+  {
+    BalanceController bc;
+    rampToHalfMps(bc, config, 100000u);  // last processed sequence is 7
+    const Output repeated = liveSample(bc, config, 480000u, 7, liveRequest(480000u, 1.0f, 0.0f));
+    assert(repeated.state == State::Run && closeTo(repeated.diag.shapedSpeedMps, 0.5f));
+    const Output next = liveSample(bc, config, 510000u, 8, liveRequest(510000u, 1.0f, 0.0f));
+    assert(closeTo(next.diag.shapedSpeedMps, 0.6f));
+  }
+
+  // Step 4: the shaped state resets on re-entering Run. The first sample after re-entry only records its
+  // timestamp and shows zero, then the ramp starts again from zero.
+  {
+    BalanceController bc;
+    rampToHalfMps(bc, config, 100000u);
+    enterRun(bc, config, 600000u);
+    const Output first = liveSample(bc, config, 610000u, 8, liveRequest(610000u, 1.0f, 0.0f));
+    assert(first.state == State::Run && closeTo(first.diag.shapedSpeedMps, 0.0f));
+    const Output second = liveSample(bc, config, 660000u, 9, liveRequest(660000u, 1.0f, 0.0f));
+    assert(closeTo(second.diag.shapedSpeedMps, 0.1f));
   }
 
   std::puts("balance controller passed");
