@@ -70,8 +70,6 @@ struct TelemetryInputs {
   PidStatus speedPid;
   PidStatus yawPid;
   PidStatus rollPid;
-  PidStatus touchXPid;
-  PidStatus touchYPid;
   TouchStatus touch;
 
   ServoTrimsDegrees servoTrims;

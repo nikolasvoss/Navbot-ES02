@@ -116,11 +116,6 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
       return appendf(buffer, capacity, length, "  P:%.2f  R:%.5f  H:%.5f  S:%.2f  vra:%.2f  vra:%.2f\n",
                      p.filteredGeometry.bodyPitch, p.filteredGeometry.bodyRoll, p.filteredGeometry.bodyHeightM,
                      p.filteredGeometry.slideStep, p.filteredGeometry.ballX, p.filteredGeometry.ballY);
-    case Logging::DebugSelector::K29:
-      return appendf(buffer, capacity, length, " Kp:%.6f Ki:%.6f Kd:%.6f deriv:%.2f out:%.2f\n", p.pidTuningState.kp,
-                     p.pidTuningState.ki, p.pidTuningState.kd, p.pidTuningState.derivative, p.pidTuningState.output);
-    case Logging::DebugSelector::K30:
-      return appendf(buffer, capacity, length, " deriv:%.2f\n", p.pidDerivative.derivative);
     case Logging::DebugSelector::K31:
       return appendf(buffer, capacity, length, " E:%.6f it:%.5f il:%.5f oI:%.5f out:%.5f\n", p.pidState.error,
                      p.pidState.integralLimit, p.pidState.integral, p.pidState.integralOutput, p.pidState.output);
@@ -132,23 +127,12 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
                      p.pidIntegralOutputState.integralLimit, p.pidIntegralOutputState.integral,
                      p.pidIntegralOutputState.integralOutput, p.pidIntegralOutputState.auxiliary,
                      p.pidIntegralOutputState.output);
-    case Logging::DebugSelector::K34:
-      return appendf(buffer, capacity, length, " Kp:%.6f Ki:%.6f Kd:%.6f deriv:%.2f out:%.2f\n", p.pidTuningState.kp,
-                     p.pidTuningState.ki, p.pidTuningState.kd, p.pidTuningState.derivative, p.pidTuningState.output);
-    case Logging::DebugSelector::K35:
-      return appendf(buffer, capacity, length, " deriv:%.2f\n", p.pidDerivative.derivative);
     case Logging::DebugSelector::K36:
       return appendf(buffer, capacity, length, " state:%d start:%d\n", static_cast<int>(p.touchState.state),
                      static_cast<int>(p.touchState.start));
     case Logging::DebugSelector::K37:
       return appendf(buffer, capacity, length, " sbus_vra:%.2f sbus_vraf:%.2f sbus_vrb:%.2f sbus_vrbf:%.2f\n",
                      p.ballPosition.x, p.ballPosition.xFiltered, p.ballPosition.y, p.ballPosition.yFiltered);
-    case Logging::DebugSelector::K38:
-      return appendf(buffer, capacity, length, " X OUT:%.2f Y OUT:%.2f\n", p.balanceOutputPair.bodyPitch,
-                     p.balanceOutputPair.controllerOutput);
-    case Logging::DebugSelector::K39:
-      return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f out:%.5f\n", p.pidIntegralState.integralLimit,
-                     p.pidIntegralState.integral, p.pidIntegralState.integralOutput, p.pidIntegralState.output);
     case Logging::DebugSelector::K40:
       if (p.touchPoint.state == 1)
         return appendf(buffer, capacity, length, "  aX:%d  aY:%d\n", static_cast<int>(p.touchPoint.x),

@@ -910,8 +910,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.speedPid = pidStatus(speedPid);
   in.yawPid = pidStatus(yawPid);
   in.rollPid = pidStatus(rollPid);
-  in.touchXPid = pidStatus(touchXPid);
-  in.touchYPid = pidStatus(touchYPid);
   in.touch = {Touch.XPressDat, Touch.YPressDat, Touch.XPdat,  Touch.YPdat, Touch.XLdat,
               Touch.YLdat,     Touch.XPdatF,    Touch.YPdatF, Touch.state, Touch.start};
 

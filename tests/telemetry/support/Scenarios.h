@@ -87,8 +87,6 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   fill(g, in.speedPid);
   fill(g, in.yawPid);
   fill(g, in.rollPid);
-  fill(g, in.touchXPid);
-  fill(g, in.touchYPid);
 
   DebugTelemetry::TouchStatus& t = in.touch;
   t.XPressDat = g.u16(); t.YPressDat = g.u16();

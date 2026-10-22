@@ -168,18 +168,12 @@ enum class DebugSelector : uint8_t {
   K26,
   K27,
   K28,
-  K29,
-  K30,
-  K31,
+  K31 = 31,
   K32,
   K33,
-  K34,
-  K35,
-  K36,
+  K36 = 36,
   K37,
-  K38,
-  K39,
-  K40,
+  K40 = 40,
   K41,
   K42,
   K43,
@@ -309,9 +303,6 @@ struct TouchFilteredPoint {
   float xFiltered;
   float yFiltered;
 };
-struct PidDerivative {
-  float derivative;
-};
 struct TouchState {
   int32_t state;
   int32_t start;
@@ -321,10 +312,6 @@ struct BallPosition {
   float xFiltered;
   float y;
   float yFiltered;
-};
-struct BalanceOutputPair {
-  float bodyPitch;
-  float controllerOutput;
 };
 struct RollOutputState {
   float rollOk;
@@ -377,13 +364,6 @@ struct FilteredGeometry {
   float slideStep;
   float ballX;
   float ballY;
-};
-struct PidTuningState {
-  float kp;
-  float ki;
-  float kd;
-  float derivative;
-  float output;
 };
 struct RollCorrection {
   float rollOk;
@@ -441,10 +421,8 @@ union DebugPayload {
   PidCoefficients pidCoefficients;
   TouchPoint touchPoint;
   TouchFilteredPoint touchFilteredPoint;
-  PidDerivative pidDerivative;
   TouchState touchState;
   BallPosition ballPosition;
-  BalanceOutputPair balanceOutputPair;
   RollOutputState rollOutput;
   VoltageState voltageState;
   TuningState tuningState;
@@ -455,7 +433,6 @@ union DebugPayload {
   PidIntegralState pidIntegralState;
   PidIntegralOutputState pidIntegralOutputState;
   FilteredGeometry filteredGeometry;
-  PidTuningState pidTuningState;
   RollCorrection rollCorrection;
   BodyPitchState bodyPitchState;
   GyroFftSample gyroFft;

@@ -11,9 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 SKETCH = ROOT / "src/ES-02/OllieFOCdrive"
 TESTS = ROOT / "tests/telemetry"
 
-SELECTED = list(range(1, 49))
+REMOVED = [29, 30, 34, 35, 38, 39]
+SELECTED = [selector for selector in range(1, 49) if selector not in REMOVED]
 CHANNELS = list(range(60, 76))
-SILENT = [0, 49, 54, 59, 76, 80]
+SILENT = [0, 49, 54, 59, 76, 80] + REMOVED
 TRACE_KIND = {55: "Trace", 56: "Control", 57: "Balance", 58: "Drive"}
 
 

@@ -125,7 +125,7 @@ bool fillReceiver(const TelemetryInputs &in, Logging::DebugPayload &payload) {
   return true;
 }
 
-// Selectors 9, 22, 23, 29..35 and 39.
+// Selectors 9, 22, 23 and 31..33.
 bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 9:
@@ -141,13 +141,6 @@ bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &pa
       payload.pidIntegralOutputState = {in.speedPid.iLimit, in.speedPid.integral, in.speedPid.outI,
                                         in.bodyPitchingFiltered, in.speedPid.output};
       return true;
-    case 29:
-      payload.pidTuningState = {in.touchYPid.Kp, in.touchYPid.Ki, in.touchYPid.Kd, in.touchYPid.deriv,
-                                in.touchYPid.output};
-      return true;
-    case 30:
-      payload.pidDerivative = {in.touchYPid.deriv};
-      return true;
     case 31:
       payload.pidState = {in.rollPid.error, in.rollPid.iLimit, in.rollPid.integral, in.rollPid.outI, in.rollPid.output};
       return true;
@@ -157,16 +150,6 @@ bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &pa
     case 33:
       payload.pidIntegralOutputState = {in.yawPid.iLimit, in.yawPid.integral, in.yawPid.outI, in.bodyPitchingFiltered,
                                         in.yawPid.output};
-      return true;
-    case 34:
-      payload.pidTuningState = {in.touchXPid.Kp, in.touchXPid.Ki, in.touchXPid.Kd, in.touchXPid.deriv,
-                                in.touchXPid.output};
-      return true;
-    case 35:
-      payload.pidDerivative = {in.touchXPid.deriv};
-      return true;
-    case 39:
-      payload.pidIntegralState = {in.touchYPid.iLimit, in.touchYPid.integral, in.touchYPid.outI, in.touchYPid.output};
       return true;
     default:
       return false;
@@ -201,7 +184,7 @@ bool fillTouch(int selection, const TelemetryInputs &in, Logging::DebugPayload &
   }
 }
 
-// Selectors 19..21, 24, 25, 28, 37, 38, 41 and 42.
+// Selectors 19..21, 24, 25, 28, 37, 41 and 42.
 bool fillPose(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
     case 19:
@@ -226,9 +209,6 @@ bool fillPose(int selection, const TelemetryInputs &in, Logging::DebugPayload &p
       return true;
     case 37:
       payload.ballPosition = {in.topBallX, in.sbusTopBallXSmoothed, in.topBallY, in.sbusTopBallYSmoothed};
-      return true;
-    case 38:
-      payload.balanceOutputPair = {in.bodyPitching, in.touchYPid.output};
       return true;
     case 41:
       payload.rollOutput = {in.imu.correctedRollDegrees, in.bodyPitching, in.speedPid.output};
@@ -288,14 +268,9 @@ bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &paylo
     case 9:
     case 22:
     case 23:
-    case 29:
-    case 30:
     case 31:
     case 32:
     case 33:
-    case 34:
-    case 35:
-    case 39:
       return fillPid(selection, in, payload);
     case 26:
     case 27:
@@ -309,7 +284,6 @@ bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &paylo
     case 25:
     case 28:
     case 37:
-    case 38:
     case 41:
     case 42:
       return fillPose(selection, in, payload);

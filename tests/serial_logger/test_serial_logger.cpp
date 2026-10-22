@@ -129,7 +129,7 @@ void verifyFormatters(const char *fixturePath) {
       value.replace(position, 2, "\n");
     fixtures[line.substr(0, separator)] = value;
   }
-  require(fixtures.size() == 69, "format fixture does not cover every active selector and profile");
+  require(fixtures.size() == 63, "format fixture does not cover every active selector and profile");
 
   const LoggingInternal::RecordKind kinds[] = {
       LoggingInternal::RecordKind::Diagnostic, LoggingInternal::RecordKind::Trace,
@@ -142,6 +142,8 @@ void verifyFormatters(const char *fixturePath) {
   }
 
   for (int selector = 1; selector <= 48; ++selector) {
+    if (selector == 29 || selector == 30 || selector == 34 || selector == 35 || selector == 38 || selector == 39)
+      continue;  // Removed selectors have no formatter.
     LoggingInternal::Record record{};
     record.kind = LoggingInternal::RecordKind::Debug;
     record.payload.debug.selector = static_cast<Logging::DebugSelector>(selector);
