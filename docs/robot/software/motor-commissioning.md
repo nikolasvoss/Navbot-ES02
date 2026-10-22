@@ -1,6 +1,6 @@
 # Motor commissioning: bounded current and voltage identification
 
-This page describes the Package 1 diagnostic commands for the two wheel motors, the manual phase-resistance method, the `KV_rating` fit, and the commissioning record. It is the operating procedure for [Package 1 of the robust control plan](../plans/robust-control-system.md#package-1-measurement-support-controller-unchanged). Software support is implemented; physical acceptance is pending. The only measured values recorded here are the two wheel phase-to-phase resistances; no `KV_rating` or voltage ceiling is recorded yet.
+This page describes the Package 1 diagnostic commands for the two wheel motors, the manual phase-resistance method, the `KV_rating` fit, and the commissioning record. It is the operating procedure for [Package 1 of the robust control plan](../plans/robust-control-system.md#package-1-measurement-support-controller-unchanged). Software support is implemented, and the commissioning record below holds the measurements from the unloaded runs of 2026-10-22 (robot supported, wheels clear, legs hanging free).
 
 ## Preconditions
 
