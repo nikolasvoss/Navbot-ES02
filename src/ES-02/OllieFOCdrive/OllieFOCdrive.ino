@@ -15,6 +15,7 @@
 #include "FUTABA_SBUS.h"
 #include "LegKinematics.h"
 #include "Logging.h"
+#include "MotorDiagnostic.h"
 #include "OllieFOCdrive.h"
 #include "RobotLogCapture.h"
 #include "ServoControl.h"
@@ -25,21 +26,23 @@
 #include "robot.h"
 #include "touchscreen.h"
 
+bool motorDiagnosticOwnsOutput = false;
+
 class LoggingCommandStream : public Stream {
  public:
   int available() override { return Serial.available(); }
   int read() override { return Serial.read(); }
   int peek() override { return Serial.peek(); }
   size_t write(uint8_t value) override {
-    if (Logging::profile() != Logging::Profile::Idle) return 1;
+    if (motorDiagnosticOwnsOutput || Logging::profile() != Logging::Profile::Idle) return 1;
     return Serial.write(value);
   }
   size_t write(const uint8_t *buffer, size_t size) override {
-    if (Logging::profile() != Logging::Profile::Idle) return size;
+    if (motorDiagnosticOwnsOutput || Logging::profile() != Logging::Profile::Idle) return size;
     return Serial.write(buffer, size);
   }
   void flush() override {
-    if (Logging::profile() == Logging::Profile::Idle) Serial.flush();
+    if (!motorDiagnosticOwnsOutput && Logging::profile() == Logging::Profile::Idle) Serial.flush();
   }
 };
 
@@ -125,6 +128,8 @@ constexpr float kWheelPhaseResistanceOhm = 22;
 constexpr float kWheelVelocityPidOutputRamp = 10000;
 constexpr float kWheelVelocityFilterTfSec = 0.001;
 constexpr WheelPidParams kWheelVelocityPid{0.006, 0, 0};
+
+void configureWheelMotor(BLDCMotor &motor, const WheelPidParams &pid);
 
 constexpr float kBodyHeightOverrideDisabledM = 0.0f;
 constexpr float kBodyHeightMinM = 0.05f;
@@ -311,7 +316,6 @@ void selectDebugLog(char *cmd) {
   command.scalar(&debugLogSelector, cmd);
   RobotLogCapture::setProfileForSelector(static_cast<int>(debugLogSelector));
 }
-void selectCalibration(char *cmd) { command.scalar(&calibrationSelect, cmd); }
 
 #if ADJUST_PARAMETER == ADJUST_BALANCE_SPEED_YAW_ROLL
 // Cb prefix: Commander callback.
@@ -342,6 +346,10 @@ LowPassFilter m2VelocityFilter = LowPassFilter(0.01);  // Tf = 10ms
 float controlTimestepSec = 0;
 unsigned long loopTimeUs = 0;
 unsigned long previousControlTimeUs = 0;
+uint32_t controlStartUs = 0;
+uint32_t controlExecutionUs = 0;
+uint32_t previousLoopEntryUs = 0;
+bool hasPreviousLoopEntry = false;
 
 BLDCMotor motor1 = BLDCMotor(board::kWheelMotorPolePairs);
 BLDCDriver3PWM driver =
@@ -356,8 +364,204 @@ MagneticSensorI2C sensor1 = MagneticSensorI2C(AS5600_I2C);
 TwoWire i2cOne = TwoWire(0);
 TwoWire i2cTwo = TwoWire(1);
 
-void handleM1MotionCommand(char *cmd) { command.motion(&motor1, cmd); }
-void handleM1Command(char *cmd) { command.motor(&motor1, cmd); }
+MotorDiagnostic::State motorDiagnosticState{};
+bool motorDiagnosticApplied = false;
+
+void selectCalibration(char *cmd) {
+  float requested = calibrationSelect;
+  command.scalar(&requested, cmd);
+  if (static_cast<int>(requested) != 0 && (motorDiagnosticState.active || motorDiagnosticApplied)) {
+    Logging::message(Logging::Level::Warning, "Calibration", "refused: motor diagnostic active");
+    return;
+  }
+  calibrationSelect = requested;
+}
+bool diagnosticRestoredAwaitingResume = false;
+bool previousBalanceEnabled = false;
+
+char *trimDiagnosticCommand(char *cmd) {
+  while (*cmd == ' ' || *cmd == '\t') ++cmd;
+  size_t length = strlen(cmd);
+  while (length > 0 && (cmd[length - 1] == ' ' || cmd[length - 1] == '\t' || cmd[length - 1] == '\r' ||
+                        cmd[length - 1] == '\n'))
+    cmd[--length] = '\0';
+  return cmd;
+}
+
+void zeroMotorOutput(BLDCMotor &motor) {
+  motor.target = 0.0f;
+  motor.current_sp = 0.0f;
+  motor.voltage.q = 0.0f;
+  motor.voltage.d = 0.0f;
+}
+
+void restoreMotorConfiguration(BLDCMotor &motor) {
+  zeroMotorOutput(motor);
+  configureWheelMotor(motor, kWheelVelocityPid);
+  motor.PID_velocity.reset();
+}
+
+MotorDiagnostic::Inputs diagnosticInputs() {
+  return {millis(), pidGainsMode != REMOTE_CONTROL_PID_GAINS_MODE_OFF,
+          calibrationSelect != 0.0f, motor1.shaft_velocity, motor2.shaft_velocity};
+}
+
+void applyMotorDiagnosticRequest() {
+  if (!motorDiagnosticState.active) return;
+  const MotorDiagnostic::Request &request = motorDiagnosticState.request;
+  restoreMotorConfiguration(motor1);
+  restoreMotorConfiguration(motor2);
+  motor1.controller = MotionControlType::torque;
+  motor2.controller = MotionControlType::torque;
+  if (request.mode == MotorDiagnostic::Mode::CurrentTest) {
+    motor1.torque_controller = TorqueControlType::estimated_current;
+    motor2.torque_controller = TorqueControlType::estimated_current;
+    motor1.current_limit = MotorDiagnostic::kMaximumCurrentA;
+    motor2.current_limit = MotorDiagnostic::kMaximumCurrentA;
+    motor1.voltage_limit = MotorDiagnostic::kMaximumVoltageV;
+    motor2.voltage_limit = MotorDiagnostic::kMaximumVoltageV;
+    motor1.target = request.leftCurrentA;
+    motor2.target = request.rightCurrentA;
+    driver.enable();
+    driver2.enable();
+  } else {
+    motor1.torque_controller = TorqueControlType::voltage;
+    motor2.torque_controller = TorqueControlType::voltage;
+    motor1.phase_resistance = NOT_SET;
+    motor2.phase_resistance = NOT_SET;
+    motor1.voltage_limit = MotorDiagnostic::kMaximumVoltageV;
+    motor2.voltage_limit = MotorDiagnostic::kMaximumVoltageV;
+    if (request.selectedMotor == 1) {
+      motor1.target = request.voltageV;
+      motor2.target = 0.0f;
+      driver.enable();
+      driver2.disable();
+    } else {
+      motor1.target = 0.0f;
+      motor2.target = request.voltageV;
+      driver.disable();
+      driver2.enable();
+    }
+  }
+  motorDiagnosticApplied = true;
+  motorDiagnosticOwnsOutput = true;
+  diagnosticRestoredAwaitingResume = false;
+}
+
+// Shared by T and M so a flood of bad lines cannot fill the logger queue.
+bool diagnosticWarningDue() {
+  static bool warned = false;
+  static uint32_t lastWarningMs = 0;
+  const uint32_t nowMs = millis();
+  if (warned && static_cast<uint32_t>(nowMs - lastWarningMs) < 500) return false;
+  warned = true;
+  lastWarningMs = nowMs;
+  return true;
+}
+
+void handleM1MotionCommand(char *cmd) {
+  cmd = trimDiagnosticCommand(cmd);
+  if (strcmp(cmd, "RESET") == 0) {
+    if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs()))
+      Logging::message(Logging::Level::Info, "MOTOR_TEST", "fault reset; outputs remain disabled");
+    else
+      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "reset refused; balance off and safe speed required");
+    return;
+  }
+  if (strcmp(cmd, "STOP") == 0) {
+    MotorDiagnostic::stop(motorDiagnosticState);
+    return;
+  }
+  MotorDiagnostic::Request request{};
+  if (!MotorDiagnostic::parseCurrentRequest(cmd, request)) {
+    if (diagnosticWarningDue())
+      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "use T <left_A> <right_A> <lease_ms>, T STOP, or T RESET");
+    return;
+  }
+  const auto result = MotorDiagnostic::start(motorDiagnosticState, request, diagnosticInputs());
+  if (result == MotorDiagnostic::RequestResult::Accepted) {
+    applyMotorDiagnosticRequest();
+    Logging::message(Logging::Level::Info, "MOTOR_TEST", "current request left=%.3fA right=%.3fA lease=%lums",
+                     request.leftCurrentA, request.rightCurrentA, static_cast<unsigned long>(request.leaseMs));
+  } else if (diagnosticWarningDue()) {
+    Logging::message(Logging::Level::Warning, "MOTOR_TEST", "request refused result=%d", static_cast<int>(result));
+  }
+}
+
+void handleM1Command(char *cmd) {
+  cmd = trimDiagnosticCommand(cmd);
+  if (strcmp(cmd, "RESET") == 0) {
+    if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs()))
+      Logging::message(Logging::Level::Info, "MOTOR_TEST", "fault reset; outputs remain disabled");
+    else
+      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "reset refused; balance off and safe speed required");
+    return;
+  }
+  if (strcmp(cmd, "STOP") == 0) {
+    MotorDiagnostic::stop(motorDiagnosticState);
+    return;
+  }
+  MotorDiagnostic::Request request{};
+  if (!MotorDiagnostic::parseVoltageRequest(cmd, request)) {
+    if (diagnosticWarningDue())
+      Logging::message(Logging::Level::Warning, "MOTOR_ID", "use M <motor_1|2> <voltage_V> <lease_ms>, M STOP, or M RESET");
+    return;
+  }
+  const auto result = MotorDiagnostic::start(motorDiagnosticState, request, diagnosticInputs());
+  if (result == MotorDiagnostic::RequestResult::Accepted) {
+    applyMotorDiagnosticRequest();
+    Logging::message(Logging::Level::Info, "MOTOR_ID", "motor=%u requested_q=%.3fV lease=%lums",
+                     request.selectedMotor, request.voltageV, static_cast<unsigned long>(request.leaseMs));
+  } else if (diagnosticWarningDue()) {
+    Logging::message(Logging::Level::Warning, "MOTOR_ID", "request refused result=%d", static_cast<int>(result));
+  }
+}
+
+void serviceMotorDiagnostic() {
+  const bool balanceEnabled = pidGainsMode != REMOTE_CONTROL_PID_GAINS_MODE_OFF;
+  const MotorDiagnostic::Fault before = motorDiagnosticState.fault;
+  const MotorDiagnostic::Fault fault = MotorDiagnostic::update(motorDiagnosticState, diagnosticInputs());
+  const bool faulted = fault != MotorDiagnostic::Fault::None && motorDiagnosticApplied;
+  const bool stopped = !motorDiagnosticState.active && motorDiagnosticApplied;
+  if (faulted || stopped) {
+    const MotorDiagnostic::Request request = motorDiagnosticState.request;
+    const float actualVoltage = request.mode == MotorDiagnostic::Mode::VoltageIdentification
+                                    ? (request.selectedMotor == 1 ? motor1.voltage.q : motor2.voltage.q)
+                                    : 0.0f;
+    const float shaftVelocity = request.mode == MotorDiagnostic::Mode::VoltageIdentification
+                                    ? (request.selectedMotor == 1 ? motor1.shaft_velocity : motor2.shaft_velocity)
+                                    : 0.0f;
+    // Disable before restoring any configuration or emitting a message.
+    driver.disable();
+    driver2.disable();
+    zeroMotorOutput(motor1);
+    zeroMotorOutput(motor2);
+    restoreMotorConfiguration(motor1);
+    restoreMotorConfiguration(motor2);
+    motorDiagnosticApplied = false;
+    motorDiagnosticOwnsOutput = false;
+    diagnosticRestoredAwaitingResume = true;
+    if (request.mode == MotorDiagnostic::Mode::VoltageIdentification)
+      Logging::message(Logging::Level::Info, "MOTOR_ID_RESULT",
+                       "motor=%u requested_q=%.3fV actual_q=%.3fV shaft_velocity=%.3frad_s result=%s fault=%d",
+                       request.selectedMotor, request.voltageV, actualVoltage, shaftVelocity,
+                       stopped ? "stopped" : "fault", static_cast<int>(fault));
+  }
+  if (faulted) {
+    if (before == MotorDiagnostic::Fault::None)
+      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "diagnostic fault=%d; both drivers disabled",
+                       static_cast<int>(fault));
+  }
+  if (motorDiagnosticState.active) {
+    if (!motorDiagnosticApplied) applyMotorDiagnosticRequest();
+  } else if (diagnosticRestoredAwaitingResume && balanceEnabled && !previousBalanceEnabled &&
+             motorDiagnosticState.fault == MotorDiagnostic::Fault::None) {
+    driver.enable();
+    driver2.enable();
+    diagnosticRestoredAwaitingResume = false;
+  }
+  previousBalanceEnabled = balanceEnabled;
+}
 
 void readSbus();
 void runPostureController(float dt);
@@ -468,8 +672,8 @@ void initDrivers() {
 }
 
 const SerialCommandEntry commandEntries[] = {
-    {'T', handleM1MotionCommand, "motion1 control"},
-    {'M', handleM1Command, "motor1"},
+    {'T', handleM1MotionCommand, "bounded per-wheel current test or STOP/RESET"},
+    {'M', handleM1Command, "bounded selected-wheel voltage identification or STOP/RESET"},
     {'A', zeroBiasServo1, "my zeroBias_servo1"},
     {'B', zeroBiasServo2, "my zeroBias_servo2"},
     {'C', zeroBiasServo3, "my zeroBias_servo3"},
@@ -720,6 +924,7 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.balanceActive = isPidGainsModeEnabled(pidGainsMode) && robotTumble == ROBOT_NOT_TUMBLING;
 
   in.imu = imu::latest();
+  in.imuTiming = imu::timingStatistics();
   in.imuSettings = imu::settings();
   in.imuCalibration = imu::calibration();
   in.controlTimestepSec = controlTimestepSec;
@@ -731,6 +936,11 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.motor1Target = motor1.target;
   in.motor2Target = motor2.target;
   in.motor2CurrentSetpoint = motor2.current_sp;
+  in.motor1CurrentSetpoint = motor1.current_sp;
+  in.motor1VoltageQ = motor1.voltage.q;
+  in.motor2VoltageQ = motor2.voltage.q;
+  in.motor1ShaftVelocity = motor1.shaft_velocity;
+  in.motor2ShaftVelocity = motor2.shaft_velocity;
   in.sensor1Angle = sensor1.getAngle();
   in.sensor1MechanicalAngle = sensor1.getMechanicalAngle();
   in.sensor2Angle = sensor2.getAngle();
@@ -776,6 +986,11 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.voltageAdc = voltageAdc;
   in.voltageAdcFiltered = voltageAdcFiltered;
   in.voltage = batteryVoltage;
+  in.batteryInstantRawV = board::kBatteryVoltsPerAdcCount * voltageAdc;
+  in.batteryInstantFilteredV = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
+  in.controlStartUs = controlStartUs;
+  in.controlExecutionUs = controlExecutionUs;
+  in.maxLoopEntryIntervalUs = debugTelemetryState.maxLoopEntryIntervalUs;
 
   in.pidGainsMode = pidGainsMode;
   in.postureOrMarkMode = postureOrMarkMode;
@@ -1190,10 +1405,14 @@ void diagnosticLoop(void) {
 }
 void updateMotorsAndCommands() {
   // iterative function setting the outer loop target
-  if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO) {
-    if (Logging::profile() == Logging::Profile::Idle) motor1.monitor();
-  } else if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS) {
-    motor2.target = motor1.target;
+  if (motorDiagnosticState.active) readControlInput();
+  serviceMotorDiagnostic();
+  if (!motorDiagnosticState.active) {
+    if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO) {
+      if (Logging::profile() == Logging::Profile::Idle) motor1.monitor();
+    } else if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS) {
+      motor2.target = motor1.target;
+    }
   }
 
   motor1.move();
@@ -1205,6 +1424,13 @@ void updateMotorsAndCommands() {
 
   // user communication
   serialCommandRouter.run(commandStream, command, commandEntries);
+  // Apply STOP, mode conflicts, and lease checks immediately after dispatch.
+  // This also prevents a newly selected blocking calibration from running while leased.
+  // Skipped on the normal path: no diagnostic is active or still applied to the motors.
+  if (motorDiagnosticState.active || motorDiagnosticApplied) {
+    readControlInput();
+    serviceMotorDiagnostic();
+  }
 }
 
 /**
@@ -1308,7 +1534,7 @@ BodyPose computeBodyPose() {
 
   if ((pidGainsMode == REMOTE_CONTROL_PID_GAINS_MODE_OFF) || (robotTumble == ROBOT_TUMBLING)) {
     balancePidNeedsPriming = true;
-    if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE) {
+    if (COMMUNICATION_OBJECT == COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE && !motorDiagnosticState.active) {
       motor1.target = 0;
       motor2.target = 0;
     }
@@ -1390,15 +1616,16 @@ void writeServos(const LegSolveResult &right, const LegSolveResult &left) {
 }
 
 void runControlTick(bool imuUpdated) {
+  controlStartUs = micros();
   controlGateSequence++;
   TouchBiquadFilter();  // Touch screen filter
 
   filterRemoteControl();                                                  // Remote control signal filtering
   readBatteryVoltage();                                                   // Battery
-  DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
 
   updateTumbleState();  // Machine fall detection
   updateStatusLed();
+  serviceMotorDiagnostic();
   runCalibrationStep(imuUpdated);
   updateWheelVelocities();
 
@@ -1413,6 +1640,9 @@ void runControlTick(bool imuUpdated) {
   warnIfLegUnreachable(leftLeg, "LeftInverseKinematics", lastLeftLegWarningMs);
 
   writeServos(rightLeg, leftLeg);
+
+  controlExecutionUs = static_cast<uint32_t>(micros() - controlStartUs);
+  DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
 
   previousControlTimeUs = loopTimeUs;
 }
@@ -1433,6 +1663,13 @@ void loop() {
   return;
 #endif
   loopTimeUs = micros();
+  if (hasPreviousLoopEntry) {
+    const uint32_t intervalUs = static_cast<uint32_t>(loopTimeUs - previousLoopEntryUs);
+    if (intervalUs > debugTelemetryState.maxLoopEntryIntervalUs)
+      debugTelemetryState.maxLoopEntryIntervalUs = intervalUs;
+  }
+  previousLoopEntryUs = loopTimeUs;
+  hasPreviousLoopEntry = true;
 
   updateMotorsAndCommands();
   const bool imuUpdated = readInputs();
