@@ -321,7 +321,7 @@ Servo assembly and servo calibration currently depend on CH6 through `writeServo
 
 ### Package 1: measurement support, controller unchanged
 
-Status: software support implemented; physical acceptance pending. The telemetry, bounded `T`/`M` diagnostics, and host trace tools are in place. The operating procedure and the commissioning record with pending measurements are in [motor commissioning](../software/motor-commissioning.md). No resistance, `KV_rating`, or voltage ceiling has been measured yet.
+Status: implemented and accepted on 2026-10-22 on an unloaded robot (supported on the main body, wheels clear, legs hanging free). The telemetry, bounded `T`/`M` diagnostics, and host trace tools are in place, and the commissioning record in [motor commissioning](../software/motor-commissioning.md) holds the measured phase resistance (11.5 Ω phase to phase), `KV_rating` (about 77 to 80 rpm/V over 0.5 to 2 V), usable voltage ceiling (about 4.2 V, battery dependent), wheel signs (positive q rolls both wheels backward), and loop timing (about 521 passes per second). Not covered: loaded or standing runs, a fixed-pose check under load, and the 1 kHz loop rate, which the plan assumed and the robot does not reach.
 
 Purpose: collect stage 1-3 data without changing the balance behavior.
 

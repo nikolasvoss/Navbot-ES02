@@ -85,3 +85,7 @@ Fix: `Serial.setTxBufferSize(1024)` before `Serial.begin` (commit 66417e6). Reca
 ## 2026-10-22 follow-up: setup of the runs
 
 The operator states that for all runs above the robot was supported on the main body, the wheels were clear, and the legs hung free at position 0 with no load on them. Consequence: the speeds, KV fit, voltage ceiling and timing describe the unloaded, free-hanging case. They say nothing yet about behavior with the robot standing on its wheels or with a payload.
+
+## 2026-10-22 follow-up: physical rolling direction
+
+The operator ran `M 1 0.5 3000` and `M 2 0.5 3000` with the robot supported and the wheels clear. Positive q made both wheels roll backward in the robot frame. Consequence: forward motion needs a negative motor-local target on both wheels, and the two wheels need the same sign inversion at the Package 2 boundary. This completes the sign check; the `T` and `M` signs agree (see the earlier entry).
