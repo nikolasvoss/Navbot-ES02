@@ -55,6 +55,11 @@ Config makeConfig() {
   config.speedIntegralEnabled = false;
   config.tiltRefLimitRad = 0.3f;
   config.tiltRefSlewRadPerSec = 1.0f;
+  // Balance and reserve. The balance and yaw gains stay zero here, so the earlier steps see no effort.
+  // reserveLowA is a test value: at standstill the envelope is about +/-0.381 A, so the reserve (0.381 A)
+  // stays above it and demandScale stays 1.
+  config.reserveLowA = 0.1f;
+  config.authorityDurationUs = 100000;
   return config;
 }
 
@@ -164,6 +169,49 @@ Output rampToHalfMps(BalanceController &controller, const Config &config, uint32
     last = liveSample(controller, config, t, 2 + k, liveRequest(t, 1.0f, 2.0f));
   }
   return last;
+}
+
+// Step 6 config. With R 1 ohm and a 20 A limit, the 8.4 V voltage limit alone bounds each wheel at standstill
+// to [-8.4, 8.4] A. The speed loop gain is zero, so the tilt reference stays at the trim unless a test sets it.
+Config makeBalanceConfig() {
+  Config config = makeConfig();
+  config.phaseResistanceOhm = 1.0f;
+  config.currentLimitA = 20.0f;
+  config.tiltPAPerRad = 2.0f;
+  config.gyroDampingAPerRadPerSec = 0.5f;
+  config.yawPAPerRadPerSec = 1.0f;
+  config.reserveLowA = 1.0f;
+  config.authorityDurationUs = 100000;
+  config.speedKpRadPerMps = 0.0f;
+  return config;
+}
+
+struct ImuValues {
+  float tiltErrorRad = 0.0f;  // relative to the trim, which is the tilt reference at zero speed
+  float tiltRateRadPerSec = 0.0f;
+  float yawRateRadPerSec = 0.0f;
+  float leftRadPerSec = 0.0f;
+  float rightRadPerSec = 0.0f;
+};
+
+// A new IMU sample at nowUs; the bus is fresh.
+Output imuSample(BalanceController &controller, const Config &config, uint32_t nowUs, uint32_t imuSequence,
+                 const ImuValues &values, const Request &request) {
+  Measurements m = atTime(makeMeasurements(), nowUs);
+  m.imuSequence = imuSequence;
+  m.tiltRad = kTrimTiltRad + values.tiltErrorRad;
+  m.tiltRateRadPerSec = values.tiltRateRadPerSec;
+  m.yawRateRadPerSec = values.yawRateRadPerSec;
+  m.leftWheelRadPerSec = values.leftRadPerSec;
+  m.rightWheelRadPerSec = values.rightRadPerSec;
+  return controller.update(m, request, config, nowUs);
+}
+
+// The same IMU sequence again at nowUs: no new sample, so only freshness and the fault timers advance.
+Output heldTick(BalanceController &controller, const Config &config, uint32_t nowUs, uint32_t imuSequence) {
+  Measurements m = atTime(makeMeasurements(), nowUs);
+  m.imuSequence = imuSequence;
+  return controller.update(m, makeRequest(true), config, nowUs);
 }
 }  // namespace
 
@@ -1089,6 +1137,310 @@ int main() {
     assert(nearlyTo(reentry.diag.speedI, 0.0f, 1e-6f) && nearlyTo(reentry.diag.speedP, 0.0f, 1e-6f));
     assert(nearlyTo(reentry.diag.tiltRefRad, kTrimTiltRad, 1e-6f));
   }
+
+  // Step 6, allocateEffort: symmetric envelopes [-2, 2] on both wheels, balance 1.0 and yaw 0.5. cMin -2, cMax 2,
+  // c 1. dMin = max(1-2, -2-1) = -1 and dMax = min(1+2, 2-1) = 1, so d = 0.5, left = 0.5, right = 1.5,
+  // reserve = min(2-1, 1+2) = 1. Nothing is clipped.
+  {
+    const Allocation a = BalanceController::allocateEffort(1.0f, 0.5f, -2.0f, 2.0f, -2.0f, 2.0f);
+    assert(nearlyTo(a.cMin, -2.0f, 1e-6f) && nearlyTo(a.cMax, 2.0f, 1e-6f));
+    assert(nearlyTo(a.c, 1.0f, 1e-6f) && nearlyTo(a.dMin, -1.0f, 1e-6f) && nearlyTo(a.dMax, 1.0f, 1e-6f));
+    assert(nearlyTo(a.d, 0.5f, 1e-6f));
+    assert(nearlyTo(a.leftA, 0.5f, 1e-6f) && nearlyTo(a.rightA, 1.5f, 1e-6f));
+    assert(nearlyTo(a.reserve, 1.0f, 1e-6f));
+    assert(!a.effortClipped && !a.differentialClipped && !a.forcedDifferential);
+  }
+
+  // Step 6, allocateEffort: asymmetric envelopes L [-0.6, 0.1] and R [-0.2, 0.3]. cMin = (-0.6 - 0.2) / 2 = -0.4
+  // and cMax = (0.1 + 0.3) / 2 = 0.2.
+  {
+    // Balance 0 and yaw 0 fit: dMin = max(0 - 0.1, -0.2 - 0) = -0.1, dMax = min(0 + 0.6, 0.3 - 0) = 0.3,
+    // d = 0, reserve = min(0.2, 0.4) = 0.2.
+    const Allocation fits = BalanceController::allocateEffort(0.0f, 0.0f, -0.6f, 0.1f, -0.2f, 0.3f);
+    assert(nearlyTo(fits.cMin, -0.4f, 1e-6f) && nearlyTo(fits.cMax, 0.2f, 1e-6f));
+    assert(nearlyTo(fits.dMin, -0.1f, 1e-6f) && nearlyTo(fits.dMax, 0.3f, 1e-6f));
+    assert(nearlyTo(fits.leftA, 0.0f, 1e-6f) && nearlyTo(fits.rightA, 0.0f, 1e-6f));
+    assert(nearlyTo(fits.reserve, 0.2f, 1e-6f));
+    assert(!fits.effortClipped && !fits.differentialClipped && !fits.forcedDifferential);
+
+    // Yaw 0.5 is clamped at dMax = 0.3: left = -0.3 and right = 0.3. The envelope, not balance, limits d here,
+    // and the clip is flagged the same way.
+    const Allocation yawHigh = BalanceController::allocateEffort(0.0f, 0.5f, -0.6f, 0.1f, -0.2f, 0.3f);
+    assert(nearlyTo(yawHigh.d, 0.3f, 1e-6f) && nearlyTo(yawHigh.leftA, -0.3f, 1e-6f) &&
+           nearlyTo(yawHigh.rightA, 0.3f, 1e-6f));
+    assert(yawHigh.differentialClipped && yawHigh.forcedDifferential && !yawHigh.effortClipped);
+
+    // Yaw -0.5 is clamped at dMin = -0.1: left = 0.1 (the left maximum) and right = -0.1.
+    const Allocation yawLow = BalanceController::allocateEffort(0.0f, -0.5f, -0.6f, 0.1f, -0.2f, 0.3f);
+    assert(nearlyTo(yawLow.d, -0.1f, 1e-6f) && nearlyTo(yawLow.leftA, 0.1f, 1e-6f) &&
+           nearlyTo(yawLow.rightA, -0.1f, 1e-6f));
+    assert(yawLow.differentialClipped && yawLow.forcedDifferential);
+
+    // Balance -1.0 clips c to cMin = -0.4 (effortClipped). dMin = max(-0.4 - 0.1, -0.2 + 0.4) = 0.2 and
+    // dMax = min(-0.4 + 0.6, 0.3 + 0.4) = 0.2, so d = 0.2 is forced although the yaw request is 0.
+    // left = -0.6 (the left minimum), right = -0.2 (the right minimum), reserve = 0.
+    const Allocation low = BalanceController::allocateEffort(-1.0f, 0.0f, -0.6f, 0.1f, -0.2f, 0.3f);
+    assert(nearlyTo(low.c, -0.4f, 1e-6f) && low.effortClipped);
+    assert(nearlyTo(low.dMin, 0.2f, 1e-6f) && nearlyTo(low.dMax, 0.2f, 1e-6f));
+    assert(nearlyTo(low.d, 0.2f, 1e-6f) && low.forcedDifferential);
+    assert(nearlyTo(low.leftA, -0.6f, 1e-6f) && nearlyTo(low.rightA, -0.2f, 1e-6f));
+    assert(nearlyTo(low.reserve, 0.0f, 1e-6f));
+
+    // Balance +1.0 clips c to cMax = 0.2. dMin = max(0.2 - 0.1, -0.2 - 0.2) = 0.1 and
+    // dMax = min(0.2 + 0.6, 0.3 - 0.2) = 0.1, so d = 0.1: left = 0.1 and right = 0.3, both at their maxima.
+    const Allocation high = BalanceController::allocateEffort(1.0f, 0.0f, -0.6f, 0.1f, -0.2f, 0.3f);
+    assert(nearlyTo(high.c, 0.2f, 1e-6f) && high.effortClipped);
+    assert(nearlyTo(high.d, 0.1f, 1e-6f) && high.forcedDifferential);
+    assert(nearlyTo(high.leftA, 0.1f, 1e-6f) && nearlyTo(high.rightA, 0.3f, 1e-6f));
+    assert(nearlyTo(high.reserve, 0.0f, 1e-6f));
+  }
+
+  // Step 6, allocateEffort: symmetric envelopes [-2, 2]. A balance request beyond either end clips c to +/-2 and
+  // collapses the differential to zero, so both wheels carry the same current.
+  {
+    const Allocation top = BalanceController::allocateEffort(3.0f, 0.0f, -2.0f, 2.0f, -2.0f, 2.0f);
+    assert(nearlyTo(top.c, 2.0f, 1e-6f) && top.effortClipped);
+    assert(nearlyTo(top.d, 0.0f, 1e-6f) && !top.differentialClipped);
+    assert(nearlyTo(top.leftA, 2.0f, 1e-6f) && nearlyTo(top.rightA, 2.0f, 1e-6f));
+    assert(nearlyTo(top.reserve, 0.0f, 1e-6f));
+
+    const Allocation bottom = BalanceController::allocateEffort(-3.0f, 0.0f, -2.0f, 2.0f, -2.0f, 2.0f);
+    assert(nearlyTo(bottom.c, -2.0f, 1e-6f) && bottom.effortClipped);
+    assert(nearlyTo(bottom.leftA, -2.0f, 1e-6f) && nearlyTo(bottom.rightA, -2.0f, 1e-6f));
+    assert(nearlyTo(bottom.reserve, 0.0f, 1e-6f));
+  }
+
+  // Step 6, allocateEffort: a yaw request of 5 exceeds dMax = min(0 + 2, 2 - 0) = 2, so d clamps to the envelope
+  // edge: left = -2 and right = 2. The differential is forced by the envelope, not by balance.
+  {
+    const Allocation a = BalanceController::allocateEffort(0.0f, 5.0f, -2.0f, 2.0f, -2.0f, 2.0f);
+    assert(nearlyTo(a.d, 2.0f, 1e-6f) && nearlyTo(a.leftA, -2.0f, 1e-6f) && nearlyTo(a.rightA, 2.0f, 1e-6f));
+    assert(a.differentialClipped && a.forcedDifferential && !a.effortClipped);
+  }
+
+  // Step 6, configValid: reserveLowA must be positive, and the balance and yaw gains must be finite.
+  {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    Config noReserve = makeBalanceConfig();
+    noReserve.reserveLowA = 0.0f;
+    Config nanTilt = makeBalanceConfig();
+    nanTilt.tiltPAPerRad = nan;
+    Config infYaw = makeBalanceConfig();
+    infYaw.yawPAPerRadPerSec = inf;
+    for (const Config *bad : {&noReserve, &nanTilt, &infYaw}) {
+      BalanceController bc;
+      tick(bc, good, makeRequest(false), *bad, 1000);
+      tick(bc, good, makeRequest(true), *bad, 2000);
+      const Output out = tick(bc, good, makeRequest(true), *bad, 3000);
+      assert(out.state == State::Fault && out.fault == FaultReason::InvalidConfig && !out.driveEnabled);
+    }
+  }
+
+  // Step 6, update(): balance law and yaw law with exact currents. Envelopes are +/-8.4 A at standstill.
+  // Tilt error 0.01 rad, tilt rate 0.2 rad/s: balance = 2 * 0.01 + 0.5 * 0.2 = 0.12 A. Measured yaw 0 and request 0,
+  // so the yaw differential is 0 and both wheels carry 0.12 A. The first processed sample only records its timestamp,
+  // but the balance law still runs on it.
+  const Config balance = makeBalanceConfig();
+  {
+    BalanceController bc;
+    enterRun(bc, balance, 0);
+    const Output first = imuSample(bc, balance, 12000, 2, ImuValues{0.01f, 0.2f, 0.0f, 0.0f, 0.0f}, makeRequest(true));
+    assert(first.state == State::Run && first.driveEnabled && first.fault == FaultReason::None);
+    assert(nearlyTo(first.leftA, 0.12f, 1e-4f) && nearlyTo(first.rightA, 0.12f, 1e-4f));
+    assert(nearlyTo(first.diag.c, 0.12f, 1e-4f) && nearlyTo(first.diag.d, 0.0f, 1e-6f));
+    assert(nearlyTo(first.diag.reserve, 8.28f, 1e-4f) && nearlyTo(first.diag.demandScale, 1.0f, 1e-6f));
+    assert(!first.diag.effortClipped && !first.diag.forcedDifferential);
+    assert(!first.diag.voltageClipped && !first.diag.currentClipped);
+
+    // Yaw law: the request is 0.3 rad/s (below the 0.5 cap, scale 1), the measured yaw is 0.1 rad/s, and the
+    // gain is 1.0, so the yaw differential is 0.2 A. Balance is 0 here, so left = -0.2 and right = 0.2.
+    const Output yaw = imuSample(bc, balance, 22000, 3, ImuValues{0.0f, 0.0f, 0.1f, 0.0f, 0.0f},
+                                 liveRequest(22000, 0.0f, 0.3f));
+    assert(nearlyTo(yaw.diag.d, 0.2f, 1e-6f) && nearlyTo(yaw.diag.c, 0.0f, 1e-6f));
+    assert(nearlyTo(yaw.leftA, -0.2f, 1e-4f) && nearlyTo(yaw.rightA, 0.2f, 1e-4f));
+    assert(nearlyTo(yaw.diag.shapedYawRateRadPerSec, 0.3f, 1e-6f));
+
+    // A repeated sequence is not a new sample, so the held outputs stay at -0.2 A and 0.2 A even though the
+    // tilt error and rate in the held measurement would otherwise change the balance.
+    Measurements repeat = atTime(makeMeasurements(), 25000);
+    repeat.imuSequence = 3;
+    repeat.tiltRad = kTrimTiltRad + 0.5f;
+    repeat.tiltRateRadPerSec = 5.0f;
+    repeat.yawRateRadPerSec = -2.0f;
+    const Output held = bc.update(repeat, makeRequest(true), balance, 25000);
+    assert(held.state == State::Run);
+    assert(nearlyTo(held.leftA, -0.2f, 1e-4f) && nearlyTo(held.rightA, 0.2f, 1e-4f));
+    assert(nearlyTo(held.diag.c, 0.0f, 1e-6f) && nearlyTo(held.diag.d, 0.2f, 1e-6f));
+  }
+
+  // Held demands are reallocated every tick: when the wheels speed up between IMU samples, the held 0.3 A
+  // is clamped to the new envelope. At 100 rad/s and Vmax 8.4 V the limit is [-0.6324, 0.1312] A (bemf 5.5133 V, R 22).
+  {
+    Config pOnly = config;
+    pOnly.tiltPAPerRad = 30.0f;
+    pOnly.gyroDampingAPerRadPerSec = 0.0f;
+    BalanceController bc;
+    enterRun(bc, pOnly, 0);
+    Measurements m = good;
+    m.tiltRad = kTrimTiltRad + 0.01f;  // 30 * 0.01 = 0.3 A, inside the at-rest limit of 0.3636 A
+    m.imuSequence = 2;
+    const Output first = bc.update(atTime(m, 12000), makeRequest(true), pOnly, 12000);
+    assert(first.state == State::Run && nearlyTo(first.leftA, 0.3f, 1e-4f));
+    m.leftWheelRadPerSec = 100.0f;
+    m.rightWheelRadPerSec = 100.0f;
+    const Output held = bc.update(atTime(m, 15000), makeRequest(true), pOnly, 15000);
+    assert(held.state == State::Run);
+    assert(nearlyTo(held.leftA, 0.131214f, 1e-4f) && nearlyTo(held.rightA, 0.131214f, 1e-4f));
+  }
+
+  // Step 6, outputs: zero in Disabled, Arming, and Fault. The output is also zero for a fault latched by a stale IMU.
+  {
+    BalanceController bc;
+    tick(bc, good, makeRequest(false), balance, 1000);
+    // Tilt error 0.5 is outside the 0.05 rad arming window, so the controller stays in Arming.
+    const Output arming = imuSample(bc, balance, 2000, 1, ImuValues{0.5f, 0.0f, 0.0f, 0.0f, 0.0f}, makeRequest(true));
+    assert(arming.state == State::Arming && !arming.driveEnabled);
+    assert(arming.leftA == 0.0f && arming.rightA == 0.0f);
+
+    BalanceController running;
+    enterRun(running, balance, 0);
+    const Output live = imuSample(running, balance, 12000, 2, ImuValues{0.01f, 0.2f, 0.0f, 0.0f, 0.0f},
+                                  makeRequest(true));
+    assert(live.driveEnabled && live.leftA > 0.0f);
+    const Output off = tick(running, good, makeRequest(false), balance, 30000);
+    assert(off.state == State::Disabled && !off.driveEnabled);
+    assert(off.leftA == 0.0f && off.rightA == 0.0f);
+
+    BalanceController stale;
+    enterRun(stale, balance, 0);
+    imuSample(stale, balance, 12000, 2, ImuValues{0.01f, 0.2f, 0.0f, 0.0f, 0.0f}, makeRequest(true));
+    // IMU read at 0 us, checked at 30000 us: older than the 20 ms limit, so StaleImu latches.
+    Measurements old = atTime(makeMeasurements(), 30000);
+    old.imuSequence = 3;
+    old.imuReadTimeUs = 0;
+    const Output fault = stale.update(old, makeRequest(true), balance, 30000);
+    assert(fault.state == State::Fault && fault.fault == FaultReason::StaleImu && !fault.driveEnabled);
+    assert(fault.leftA == 0.0f && fault.rightA == 0.0f);
+  }
+
+  // Step 6, update(): a NaN tilt latches InvalidInput on its sample and the outputs are zero. The balance law and
+  // the allocation would otherwise pass NaN to the motor targets.
+  {
+    BalanceController bc;
+    enterRun(bc, balance, 0);
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const Output out = imuSample(bc, balance, 12000, 2, ImuValues{nan, 0.0f, 0.0f, 0.0f, 0.0f}, makeRequest(true));
+    assert(out.state == State::Fault && out.fault == FaultReason::InvalidInput && !out.driveEnabled);
+    assert(out.leftA == 0.0f && out.rightA == 0.0f);
+  }
+
+  // Step 6, demandScale: reserve = min(cMax - c, c - cMin). A rate of 15.8 rad/s with gyro damping 0.5 gives
+  // balance 7.9 A, so reserve = 8.4 - 7.9 = 0.5 A = reserveLowA / 2 and demandScale = 0.5. The next sample shapes
+  // demand with that scale: the speed cap is 0.5 m/s and the accel cap 1 m/s^2, so over 10 ms the speed rises by
+  // 0.01 m/s (it would rise 0.02 m/s with scale 1).
+  {
+    BalanceController bc;
+    enterRun(bc, balance, 0);
+    const Output first = imuSample(bc, balance, 12000, 2, ImuValues{0.0f, 15.8f, 0.0f, 0.0f, 0.0f}, makeRequest(true));
+    assert(nearlyTo(first.diag.c, 7.9f, 1e-4f) && !first.diag.effortClipped);
+    assert(nearlyTo(first.diag.reserve, 0.5f, 1e-4f) && nearlyTo(first.diag.demandScale, 0.5f, 1e-4f));
+
+    const Output next = imuSample(bc, balance, 22000, 3, ImuValues{}, liveRequest(22000, 1.0f, 0.0f));
+    assert(nearlyTo(next.diag.shapedSpeedMps, 0.01f, 1e-6f));
+    // With zero effort the reserve is back at 8.4 A and the scale returns to 1.
+    assert(nearlyTo(next.diag.demandScale, 1.0f, 1e-6f));
+  }
+
+  // Step 6, demandScale: a reserve of 0.25 A gives 0.25 (linear below reserveLowA).
+  {
+    BalanceController bc;
+    enterRun(bc, balance, 0);
+    // Balance 8.15 A = 0.5 * 16.3 rad/s, so reserve 0.25 A.
+    const Output out = imuSample(bc, balance, 12000, 2, ImuValues{0.0f, 16.3f, 0.0f, 0.0f, 0.0f}, makeRequest(true));
+    assert(nearlyTo(out.diag.reserve, 0.25f, 1e-4f) && nearlyTo(out.diag.demandScale, 0.25f, 1e-4f));
+  }
+
+  // Step 6, speed integral freeze. Wheels at 1 rad/s give a measured speed of 0.1 m/s; the shaped speed is 0 with
+  // zero request, so the loop error is -0.1 m/s. Each 20 ms run then adds 0.2 * -0.1 * 0.02 = -0.0004 unless frozen.
+  // Control first: no clipping, so the integral runs.
+  {
+    Config integ = balance;
+    integ.speedIntegralEnabled = true;
+    BalanceController bc;
+    enterRun(bc, integ, 0);
+    ImuValues wheels;
+    wheels.leftRadPerSec = 1.0f;
+    wheels.rightRadPerSec = 1.0f;
+    imuSample(bc, integ, 12000, 2, wheels, makeRequest(true));
+    const Output run = imuSample(bc, integ, 22000, 3, wheels, makeRequest(true));
+    assert(nearlyTo(run.diag.speedI, -0.0004f, 1e-6f));
+  }
+  // Clipped: a 10 A balance request (rate 20 rad/s) clips c to about 8.345 A, so the speed integral holds through
+  // the next loop run. Clipped c leaves zero reserve, so the reserve input freezes it too; this checks the freeze.
+  {
+    Config integ = balance;
+    integ.speedIntegralEnabled = true;
+    BalanceController bc;
+    enterRun(bc, integ, 0);
+    ImuValues clipped;
+    clipped.tiltRateRadPerSec = 20.0f;
+    clipped.leftRadPerSec = 1.0f;
+    clipped.rightRadPerSec = 1.0f;
+    const Output first = imuSample(bc, integ, 12000, 2, clipped, makeRequest(true));
+    assert(first.diag.effortClipped);
+    const Output frozen = imuSample(bc, integ, 22000, 3, clipped, makeRequest(true));
+    assert(frozen.diag.effortClipped);
+    assert(nearlyTo(frozen.diag.speedI, 0.0f, 1e-6f));
+  }
+
+  // Step 6, authority fault timing: clipped effort at 12000 us starts the timer. The limit is 100000 us, so 112000
+  // is not yet over and 112001 faults.
+  {
+    BalanceController bc;
+    enterRun(bc, balance, 0);
+    ImuValues clipped;
+    clipped.tiltRateRadPerSec = 20.0f;
+    const Output start = imuSample(bc, balance, 12000, 2, clipped, makeRequest(true));
+    assert(start.state == State::Run && start.diag.effortClipped);
+    assert(heldTick(bc, balance, 112000, 2).state == State::Run);
+    const Output over = heldTick(bc, balance, 112001, 2);
+    assert(over.state == State::Fault && over.fault == FaultReason::AuthorityExhausted && !over.driveEnabled);
+    assert(over.leftA == 0.0f && over.rightA == 0.0f);
+  }
+
+  // Step 6, authority timer restart: an unclipped sample at 60000 us clears the timer. The next clipped sample
+  // at 70000 us starts a new run, so the fault comes at 170001 us, not 112001 us.
+  {
+    BalanceController bc;
+    enterRun(bc, balance, 0);
+    ImuValues clipped;
+    clipped.tiltRateRadPerSec = 20.0f;
+    imuSample(bc, balance, 12000, 2, clipped, makeRequest(true));
+    const Output unclipped = imuSample(bc, balance, 60000, 3, ImuValues{}, makeRequest(true));
+    assert(!unclipped.diag.effortClipped);
+    imuSample(bc, balance, 70000, 4, clipped, makeRequest(true));
+    assert(heldTick(bc, balance, 112001, 4).state == State::Run);
+    assert(heldTick(bc, balance, 170000, 4).state == State::Run);
+    assert(heldTick(bc, balance, 170001, 4).state == State::Fault);
+  }
+
+  // Step 6, authority timer across micros() wraparound. The clip starts at 0xFFFFFFFF - 8000 us. Adding 100000 us
+  // wraps to 91999 us, which is exactly the limit (not over); 92000 us is over.
+  {
+    const uint32_t base = 0xFFFFFFFFu - 20000u;
+    BalanceController bc;
+    enterRun(bc, balance, base);
+    ImuValues clipped;
+    clipped.tiltRateRadPerSec = 20.0f;
+    const uint32_t clipTimeUs = base + 12000u;
+    assert(imuSample(bc, balance, clipTimeUs, 2, clipped, makeRequest(true)).diag.effortClipped);
+    assert(heldTick(bc, balance, 91999u, 2).state == State::Run);
+    assert(heldTick(bc, balance, 92000u, 2).state == State::Fault);
+  }
+
+  // Step 6, configuration: a NaN and an infinite gain are refused at entry. A zero reserveLowA is refused too.
+  // Covered in the block above.
 
   std::puts("balance controller passed");
   return 0;

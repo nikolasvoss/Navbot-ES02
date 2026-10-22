@@ -42,6 +42,7 @@ enum class FaultReason : uint8_t {
   Overspeed,
   InvalidEnvelope,
   InvalidConfig,
+  AuthorityExhausted,
 };
 
 struct Diagnostics {
@@ -133,6 +134,16 @@ struct Config {
   float tiltRefLimitRad = 0.0f;       // uncommissioned, bounds |trim + speed correction|
   float tiltRefSlewRadPerSec = 0.0f;  // uncommissioned
 
+  // Balance and yaw law, in amperes. Gains may be negative; the stage-1 sign test checks the signs.
+  float tiltPAPerRad = 0.0f;              // uncommissioned, A per rad of tilt error
+  float gyroDampingAPerRadPerSec = 0.0f;  // uncommissioned, A per rad/s of tilt rate
+  float yawPAPerRadPerSec = 0.0f;         // uncommissioned, A per rad/s of yaw-rate error
+
+  // Reserve below reserveLowA scales demand down linearly to zero at zero reserve.
+  float reserveLowA = 0.0f;         // uncommissioned, must be positive
+  // Clipped balance effort for longer than this faults with AuthorityExhausted.
+  uint32_t authorityDurationUs = 0;  // uncommissioned
+
   // Inputs supplied by the sketch from the stored trim record and pose check, not commissioning constants.
   bool trimValidated = false;
   float storedTrimDeg = 0.0f;
@@ -145,8 +156,30 @@ struct Demand {
   float yawRateRadPerSec = 0.0f;
 };
 
+// Paired wheel targets in amperes. Left is c - d and right is c + d, both forward positive.
+struct Allocation {
+  float c = 0.0f;
+  float d = 0.0f;
+  float cMin = 0.0f;
+  float cMax = 0.0f;
+  float dMin = 0.0f;
+  float dMax = 0.0f;
+  bool effortClipped = false;        // c differs from the balance request
+  bool differentialClipped = false;  // d differs from the yaw request
+  bool forcedDifferential = false;   // same as differentialClipped: the envelope forced d away from the request
+  float leftA = 0.0f;
+  float rightA = 0.0f;
+  float reserve = 0.0f;
+};
+
 class BalanceController {
  public:
+  // Requires finite envelopes with min <= max on each wheel, as checked on each tick by update().
+  // Balance takes priority over the yaw request. With asymmetric envelopes, a common effort near either
+  // end forces a differential that the yaw request did not ask for.
+  static Allocation allocateEffort(float balanceCommonA, float yawDifferentialA, float leftMinA, float leftMaxA,
+                                   float rightMinA, float rightMaxA);
+
   // Ramps the requested speed toward the capped target and clamps the requested yaw rate. A NaN
   // request counts as zero, and a NaN demandScale counts as zero.
   static Demand shapeDemand(Demand previous, Demand requested, float demandScale, float dtSec,
@@ -175,6 +208,7 @@ class BalanceController {
                     uint32_t nowUs);
   void latchFault(FaultReason reason);
   void checkEnvelopes(const Measurements &measurements, const Config &config);
+  void computeEffort(const Measurements &measurements, const Config &config, uint32_t nowUs, bool newImuSample);
 
   State state_ = State::Disabled;
   FaultReason fault_ = FaultReason::None;
@@ -195,8 +229,16 @@ class BalanceController {
   float rightMinA_ = 0.0f;
   float rightMaxA_ = 0.0f;
 
-  // Scales both demand caps. Stays 1.0 until the reserve logic sets it.
+  // Scales both demand caps. Set from the reserve on each processed IMU sample in Run; 1.0 on entering Run.
   float demandScale_ = 1.0f;
+  // Balance and yaw outputs of the last processed sample in Run; zero outside Run.
+  Allocation allocation_;
+  float balanceCommonA_ = 0.0f;
+  float yawDifferentialA_ = 0.0f;
+  bool haveEffortDemand_ = false;
+  // Start of the current run of clipped balance effort, valid while authorityClipped_ is set.
+  bool authorityClipped_ = false;
+  uint32_t authorityStartUs_ = 0;
   // Shaped demand of the last processed IMU sample; zero outside Run and on entering Run.
   Demand shapedDemand_;
 
@@ -213,7 +255,7 @@ class BalanceController {
   float tiltRefRad_ = 0.0f;      // applied reference, slewed toward desiredTiltRad_ every processed sample
   bool tiltClipped_ = false;
   uint32_t lastSpeedLoopUs_ = 0;
-  // Set by the effort allocator in a later step; both stay false until then.
+  // From the last processed sample in Run; they gate the speed integral on the next loop run.
   bool effortClippedPrev_ = false;
   bool reserveLowPrev_ = false;
 };

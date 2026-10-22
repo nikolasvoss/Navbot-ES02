@@ -65,7 +65,10 @@ bool configValid(const Config &config) {
          std::isfinite(config.speedKiRadPerMpsS) && std::isfinite(config.tiltRefLimitRad) &&
          config.tiltRefLimitRad >= 0.0f && std::isfinite(config.tiltRefSlewRadPerSec) &&
          config.tiltRefSlewRadPerSec > 0.0f &&
-         std::fabs(config.storedTrimDeg * kDegreesToRadiansF) <= config.tiltRefLimitRad;
+         std::fabs(config.storedTrimDeg * kDegreesToRadiansF) <= config.tiltRefLimitRad &&
+         std::isfinite(config.tiltPAPerRad) && std::isfinite(config.gyroDampingAPerRadPerSec) &&
+         std::isfinite(config.yawPAPerRadPerSec) && std::isfinite(config.reserveLowA) &&
+         config.reserveLowA > 0.0f;
 }
 
 float nanToZero(float value) { return std::isnan(value) ? 0.0f : value; }
@@ -146,6 +149,28 @@ float BalanceController::slewTiltRef(float previousRad, float desiredRad, float 
   return previousRad + (differenceRad > 0.0f ? maxStepRad : -maxStepRad);
 }
 
+Allocation BalanceController::allocateEffort(float balanceCommonA, float yawDifferentialA, float leftMinA,
+                                             float leftMaxA, float rightMinA, float rightMaxA) {
+  Allocation out;
+  out.cMin = 0.5f * (leftMinA + rightMinA);
+  out.cMax = 0.5f * (leftMaxA + rightMaxA);
+  out.c = std::max(out.cMin, std::min(out.cMax, balanceCommonA));
+  // left = c - d stays in [leftMin, leftMax] and right = c + d in [rightMin, rightMax].
+  out.dMin = std::max(out.c - leftMaxA, rightMinA - out.c);
+  out.dMax = std::min(out.c - leftMinA, rightMaxA - out.c);
+  // min/max rather than std::clamp: rounding can leave dMin a hair above dMax at a point interval.
+  out.d = std::max(out.dMin, std::min(out.dMax, yawDifferentialA));
+  // The final clamp removes the last-ulp rounding excess, so each output lies inside its envelope.
+  out.leftA = std::max(leftMinA, std::min(leftMaxA, out.c - out.d));
+  out.rightA = std::max(rightMinA, std::min(rightMaxA, out.c + out.d));
+  out.reserve = std::min(out.cMax - out.c, out.c - out.cMin);
+  out.effortClipped = out.c != balanceCommonA;
+  out.differentialClipped = out.d != yawDifferentialA;
+  // Balance takes priority: the envelope left no room for the requested differential.
+  out.forcedDifferential = out.differentialClipped;
+  return out;
+}
+
 Output BalanceController::update(const Measurements &measurements, const Request &request, const Config &config,
                                  uint32_t nowUs) {
   // The first call only records the switch level, so a switch that is already on at boot is not an edge.
@@ -188,12 +213,27 @@ Output BalanceController::update(const Measurements &measurements, const Request
     trimRad_ = speedPRad_ = speedIRad_ = desiredTiltRad_ = tiltRefRad_ = 0.0f;
     tiltClipped_ = false;
     effortClippedPrev_ = reserveLowPrev_ = false;
+    demandScale_ = 1.0f;
+  }
+  if (state_ != State::Run) {
+    allocation_ = Allocation{};  // wheel effort is only commanded in Run until step 7 wires Commissioning
   }
 
   Output output;
   output.driveEnabled = state_ == State::Run;
   output.state = state_;
   output.fault = fault_;
+  output.leftA = allocation_.leftA;
+  output.rightA = allocation_.rightA;
+  output.diag.c = allocation_.c;
+  output.diag.d = allocation_.d;
+  output.diag.cMin = allocation_.cMin;
+  output.diag.cMax = allocation_.cMax;
+  output.diag.dMin = allocation_.dMin;
+  output.diag.dMax = allocation_.dMax;
+  output.diag.effortClipped = allocation_.effortClipped;
+  output.diag.forcedDifferential = allocation_.forcedDifferential;
+  output.diag.reserve = allocation_.reserve;
   output.diag.leftMinA = leftMinA_;
   output.diag.leftMaxA = leftMaxA_;
   output.diag.rightMinA = rightMinA_;
@@ -223,6 +263,10 @@ void BalanceController::resetRunTracking(const Config &config, uint32_t nowUs) {
   tiltClipped_ = false;
   lastSpeedLoopUs_ = nowUs;
   effortClippedPrev_ = reserveLowPrev_ = false;
+  allocation_ = Allocation{};
+  haveEffortDemand_ = false;
+  demandScale_ = 1.0f;
+  authorityClipped_ = false;
 }
 
 void BalanceController::latchFault(FaultReason reason) {
@@ -317,6 +361,46 @@ void BalanceController::checkRunning(const Measurements &measurements, const Req
   }
 
   checkEnvelopes(measurements, config);
+  if (state_ == State::Run) {
+    computeEffort(measurements, config, nowUs, newImuSample);
+  }
+  // Checked on every tick, so the authority timer runs while the held effort stays clipped.
+  if (state_ == State::Run && authorityClipped_ &&
+      elapsedLongerThan(nowUs, authorityStartUs_, config.authorityDurationUs)) {
+    latchFault(FaultReason::AuthorityExhausted);
+  }
+}
+
+// The balance and yaw demands are updated on each new IMU sample. The allocation is redone every tick,
+// so held demands are always clamped to the envelopes of the current wheel speeds and bus voltage.
+void BalanceController::computeEffort(const Measurements &measurements, const Config &config, uint32_t nowUs,
+                                      bool newImuSample) {
+  if (newImuSample) {
+    balanceCommonA_ = config.tiltPAPerRad * (measurements.tiltRad - tiltRefRad_) +
+                      config.gyroDampingAPerRadPerSec * measurements.tiltRateRadPerSec;
+    yawDifferentialA_ = config.yawPAPerRadPerSec * (shapedDemand_.yawRateRadPerSec - measurements.yawRateRadPerSec);
+    // A NaN or infinite input would reach the motor targets through the allocation, so it faults instead.
+    if (!std::isfinite(balanceCommonA_) || !std::isfinite(yawDifferentialA_)) {
+      latchFault(FaultReason::InvalidInput);
+      return;
+    }
+    haveEffortDemand_ = true;
+  }
+  if (!haveEffortDemand_) {
+    return;
+  }
+
+  allocation_ = allocateEffort(balanceCommonA_, yawDifferentialA_, leftMinA_, leftMaxA_, rightMinA_, rightMaxA_);
+  effortClippedPrev_ = allocation_.effortClipped;
+  reserveLowPrev_ = allocation_.reserve < config.reserveLowA;
+  demandScale_ = std::clamp(allocation_.reserve / config.reserveLowA, 0.0f, 1.0f);
+
+  if (!allocation_.effortClipped) {
+    authorityClipped_ = false;
+  } else if (!authorityClipped_) {
+    authorityClipped_ = true;
+    authorityStartUs_ = nowUs;
+  }
 }
 
 void BalanceController::checkEnvelopes(const Measurements &measurements, const Config &config) {
