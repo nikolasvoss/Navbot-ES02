@@ -59,3 +59,7 @@ Wheel overspeed limit lowered to 30 rad/s. With the robot held and then released
 | `b0574c4` | tiltP 8, gyro 0.4 | Still better, adopted as the working set |
 
 Practical consequence: the inner tilt loop was too soft; stiffening it removed most of the swing. Legs at 20 degrees hold the body higher than at 0. Status stays open: driving with the sticks, long runs and the battery effect are untested.
+
+## Update 2026-10-24: stick driving
+
+With `b0574c4` and the LiDAR plugged in and turning, the robot stayed as stable as before. Forward and backward driving, braking and standing still were good. The turn was too slow, so `yawRateCap` went from 0.5 to 1.0 rad/s (`7497510`); the operator rated the result good. Untested: long runs, low battery, the leg servo start-up (brief in `work/servo-soft-start.brief.md`). Status stays open.

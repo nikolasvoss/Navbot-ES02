@@ -123,6 +123,6 @@ Checked on the robot on 2026-10-24:
 
 ## Not done yet
 
-- **Tuning.** The gains above are a first set. The robot swings 2 to 3 cm and still drifts a little; driving with the sticks is not tested yet.
+- **Tuning.** The gains above are a hand-tuned set. Driving with the sticks works (turn rate cap 1.0 rad/s). Not tested: long runs and low battery.
 - **Gains, trim storage, scheduling** on the IMU rate, and **KV and resistance per wheel**.
 - **The remaining starting values.** All `balanceConfig()` values marked `uncommissioned` in the sketch are proposals, not measured.
