@@ -145,8 +145,8 @@ const Config &balanceConfig() {
     // Speed loop (gains zero, integral off)
     c.wheelRadiusM = 0.019f;                     // measured 2026-10-24: diameter 38.3 mm, 38 mm used, m
     c.speedLoopPeriodUs = 20000;                 // plan: provisional 50 Hz speed loop, us
-    c.speedKpRadPerMps = 0.1f;                   // uncommissioned: first gain, tilt rad per m/s (0.5 m/s error asks 0.05 rad)
-    c.speedKiRadPerMpsS = 0.05f;                 // uncommissioned: first gain, tilt rad per m (0.1 m/s error for 1 s adds 0.005 rad)
+    c.speedKpRadPerMps = 0.25f;                  // uncommissioned: tilt rad per m/s (0.2 m/s error asks 0.05 rad)
+    c.speedKiRadPerMpsS = 0.15f;                 // uncommissioned: tilt rad per m (0.1 m/s error for 1 s adds 0.015 rad)
     c.speedIntegralEnabled = true;               // uncommissioned: on, learns the lean that cancels an off-centre centre of mass
     c.tiltRefLimitRad = 0.0872665f;              // uncommissioned: proposed starting value, rad (5 deg)
     c.tiltRefSlewRadPerSec = 0.5f;               // uncommissioned: proposed starting value, rad/s
@@ -462,7 +462,7 @@ void serviceWheelOverspeed() {
                      wheelOverspeed.peakRadPerSec, OverspeedGuard::kLimitRadPerSec);
 }
 
-// Called only after a successful diagnostic RESET. Rearms the guard only while both wheels are below the limit.
+// Called after a successful diagnostic RESET and by balanceRequest() while CH5 is off. Rearms the guard only while both wheels are below the limit.
 // Rearming does not enable the drivers. balanceRequest() reports enable off while the guard is tripped, so CH5 must
 // go off and on again before the controller drives the wheels.
 void resetWheelOverspeed() {
@@ -911,6 +911,8 @@ float rcStickFraction(int16_t raw) {
 Request balanceRequest(uint32_t nowUs) {
   const Config &config = balanceConfig();
   const bool fresh = rcFrameSeen && static_cast<uint32_t>(nowUs - rcFrameUs) <= kRcFrameTimeoutMs * 1000U;
+  // CH5 off rearms a tripped overspeed guard (once both wheels are below the limit), so no serial command is needed.
+  if (fresh && rcChannels[4] < kRcEnableOnRaw) resetWheelOverspeed();
   Request request{};
   request.receivedTimeUs = rcFrameUs;
   request.sourceValid = fresh && sBus.Failsafe() == FUTABA_SBUS::kSignalOk;
