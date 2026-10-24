@@ -69,6 +69,7 @@ COMMAND_CALLBACK(setMahonyKi)
 COMMAND_CALLBACK(selectDebugLog)
 COMMAND_CALLBACK(selectCalibration)
 COMMAND_CALLBACK(setYawPid)
+COMMAND_CALLBACK(setKvSafetyFactor)
 #undef COMMAND_CALLBACK
 
 #include "../../src/ES-02/OllieFOCdrive/SerialCommandRouter.h"
@@ -80,18 +81,20 @@ int main() {
   commander.com_port = &output;
   SerialCommandRouter router;
 
-  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 12);
+  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 13);
   const char *expectedCallbacks[] = {"handleM1MotionCommand", "handleM1Command", "zeroBiasServo1", "zeroBiasServo2",
                                     "zeroBiasServo3", "zeroBiasServo4", "setImuLowPassCutoff", "setMahonyKp",
-                                    "setMahonyKi", "selectDebugLog", "selectCalibration", "setYawPid"};
-  const char ids[] = "TMABCDZQIKEY";
+                                    "setMahonyKi", "selectDebugLog", "selectCalibration", "setYawPid",
+                                    "setKvSafetyFactor"};
+  const char ids[] = "TMABCDZQIKEYJ";
   for (size_t i = 0; ids[i]; ++i) {
     Stream input(std::string(1, ids[i]) + "\n");
     router.run(input, commander, commandEntries);
     assert(calls[i] == std::string(expectedCallbacks[i]) + ":\n");
   }
-  assert(calls.size() == 12);
+  assert(calls.size() == 13);
   assert(calls[11] == "setYawPid:\n");
+  assert(calls[12] == "setKvSafetyFactor:\n");
 
   calls.clear();
   Stream yawInput("YP?\nYI2\nYD\nYL\n");

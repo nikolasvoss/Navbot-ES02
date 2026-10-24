@@ -82,6 +82,12 @@ constexpr float kWheelVelocityFilterTfSec = 0.001;
 constexpr WheelMotorParams kLeftWheelMotor{5.75f, 79.5f};
 constexpr WheelMotorParams kRightWheelMotor{5.75f, 76.7f};
 
+// SimpleFOC adds the estimated back-EMF as voltage even at 0 A. If that estimate is larger than the real back-EMF
+// the wheel accelerates by itself, so the rating handed to SimpleFOC is the measured KV times this factor (a larger
+// KV gives a smaller estimate). Measured KV depends on the speed range (79.5 rpm/V over 0.5-2 V, about 108 rpm/V for
+// 0.5-1 V), so 1.4 is a starting value. Adjustable with Commander J until a wheel at 0 A no longer accelerates.
+float wheelKvSafetyFactor = 1.4f;  // uncommissioned: proposed starting value
+
 // Balance configuration, built once. Gains are zero, so the demand is zero. The envelope can still command a small
 // braking current above roughly 50 rad/s, because the plan requires outputs inside the envelope.
 // Each value is one of: existing constant (named), plan (decision or stated number), or an uncommissioned placeholder.
@@ -113,7 +119,9 @@ const Config &balanceConfig() {
     // Effort envelope. One KV is used for both wheels: 76.7 (right) and 79.5 (left) measured, about 3.6 percent apart,
     // so the envelope error is small. The lower value is used.
     c.phaseResistanceOhm = kLeftWheelMotor.phaseResistanceOhm;     // existing constant, ohm per phase (5.75 not verified)
-    c.kvRating = std::min(kLeftWheelMotor.kvRatingRpmPerV, kRightWheelMotor.kvRatingRpmPerV);  // existing constant, rpm/V
+    // Same rating as handed to SimpleFOC, so the envelope matches the voltage the drive really outputs. Built once at
+    // first use: a later Commander J does not change it (the wheels are not driven by the controller yet).
+    c.kvRating = std::min(kLeftWheelMotor.kvRatingRpmPerV, kRightWheelMotor.kvRatingRpmPerV) * wheelKvSafetyFactor;  // rpm/V
     c.voltageLimitV = kWheelVoltageLimitV;                         // existing constant, V
     c.currentLimitA = kWheelVoltageLimitV / c.phaseResistanceOhm;  // as configureWheelMotor(), A
     c.sagMarginV = 0.5f;                         // uncommissioned: proposed starting value, V
@@ -336,6 +344,19 @@ TwoWire i2cTwo = TwoWire(1);
 
 MotorDiagnostic::State motorDiagnosticState{};
 bool motorDiagnosticApplied = false;
+
+void setKvSafetyFactor(char *cmd) {
+  float value = 0.0f;
+  if (!parseCommandFloat(cmd, value) || value < 1.0f || value > 3.0f) {
+    Logging::message(Logging::Level::Warning, "KV_FACTOR", "refused; use J <1.0..3.0>, now %.3f", wheelKvSafetyFactor);
+    return;
+  }
+  wheelKvSafetyFactor = value;
+  motor1.KV_rating = kLeftWheelMotor.kvRatingRpmPerV * wheelKvSafetyFactor;
+  motor2.KV_rating = kRightWheelMotor.kvRatingRpmPerV * wheelKvSafetyFactor;
+  Logging::message(Logging::Level::Info, "KV_FACTOR", "%.3f -> KV %.1f / %.1f rpm/V", wheelKvSafetyFactor,
+                   motor1.KV_rating, motor2.KV_rating);
+}
 
 void selectCalibration(char *cmd) {
   float requested = calibrationSelect;
@@ -593,7 +614,7 @@ void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params) {
   motor.LPF_velocity.Tf = kWheelVelocityFilterTfSec;
 
   motor.phase_resistance = params.phaseResistanceOhm;
-  motor.KV_rating = params.kvRatingRpmPerV;
+  motor.KV_rating = params.kvRatingRpmPerV * wheelKvSafetyFactor;
   motor.voltage_limit = kWheelVoltageLimitV;
   motor.current_limit = kWheelVoltageLimitV / params.phaseResistanceOhm;  // stall current at the voltage ceiling
   motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
@@ -646,6 +667,7 @@ const SerialCommandEntry commandEntries[] = {
     {'K', selectDebugLog, "my Select"},
     {'E', selectCalibration, "my CalibrationSelect"},
     {'Y', setYawPid, "yawPidSettings"},
+    {'J', setKvSafetyFactor, "wheel KV safety factor, 1.0 to 3.0"},
 };
 
 SerialCommandRouter serialCommandRouter;
