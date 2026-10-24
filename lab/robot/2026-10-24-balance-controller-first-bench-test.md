@@ -25,3 +25,15 @@ User-reported log lines and observations from the bench session in the task chat
 - **Run keeps the wheels off** until the drive is commissioned (`kBalanceDrivesWheels` is `false`). The plan's coast decision is unchanged.
 - **Before any gain is set:** choose a back-EMF setting that cannot accelerate the wheel (KV set high enough that the estimate is below the real back-EMF, or no back-EMF term), and lower the overspeed limit below the plateau. Neither is decided.
 - The measured signs are now in the sketch: a forward lean is positive, so positive gains drive the wheels forward.
+
+## Update 2026-10-24: KV safety factor, left wheel
+
+The estimated back-EMF handed to SimpleFOC uses the measured KV times a factor (Commander `J`, default now 1.8). The left wheel was pushed by hand with `T 0 0 5000` active and `K7` running, battery about 8 V:
+
+| Factor | Observation |
+| --- | --- |
+| 1.0 | `T 0.05 0.05`: the wheel ran up to 37 rad/s within the lease |
+| 1.4 | After one push the wheel slowed from 45 to 24 rad/s, then sped up again to 30, and later from 17 to 27 rad/s, so the drive kept the wheel turning |
+| 1.8 | Two pushes (peaks 38.7 and 45.9 rad/s): the speed fell continuously to 0 both times, with no renewed speed-up at higher speed. After stopping, the wheel turned back to about -3.9 rad/s and died away, probably the motor's cogging torque (not checked) |
+
+Practical consequence: 1.8 is the working value for the left wheel at 0 A. The right wheel has a lower KV (76.7 against 79.5 rpm/V) and takes the same factor on the operator's decision, without a separate test. The wheels stay off in Run (`kBalanceDrivesWheels` is `false`) until the drive is enabled again on purpose.

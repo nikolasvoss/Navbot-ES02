@@ -85,8 +85,10 @@ constexpr WheelMotorParams kRightWheelMotor{5.75f, 76.7f};
 // SimpleFOC adds the estimated back-EMF as voltage even at 0 A. If that estimate is larger than the real back-EMF
 // the wheel accelerates by itself, so the rating handed to SimpleFOC is the measured KV times this factor (a larger
 // KV gives a smaller estimate). Measured KV depends on the speed range (79.5 rpm/V over 0.5-2 V, about 108 rpm/V for
-// 0.5-1 V), so 1.4 is a starting value. Adjustable with Commander J until a wheel at 0 A no longer accelerates.
-float wheelKvSafetyFactor = 1.4f;  // uncommissioned: proposed starting value
+// 0.5-1 V). Bench test of the left wheel with T 0 0 on 2026-10-24: 1.0 ran away from rest, 1.4 let the wheel speed
+// up again between 17 and 30 rad/s, 1.8 slowed it down continuously. The right wheel takes the same factor on the
+// operator's decision; it is not tested separately. Adjustable with Commander J.
+float wheelKvSafetyFactor = 1.8f;  // left wheel verified at 0 A on 2026-10-24, right wheel not tested
 
 // Balance configuration, built once. Gains are zero, so the demand is zero. The envelope can still command a small
 // braking current above roughly 50 rad/s, because the plan requires outputs inside the envelope.
