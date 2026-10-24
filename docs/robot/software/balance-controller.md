@@ -26,53 +26,34 @@ The start arrow marks the initial state, Disabled. The diagram follows `BalanceC
 
 ```mermaid
 stateDiagram-v2
+    direction LR
     [*] --> Disabled
+    Disabled --> Enabled: CH5 off to on
+    Enabled --> Disabled: CH5 off, clears fault
+    Arming --> Disabled: timeout 3 s
 
-    Disabled --> Arming: CH5 off to on, live request, trimValidated, fixedPoseReachable
-    Arming --> Run: start conditions hold and envelope contains 0 A
-    Arming --> Fault: invalid envelope or config, checked when start conditions hold
-    Arming --> Disabled: arming timeout after 3 s, or CH5 off
-    Run --> Commissioning: CH7 on, live request, transfer check passes
-    Commissioning --> Run: CH7 off, live request, trim equals stored trim
-    Run --> Fault: stale or invalid input, bad dt, fall, overspeed, invalid envelope or config, authority exhausted, tilt saturated
-    Commissioning --> Fault: same faults as Run
-    Run --> Disabled: CH5 off
-    Commissioning --> Disabled: CH5 off
-    Fault --> Disabled: CH5 off
-
-    note right of Disabled
-        Drivers off.
-        A lost remote blocks the start.
-    end note
-
-    note right of Arming
-        Drivers off.
-        Start conditions, all checked every tick:
-        IMU, wheels and battery fresh.
-        Tilt within 5 degrees of the stored trim.
-        Tilt rate at most 0.1 rad/s.
-        Drive and turn requests within 0.05 m/s and 0.05 rad/s.
-        Both wheels at most 2 rad/s.
-        Envelope valid and containing 0 A.
-        A lost remote holds Arming, the timeout still applies.
-    end note
-
-    note right of Run
-        Controller computes. Wheels stay off.
-        A lost remote leaves the state unchanged; the request counts as zero.
-        CH7 on but transfer refused: stays in Run, commissioningRefused=1.
-    end note
-
-    note right of Commissioning
-        Controller computes with zero drive and turn demand. Wheels stay off.
-        A lost remote leaves the state unchanged.
-        CH6 save edges are handled here.
-    end note
-
-    note right of Fault
-        Drivers off. Latched until CH5 off.
-    end note
+    state Enabled {
+        [*] --> Arming
+        Arming --> Run: start conditions met
+        Arming --> Fault: invalid envelope or config
+        Run --> Commissioning: CH7 on, transfer ok
+        Commissioning --> Run: CH7 off, trim matches
+        Run --> Fault: any fault
+        Commissioning --> Fault: any fault
+    }
 ```
+
+Disabled, Arming and Fault keep the drivers off. Run and Commissioning run the controller; the wheels stay off because `kBalanceDrivesWheels` is `false`. `Enabled` groups the four states that need CH5 on.
+
+- **Disabled to Arming** needs the CH5 edge with a live request, `trimValidated` and `fixedPoseReachable`, and no fault.
+- **Arming to Run** needs every start condition in the [start conditions](#start-conditions-arming-to-run) section and an envelope that contains 0 A.
+- **Arming to Disabled** after the 3 s timeout, if the start conditions never hold together (drawn as "timeout 3 s").
+- **Arming to Fault** on an invalid envelope or config, checked only while the start conditions hold.
+- **Run to Commissioning** needs CH7 on and a live request; if the transfer check fails, the state stays in Run with `commissioningRefused=1`.
+- **Commissioning to Run** needs CH7 off, a live request, `trimValidated` and a working trim equal to the stored trim.
+- **Any fault** from Run or Commissioning goes to Fault: stale or invalid input, bad dt, fall, overspeed, invalid envelope or config, authority exhausted, tilt saturated (see the [faults](#faults-state-4) table).
+- **CH5 off** returns every state to Disabled and clears the fault.
+- A lost remote leaves Run and Commissioning unchanged; the request counts as zero. It holds Arming, and the timeout still applies.
 
 ## Remote switches
 
