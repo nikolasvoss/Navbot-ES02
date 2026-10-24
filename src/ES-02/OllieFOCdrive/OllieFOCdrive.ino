@@ -163,8 +163,8 @@ const Config &balanceConfig() {
     c.saveRequestYawTolRadPerSec = 0.05f;        // uncommissioned: proposed starting value, rad/s
 
     // Balance and yaw law (passive: zero)
-    c.tiltPAPerRad = 6.0f;                       // uncommissioned: A/rad (5 deg lean asks 0.52 A)
-    c.gyroDampingAPerRadPerSec = 0.3f;           // uncommissioned: A/(rad/s) (1 rad/s asks 0.3 A)
+    c.tiltPAPerRad = 8.0f;                       // uncommissioned: A/rad (5 deg lean asks 0.70 A)
+    c.gyroDampingAPerRadPerSec = 0.4f;           // uncommissioned: A/(rad/s) (1 rad/s asks 0.4 A)
     c.yawPAPerRadPerSec = 0.6f;                  // uncommissioned: A/(rad/s) (1 rad/s yaw error asks 0.6 A per side)
 
     // Reserve and authority
