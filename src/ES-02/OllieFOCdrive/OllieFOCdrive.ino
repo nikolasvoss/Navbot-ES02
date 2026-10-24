@@ -146,7 +146,7 @@ const Config &balanceConfig() {
     c.wheelRadiusM = 0.019f;                     // measured 2026-10-24: diameter 38.3 mm, 38 mm used, m
     c.speedLoopPeriodUs = 20000;                 // plan: provisional 50 Hz speed loop, us
     c.speedKpRadPerMps = 0.25f;                  // uncommissioned: tilt rad per m/s (0.2 m/s error asks 0.05 rad)
-    c.speedKiRadPerMpsS = 0.15f;                 // uncommissioned: tilt rad per m (0.1 m/s error for 1 s adds 0.015 rad)
+    c.speedKiRadPerMpsS = 0.08f;                 // uncommissioned: tilt rad per m (0.1 m/s error for 1 s adds 0.008 rad)
     c.speedIntegralEnabled = true;               // uncommissioned: on, learns the lean that cancels an off-centre centre of mass
     c.tiltRefLimitRad = 0.0872665f;              // uncommissioned: proposed starting value, rad (5 deg)
     c.tiltRefSlewRadPerSec = 0.5f;               // uncommissioned: proposed starting value, rad/s
@@ -165,7 +165,7 @@ const Config &balanceConfig() {
     // Balance and yaw law (passive: zero)
     c.tiltPAPerRad = 4.0f;                       // uncommissioned: first gain, A/rad (5 deg lean asks 0.35 A)
     c.gyroDampingAPerRadPerSec = 0.2f;           // uncommissioned: first damping, A/(rad/s) (1 rad/s asks 0.2 A)
-    c.yawPAPerRadPerSec = 0.3f;                  // uncommissioned: first gain, A/(rad/s) (1 rad/s yaw error asks 0.3 A per side)
+    c.yawPAPerRadPerSec = 0.6f;                  // uncommissioned: A/(rad/s) (1 rad/s yaw error asks 0.6 A per side)
 
     // Reserve and authority
     c.reserveLowA = 0.2f;                        // uncommissioned: proposed starting value, A
