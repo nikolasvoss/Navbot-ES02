@@ -1,6 +1,8 @@
 # Navbot-ES02 control: developer overview
 
 As of 2026-10-08 · Based on the firmware in [OllieFOCdrive.ino](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino). This page explains the compiled **two-wheel / master mode** on the ESP32-S3. It describes the code, not automatically the state of a robot flashed later. Live-changed PID values are lost on restart.
+> The state machine, remote switches, faults, and commissioning added in Package 4 are described in [Balance controller](balance-controller.md). This page predates them.
+
 
 ## The idea in one sentence
 
