@@ -945,11 +945,13 @@ void logBalanceChange(const Output &out) {
  *        Otherwise both wheels get 0 A and are disabled; setWheelEnabled() acts only on a wheel that is still enabled.
  *        The motor diagnostic owns the outputs while it is active or applied.
  */
-// Wheels are driven only when this is true. Torque mode has no speed loop: a 0 A command still outputs the estimated
-// back-EMF as voltage, which is positive feedback, so any KV error makes an enabled wheel accelerate until the
-// voltage ceiling (about 55 rad/s at 6.7 V, below the 60 rad/s overspeed limit). Measured on the robot 2026-10-24
-// in Run with all gains 0. Keep false until KV and the speed protection are commissioned; Run then coasts.
-constexpr bool kBalanceDrivesWheels = false;
+// Wheels are driven only when this is true; otherwise Run coasts like Disabled. Torque mode has no speed loop: a 0 A
+// command still outputs the estimated back-EMF as voltage, which is positive feedback, so a KV estimate that is too
+// large makes an enabled wheel accelerate until the voltage ceiling (about 55 rad/s at 6.7 V, below the 60 rad/s
+// overspeed limit). Measured on the robot 2026-10-24 in Run with all gains 0. With wheelKvSafetyFactor 1.8 a wheel
+// at 0 A slows down instead (left wheel tested), so the drive is on again in Run and Commissioning, still with all
+// gains 0. Disabled, Arming and Fault keep the wheels off.
+constexpr bool kBalanceDrivesWheels = true;
 
 void applyBalanceOutput(const Output &out) {
   if (motorDiagnosticState.active || motorDiagnosticApplied) return;
