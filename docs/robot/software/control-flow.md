@@ -34,7 +34,7 @@ The IMU sits on the MAIN board according to the PCB draft. Each wheel motor has 
 
 ### Which controllers affect what?
 
-There is no balance, speed, roll, or ball controller in the sketch since Package 3. Both wheel targets are 0 A (set in `runControlTick()`), and the legs hold the fixed standing pose: each servo at `-trim`, with no inverse kinematics. Package 4 adds the balance controller. See the [robust control plan](../plans/robust-control-system.md#package-4-controller-module).
+There is no balance, speed, roll, or ball controller in the sketch since Package 3. Both wheel targets are 0 A (set in `runControlTick()`), and the legs hold the fixed standing pose: each servo at a fixed 20 degrees (trims do not apply), with no inverse kinematics. Package 4 adds the balance controller. See the [robust control plan](../plans/robust-control-system.md#package-4-controller-module).
 
 The yaw loop is not computed either: `yawPid` keeps its settings from Commander `Y`, but no code updates its output since Package 3 row 9. Package 4 replaces it with a yaw-rate term.
 

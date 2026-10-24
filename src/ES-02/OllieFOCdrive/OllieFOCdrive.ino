@@ -163,8 +163,8 @@ const Config &balanceConfig() {
     c.saveRequestYawTolRadPerSec = 0.05f;        // uncommissioned: proposed starting value, rad/s
 
     // Balance and yaw law (passive: zero)
-    c.tiltPAPerRad = 4.0f;                       // uncommissioned: first gain, A/rad (5 deg lean asks 0.35 A)
-    c.gyroDampingAPerRadPerSec = 0.2f;           // uncommissioned: first damping, A/(rad/s) (1 rad/s asks 0.2 A)
+    c.tiltPAPerRad = 6.0f;                       // uncommissioned: A/rad (5 deg lean asks 0.52 A)
+    c.gyroDampingAPerRadPerSec = 0.3f;           // uncommissioned: A/(rad/s) (1 rad/s asks 0.3 A)
     c.yawPAPerRadPerSec = 0.6f;                  // uncommissioned: A/(rad/s) (1 rad/s yaw error asks 0.6 A per side)
 
     // Reserve and authority
@@ -201,6 +201,7 @@ uint32_t controlGateSequence = 0;
 DebugTelemetry::TelemetryState debugTelemetryState{};
 uint32_t diagnosticSequence = 0;
 ServoTrimsDegrees servoTrims{};
+constexpr int kLegPoseDegrees = 20;  // fixed leg pose for all four servos, degrees
 
 bool parseCommandFloat(const char *text, float &value) {
   char *end = nullptr;
@@ -1181,11 +1182,9 @@ void runControlTick(bool imuUpdated) {
   bodyTurn = request.sourceValid ? request.yawRateRadPerSec : 0.0f;
   applyBalanceOutput(out);
 
-  // Fixed standing pose: every servo at its calibrated zero, which is the servo calibration pose. No IK runs.
-  servoTraceAngle[0] = -servoTrims.servo1Degrees;
-  servoTraceAngle[1] = -servoTrims.servo2Degrees;
-  servoTraceAngle[2] = -servoTrims.servo3Degrees;
-  servoTraceAngle[3] = -servoTrims.servo4Degrees;
+  // Fixed standing pose: every servo at kLegPoseDegrees, found on the robot 2026-10-24 (body higher than at 0). The
+  // servo trims do not apply. No IK runs.
+  for (int &angle : servoTraceAngle) angle = kLegPoseDegrees;
   writeLegServos();
   RobotLogCapture::observeServoAngles(servoTraceAngle);
 
