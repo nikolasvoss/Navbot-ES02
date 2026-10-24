@@ -4,7 +4,7 @@ As of 2026-10-24 · firmware commit `776684b` · code in [BalanceController.h](.
 
 ## What it does today
 
-The controller is a state machine plus the control math. The sketch gives it measurements and the remote request on every control tick, and applies its output. **All control gains are 0 and the wheels are never driven.** The constant `kBalanceDrivesWheels` in the sketch is `false`, so in every state the wheels coast with the drivers off. The reason is in the [bench test note](../../../lab/robot/2026-10-24-balance-controller-first-bench-test.md): an enabled wheel at 0 A runs away.
+The controller is a state machine plus the control math. The sketch gives it measurements and the remote request on every control tick, and applies its output. **All control gains are 0, so the controller asks for 0 A.** In Run and Commissioning the sketch enables the wheel drivers and applies that output (`kBalanceDrivesWheels` is `true`). A wheel at 0 A brakes slightly, because the back-EMF estimate handed to SimpleFOC is the measured KV times `wheelKvSafetyFactor` (1.8, Commander `J`). Without that margin an enabled wheel at 0 A runs away; see the [bench test note](../../../lab/robot/2026-10-24-balance-controller-first-bench-test.md). Disabled, Arming and Fault keep the drivers off and the wheels free.
 
 What works and is tested on the robot: arming, run, fall detection, fault latching, remote loss, and the commissioning state with the trim knob and the save request.
 
@@ -16,7 +16,7 @@ The sketch logs one `BALANCE state=<n> fault=<n> commissioningRefused=<0|1>` lin
 | --- | --- | --- |
 | 0 | Disabled | Off. Drivers off, wheels free. Waits for CH5 to go from off to on. |
 | 1 | Arming | CH5 went on. The controller checks the start conditions below. When they hold it goes to Run. After 3 s without success it returns to Disabled. |
-| 2 | Run | Normal operation. The controller watches for faults. Wheels stay off (see above). |
+| 2 | Run | Normal operation. The controller watches for faults and the wheel drivers are on at 0 A (a slight brake). |
 | 3 | Commissioning | Standstill setup (CH7 on): trim adjustment and save request. Drive and turn requests are ignored. |
 | 4 | Fault | A fault is latched. Drivers off. Only CH5 off leaves this state; the robot never restarts by itself. |
 
@@ -43,7 +43,7 @@ stateDiagram-v2
     }
 ```
 
-Disabled, Arming and Fault keep the drivers off. Run and Commissioning run the controller; the wheels stay off because `kBalanceDrivesWheels` is `false`. `Enabled` groups the four states that need CH5 on.
+Disabled, Arming and Fault keep the drivers off. Run and Commissioning run the controller with the wheel drivers on; the output is 0 A while all gains are 0. `Enabled` groups the four states that need CH5 on.
 
 - **Disabled to Arming** needs the CH5 edge with a live request, `trimValidated` and `fixedPoseReachable`, and no fault.
 - **Arming to Run** needs every start condition in the [start conditions](#start-conditions-arming-to-run) section and an envelope that contains 0 A.
@@ -123,6 +123,7 @@ Checked on the robot on 2026-10-24:
 
 ## Not done yet
 
-- **Driving the wheels.** Needs a safe 0 A behaviour first: SimpleFOC adds the estimated back-EMF as voltage, which accelerates the wheel on any KV error. The overspeed limit of 60 rad/s is also above the plateau at a low battery.
+- **Non-zero gains.** The tilt, tilt-rate, yaw, and speed gains are all 0, so the robot does not balance yet. The signs of tilt, tilt rate, and yaw rate are measured and fixed in the sketch.
+- **The overspeed limit.** 60 rad/s is above the speed an enabled wheel reaches at a low battery, so it cannot catch a runaway there. With the KV safety factor a runaway at 0 A does not occur, but the limit should be lowered before driving.
 - **Gains, trim storage, scheduling** on the IMU rate, and **KV and resistance per wheel**.
 - **The remaining starting values.** All `balanceConfig()` values marked `uncommissioned` in the sketch are proposals, not measured.

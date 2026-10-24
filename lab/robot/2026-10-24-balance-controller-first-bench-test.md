@@ -37,3 +37,9 @@ The estimated back-EMF handed to SimpleFOC uses the measured KV times a factor (
 | 1.8 | Two pushes (peaks 38.7 and 45.9 rad/s): the speed fell continuously to 0 both times, with no renewed speed-up at higher speed. After stopping, the wheel turned back to about -3.9 rad/s and died away, probably the motor's cogging torque (not checked) |
 
 Practical consequence: 1.8 is the working value for the left wheel at 0 A. The right wheel has a lower KV (76.7 against 79.5 rpm/V) and takes the same factor on the operator's decision, without a separate test. The wheels stay off in Run (`kBalanceDrivesWheels` is `false`) until the drive is enabled again on purpose.
+
+## Update 2026-10-24: drive enabled again in Run, both wheels
+
+With `kBalanceDrivesWheels` set to `true` and the KV safety factor at 1.8 for both wheels (gains 0), the operator ran the Run tests on the supported robot: wheels turn by hand and brake slightly, a pushed wheel slows down on both sides without a renewed speed-up, no wheel starts from rest, a tilt past 35 degrees gives Fault 6 and the wheels go off, and CH5 off gives Disabled with free wheels. The operator reported that both wheels felt alike. All of these passed.
+
+Practical consequence: the robot now sits in a safe passive state in Run, and the next step is the first non-zero gain with the measured signs. The overspeed limit of 60 rad/s should still be lowered before driving. Status stays open for that reason.
