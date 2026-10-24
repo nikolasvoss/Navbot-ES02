@@ -20,6 +20,60 @@ The sketch logs one `BALANCE state=<n> fault=<n> commissioningRefused=<0|1>` lin
 | 3 | Commissioning | Standstill setup (CH7 on): trim adjustment and save request. Drive and turn requests are ignored. |
 | 4 | Fault | A fault is latched. Drivers off. Only CH5 off leaves this state; the robot never restarts by itself. |
 
+## State diagram
+
+The start arrow marks the initial state, Disabled. The diagram follows `BalanceController::update()` in the code. CH5 off takes every state to Disabled and clears the fault. The request is live when the remote signal is fresh.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Disabled
+
+    Disabled --> Arming: CH5 off to on, live request, trimValidated, fixedPoseReachable
+    Arming --> Run: start conditions hold and envelope contains 0 A
+    Arming --> Fault: invalid envelope or config, checked when start conditions hold
+    Arming --> Disabled: arming timeout after 3 s, or CH5 off
+    Run --> Commissioning: CH7 on, live request, transfer check passes
+    Commissioning --> Run: CH7 off, live request, trim equals stored trim
+    Run --> Fault: stale or invalid input, bad dt, fall, overspeed, invalid envelope or config, authority exhausted, tilt saturated
+    Commissioning --> Fault: same faults as Run
+    Run --> Disabled: CH5 off
+    Commissioning --> Disabled: CH5 off
+    Fault --> Disabled: CH5 off
+
+    note right of Disabled
+        Drivers off.
+        A lost remote blocks the start.
+    end note
+
+    note right of Arming
+        Drivers off.
+        Start conditions, all checked every tick:
+        IMU, wheels and battery fresh.
+        Tilt within 5 degrees of the stored trim.
+        Tilt rate at most 0.1 rad/s.
+        Drive and turn requests within 0.05 m/s and 0.05 rad/s.
+        Both wheels at most 2 rad/s.
+        Envelope valid and containing 0 A.
+        A lost remote holds Arming, the timeout still applies.
+    end note
+
+    note right of Run
+        Controller computes. Wheels stay off.
+        A lost remote leaves the state unchanged; the request counts as zero.
+        CH7 on but transfer refused: stays in Run, commissioningRefused=1.
+    end note
+
+    note right of Commissioning
+        Controller computes with zero drive and turn demand. Wheels stay off.
+        A lost remote leaves the state unchanged.
+        CH6 save edges are handled here.
+    end note
+
+    note right of Fault
+        Drivers off. Latched until CH5 off.
+    end note
+```
+
 ## Remote switches
 
 | Channel | Function | Notes |
@@ -46,7 +100,7 @@ Hold the robot upright and still before switching CH5 on. A lost remote signal b
 
 ## Faults (state 4)
 
-`fault` says why. The first four are checked every tick in Run and Commissioning.
+`fault` says why. All are checked every tick in Run and Commissioning; faults 8 and 9 can also latch in Arming once the start conditions hold.
 
 | `fault` | Reason | Trigger |
 | --- | --- | --- |
@@ -60,7 +114,7 @@ Hold the robot upright and still before switching CH5 on. A lost remote signal b
 | 10 | Authority exhausted | The balance effort is limited for more than 2 s |
 | 11 | Tilt saturated | The tilt reference is limited for more than 0.5 s |
 
-CH5 off always returns to Disabled and clears the fault.
+CH5 off always returns to Disabled and clears the fault. In the sketch, a tripped wheel overspeed guard (60 rad/s for 50 ms) is read as CH5 off, so a runaway usually ends in Disabled instead of Fault 7; flip CH5 off and on to restart.
 
 ## Losing the remote
 
