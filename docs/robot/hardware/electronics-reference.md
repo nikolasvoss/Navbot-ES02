@@ -10,7 +10,7 @@ This page supplements the [system overview](system-overview.md). All component p
 | --- | --- | --- |
 | Battery | External 2S 18650 holder → `CN2`: 1 `B2`, 2 `B1`, 3 `B-` | Center tap `B1`. Do not confuse it with a simple two-pole battery lead. BOM: one 2S holder and two cells. |
 | Protection and on/off | `U8` HY2120-LB, `Q2` WSD3056DN, `SW4`/`SW1`; `SW1` routes `B2` to `VIN` | Cell protection and a switched main supply are present in the design. `VIN` supplies the motor drivers directly. The actual cutoff threshold was not measured here. |
-| Charging / USB | `M1` "2S充电模块" (2S charging module) with `VBUS`, `B2`, `B1`, `GND`, `VSTA`; USB-C `USB1`; `D5`/`J1` in the path to `+5V` | Charging and USB supply are intended in the design. No charging behavior or simultaneous operation under load has been verified. `VSTA` goes to the ESP32 (`GPIO18`). |
+| Charging / USB | `M1` "2S充电模块" (2S charging module, IP2326 boost charger; see [charger module](charger-module.md)) with `VBUS`, `B2`, `B1`, `GND`, `VSTA`; USB-C `USB1`; `D5`/`J1` in the path to `+5V` | Charging and USB supply are intended in the design. The module project sets about 1.3 A charge current (`ISET` 68 kΩ) and 8.4 V; not yet verified on the built module. No charging behavior or simultaneous operation under load has been verified. `VSTA` goes to the ESP32 (`GPIO18`). |
 | 5 V | `U1` RT8289GSP, `L1` FXL0630-100-M, input net `VIN`, output `+5V` | Switching regulator for 5 V loads and connectors. |
 | 3.3 V | `U2` XC6210B332MR from `+5V` to `+3.3V` | Supplies the ESP32, IMU, encoders, and logic. Does not supply the servo load. |
 | Servo supply | `H11`: 1 `+5V`, 2 servo supply net, 3 `VIN`; same net on `H9/H10` pins 3/4 | Three-pin select: jumper 1–2 = 5 V, 2–3 = VIN. The PCB project does not show which jumper position is fitted. Before connecting 2S VIN to the servos, check that they are rated for it. |
@@ -40,7 +40,7 @@ The [startup capture after the library change](../../../lab/robot/captures/seria
 | IMU | `U5` ICM-42688P-HXY, SPI `SCLK/MOSI/MISO/CS1` | GPIO3/9/10/13; `ICM42688.cpp` uses SPI mode 3, accelerometer ±8 g and gyro ±2000 °/s at 1 kHz. `INT1/INT2` are present in the design but, according to the netlist, not connected to U4 (R28 pulls INT2 to GND). The firmware shown reads over SPI without FIFO or interrupt. Check the real board before interrupt or FIFO capture. |
 | Four leg servos | `SERVO1/2/3/4` | GPIO11/12/21/14, 50 Hz PWM in `ServoControl`. Servos 2/3 are inverted in the standard drive. The GPIO order does not yet say anything about left/right on the mechanics. |
 | Operating LEDs | `LED2/LED3` | GPIO35/36. `board::kStatusLedPin=35`; LOW switches the firmware LED on. |
-| Charging signal | `VSTA` | GPIO18. In the schematic connected to `M1`; no software evaluation confirmed here. |
+| Charging signal | `VSTA` | GPIO18. Not the IP2326 status pin (unconnected). Per the module project, a divider from `BAT+` through `Q2` when USB is present, about 2 V at 8.4 V. See [charger module](charger-module.md). No software evaluation confirmed here. |
 | Version identifier | `VERSION_ADC` | GPIO8, divider 180 kΩ/100 kΩ. Present in the design; use by the current firmware not established. |
 
 ## Connectors

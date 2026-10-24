@@ -6,6 +6,7 @@ The robot is the ESP32-S3 controller board and everything attached to it: wheel 
 
 - [System overview](hardware/system-overview.md): start here for any hardware question.
 - [Electronics reference](hardware/electronics-reference.md): power paths, GPIOs, connectors, and firmware interfaces.
+- [Charger module](hardware/charger-module.md): the on-board 2S charger (IP2326), its pads, and the resistor-set limits.
 - [Netlist](hardware/netlist.md): every component pad and net, for targeted search.
 - [Touchscreen stand](hardware/touchscreenstand.md): stand dimensions and robot mounting holes.
 
