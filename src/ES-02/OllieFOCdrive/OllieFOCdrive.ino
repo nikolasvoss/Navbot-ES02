@@ -133,7 +133,7 @@ const Config &balanceConfig() {
     c.demandScaleCapStart = 0.5f;                // uncommissioned: proposed starting value, dimensionless
 
     // Speed loop (gains zero, integral off)
-    c.wheelRadiusM = 0.03f;                      // uncommissioned: NOT MEASURED placeholder, m
+    c.wheelRadiusM = 0.019f;                     // measured 2026-10-23: diameter 38.3 mm, 38 mm used, m
     c.speedLoopPeriodUs = 20000;                 // plan: provisional 50 Hz speed loop, us
     c.speedKpRadPerMps = 0.0f;                   // passive: zero gain
     c.speedKiRadPerMpsS = 0.0f;                  // passive: zero gain
