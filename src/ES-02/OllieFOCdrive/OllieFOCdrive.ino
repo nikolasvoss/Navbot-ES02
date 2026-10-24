@@ -841,12 +841,11 @@ void readBatteryVoltage(void) {
   batteryVoltage = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
 }
 
-// Balance measurements, built at the hardware boundary. Sign and axis constants are unverified until stage 1.
-// UNVERIFIED sign/axis: verify on the supported robot (plan: stage 1 sign test)
-constexpr float kTiltSign = 1.0f;
-// UNVERIFIED sign/axis: verify on the supported robot (plan: stage 1 sign test)
-constexpr float kTiltRateSign = 1.0f;
-// UNVERIFIED sign/axis: verify on the supported robot (plan: stage 1 sign test)
+// Balance measurements, built at the hardware boundary. Sign and axis checked on the supported robot 2026-10-23:
+// leaning forward lowers correctedRollDegrees and drives gyro x below 0, so both are negated to make a forward lean
+// positive (positive gains then push the wheels forward). Turning left raises gyro z, which is the positive yaw rate.
+constexpr float kTiltSign = -1.0f;
+constexpr float kTiltRateSign = -1.0f;
 constexpr float kYawRateSign = 1.0f;
 
 /**
