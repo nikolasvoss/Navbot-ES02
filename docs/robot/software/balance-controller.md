@@ -89,13 +89,13 @@ Hold the robot upright and still before switching CH5 on. A lost remote signal b
 | 4 | Invalid input | IMU or wheels flagged invalid, or a non-finite value |
 | 5 | Time gap | Time between IMU samples is 0 or above 20 ms |
 | 6 | **Fall** | Corrected roll beyond 35 degrees for 20 ms, same as the upstream project |
-| 7 | Overspeed | A wheel above 60 rad/s for 50 ms |
+| 7 | Overspeed | A wheel above 30 rad/s for 50 ms |
 | 8 | Invalid envelope | Battery out of range, non-finite value, or an inverted current range |
 | 9 | Invalid config | A configuration value is unusable |
 | 10 | Authority exhausted | The balance effort is limited for more than 2 s |
 | 11 | Tilt saturated | The tilt reference is limited for more than 0.5 s |
 
-CH5 off always returns to Disabled and clears the fault. In the sketch, a tripped wheel overspeed guard (60 rad/s for 50 ms) is read as CH5 off, so a runaway usually ends in Disabled instead of Fault 7; flip CH5 off and on to restart.
+CH5 off always returns to Disabled and clears the fault. In the sketch, a tripped wheel overspeed guard (30 rad/s for 50 ms) is read as CH5 off, so a runaway usually ends in Disabled instead of Fault 7; flip CH5 off and on to restart.
 
 ## Losing the remote
 
@@ -124,6 +124,5 @@ Checked on the robot on 2026-10-24:
 ## Not done yet
 
 - **Non-zero gains.** The tilt, tilt-rate, yaw, and speed gains are all 0, so the robot does not balance yet. The signs of tilt, tilt rate, and yaw rate are measured and fixed in the sketch.
-- **The overspeed limit.** 60 rad/s is above the speed an enabled wheel reaches at a low battery, so it cannot catch a runaway there. With the KV safety factor a runaway at 0 A does not occur, but the limit should be lowered before driving.
 - **Gains, trim storage, scheduling** on the IMU rate, and **KV and resistance per wheel**.
 - **The remaining starting values.** All `balanceConfig()` values marked `uncommissioned` in the sketch are proposals, not measured.

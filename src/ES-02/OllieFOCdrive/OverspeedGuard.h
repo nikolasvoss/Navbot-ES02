@@ -4,8 +4,9 @@
 
 namespace OverspeedGuard {
 
-// Wheel speed above this value counts as overspeed. Matches MotorDiagnostic::kMaximumSpeedRadPerSec.
-constexpr float kLimitRadPerSec = 60.0f;
+// Wheel speed above this value counts as overspeed. Below the speed an enabled wheel reaches at a low battery, so
+// the guard catches a runaway there. Lowered from 60 rad/s on 2026-10-24 before the first non-zero gain.
+constexpr float kLimitRadPerSec = 30.0f;
 // An over-limit run latches the guard only after it has lasted this long (measured with nowMs).
 constexpr uint32_t kDebounceMs = 50;
 

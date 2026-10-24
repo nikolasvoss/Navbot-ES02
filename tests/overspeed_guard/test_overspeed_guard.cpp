@@ -5,7 +5,7 @@
 #include "../../src/ES-02/OllieFOCdrive/OverspeedGuard.h"
 
 namespace {
-constexpr float kOver = 60.01f;
+constexpr float kOver = 30.01f;
 }  // namespace
 
 int main() {
@@ -34,7 +34,7 @@ int main() {
     State s{};
     assert(!update(s, 3000, kOver, 0.0f));
     assert(!update(s, 3030, kOver, 0.0f));
-    assert(!update(s, 3031, 60.0f, 0.0f));  // exactly at the limit is not over
+    assert(!update(s, 3031, 30.0f, 0.0f));  // exactly at the limit is not over
     assert(!s.pending);
     assert(!update(s, 3032, kOver, 0.0f));
     assert(!update(s, 3081, kOver, 0.0f));  // 49 ms since 3032
