@@ -163,7 +163,7 @@ const Config &balanceConfig() {
     c.saveRequestYawTolRadPerSec = 0.05f;        // uncommissioned: proposed starting value, rad/s
 
     // Balance and yaw law (passive: zero)
-    c.tiltPAPerRad = 0.0f;                       // passive: zero gain, A/rad
+    c.tiltPAPerRad = 4.0f;                       // uncommissioned: first gain, A/rad (5 deg lean asks 0.35 A)
     c.gyroDampingAPerRadPerSec = 0.0f;           // passive: zero gain, A/(rad/s)
     c.yawPAPerRadPerSec = 0.0f;                  // passive: zero gain, A/(rad/s)
 
