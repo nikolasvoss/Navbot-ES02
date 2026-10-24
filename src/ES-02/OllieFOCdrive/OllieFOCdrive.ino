@@ -1181,11 +1181,9 @@ void runControlTick(bool imuUpdated) {
   bodyTurn = request.sourceValid ? request.yawRateRadPerSec : 0.0f;
   applyBalanceOutput(out);
 
-  // Fixed standing pose: every servo at its calibrated zero, which is the servo calibration pose. No IK runs.
-  servoTraceAngle[0] = -servoTrims.servo1Degrees;
-  servoTraceAngle[1] = -servoTrims.servo2Degrees;
-  servoTraceAngle[2] = -servoTrims.servo3Degrees;
-  servoTraceAngle[3] = -servoTrims.servo4Degrees;
+  // Fixed standing pose: every servo at raw angle 0, the pose set at boot, which holds the body higher than the
+  // trimmed pose did. The servo trims do not apply. No IK runs.
+  for (int &angle : servoTraceAngle) angle = 0;
   writeLegServos();
   RobotLogCapture::observeServoAngles(servoTraceAngle);
 
