@@ -146,8 +146,8 @@ const Config &balanceConfig() {
     c.wheelRadiusM = 0.019f;                     // measured 2026-10-24: diameter 38.3 mm, 38 mm used, m
     c.speedLoopPeriodUs = 20000;                 // plan: provisional 50 Hz speed loop, us
     c.speedKpRadPerMps = 0.1f;                   // uncommissioned: first gain, tilt rad per m/s (0.5 m/s error asks 0.05 rad)
-    c.speedKiRadPerMpsS = 0.0f;                  // passive: zero gain
-    c.speedIntegralEnabled = false;              // passive: integral off
+    c.speedKiRadPerMpsS = 0.05f;                 // uncommissioned: first gain, tilt rad per m (0.1 m/s error for 1 s adds 0.005 rad)
+    c.speedIntegralEnabled = true;               // uncommissioned: on, learns the lean that cancels an off-centre centre of mass
     c.tiltRefLimitRad = 0.0872665f;              // uncommissioned: proposed starting value, rad (5 deg)
     c.tiltRefSlewRadPerSec = 0.5f;               // uncommissioned: proposed starting value, rad/s
     c.tiltClipDurationUs = 500000;               // uncommissioned: proposed starting value, 0.5 s
