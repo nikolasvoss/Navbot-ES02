@@ -63,3 +63,7 @@ Practical consequence: the inner tilt loop was too soft; stiffening it removed m
 ## Update 2026-10-24: stick driving
 
 With `b0574c4` and the LiDAR plugged in and turning, the robot stayed as stable as before. Forward and backward driving, braking and standing still were good. The turn was too slow, so `yawRateCap` went from 0.5 to 1.0 rad/s (`7497510`); the operator rated the result good. Untested: long runs, low battery, the leg servo start-up (brief in `work/servo-soft-start.brief.md`). Status stays open.
+
+## Update 2026-10-24: test aids removed
+
+The Commander `J` command and the `kBalanceDrivesWheels` flag were bench-test aids. With the drive permanent and 1.8 accepted for both wheels, the factor is now the constant `kWheelKvSafetyFactor` and Run always drives the wheels. Earlier entries in this note name the old command and flag as the record of how the factor was found.

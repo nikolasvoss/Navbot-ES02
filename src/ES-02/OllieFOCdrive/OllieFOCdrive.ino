@@ -88,8 +88,8 @@ constexpr WheelMotorParams kRightWheelMotor{5.75f, 76.7f};
 // KV gives a smaller estimate). Measured KV depends on the speed range (79.5 rpm/V over 0.5-2 V, about 108 rpm/V for
 // 0.5-1 V). Bench test of the left wheel with T 0 0 on 2026-10-24: 1.0 ran away from rest, 1.4 let the wheel speed
 // up again between 17 and 30 rad/s, 1.8 slowed it down continuously. The right wheel takes the same factor on the
-// operator's decision; it is not tested separately. Adjustable with Commander J.
-float wheelKvSafetyFactor = 1.8f;  // left wheel verified at 0 A on 2026-10-24, right wheel not tested
+// operator's decision; it is not tested separately.
+constexpr float kWheelKvSafetyFactor = 1.8f;
 
 // Balance configuration, built once. Gains are zero, so the demand is zero. The envelope can still command a small
 // braking current above roughly 50 rad/s, because the plan requires outputs inside the envelope.
@@ -122,9 +122,8 @@ const Config &balanceConfig() {
     // Effort envelope. One KV is used for both wheels: 76.7 (right) and 79.5 (left) measured, about 3.6 percent apart,
     // so the envelope error is small. The lower value is used.
     c.phaseResistanceOhm = kLeftWheelMotor.phaseResistanceOhm;     // existing constant, ohm per phase (5.75 not verified)
-    // Same rating as handed to SimpleFOC, so the envelope matches the voltage the drive really outputs. Built once at
-    // first use: a later Commander J does not change it (the wheels are not driven by the controller yet).
-    c.kvRating = std::min(kLeftWheelMotor.kvRatingRpmPerV, kRightWheelMotor.kvRatingRpmPerV) * wheelKvSafetyFactor;  // rpm/V
+    // Same rating as handed to SimpleFOC, so the envelope matches the voltage the drive really outputs. 
+    c.kvRating = std::min(kLeftWheelMotor.kvRatingRpmPerV, kRightWheelMotor.kvRatingRpmPerV) * kWheelKvSafetyFactor;  // rpm/V
     c.voltageLimitV = kWheelVoltageLimitV;                         // existing constant, V
     c.currentLimitA = kWheelVoltageLimitV / c.phaseResistanceOhm;  // as configureWheelMotor(), A
     c.sagMarginV = 0.5f;                         // uncommissioned: proposed starting value, V
@@ -352,19 +351,6 @@ TwoWire i2cTwo = TwoWire(1);
 
 MotorDiagnostic::State motorDiagnosticState{};
 bool motorDiagnosticApplied = false;
-
-void setKvSafetyFactor(char *cmd) {
-  float value = 0.0f;
-  if (!parseCommandFloat(cmd, value) || value < 1.0f || value > 3.0f) {
-    Logging::message(Logging::Level::Warning, "KV_FACTOR", "refused; use J <1.0..3.0>, now %.3f", wheelKvSafetyFactor);
-    return;
-  }
-  wheelKvSafetyFactor = value;
-  motor1.KV_rating = kLeftWheelMotor.kvRatingRpmPerV * wheelKvSafetyFactor;
-  motor2.KV_rating = kRightWheelMotor.kvRatingRpmPerV * wheelKvSafetyFactor;
-  Logging::message(Logging::Level::Info, "KV_FACTOR", "%.3f -> KV %.1f / %.1f rpm/V", wheelKvSafetyFactor,
-                   motor1.KV_rating, motor2.KV_rating);
-}
 
 void selectCalibration(char *cmd) {
   float requested = calibrationSelect;
@@ -622,7 +608,7 @@ void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params) {
   motor.LPF_velocity.Tf = kWheelVelocityFilterTfSec;
 
   motor.phase_resistance = params.phaseResistanceOhm;
-  motor.KV_rating = params.kvRatingRpmPerV * wheelKvSafetyFactor;
+  motor.KV_rating = params.kvRatingRpmPerV * kWheelKvSafetyFactor;
   motor.voltage_limit = kWheelVoltageLimitV;
   motor.current_limit = kWheelVoltageLimitV / params.phaseResistanceOhm;  // stall current at the voltage ceiling
   motor.foc_modulation = FOCModulationType::SpaceVectorPWM;
@@ -675,7 +661,6 @@ const SerialCommandEntry commandEntries[] = {
     {'K', selectDebugLog, "my Select"},
     {'E', selectCalibration, "my CalibrationSelect"},
     {'Y', setYawPid, "yawPidSettings"},
-    {'J', setKvSafetyFactor, "wheel KV safety factor, 1.0 to 3.0"},
 };
 
 SerialCommandRouter serialCommandRouter;
@@ -950,17 +935,9 @@ void logBalanceChange(const Output &out) {
  *        Otherwise both wheels get 0 A and are disabled; setWheelEnabled() acts only on a wheel that is still enabled.
  *        The motor diagnostic owns the outputs while it is active or applied.
  */
-// Wheels are driven only when this is true; otherwise Run coasts like Disabled. Torque mode has no speed loop: a 0 A
-// command still outputs the estimated back-EMF as voltage, which is positive feedback, so a KV estimate that is too
-// large makes an enabled wheel accelerate until the voltage ceiling (about 55 rad/s at 6.7 V, below the 60 rad/s
-// overspeed limit). Measured on the robot 2026-10-24 in Run with all gains 0. With wheelKvSafetyFactor 1.8 a wheel
-// at 0 A slows down instead (left wheel tested), so the drive is on again in Run and Commissioning, still with all
-// gains 0. Disabled, Arming and Fault keep the wheels off.
-constexpr bool kBalanceDrivesWheels = true;
-
 void applyBalanceOutput(const Output &out) {
   if (motorDiagnosticState.active || motorDiagnosticApplied) return;
-  if (kBalanceDrivesWheels && out.driveEnabled && !wheelOverspeed.tripped) {
+  if (out.driveEnabled && !wheelOverspeed.tripped) {
     setWheelEnabled(motor1, true);
     setWheelEnabled(motor2, true);
     const WheelBoundary::MotorValues targets = WheelBoundary::toMotorTargets(out.leftA, out.rightA);
