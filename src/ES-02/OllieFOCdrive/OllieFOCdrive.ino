@@ -22,6 +22,7 @@
 #include "WheelBoundary.h"
 #include "OllieFOCdrive.h"
 #include "RobotLogCapture.h"
+#include "LegPoseRamp.h"
 #include "ServoControl.h"
 #include "SerialCommandRouter.h"
 #include "filter.h"
@@ -202,6 +203,10 @@ DebugTelemetry::TelemetryState debugTelemetryState{};
 uint32_t diagnosticSequence = 0;
 ServoTrimsDegrees servoTrims{};
 constexpr int kLegPoseDegrees = 20;  // fixed leg pose for all four servos, degrees
+constexpr int kLegSagDegrees = 10;  // assumed leg angle after the robot has sagged, between 0 and kLegPoseDegrees
+constexpr float kLegRampDegPerSec = 30.0f;  // leg pose ramp, 0 to 20 degrees in about 0.7 s
+constexpr float kLegRampMaxDtSec = 0.02f;   // the first tick after boot reports the whole boot time as dt
+float legPoseDegrees = 0.0f;                // commanded leg angle, ramped toward kLegPoseDegrees
 
 bool parseCommandFloat(const char *text, float &value) {
   char *end = nullptr;
@@ -675,7 +680,6 @@ const SerialCommandEntry commandEntries[] = {
 
 SerialCommandRouter serialCommandRouter;
 
-void setAssemblyPosition() { servoControl.setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1); }
 
 /**
  * @brief Initializes the robot's hardware and software components.
@@ -722,12 +726,10 @@ void setup() {
   biquadFilterInitLPF(&voltageFilterLpf, 50, 1000);  // TODO replace numbers with names
 
   //  Initialize servo
-  servoControl.initialize();
-
-  setAssemblyPosition();
-  _delay(555);
-
-  setAssemblyPosition();  // TODO why is this repeated?
+  // The unpowered legs sag to somewhere between 0 and kLegPoseDegrees. Attach at the middle of that range so the first
+  // move is small, hold it during the motor calibration. runControlTick() ramps the legs up to kLegPoseDegrees.
+  legPoseDegrees = kLegSagDegrees;
+  servoControl.initialize(kLegSagDegrees);
 
   initIMU(imuCalibration);
   initRemoteControl();
@@ -1184,7 +1186,10 @@ void runControlTick(bool imuUpdated) {
 
   // Fixed standing pose: every servo at kLegPoseDegrees, found on the robot 2026-10-24 (body higher than at 0). The
   // servo trims do not apply. No IK runs.
-  for (int &angle : servoTraceAngle) angle = kLegPoseDegrees;
+  // The commanded angle ramps up from the boot pose so the servos do not jump at full speed.
+  legPoseDegrees = stepLegPoseToward(legPoseDegrees, kLegPoseDegrees, kLegRampDegPerSec,
+                                     fminf(controlTimestepSec, kLegRampMaxDtSec));
+  for (int &angle : servoTraceAngle) angle = static_cast<int>(lroundf(legPoseDegrees));
   writeLegServos();
   RobotLogCapture::observeServoAngles(servoTraceAngle);
 
