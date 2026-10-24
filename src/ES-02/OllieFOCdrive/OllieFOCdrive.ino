@@ -139,7 +139,7 @@ const Config &balanceConfig() {
     c.speedCapMps = 0.3f;                        // uncommissioned: proposed starting value, m/s
     c.accelCapMps2 = 0.5f;                       // uncommissioned: proposed starting value, m/s^2
     c.brakeCapMps2 = 1.0f;                       // uncommissioned: proposed starting value, m/s^2
-    c.yawRateCapRadPerSec = 0.5f;                // uncommissioned: proposed starting value, rad/s
+    c.yawRateCapRadPerSec = 1.0f;                // uncommissioned: doubled after the stick test 2026-10-24, rad/s
     c.requestMaxAgeUs = kRcFrameTimeoutMs * 1000U;  // existing constant (RC frame timeout), us
     c.demandScaleCapStart = 0.5f;                // uncommissioned: proposed starting value, dimensionless
 
