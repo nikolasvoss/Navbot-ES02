@@ -133,7 +133,7 @@ const Config &balanceConfig() {
     c.demandScaleCapStart = 0.5f;                // uncommissioned: proposed starting value, dimensionless
 
     // Speed loop (gains zero, integral off)
-    c.wheelRadiusM = 0.019f;                     // measured 2026-10-23: diameter 38.3 mm, 38 mm used, m
+    c.wheelRadiusM = 0.019f;                     // measured 2026-10-24: diameter 38.3 mm, 38 mm used, m
     c.speedLoopPeriodUs = 20000;                 // plan: provisional 50 Hz speed loop, us
     c.speedKpRadPerMps = 0.0f;                   // passive: zero gain
     c.speedKiRadPerMpsS = 0.0f;                  // passive: zero gain
@@ -841,7 +841,7 @@ void readBatteryVoltage(void) {
   batteryVoltage = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
 }
 
-// Balance measurements, built at the hardware boundary. Sign and axis checked on the supported robot 2026-10-23:
+// Balance measurements, built at the hardware boundary. Sign and axis checked on the supported robot 2026-10-24:
 // leaning forward lowers correctedRollDegrees and drives gyro x below 0, so both are negated to make a forward lean
 // positive (positive gains then push the wheels forward). Turning left raises gyro z, which is the positive yaw rate.
 constexpr float kTiltSign = -1.0f;
@@ -923,7 +923,7 @@ void logBalanceChange(const Output &out) {
  */
 // Wheels are driven only when this is true. Torque mode has no speed loop: a 0 A command still outputs the estimated
 // back-EMF as voltage, which is positive feedback, so any KV error makes an enabled wheel accelerate until the
-// voltage ceiling (about 55 rad/s at 6.7 V, below the 60 rad/s overspeed limit). Measured on the robot 2026-10-23
+// voltage ceiling (about 55 rad/s at 6.7 V, below the 60 rad/s overspeed limit). Measured on the robot 2026-10-24
 // in Run with all gains 0. Keep false until KV and the speed protection are commissioned; Run then coasts.
 constexpr bool kBalanceDrivesWheels = false;
 
