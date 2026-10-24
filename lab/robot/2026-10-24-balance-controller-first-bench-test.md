@@ -56,5 +56,6 @@ Wheel overspeed limit lowered to 30 rad/s. With the robot held and then released
 | `b97996d` | speedKp 0.25, speedKi 0.15, CH5 off rearms the guard | Swings 10 to 15 cm, absorbs side pushes |
 | `6f5d611` | speedKi 0.08, yawP 0.6 | Same swing, no more turning, slightly more jitter |
 | `587ff73` | tiltP 6, gyro 0.3, legs 20 degrees | Swing 2 to 3 cm, less jitter, side pushes still absorbed, no shutdown |
+| `b0574c4` | tiltP 8, gyro 0.4 | Still better, adopted as the working set |
 
 Practical consequence: the inner tilt loop was too soft; stiffening it removed most of the swing. Legs at 20 degrees hold the body higher than at 0. Status stays open: driving with the sticks, long runs and the battery effect are untested.
