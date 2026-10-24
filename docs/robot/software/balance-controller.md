@@ -4,7 +4,7 @@ As of 2026-10-24 · firmware commit `776684b` · code in [BalanceController.h](.
 
 ## What it does today
 
-The controller is a state machine plus the control math. The sketch gives it measurements and the remote request on every control tick, and applies its output. **All control gains are 0, so the controller asks for 0 A.** In Run and Commissioning the sketch enables the wheel drivers and applies that output (`kBalanceDrivesWheels` is `true`). A wheel at 0 A brakes slightly, because the back-EMF estimate handed to SimpleFOC is the measured KV times `wheelKvSafetyFactor` (1.8, Commander `J`). Without that margin an enabled wheel at 0 A runs away; see the [bench test note](../../../lab/robot/2026-10-24-balance-controller-first-bench-test.md). Disabled, Arming and Fault keep the drivers off and the wheels free.
+The controller is a state machine plus the control math. The sketch gives it measurements and the remote request on every control tick, and applies its output. Since 2026-10-24 the robot stands on its own on the ground. Gains in `balanceConfig()` (all uncommissioned starting values found by hand): tilt `tiltP` 6 A/rad, `gyroDamping` 0.3 A/(rad/s), yaw hold `yawP` 0.6 A/(rad/s), speed loop `speedKp` 0.25 rad per m/s and `speedKi` 0.08 rad per m, integral on. The leg servos are fixed at 20 degrees. The wheel drivers are on in Run and Commissioning (`kBalanceDrivesWheels` is `true`). The estimated back-EMF handed to SimpleFOC is the measured KV times `wheelKvSafetyFactor` (1.8, Commander `J`); without that margin an enabled wheel at 0 A runs away, see the [bench test note](../../../lab/robot/2026-10-24-balance-controller-first-bench-test.md). Disabled, Arming and Fault keep the drivers off and the wheels free.
 
 What works and is tested on the robot: arming, run, fall detection, fault latching, remote loss, and the commissioning state with the trim knob and the save request.
 
@@ -123,6 +123,6 @@ Checked on the robot on 2026-10-24:
 
 ## Not done yet
 
-- **Non-zero gains.** The tilt, tilt-rate, yaw, and speed gains are all 0, so the robot does not balance yet. The signs of tilt, tilt rate, and yaw rate are measured and fixed in the sketch.
+- **Tuning.** The gains above are a first set. The robot swings 2 to 3 cm and still drifts a little; driving with the sticks is not tested yet.
 - **Gains, trim storage, scheduling** on the IMU rate, and **KV and resistance per wheel**.
 - **The remaining starting values.** All `balanceConfig()` values marked `uncommissioned` in the sketch are proposals, not measured.

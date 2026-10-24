@@ -43,3 +43,18 @@ Practical consequence: 1.8 is the working value for the left wheel at 0 A. The r
 With `kBalanceDrivesWheels` set to `true` and the KV safety factor at 1.8 for both wheels (gains 0), the operator ran the Run tests on the supported robot: wheels turn by hand and brake slightly, a pushed wheel slows down on both sides without a renewed speed-up, no wheel starts from rest, a tilt past 35 degrees gives Fault 6 and the wheels go off, and CH5 off gives Disabled with free wheels. The operator reported that both wheels felt alike. All of these passed.
 
 Practical consequence: the robot now sits in a safe passive state in Run, and the next step is the first non-zero gain with the measured signs. The overspeed limit of 60 rad/s should still be lowered before driving. Status stays open for that reason.
+
+## Update 2026-10-24: first ground test, hand-tuned gains
+
+Wheel overspeed limit lowered to 30 rad/s. With the robot held and then released on the ground, the wheels turned the right way for tilt (hand test with free wheels, 80 rad/s peak tripped the guard). Gains were raised in steps; each row is what the operator saw.
+
+| Firmware | Gains | Observation |
+| --- | --- | --- |
+| `efa3f8d` | tiltP 4, gyro 0.2, others 0 | Stands briefly, then drifts and falls; turns while driving |
+| `6aa5378` | + yawP 0.3, speedKp 0.1 | Turning almost gone, drift much better, still tips slowly in one direction (centre of mass) |
+| `1fbf573` | + speedKi 0.05, integral on | Without a cable it ran away twice and tripped the guard; CH5 off/on did not restart (only serial `T RESET` cleared the guard) |
+| `b97996d` | speedKp 0.25, speedKi 0.15, CH5 off rearms the guard | Swings 10 to 15 cm, absorbs side pushes |
+| `6f5d611` | speedKi 0.08, yawP 0.6 | Same swing, no more turning, slightly more jitter |
+| `587ff73` | tiltP 6, gyro 0.3, legs 20 degrees | Swing 2 to 3 cm, less jitter, side pushes still absorbed, no shutdown |
+
+Practical consequence: the inner tilt loop was too soft; stiffening it removed most of the swing. Legs at 20 degrees hold the body higher than at 0. Status stays open: driving with the sticks, long runs and the battery effect are untested.
