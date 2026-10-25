@@ -1,5 +1,8 @@
 #include "link_uart.h"
 
+#include <soc/usb_serial_jtag_struct.h>
+
+#include "Logging.h"
 #include "link_frame.h"
 
 namespace {
@@ -25,8 +28,14 @@ void LinkSend(navbot_link_v1_Message& msg) {
 }  // namespace
 
 void LinkUartInit() {
+  // GPIO19 and GPIO20 are the USB Serial/JTAG D- and D+ pads. They power up in USB mode (pad function and D+ pull-up
+  // on), which keeps the UART signals off the pins. Nothing here uses native USB, so release the pads first.
+  USB_SERIAL_JTAG.conf0.usb_pad_enable = 0;
+  USB_SERIAL_JTAG.conf0.dp_pullup = 0;
   Serial1.setTxBufferSize(512);
   Serial1.begin(LINK_UART_BAUD, SERIAL_8N1, board::kLinkUartRxPin, board::kLinkUartTxPin);
+  Logging::message(Logging::Level::Info, "Link", "UART1 %d baud RX=%d TX=%d usbPad=%d", LINK_UART_BAUD,
+                   board::kLinkUartRxPin, board::kLinkUartTxPin, static_cast<int>(USB_SERIAL_JTAG.conf0.usb_pad_enable));
 }
 
 void LinkPublishOdometry(uint32_t sampleTimeUs, double leftWheelAngleRad, double rightWheelAngleRad, const imu::Snapshot& imuSnapshot) {

@@ -71,6 +71,6 @@ Consequences:
 
 ## Next steps
 
-1. Verify pins, 3.3 V levels and the 500 kBd link on the physical board before wiring the ros2_pc.
+1. Verify pins, 3.3 V levels and the 500 kBd link on the physical board before wiring the ros2_pc. GPIO19/20 are the USB Serial/JTAG pads and power up in USB mode, so `LinkUartInit()` releases them (`USB_SERIAL_JTAG.conf0.usb_pad_enable = 0`) before opening UART1 and logs `usbPad=` at boot. Whether this makes the pins carry UART1 is not yet confirmed on the board.
 2. Measure the track width and check the odometry signs by rolling the robot forward. The bridge takes the wheel radius and the track width as required parameters.
 3. Map `Battery`, `Status` and `Log` in the ROS 2 bridge to `sensor_msgs/BatteryState`, `diagnostic_msgs` and `/rosout`.
