@@ -55,7 +55,7 @@ Build and start the bridge as described in the [bridge page](navbot-link-bridge.
 
 With the robot powered, balance disabled and motor outputs safe:
 
-1. The bridge logs `opened <port> at 500000 baud`. `cannot open` means a wrong path or missing group.
+1. The bridge logs `opened <port> at 115200 baud`. `cannot open` means a wrong path or missing group.
 2. `ros2 topic hz /odom` and `ros2 topic hz /imu/data` show about 50 Hz.
 3. The bridge reports no `bad_frames`, `decode_errors` or `lost_frames` growth. A burst at start is normal while it resynchronises.
 4. Roll the robot forward by hand: `/odom` twist must be positive.

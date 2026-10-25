@@ -14,7 +14,7 @@ ESP32-S3-WROOM-1 (MAIN)
   ├─ 2 separate I²C buses → 1 AS5600 board each (CODER), wheel angle for SimpleFOC
   ├─ SPI → ICM-42688P, acceleration and angular rate for attitude/balance control
   ├─ 6 PWM + 2 enable → 2 motor power stages; 4 PWM → leg servos
-  ├─ UART2 → inverted SBUS receiver; UART1 → ros2_pc link (500000 baud)
+  ├─ UART2 → inverted SBUS receiver; UART1 → ros2_pc link (115200 baud)
   ├─ UART0 → CH340X → USB-C for flash and serial
   └─ GPIO17/ADC → 2S battery voltage via 10-kΩ/1-kΩ divider
 ```

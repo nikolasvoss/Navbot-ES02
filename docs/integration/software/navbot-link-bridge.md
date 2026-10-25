@@ -19,7 +19,7 @@ Run it with the serial port and the measured wheel geometry. `port`, `wheel_radi
 ros2 run navbot_link_bridge navbot_link_bridge --ros-args -p port:=<serial-port> -p wheel_radius_m:=<measured-radius-m> -p wheel_separation_m:=<measured-separation-m>
 ```
 
-Optional parameters: `baud` (500000), `odom_frame` (`odom`), `base_frame` (`base_link`), `imu_frame` (`imu_link`), `publish_tf` (`true`). The node reopens the port every second after an error, so a power-cycled robot reconnects.
+Optional parameters: `baud` (115200), `odom_frame` (`odom`), `base_frame` (`base_link`), `imu_frame` (`imu_link`), `publish_tf` (`true`). The node reopens the port every second after an error, so a power-cycled robot reconnects.
 
 Unverified, before relying on the output:
 

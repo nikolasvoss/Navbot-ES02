@@ -11,7 +11,7 @@ The measured current of CM5 together with a running LiDAR is recorded below. The
 | ros2_pc and carrier board | **Confirmed.** The ros2_pc sits on the carrier board described in the [carrier pinout reference](ros2-pc-carrier-board.md). The board revision is not recorded. | User statement, 2026-10-20 |
 | LDS08RR LiDAR | **Connected and receiving.** UART0, `/dev/ttyAMA0`, live `/scan` verified. Supply wiring, voltage margins and motor control are not verified. | [LDS08RR page](lds08rr-lidar.md), 2026-10-15 |
 | HMMD mmWave radar | **Planned on UART2.** An earlier setup read it on UART0 (`/dev/ttyAMA0`, 2026-10-04/05); UART0 now belongs to the LiDAR. Current wiring, module variant, supply and signal levels are not verified. | [HMMD radar](hmmd-radar.md), [HMMD guide](../software/hmmd-ros2.md) |
-| ESP32 robot link | **Chosen, not wired.** The ros2_pc side uses GPIO8/GPIO9 (J8 pins 24 and 21). The carrier datasheet names this pair UART3, not UART4; the user named it UART4 on 2026-10-25. The robot side is UART1, 500000 baud, 3.3 V logic. | [Link protocol](../../integration/software/ros2-uart-protocol.md), [robot serial interfaces](../../robot/hardware/electronics-reference.md#serial-interfaces) |
+| ESP32 robot link | **Chosen, not wired.** The ros2_pc side uses GPIO8/GPIO9 (J8 pins 24 and 21). The carrier datasheet names this pair UART3, not UART4; the user named it UART4 on 2026-10-25. The robot side is UART1, 115200 baud, 3.3 V logic. | [Link protocol](../../integration/software/ros2-uart-protocol.md), [robot serial interfaces](../../robot/hardware/electronics-reference.md#serial-interfaces) |
 
 ## J8 pin allocation
 

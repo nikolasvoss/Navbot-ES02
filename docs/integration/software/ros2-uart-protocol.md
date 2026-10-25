@@ -21,7 +21,7 @@ frame = COBS( payload || crc16_le(payload) ) || 0x00
 payload = serialized navbot.link.v1.Message   (<= 252 bytes)
 ```
 
-Both directions use the same format. Transport: ESP32 UART1 (the former touchscreen port, now removed), **500000 baud, 8N1**, RX = GPIO20, TX = GPIO19 in the firmware (`link_uart.h`). The firmware opens the port at startup and sends `WheelOdometry` and `Imu` in normal mode. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: wheel odometry (`WheelOdometry`), sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), and PC→robot `Command` with `Ack`.
+Both directions use the same format. Transport: ESP32 UART1 (the former touchscreen port, now removed), **115200 baud, 8N1**, RX = GPIO20, TX = GPIO19 in the firmware (`link_uart.h`). The firmware opens the port at startup and sends `WheelOdometry` and `Imu` in normal mode. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: wheel odometry (`WheelOdometry`), sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), and PC→robot `Command` with `Ack`.
 
 ## Rules
 
@@ -40,6 +40,8 @@ Normal mode sends one `WheelOdometry` and one `Imu` every 20 ms (50 Hz each, fro
 - The PC owns wheel radius and track width. It computes wheel travel from the angle deltas, so a dropped frame loses one sample and not the total.
 - `Imu` values use SI units. Axes are the IMU sensor frame, not a robot body frame. Acceleration and angular rate are the filtered values.
 
+The rate was set to 115200 baud for the first hardware test (2026-10-25); the design value was 500000 baud. The two frames of one tick are about 55 bytes, 2.8 kB/s at 50 Hz, about a quarter of the 11.5 kB/s the line carries. `LINK_UART_BAUD` in `link_uart.h` and the bridge's `baud` parameter must match.
+
 ## Time stamps
 
 The robot and the ros2_pc run on unsynchronized clocks, and nothing converts one into the other.
@@ -55,7 +57,7 @@ The robot and the ros2_pc run on unsynchronized clocks, and nothing converts one
 Consequences:
 
 - Velocities and yaw rate come from robot-clock differences (`t_us`), so they are not affected by link jitter.
-- Absolute stamps on `/odom`, the `odom` to `base_link` TF and `/imu/data` are arrival times. They lag the true sample by the transmission time (under 1 ms for these frames at 500 kBd), the robot's TX queue and the polling delay (up to 5 ms). Odometry and IMU frames from the same tick often carry the same stamp.
+- Absolute stamps on `/odom`, the `odom` to `base_link` TF and `/imu/data` are arrival times. They lag the true sample by the transmission time (a 35-byte frame takes about 3 ms at 115200 baud, so an odometry and IMU pair about 5 ms), the robot's TX queue and the polling delay (up to 5 ms). Odometry and IMU frames from the same tick often carry the same stamp.
 - Robot data and other ROS data (the LiDAR scan, for example) are matched only through these ROS stamps. A robot-to-ROS clock offset is not estimated. Better matching would need an offset estimate from `t_us` against the arrival time, or an explicit time-sync message. Neither exists.
 - The 50 Hz rate is nominal: the odometry is sent on every 20th control tick, and a tick runs at least 1 ms apart.
 
@@ -71,6 +73,6 @@ Consequences:
 
 ## Next steps
 
-1. Verify pins, 3.3 V levels and the 500 kBd link on the physical board before wiring the ros2_pc. GPIO19/20 are the USB Serial/JTAG pads and power up in USB mode, so `LinkUartInit()` releases them (`USB_SERIAL_JTAG.conf0.usb_pad_enable = 0`) before opening UART1 and logs `usbPad=` at boot. Whether this makes the pins carry UART1 is not yet confirmed on the board.
+1. Verify pins, 3.3 V levels and the 115.2 kBd link on the physical board before wiring the ros2_pc. GPIO19/20 are the USB Serial/JTAG pads and power up in USB mode, so `LinkUartInit()` releases them (`USB_SERIAL_JTAG.conf0.usb_pad_enable = 0`) before opening UART1 and logs `usbPad=` at boot. Whether this makes the pins carry UART1 is not yet confirmed on the board.
 2. Measure the track width and check the odometry signs by rolling the robot forward. The bridge takes the wheel radius and the track width as required parameters.
 3. Map `Battery`, `Status` and `Log` in the ROS 2 bridge to `sensor_msgs/BatteryState`, `diagnostic_msgs` and `/rosout`.

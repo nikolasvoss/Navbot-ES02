@@ -14,3 +14,7 @@ The touchscreen is removed. The firmware no longer contains the touch driver, th
 ## Practical consequence
 
 With no touch data, the old control path produced zero touch terms, so the removal keeps the control behavior. Only the RC ball-pose offsets (CH9/CH10) remain. The CH5 gain sets are now called set 1 and set 2, with unchanged values. The DRIVE trace row lost its touch column. Verify 3.3 V levels and the pin direction before connecting the ros2_pc. Protocol: [NavBot link](../../docs/integration/software/ros2-uart-protocol.md).
+
+## 2026-10-25 update
+
+The link baud rate was lowered from 500000 to 115200 for the first hardware test, in `link_uart.h` and in the bridge default. The `usbPad=0` boot line is visible on the robot (user report). The pad release was added because GPIO19/20 power up as USB pads; whether the pins now carry UART1 is not yet confirmed.
