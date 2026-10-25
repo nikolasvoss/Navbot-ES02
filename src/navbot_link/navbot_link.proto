@@ -23,6 +23,7 @@ message Imu {
   float ax = 1; float ay = 2; float az = 3;     // m/s^2
   float gx = 4; float gy = 5; float gz = 6;     // rad/s
   float roll_rad = 7; float pitch_rad = 8; float yaw_rad = 9;
+  uint32 t_us = 10;            // micros() at the IMU read (host timestamp)
 }
 
 // Cumulative wheel angle, same sign convention as the controller wheel

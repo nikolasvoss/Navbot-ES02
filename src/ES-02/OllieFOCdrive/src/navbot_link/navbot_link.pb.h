@@ -39,6 +39,7 @@ typedef struct _navbot_link_v1_Imu {
     float roll_rad;
     float pitch_rad;
     float yaw_rad;
+    uint32_t t_us; /* micros() at the IMU read (host timestamp) */
 } navbot_link_v1_Imu;
 
 /* Cumulative wheel angle, same sign convention as the controller wheel
@@ -119,7 +120,7 @@ extern "C" {
 
 /* Initializer values for message structs */
 #define navbot_link_v1_Message_init_default      {0, 0, 0, {navbot_link_v1_Imu_init_default}}
-#define navbot_link_v1_Imu_init_default          {0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define navbot_link_v1_Imu_init_default          {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define navbot_link_v1_WheelOdometry_init_default {0, 0, 0}
 #define navbot_link_v1_Battery_init_default      {0}
 #define navbot_link_v1_Status_init_default       {_navbot_link_v1_Status_Mode_MIN, 0, 0}
@@ -127,7 +128,7 @@ extern "C" {
 #define navbot_link_v1_Command_init_default      {0, 0, 0}
 #define navbot_link_v1_Ack_init_default          {0, 0}
 #define navbot_link_v1_Message_init_zero         {0, 0, 0, {navbot_link_v1_Imu_init_zero}}
-#define navbot_link_v1_Imu_init_zero             {0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define navbot_link_v1_Imu_init_zero             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define navbot_link_v1_WheelOdometry_init_zero   {0, 0, 0}
 #define navbot_link_v1_Battery_init_zero         {0}
 #define navbot_link_v1_Status_init_zero          {_navbot_link_v1_Status_Mode_MIN, 0, 0}
@@ -145,6 +146,7 @@ extern "C" {
 #define navbot_link_v1_Imu_roll_rad_tag          7
 #define navbot_link_v1_Imu_pitch_rad_tag         8
 #define navbot_link_v1_Imu_yaw_rad_tag           9
+#define navbot_link_v1_Imu_t_us_tag              10
 #define navbot_link_v1_WheelOdometry_t_us_tag    1
 #define navbot_link_v1_WheelOdometry_left_angle_rad_tag 2
 #define navbot_link_v1_WheelOdometry_right_angle_rad_tag 3
@@ -200,7 +202,8 @@ X(a, STATIC,   SINGULAR, FLOAT,    gy,                5) \
 X(a, STATIC,   SINGULAR, FLOAT,    gz,                6) \
 X(a, STATIC,   SINGULAR, FLOAT,    roll_rad,          7) \
 X(a, STATIC,   SINGULAR, FLOAT,    pitch_rad,         8) \
-X(a, STATIC,   SINGULAR, FLOAT,    yaw_rad,           9)
+X(a, STATIC,   SINGULAR, FLOAT,    yaw_rad,           9) \
+X(a, STATIC,   SINGULAR, UINT32,   t_us,             10)
 #define navbot_link_v1_Imu_CALLBACK NULL
 #define navbot_link_v1_Imu_DEFAULT NULL
 
@@ -267,7 +270,7 @@ extern const pb_msgdesc_t navbot_link_v1_Ack_msg;
 #define navbot_link_v1_Ack_size                  8
 #define navbot_link_v1_Battery_size              5
 #define navbot_link_v1_Command_size              16
-#define navbot_link_v1_Imu_size                  45
+#define navbot_link_v1_Imu_size                  51
 #define navbot_link_v1_Log_size                  106
 #define navbot_link_v1_Message_size              120
 #define navbot_link_v1_Status_size               10

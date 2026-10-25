@@ -49,5 +49,6 @@ void LinkPublishOdometry(uint32_t sampleTimeUs, double leftWheelAngleRad, double
   sample.body.imu.roll_rad = imuSnapshot.attitudeDegrees.roll * DEG_TO_RAD;
   sample.body.imu.pitch_rad = imuSnapshot.attitudeDegrees.pitch * DEG_TO_RAD;
   sample.body.imu.yaw_rad = imuSnapshot.attitudeDegrees.yaw * DEG_TO_RAD;
+  sample.body.imu.t_us = imuSnapshot.readTimeUs;
   LinkSend(sample);
 }

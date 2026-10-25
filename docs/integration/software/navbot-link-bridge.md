@@ -26,7 +26,7 @@ Unverified, before relying on the output:
 - The track width is not measured. The bridge does not guess it.
 - The forward direction and the left/right mapping of the wheel angles are not verified against this firmware. Roll the robot forward and check the signs of the `/odom` twist.
 - The IMU frame `imu_link` has no `base_link` to `imu_link` TF yet.
-- Stamps are the ROS receive time, not the robot's sample time. Covariances are zero.
+- Stamps are the ROS receive time, not the robot's sample time. The robot's IMU read time (`Imu.t_us`) is decoded but not published, because nothing converts robot time into ROS time. Covariances are zero.
 
 Test the framing, decoding and odometry logic without ROS. The tests need `pytest` and `protobuf`.
 
