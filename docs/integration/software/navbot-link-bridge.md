@@ -24,7 +24,7 @@ Optional parameters: `baud` (500000), `odom_frame` (`odom`), `base_frame` (`base
 Unverified, before relying on the output:
 
 - The track width is not measured. The bridge does not guess it.
-- The forward direction and the left/right mapping of the wheel angles are not verified against this firmware. Roll the robot forward and check the signs of the `/odom` twist.
+- The forward direction of the wheel angles was checked on the link on 2026-10-25: both angles grow when the wheels roll forward ([lab note](../../../lab/integration/2026-10-25-odometry-signs-and-rate.md)). The left/right mapping is not verified (both wheels were rolled together), and neither are the signs of the `/odom` twist. Roll one wheel at a time to check the mapping.
 - The IMU frame `imu_link` has no `base_link` to `imu_link` TF yet.
 - Stamps are the ROS receive time, not the robot's sample time. The robot's IMU read time (`Imu.t_us`) is decoded but not published, because nothing converts robot time into ROS time. Covariances are zero.
 

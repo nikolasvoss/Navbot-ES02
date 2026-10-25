@@ -35,3 +35,7 @@ Loop timing measured on the CH340 console (firmware before the 20 ms schedule, `
 - Only 42 of 523 DRIVE rows parsed cleanly at 576000 baud: the rest had missing commas or mixed bytes. The rates above come from monotone counters and are not affected, but the per-row figures rest on a small sample. `K58` output also adds load, so the idle loop may be slightly faster.
 
 Consequence: the IMU biquad filters are designed for `kSampleRateHz` = 1000 but run at about 700 Hz, so their effective cutoffs are about 30% lower than configured. The Mahony filter and the balance controller use measured `dt` and are not affected by the rate itself. The loop timing needs its own fix; the link schedule change does not touch it.
+
+## 2026-10-26 hardware check of the 20 ms schedule
+
+Flashed `feat/link-schedule-imu-timestamp` (20 ms send schedule and `Imu.t_us`). A 10 s capture on `/dev/ttyAMA3` at 500000 baud gave 1001 CRC-valid frames and 1 bad one (the partial first frame), no `seq` gaps, and 4.96 KB/s. `WheelOdometry`: 501 frames, `t_us` interval mean 20.001 ms (min 19.07, max 21.05), 50.0 Hz. `Imu`: 500 frames, all with `t_us`, interval mean 20.000 ms (min 19.08, max 21.08), 50.0 Hz. The link rate is fixed. The loop timing from the entry above is unchanged by this firmware and remains open.
