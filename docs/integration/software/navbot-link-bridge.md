@@ -19,14 +19,14 @@ Run it with the serial port and the measured wheel geometry. `port`, `wheel_radi
 ros2 run navbot_link_bridge navbot_link_bridge --ros-args -p port:=<serial-port> -p wheel_radius_m:=<measured-radius-m> -p wheel_separation_m:=<measured-separation-m>
 ```
 
-Optional parameters: `baud` (115200), `odom_frame` (`odom`), `base_frame` (`base_link`), `imu_frame` (`imu_link`), `publish_tf` (`true`). The node reopens the port every second after an error, so a power-cycled robot reconnects.
+Optional parameters: `baud` (500000), `odom_frame` (`odom`), `base_frame` (`base_link`), `imu_frame` (`imu_link`), `publish_tf` (`true`). The node reopens the port every second after an error, so a power-cycled robot reconnects.
 
 Unverified, before relying on the output:
 
 - The track width is not measured. The bridge does not guess it.
-- The forward direction and the left/right mapping of the wheel angles are not verified against this firmware. Roll the robot forward and check the signs of the `/odom` twist.
+- The forward direction of the wheel angles was checked on the link on 2026-10-25: both angles grow when the wheels roll forward ([lab note](../../../lab/integration/2026-10-25-odometry-signs-and-rate.md)). The left/right mapping is not verified (both wheels were rolled together), and neither are the signs of the `/odom` twist. Roll one wheel at a time to check the mapping.
 - The IMU frame `imu_link` has no `base_link` to `imu_link` TF yet.
-- Stamps are the ROS receive time, not the robot's sample time. Covariances are zero.
+- Stamps are the ROS receive time, not the robot's sample time. The robot's IMU read time (`Imu.t_us`) is decoded but not published, because nothing converts robot time into ROS time. Covariances are zero.
 
 Test the framing, decoding and odometry logic without ROS. The tests need `pytest` and `protobuf`.
 

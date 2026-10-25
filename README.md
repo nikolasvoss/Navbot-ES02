@@ -44,7 +44,7 @@ Full tutorial: [Frank Fu’s Build Guide](https://frankfu.blog/embodied-ai-robot
 | `docs/` | Documentation of the current state and plans |
 | `lab/` | Dated observations and raw captures |
 
-The full placement rules are in [AGENTS.md](AGENTS.md#where-files-go). The current firmware supports the two-wheel balancing robot only. Legacy four-wheel gait control and master/slave communication have been removed. UART1 (115200 baud) is the link to the ros2_pc, and UART2 handles SBUS.
+The full placement rules are in [AGENTS.md](AGENTS.md#where-files-go). The current firmware supports the two-wheel balancing robot only. Legacy four-wheel gait control and master/slave communication have been removed. UART1 (500000 baud) is the link to the ros2_pc, and UART2 handles SBUS.
 
 ## Project documentation
 

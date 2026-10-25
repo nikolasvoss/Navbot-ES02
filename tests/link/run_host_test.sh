@@ -19,3 +19,10 @@ c++ -std=c++11 -Wall -Wextra -Werror \
   -o "$build_dir/test_link_frame"
 
 "$build_dir/test_link_frame"
+
+c++ -std=c++11 -Wall -Wextra -Werror \
+  -I"$sketch_dir" \
+  "$repo_root/tests/link/test_link_schedule.cpp" \
+  -o "$build_dir/test_link_schedule"
+
+"$build_dir/test_link_schedule"

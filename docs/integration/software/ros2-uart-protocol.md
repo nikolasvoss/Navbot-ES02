@@ -21,7 +21,7 @@ frame = COBS( payload || crc16_le(payload) ) || 0x00
 payload = serialized navbot.link.v1.Message   (<= 252 bytes)
 ```
 
-Both directions use the same format. Transport: ESP32 UART1 (the former touchscreen port, now removed), **115200 baud, 8N1**, RX = GPIO20, TX = GPIO19 in the firmware (`link_uart.h`). The firmware opens the port at startup and sends `WheelOdometry` and `Imu` in normal mode. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: wheel odometry (`WheelOdometry`), sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), and PC→robot `Command` with `Ack`.
+Both directions use the same format. Transport: ESP32 UART1 (the former touchscreen port, now removed), **500000 baud, 8N1**, RX = GPIO20, TX = GPIO19 in the firmware (`link_uart.h`). The firmware opens the port at startup and sends `WheelOdometry` and `Imu` in normal mode. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: wheel odometry (`WheelOdometry`), sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), and PC→robot `Command` with `Ack`.
 
 ## Rules
 
@@ -32,15 +32,16 @@ Both directions use the same format. Transport: ESP32 UART1 (the former touchscr
 
 ## Odometry
 
-Normal mode sends one `WheelOdometry` and one `Imu` every 20 ms (50 Hz each, from the 1 kHz control loop). Sensor diagnostic mode sends neither.
+Normal mode sends one `WheelOdometry` and one `Imu` on a 20 ms schedule (50 Hz each on average, from the control loop; see the rules below). Sensor diagnostic mode sends neither.
 
 - `t_us` is `micros()` at the wheel read. Use it for deltas, not `t_ms`.
 - `left_angle_rad` and `right_angle_rad` are cumulative wheel angles in radians, not wrapped. Positive angle means forward rolling, the same sign as the controller's wheel speeds. The firmware takes them from `motor.shaftAngle()` times `WheelBoundary::kLeftMotorSign` and `kRightMotorSign`, the only place motor signs appear.
-- The sign convention was measured on the robot for the wheel boundary (2026-10-22: positive motor-local q rolls both wheels backward). The odometry stream itself has not been checked on hardware. Roll the robot forward and check the signs before relying on them.
+- The sign convention was measured on the robot for the wheel boundary (2026-10-22: positive motor-local q rolls both wheels backward). The odometry stream was checked on hardware on 2026-10-25: rolling both wheels forward by hand gave positive changes in `left_angle_rad` and `right_angle_rad` (+11.04 and +9.96 rad). Rolling backward was not tested ([lab note](../../../lab/integration/2026-10-25-odometry-signs-and-rate.md)).
 - The PC owns wheel radius and track width. It computes wheel travel from the angle deltas, so a dropped frame loses one sample and not the total.
 - `Imu` values use SI units. Axes are the IMU sensor frame, not a robot body frame. Acceleration and angular rate are the filtered values.
+- `Imu.t_us` is `micros()` at the IMU read (`imu::Snapshot::readTimeUs`), a host timestamp, not the sensor's own. Use it for IMU deltas, not `t_ms`. Firmware older than this field leaves it unset, which decodes as 0.
 
-The rate was set to 115200 baud for the first hardware test (2026-10-25); the design value was 500000 baud. The two frames of one tick are estimated at about 100 bytes (the test vectors are shorter because protobuf omits zero values; real floats and doubles use full width), so about 5 kB/s at 50 Hz, roughly 45 % of the 11.5 kB/s the line carries. Measure the real frame sizes on the wire. `LINK_UART_BAUD` in `link_uart.h` and the bridge's `baud` parameter must match.
+The first hardware test on 2026-10-25 ran at 115200 baud; the link now runs at the design value of 500000 baud. Measured on the robot on 2026-10-26: 4.96 kB/s for `WheelOdometry` and `Imu` at 50 Hz each, about 10 % of the 50 kB/s the line carries ([lab note](../../../lab/integration/2026-10-25-odometry-signs-and-rate.md)). `LINK_UART_BAUD` in `link_uart.h` and the bridge's `baud` parameter must match.
 
 ## Time stamps
 
@@ -51,15 +52,15 @@ The robot and the ros2_pc run on unsynchronized clocks, and nothing converts one
 | `Message.seq` | robot counter | Gap = lost frame; a non-increasing value = robot restart. |
 | `Message.t_ms` | robot `millis()` when the frame is encoded | Monotonic, 1 ms resolution. The bridge does not use it. |
 | `WheelOdometry.t_us` | robot `micros()` at the wheel read | Wraps at 2^32 (about 71 min). The bridge uses only differences, which are wrap-safe. |
-| `Imu` | none of its own | Only the message-level `t_ms`. The IMU snapshot is sent right after the odometry frame in the same control tick, but its sample time is not transmitted. |
+| `Imu.t_us` | robot `micros()` at the IMU read | Same clock and wrap as `WheelOdometry.t_us`. The IMU read and the wheel read happen at different moments, so the two values differ. The bridge decodes it into `ImuSample.t_us` but computes no IMU deltas yet, and `/imu/data` does not carry it. |
 | ROS `header.stamp` | ros2_pc `get_clock().now()` | Taken once per serial poll (200 Hz timer) and shared by every frame in that read. It is the arrival time, not the sample time. |
 
 Consequences:
 
-- Velocities and yaw rate come from robot-clock differences (`t_us`), so they are not affected by link jitter.
-- Absolute stamps on `/odom`, the `odom` to `base_link` TF and `/imu/data` are arrival times. They lag the true sample by the transmission time (a 40-byte frame takes about 3.5 ms at 115200 baud, so an odometry and IMU pair about 9 ms), the robot's TX queue and the polling delay (up to 5 ms). Odometry and IMU frames from the same tick often carry the same stamp.
+- Velocities and yaw rate come from robot-clock differences (`t_us`), so they are not affected by link jitter. A consumer that needs IMU sample spacing must take it from `Imu.t_us` differences, not from ROS stamps.
+- Absolute stamps on `/odom`, the `odom` to `base_link` TF and `/imu/data` are arrival times. They lag the true sample by the transmission time (under 1 ms for these frames at 500 kBd), the robot's TX queue and the polling delay (up to 5 ms). Odometry and IMU frames from the same tick often carry the same stamp.
 - Robot data and other ROS data (the LiDAR scan, for example) are matched only through these ROS stamps. A robot-to-ROS clock offset is not estimated. Better matching would need an offset estimate from `t_us` against the arrival time, or an explicit time-sync message. Neither exists.
-- The 50 Hz rate is nominal: the odometry is sent on every 20th control tick, and a tick runs at least 1 ms apart.
+- The send is checked once per control tick, right after the wheel read, so the data is at most one tick old. Each send moves the 20 ms deadline forward by exactly 20 ms (`LinkScheduleDue()` in `link_schedule.h`, period `LINK_ODOMETRY_PERIOD_US`), so the average rate is 50 Hz. A frame goes out on the first tick at or after its deadline, so single intervals jitter by up to one control tick (measured period about 1.41 ms, [lab note](../../../lab/integration/2026-10-25-odometry-signs-and-rate.md)): between about 18.6 and 21.4 ms. After a stall of a full period or more (a blocking calibration step, for example), one frame is sent and the schedule restarts 20 ms later; missed frames are not caught up. Use `t_us` for deltas, not the nominal rate.
 
 ## Code
 
@@ -68,11 +69,11 @@ Consequences:
 - Firmware: `link_frame` (pure C++, frames one `Message`) and `link_uart` (UART1 init, sequence and time stamps, non-blocking send, odometry and IMU publish).
 - [framing.py](../../../src/ros2_pc/ros2/src/navbot_link_bridge/navbot_link_bridge/framing.py): `encode_frame`, `FrameDecoder` (stdlib only).
 - ROS 2 bridge: [navbot_link_bridge](../../../src/ros2_pc/ros2/src/navbot_link_bridge/) (`bridge.py` decodes frames, `odometry.py` integrates wheel angles, `node.py` is the rclpy node). Build and run steps: [ros2_pc software](navbot-link-bridge.md).
-- Tests: `PYTHONPATH=src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test` (framing: CRC check value `0x29B1`, COBS vectors, resync after garbage; bridge: the firmware literal frames, seq gaps and restarts; odometry: straight line, spin, `micros()` wrap).
-- Host test: `bash tests/link/run_host_test.sh` encodes an odometry and an IMU `Message` with the firmware encoder and compares the frame bytes to literal vectors.
+- Tests: `PYTHONPATH=src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test` (framing: CRC check value `0x29B1`, COBS vectors, resync after garbage; bridge: the firmware literal frames including the IMU `t_us`, seq gaps and restarts; odometry: straight line, spin, `micros()` wrap).
+- Host test: `bash tests/link/run_host_test.sh` encodes an odometry and an IMU `Message` (with `t_us`) with the firmware encoder and compares the frame bytes to literal vectors.
 
 ## Next steps
 
-1. Verify pins, 3.3 V levels and the 115.2 kBd link on the physical board before wiring the ros2_pc. GPIO19/20 are the USB Serial/JTAG pads and power up in USB mode, so `LinkUartInit()` releases them (`USB_SERIAL_JTAG.conf0.usb_pad_enable = 0`) before opening UART1 and logs `usbPad=` at boot. Whether this makes the pins carry UART1 is not yet confirmed on the board.
+1. Done on 2026-10-26: pins, levels and the 500 kBd link work on the robot. The cause of the earlier failure was an unpowered STC8H1K08 on the line ([lab note](../../../lab/robot/2026-10-25-stc8h1k08-backpowers-uart1.md)). GPIO19/20 are the USB Serial/JTAG pads and power up in USB mode, so `LinkUartInit()` releases them (`USB_SERIAL_JTAG.conf0.usb_pad_enable = 0`) before opening UART1 and logs `usbPad=` at boot. A build without this release also carried clean frames, so the release is a safeguard, not the fix.
 2. Measure the track width and check the odometry signs by rolling the robot forward. The bridge takes the wheel radius and the track width as required parameters.
 3. Map `Battery`, `Status` and `Log` in the ROS 2 bridge to `sensor_msgs/BatteryState`, `diagnostic_msgs` and `/rosout`.

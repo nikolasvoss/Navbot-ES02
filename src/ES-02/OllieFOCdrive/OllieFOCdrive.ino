@@ -199,6 +199,7 @@ float voltageAdcFiltered = 0;     // Battery voltage ADC data
 float batteryVoltage = 0;         // Battery voltage
 
 uint32_t controlGateSequence = 0;
+LinkSchedule linkOdometrySchedule;
 DebugTelemetry::TelemetryState debugTelemetryState{};
 uint32_t diagnosticSequence = 0;
 ServoTrimsDegrees servoTrims{};
@@ -1150,7 +1151,7 @@ void runControlTick(bool imuUpdated) {
   runCalibrationStep(imuUpdated);
   updateWheelVelocities();
   serviceWheelOverspeed();
-  if (wheelsValid && controlGateSequence % LINK_ODOMETRY_DIVIDER == 0) {
+  if (wheelsValid && LinkScheduleDue(linkOdometrySchedule, controlStartUs, LINK_ODOMETRY_PERIOD_US)) {
     // Forward-positive wheel angles: the same sign as the wheel speeds, applied only through the wheel boundary.
     LinkPublishOdometry(wheelReadTimeUs, WheelBoundary::kLeftMotorSign * motor1.shaftAngle(),
                         WheelBoundary::kRightMotorSign * motor2.shaftAngle(), imu::latest());

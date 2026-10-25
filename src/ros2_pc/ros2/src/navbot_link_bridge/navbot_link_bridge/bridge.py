@@ -16,6 +16,7 @@ class ImuSample:
     roll_rad: float
     pitch_rad: float
     yaw_rad: float
+    t_us: int  # robot micros() at the IMU read; use only differences (wraps at 2**32)
 
 
 class LinkBridge:
@@ -73,4 +74,5 @@ def _imu_sample(imu) -> ImuSample:
         roll_rad=imu.roll_rad,
         pitch_rad=imu.pitch_rad,
         yaw_rad=imu.yaw_rad,
+        t_us=imu.t_us,
     )
