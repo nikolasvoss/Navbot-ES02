@@ -32,7 +32,7 @@ Both directions use the same format. Transport: ESP32 UART1 (the former touchscr
 
 ## Odometry
 
-Normal mode sends one `WheelOdometry` and one `Imu` every 20 ms (nominal 50 Hz each, from the control loop; measured about 35.5 Hz, see the rules below). Sensor diagnostic mode sends neither.
+Normal mode sends one `WheelOdometry` and one `Imu` on a 20 ms schedule (50 Hz each on average, from the control loop; see the rules below). Sensor diagnostic mode sends neither.
 
 - `t_us` is `micros()` at the wheel read. Use it for deltas, not `t_ms`.
 - `left_angle_rad` and `right_angle_rad` are cumulative wheel angles in radians, not wrapped. Positive angle means forward rolling, the same sign as the controller's wheel speeds. The firmware takes them from `motor.shaftAngle()` times `WheelBoundary::kLeftMotorSign` and `kRightMotorSign`, the only place motor signs appear.
@@ -57,7 +57,7 @@ Consequences:
 - Velocities and yaw rate come from robot-clock differences (`t_us`), so they are not affected by link jitter.
 - Absolute stamps on `/odom`, the `odom` to `base_link` TF and `/imu/data` are arrival times. They lag the true sample by the transmission time (under 1 ms for these frames at 500 kBd), the robot's TX queue and the polling delay (up to 5 ms). Odometry and IMU frames from the same tick often carry the same stamp.
 - Robot data and other ROS data (the LiDAR scan, for example) are matched only through these ROS stamps. A robot-to-ROS clock offset is not estimated. Better matching would need an offset estimate from `t_us` against the arrival time, or an explicit time-sync message. Neither exists.
-- The 50 Hz rate is nominal: the odometry is sent on every 20th control tick, and a tick runs at least 1 ms apart. The measured tick period is about 1.41 ms (710 Hz), so frames arrive about every 28.2 ms (35.5 Hz each). Use `t_us` for deltas, not the nominal rate.
+- The send is checked once per control tick, right after the wheel read, so the data is at most one tick old. Each send moves the 20 ms deadline forward by exactly 20 ms (`LinkScheduleDue()` in `link_schedule.h`, period `LINK_ODOMETRY_PERIOD_US`), so the average rate is 50 Hz. A frame goes out on the first tick at or after its deadline, so single intervals jitter by up to one control tick (measured period about 1.41 ms, [lab note](../../../lab/integration/2026-10-25-odometry-signs-and-rate.md)): between about 18.6 and 21.4 ms. After a stall of a full period or more (a blocking calibration step, for example), one frame is sent and the schedule restarts 20 ms later; missed frames are not caught up. Use `t_us` for deltas, not the nominal rate.
 
 ## Code
 

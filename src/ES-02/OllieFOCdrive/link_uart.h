@@ -4,14 +4,15 @@
 #include <Arduino.h>
 #include "BoardConfig.h"
 #include "imu.h"
+#include "link_schedule.h"
 
 // UART1 connects the ESP32 to the ros2_pc (NavBot link, see
 // docs/robot/software/interfaces/ros2-uart-protocol.md).
 // Firmware pin numbers: RX = GPIO20, TX = GPIO19 (opposite of the PCB net names RX1/TX1).
 #define LINK_UART_BAUD 500000
 
-// 1 kHz / 20 = 50 Hz
-#define LINK_ODOMETRY_DIVIDER 20
+// WheelOdometry/Imu send period: 50 Hz on average, checked once per control tick (see link_schedule.h).
+#define LINK_ODOMETRY_PERIOD_US 20000
 
 void LinkUartInit();
 

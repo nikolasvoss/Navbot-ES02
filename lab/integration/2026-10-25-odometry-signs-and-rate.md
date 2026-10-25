@@ -20,3 +20,7 @@ With the UART1 link working at 500000 baud (after the STC8H1K08 fix, see [the ST
 Positive wheel-angle change means forward rolling, as the protocol specifies. Backward rolling was not tested.
 
 The link rate is about 35.5 Hz, not 50 Hz. The control loop does not run at 1 kHz: a tick takes about 1.41 ms. The ROS 2 bridge and any consumer must use `t_us` for time deltas and must not assume 50 Hz. The cause of the 1.41 ms period is not confirmed. It is probably the execution time of one `loop()` pass (motor FOC and sensor reads); `controlExecutionUs` and `maxLoopEntryIntervalUs` in the debug telemetry would show it, but the console was not connected during this test. Open items: read those two values on the CH340 console, and decide whether to keep the 20-tick divider or switch to a time-based 20 ms send interval.
+
+## 2026-10-25 update
+
+The firmware now sends `WheelOdometry` and `Imu` on a 20 ms time schedule instead of every 20th control tick: `runControlTick()` calls `LinkScheduleDue()` (`link_schedule.h`) with the tick start time and `LINK_ODOMETRY_PERIOD_US` (20000). The deadline advances by one period per send, so the expected average is 50 Hz with up to one tick (about 1.41 ms) of jitter per interval. Host tests in `tests/link/` cover the rate, the stall recovery and the `micros()` wrap. Not yet verified on hardware: the firmware was not built or flashed, and the rate was not measured again.
