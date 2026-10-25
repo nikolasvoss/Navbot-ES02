@@ -1,6 +1,6 @@
-# Touchscreen stand
+# Stand mounting holes
 
-[`touchscreenstand.stl`](../../../cad/robot/touchscreenstand.stl) is the 3D-printed stand that held the original touchscreen on top of the robot. The touchscreen is removed. Its mounting-hole pattern is still the robot-side interface: the LiDAR/ros2_pc stand in [`cad/ros2_pc/lidar_ros2_pc_stand/`](../../../cad/ros2_pc/lidar_ros2_pc_stand/) uses the same pattern. This page describes only the mounting holes.
+The file [`touchscreenstand.stl`](../../../cad/robot/touchscreenstand.stl) contains a 3D-printed stand. This page describes only the mounting holes.
 
 ## Mounting holes
 

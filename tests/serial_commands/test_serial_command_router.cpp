@@ -4,6 +4,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "../../src/ES-02/OllieFOCdrive/MotorDiagnostic.h"
 
 enum class VerboseMode : unsigned char { nothing, on_request, user_friendly, machine_readable };
 constexpr int MAX_COMMAND_LENGTH = 20;
@@ -45,10 +46,19 @@ class Commander {
 };
 
 static std::vector<std::string> calls;
+static std::vector<bool> parsedMotorCommands;
 #define COMMAND_CALLBACK(name) \
   void name(char *input) { calls.emplace_back(#name ":" + std::string(input)); }
-COMMAND_CALLBACK(handleM1MotionCommand)
-COMMAND_CALLBACK(handleM1Command)
+void handleM1MotionCommand(char *input) {
+  calls.emplace_back("handleM1MotionCommand:" + std::string(input));
+  MotorDiagnostic::Request request{};
+  parsedMotorCommands.push_back(MotorDiagnostic::parseCurrentRequest(input, request));
+}
+void handleM1Command(char *input) {
+  calls.emplace_back("handleM1Command:" + std::string(input));
+  MotorDiagnostic::Request request{};
+  parsedMotorCommands.push_back(MotorDiagnostic::parseVoltageRequest(input, request));
+}
 COMMAND_CALLBACK(zeroBiasServo1)
 COMMAND_CALLBACK(zeroBiasServo2)
 COMMAND_CALLBACK(zeroBiasServo3)
@@ -58,17 +68,7 @@ COMMAND_CALLBACK(setMahonyKp)
 COMMAND_CALLBACK(setMahonyKi)
 COMMAND_CALLBACK(selectDebugLog)
 COMMAND_CALLBACK(selectCalibration)
-COMMAND_CALLBACK(setBodyCommandFilterCutoffHz)
-COMMAND_CALLBACK(setBodyCommandFilteringEnabled)
-COMMAND_CALLBACK(setAnglePid)
-COMMAND_CALLBACK(setSpeedPid)
 COMMAND_CALLBACK(setYawPid)
-COMMAND_CALLBACK(setRollPid)
-COMMAND_CALLBACK(setTargetBodyHeight)
-COMMAND_CALLBACK(setControlTorqueCompensation)
-COMMAND_CALLBACK(handleUserCommand)
-COMMAND_CALLBACK(setWheelSpeedFeedbackGain)
-COMMAND_CALLBACK(setDriveTiltReductionGain)
 #undef COMMAND_CALLBACK
 
 #include "../../src/ES-02/OllieFOCdrive/SerialCommandRouter.h"
@@ -80,37 +80,27 @@ int main() {
   commander.com_port = &output;
   SerialCommandRouter router;
 
-  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 21);
+  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 12);
   const char *expectedCallbacks[] = {"handleM1MotionCommand", "handleM1Command", "zeroBiasServo1", "zeroBiasServo2",
                                     "zeroBiasServo3", "zeroBiasServo4", "setImuLowPassCutoff", "setMahonyKp",
-                                    "setMahonyKi", "selectDebugLog", "selectCalibration", "setBodyCommandFilterCutoffHz",
-                                    "setBodyCommandFilteringEnabled", "setAnglePid", "setSpeedPid", "setYawPid",
-                                    "setRollPid", "setTargetBodyHeight", "handleUserCommand",
-                                    "setWheelSpeedFeedbackGain", "setDriveTiltReductionGain"};
-  const char ids[] = "TMABCDZQIKEFJPSYROUVW";
+                                    "setMahonyKi", "selectDebugLog", "selectCalibration", "setYawPid"};
+  const char ids[] = "TMABCDZQIKEY";
   for (size_t i = 0; ids[i]; ++i) {
     Stream input(std::string(1, ids[i]) + "\n");
     router.run(input, commander, commandEntries);
     assert(calls[i] == std::string(expectedCallbacks[i]) + ":\n");
   }
-  assert(calls.size() == 21);
-  assert(calls[15] == "setYawPid:\n");
-  assert(calls[18] == "handleUserCommand:\n");
-  assert(calls[19] == "setWheelSpeedFeedbackGain:\n");
-  assert(calls[20] == "setDriveTiltReductionGain:\n");
+  assert(calls.size() == 12);
+  assert(calls[11] == "setYawPid:\n");
 
   calls.clear();
-  Stream yawInput("YP?\nYI2\nYD\nYL\nU\nU3.5\nV\nV0.75\nW\nW2\n");
+  Stream yawInput("YP?\nYI2\nYD\nYL\n");
   router.run(yawInput, commander, commandEntries);
-  assert((calls == std::vector<std::string>{"setYawPid:P?\n", "setYawPid:I2\n", "setYawPid:D\n", "setYawPid:L\n",
-                                             "handleUserCommand:\n", "handleUserCommand:3.5\n",
-                                             "setWheelSpeedFeedbackGain:\n", "setWheelSpeedFeedbackGain:0.75\n",
-                                             "setDriveTiltReductionGain:\n", "setDriveTiltReductionGain:2\n"}));
+  assert((calls == std::vector<std::string>{"setYawPid:P?\n", "setYawPid:I2\n", "setYawPid:D\n", "setYawPid:L\n"}));
 
   Stream helpInput("?\n");
   router.run(helpInput, commander, commandEntries);
   assert(output.output().find("Y:yawPidSettings\n") != std::string::npos);
-  assert(output.output().find("W:drive tilt reduction gain\n") != std::string::npos);
 
   const int builtinCalls = commander.builtins;
   Stream builtinInput("@3\n#5\n");
@@ -156,9 +146,54 @@ int main() {
   assert((calls == std::vector<std::string>{"setYawPid:I2\r"}));
 
   calls.clear();
+  parsedMotorCommands.clear();
+  Stream currentDiagnostic("T 0.02 -0.02 1000\n");
+  router.run(currentDiagnostic, commander, commandEntries);
+  assert((calls == std::vector<std::string>{"handleM1MotionCommand: 0.02 -0.02 1000\n"}));
+  assert(parsedMotorCommands.size() == 1 && parsedMotorCommands[0]);
+  calls.clear();
+  parsedMotorCommands.clear();
+  Stream voltageDiagnostic("M 2 2.0 5000\r\n");
+  router.run(voltageDiagnostic, commander, commandEntries);
+  assert(parsedMotorCommands.size() == 1 && parsedMotorCommands[0]);
+  calls.clear();
+  parsedMotorCommands.clear();
+  Stream invalidDiagnostic("M 1 nan 1000\n");
+  router.run(invalidDiagnostic, commander, commandEntries);
+  assert(parsedMotorCommands.size() == 1 && !parsedMotorCommands[0]);
+
+  calls.clear();
+  std::string continuousCommands;
+  for (int i = 0; i < 30; ++i) continuousCommands += "YI\n";
+  Stream continuousInput(continuousCommands);
+  router.run(continuousInput, commander, commandEntries);
+  assert(calls.size() == SerialCommandRouter::kByteBudgetPerRun / 3);
+  assert(continuousInput.available() > 0);
+  const size_t callsBeforeSecondRun = calls.size();
+  router.run(continuousInput, commander, commandEntries);
+  assert(calls.size() > callsBeforeSecondRun);
+  while (continuousInput.available()) router.run(continuousInput, commander, commandEntries);
+  assert(calls.size() == 30);
+
+  calls.clear();
   Stream overlongInput("Y" + std::string(24, '1') + "\nYI\n");
   router.run(overlongInput, commander, commandEntries);
   assert((calls == std::vector<std::string>{"setYawPid:I\n"}));
+
+  // Commander's 20-character limit: a 19-character T line plus its newline is dispatched, while a
+  // 20-character T line plus its newline is discarded whole, so the next line still runs.
+  calls.clear();
+  parsedMotorCommands.clear();
+  Stream maxWidthCurrent("T -0.020 -0.020 200\n");
+  router.run(maxWidthCurrent, commander, commandEntries);
+  assert((calls == std::vector<std::string>{"handleM1MotionCommand: -0.020 -0.020 200\n"}));
+  assert(parsedMotorCommands.size() == 1 && parsedMotorCommands[0]);
+  calls.clear();
+  parsedMotorCommands.clear();
+  Stream overWidthCurrent("T -0.020 -0.020 2000\nYI\n");
+  router.run(overWidthCurrent, commander, commandEntries);
+  assert((calls == std::vector<std::string>{"setYawPid:I\n"}));
+  assert(parsedMotorCommands.empty());
 
   commander.echo = true;
   commander.verbose = VerboseMode::user_friendly;

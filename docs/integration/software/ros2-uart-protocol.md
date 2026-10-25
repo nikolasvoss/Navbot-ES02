@@ -35,8 +35,8 @@ Both directions use the same format. Transport: ESP32 UART1 (the former touchscr
 Normal mode sends one `WheelOdometry` and one `Imu` every 20 ms (50 Hz each, from the 1 kHz control loop). Sensor diagnostic mode sends neither.
 
 - `t_us` is `micros()` at the wheel sample. Use it for deltas, not `t_ms`.
-- `left_angle_rad` and `right_angle_rad` are cumulative wheel angles in radians, not wrapped. They use the same sign convention as the controller wheel velocity: positive angle means positive `m1FilteredVelocityRadPerSec` (left) and positive `m2FilteredVelocityRadPerSec` (right).
-- **Not verified on hardware:** the forward direction and the left/right mapping. The firmware takes left from sensor 1 and right from the negated sensor 2 angle, as the velocity code does. Roll the robot forward and check the signs before relying on them.
+- `left_angle_rad` and `right_angle_rad` are cumulative wheel angles in radians, not wrapped. Positive angle means forward rolling, the same sign as the controller's wheel speeds. The firmware takes them from `motor.shaftAngle()` times `WheelBoundary::kLeftMotorSign` and `kRightMotorSign`, the only place motor signs appear.
+- The sign convention was measured on the robot for the wheel boundary (2026-10-22: positive motor-local q rolls both wheels backward). The odometry stream itself has not been checked on hardware. Roll the robot forward and check the signs before relying on them.
 - The PC owns wheel radius and track width. It computes wheel travel from the angle deltas, so a dropped frame loses one sample and not the total.
 - `Imu` values use SI units. Axes are the IMU sensor frame, not a robot body frame. Acceleration and angular rate are the filtered values.
 
@@ -53,5 +53,5 @@ Normal mode sends one `WheelOdometry` and one `Imu` every 20 ms (50 Hz each, fro
 ## Next steps
 
 1. Verify pins, 3.3 V levels and the 500 kBd link on the physical board before wiring the ros2_pc.
-2. Measure the real wheel radius and track width, and verify the forward direction and left/right signs by rolling the robot forward. The bridge takes both geometry values as required parameters; the signs are unverified.
+2. Measure the track width and check the odometry signs by rolling the robot forward. The bridge takes the wheel radius and the track width as required parameters.
 3. Map `Battery`, `Status` and `Log` in the ROS 2 bridge to `sensor_msgs/BatteryState`, `diagnostic_msgs` and `/rosout`.

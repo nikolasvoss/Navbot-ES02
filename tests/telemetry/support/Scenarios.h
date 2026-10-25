@@ -45,6 +45,8 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   s.sequence = 100 + tick;
   s.readTimeUs = 3000000u + 1000u * tick;
   s.dtSec = g.f();
+  in.imuTiming = {4000000u + static_cast<uint32_t>(tick), 20u + static_cast<uint32_t>(variant),
+                  2500u + static_cast<uint32_t>(tick)};
   fill(g, s.accelerationG);
   fill(g, s.angularVelocityRadPerSec);
   fill(g, s.filteredAccelerationG);
@@ -68,6 +70,11 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   in.motor1Target = g.f();
   in.motor2Target = g.f();
   in.motor2CurrentSetpoint = g.f();
+  in.motor1CurrentSetpoint = g.f();
+  in.motor1VoltageQ = g.f();
+  in.motor2VoltageQ = g.f();
+  in.motor1ShaftVelocity = g.f();
+  in.motor2ShaftVelocity = g.f();
   in.sensor1Angle = g.f();
   in.sensor1MechanicalAngle = g.f();
   in.sensor2Angle = g.f();
@@ -76,56 +83,27 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   for (int i = 0; i < 18; ++i) in.sbusChannels[i] = static_cast<int16_t>(172 + 41 * i + variant);
   in.sbusFrameIntervalMs = 14 + variant;
 
-  fill(g, in.anglePid);
-  fill(g, in.speedPid);
   fill(g, in.yawPid);
-  fill(g, in.rollPid);
-  // The two PID states and the touch readings of the removed touchscreen still consume their draws, so every other
-  // value keeps the sequence the golden stream was recorded with. The old touch Y PID output is now the roll offset.
-  DebugTelemetry::PidStatus removedTouchXPid{};
-  DebugTelemetry::PidStatus removedTouchYPid{};
-  fill(g, removedTouchXPid);
-  fill(g, removedTouchYPid);
-  in.ballRollOffset = removedTouchYPid.output;
-  g.u16(); g.u16();
-  for (int i = 0; i < 4; ++i) g.i16();
-  g.f(); g.f();
-  g.i32();
 
   in.servoTrims = {g.f(), g.f(), g.f(), g.f()};
   for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = g.i32();
 
-  in.topBallX = g.f();
-  in.topBallY = g.f();
-  in.sbusTopBallXSmoothed = g.f();
-  in.sbusTopBallYSmoothed = g.f();
 
-  in.bodyRoll = g.f();
-  in.bodyPitching = g.f();
-  in.bodyPitchingFiltered = g.f();
-  in.bodyRollFiltered = g.f();
-  in.bodyPitchCorrection = g.f();
-  in.bodyHeightCommandM = g.f();
-  in.bodyHeightCommandFilteredM = g.f();
   in.bodyTurn = g.f();
-  in.bodyX = g.f();
-  in.bodyCommandFilteringEnabled = g.f();
-  in.bodyCommandFilterCutoffHz = g.f();
 
   in.movementSpeed = g.f();
-  in.driveEffectiveSpeed = g.f();
-  in.driveSpeedBodyXRaw = g.f();
-  in.wheelVelocityFeedbackCorrection = g.f();
 
   in.voltageAdc = static_cast<uint16_t>(700 + 11 * tick + variant);
   in.voltageAdcFiltered = g.f();
   in.voltage = g.f();
+  in.batteryInstantRawV = g.f();
+  in.batteryInstantFilteredV = g.f();
+  in.controlStartUs = 5000000u + 1000u * tick;
+  in.controlExecutionUs = 800u + 20u * tick;
+  in.maxLoopEntryIntervalUs = 1200u + 50u * tick;
 
   in.pidGainsMode = variant == 2 ? 0 : (variant == 0 ? 2 : 1);
-  in.postureOrMarkMode = 1 + variant;
   in.robotTumble = variant == 1 ? 2 : 0;
-  in.pidParameterTuning = 1.0f + variant;
-  in.targetBodyHeightOverrideM = g.f();
   return in;
 }
 
@@ -140,7 +118,7 @@ std::string recordAll(Runner run) {
       for (int due = 1; due >= 0; --due) {
         Recording::reset();
         Recording::dueResult = due == 1;
-        DebugTelemetry::TelemetryState state{static_cast<uint16_t>(650 + variant), 0};
+        DebugTelemetry::TelemetryState state{static_cast<uint16_t>(650 + variant), 0, 0};
         for (int tick = 0; tick < 4; ++tick) {
           const DebugTelemetry::TelemetryInputs in = makeInputs(variant, selection, tick);
           const size_t before = Recording::events().size();
