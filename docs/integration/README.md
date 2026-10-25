@@ -5,6 +5,7 @@ The integration system is the connection between the robot (ESP32-S3) and the ro
 ## Software
 
 - [NavBot link protocol](software/ros2-uart-protocol.md): framing, messages, odometry convention, and the firmware sender.
+- [ros2_pc setup](software/ros2-pc-setup.md): everything to configure on the ros2_pc outside the checkout: packages, boot overlay, permissions, checks.
 - [NavBot link bridge](software/navbot-link-bridge.md): the ROS 2 node that publishes `/odom`, the `odom` to `base_link` TF, and `/imu/data`; build, run, and open checks.
 
 ## Plans

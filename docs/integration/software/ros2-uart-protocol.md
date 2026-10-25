@@ -34,11 +34,30 @@ Both directions use the same format. Transport: ESP32 UART1 (the former touchscr
 
 Normal mode sends one `WheelOdometry` and one `Imu` every 20 ms (50 Hz each, from the 1 kHz control loop). Sensor diagnostic mode sends neither.
 
-- `t_us` is `micros()` at the wheel sample. Use it for deltas, not `t_ms`.
+- `t_us` is `micros()` at the wheel read. Use it for deltas, not `t_ms`.
 - `left_angle_rad` and `right_angle_rad` are cumulative wheel angles in radians, not wrapped. Positive angle means forward rolling, the same sign as the controller's wheel speeds. The firmware takes them from `motor.shaftAngle()` times `WheelBoundary::kLeftMotorSign` and `kRightMotorSign`, the only place motor signs appear.
 - The sign convention was measured on the robot for the wheel boundary (2026-10-22: positive motor-local q rolls both wheels backward). The odometry stream itself has not been checked on hardware. Roll the robot forward and check the signs before relying on them.
 - The PC owns wheel radius and track width. It computes wheel travel from the angle deltas, so a dropped frame loses one sample and not the total.
 - `Imu` values use SI units. Axes are the IMU sensor frame, not a robot body frame. Acceleration and angular rate are the filtered values.
+
+## Time stamps
+
+The robot and the ros2_pc run on unsynchronized clocks, and nothing converts one into the other.
+
+| Stamp | Source | Meaning |
+| --- | --- | --- |
+| `Message.seq` | robot counter | Gap = lost frame; a non-increasing value = robot restart. |
+| `Message.t_ms` | robot `millis()` when the frame is encoded | Monotonic, 1 ms resolution. The bridge does not use it. |
+| `WheelOdometry.t_us` | robot `micros()` at the wheel read | Wraps at 2^32 (about 71 min). The bridge uses only differences, which are wrap-safe. |
+| `Imu` | none of its own | Only the message-level `t_ms`. The IMU snapshot is sent right after the odometry frame in the same control tick, but its sample time is not transmitted. |
+| ROS `header.stamp` | ros2_pc `get_clock().now()` | Taken once per serial poll (200 Hz timer) and shared by every frame in that read. It is the arrival time, not the sample time. |
+
+Consequences:
+
+- Velocities and yaw rate come from robot-clock differences (`t_us`), so they are not affected by link jitter.
+- Absolute stamps on `/odom`, the `odom` to `base_link` TF and `/imu/data` are arrival times. They lag the true sample by the transmission time (under 1 ms for these frames at 500 kBd), the robot's TX queue and the polling delay (up to 5 ms). Odometry and IMU frames from the same tick often carry the same stamp.
+- Robot data and other ROS data (the LiDAR scan, for example) are matched only through these ROS stamps. A robot-to-ROS clock offset is not estimated. Better matching would need an offset estimate from `t_us` against the arrival time, or an explicit time-sync message. Neither exists.
+- The 50 Hz rate is nominal: the odometry is sent on every 20th control tick, and a tick runs at least 1 ms apart.
 
 ## Code
 
