@@ -11,6 +11,8 @@ constexpr float kStandardGravityMps2 = 9.80665f;
 
 uint32_t linkSequence = 0;
 uint32_t linkDroppedFrames = 0;
+uint32_t linkSentFrames = 0;
+constexpr uint32_t kLinkStatsEverySends = 100;  // 2 s at 50 Hz
 
 void LinkSend(navbot_link_v1_Message& msg) {
   msg.seq = ++linkSequence;
@@ -23,6 +25,7 @@ void LinkSend(navbot_link_v1_Message& msg) {
     return;
   }
   Serial1.write(frame, frameLen);
+  ++linkSentFrames;
 }
 
 }  // namespace
@@ -32,6 +35,17 @@ void LinkUartInit() {
   // on), which keeps the UART signals off the pins. Nothing here uses native USB, so release the pads first.
   USB_SERIAL_JTAG.conf0.usb_pad_enable = 0;
   USB_SERIAL_JTAG.conf0.dp_pullup = 0;
+  // Pin check before UART1 takes the pin: drive the TX pin low for 50 ms and read it back. A pad that does not follow
+  // shows up in the log and as a missing low pulse on a logic analyzer.
+  pinMode(board::kLinkUartTxPin, OUTPUT);
+  digitalWrite(board::kLinkUartTxPin, LOW);
+  delay(50);
+  const int lowReadback = digitalRead(board::kLinkUartTxPin);
+  digitalWrite(board::kLinkUartTxPin, HIGH);
+  delay(1);
+  const int highReadback = digitalRead(board::kLinkUartTxPin);
+  Logging::message(Logging::Level::Info, "Link", "GPIO%d drive low reads %d, high reads %d", board::kLinkUartTxPin,
+                   lowReadback, highReadback);
   Serial1.setTxBufferSize(512);
   Serial1.begin(LINK_UART_BAUD, SERIAL_8N1, board::kLinkUartRxPin, board::kLinkUartTxPin);
   Logging::message(Logging::Level::Info, "Link", "UART1 %d baud RX=%d TX=%d usbPad=%d", LINK_UART_BAUD,
@@ -39,6 +53,10 @@ void LinkUartInit() {
 }
 
 void LinkPublishOdometry(uint32_t sampleTimeUs, double leftWheelAngleRad, double rightWheelAngleRad, const imu::Snapshot& imuSnapshot) {
+  static uint32_t publishCount = 0;
+  if (++publishCount % kLinkStatsEverySends == 0)
+    Logging::message(Logging::Level::Info, "Link", "sent=%u dropped=%u txFree=%d", static_cast<unsigned>(linkSentFrames),
+                     static_cast<unsigned>(linkDroppedFrames), Serial1.availableForWrite());
   navbot_link_v1_Message odom = navbot_link_v1_Message_init_zero;
   odom.which_body = navbot_link_v1_Message_odom_tag;
   odom.body.odom.t_us = sampleTimeUs;
