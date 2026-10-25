@@ -12,7 +12,11 @@ slam_toolbox:
     max_laser_range: 8.0          # provisional; the LDS08RR range is not yet measured
     map_update_interval: 2.0
     # Odometry is static, so "movement" is never detected from odom. Process scans by time instead.
-    minimum_time_interval: 0.5
+    minimum_time_interval: 0.2              # jeden Scan verarbeiten (5 Hz)
+    correlation_search_space_dimension: 1.0 # ±0,5 m Suchfenster
+    coarse_search_angle_offset: 0.698       # ±40°
+    loop_search_maximum_distance: 6.0
+
     minimum_travel_distance: 0.0
     minimum_travel_heading: 0.0
     throttle_scans: 1
