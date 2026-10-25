@@ -40,7 +40,7 @@ Normal mode sends one `WheelOdometry` and one `Imu` every 20 ms (50 Hz each, fro
 - The PC owns wheel radius and track width. It computes wheel travel from the angle deltas, so a dropped frame loses one sample and not the total.
 - `Imu` values use SI units. Axes are the IMU sensor frame, not a robot body frame. Acceleration and angular rate are the filtered values.
 
-The rate was set to 115200 baud for the first hardware test (2026-10-25); the design value was 500000 baud. The two frames of one tick are about 55 bytes, 2.8 kB/s at 50 Hz, about a quarter of the 11.5 kB/s the line carries. `LINK_UART_BAUD` in `link_uart.h` and the bridge's `baud` parameter must match.
+The rate was set to 115200 baud for the first hardware test (2026-10-25); the design value was 500000 baud. The two frames of one tick are estimated at about 100 bytes (the test vectors are shorter because protobuf omits zero values; real floats and doubles use full width), so about 5 kB/s at 50 Hz, roughly 45 % of the 11.5 kB/s the line carries. Measure the real frame sizes on the wire. `LINK_UART_BAUD` in `link_uart.h` and the bridge's `baud` parameter must match.
 
 ## Time stamps
 
@@ -57,7 +57,7 @@ The robot and the ros2_pc run on unsynchronized clocks, and nothing converts one
 Consequences:
 
 - Velocities and yaw rate come from robot-clock differences (`t_us`), so they are not affected by link jitter.
-- Absolute stamps on `/odom`, the `odom` to `base_link` TF and `/imu/data` are arrival times. They lag the true sample by the transmission time (a 35-byte frame takes about 3 ms at 115200 baud, so an odometry and IMU pair about 5 ms), the robot's TX queue and the polling delay (up to 5 ms). Odometry and IMU frames from the same tick often carry the same stamp.
+- Absolute stamps on `/odom`, the `odom` to `base_link` TF and `/imu/data` are arrival times. They lag the true sample by the transmission time (a 40-byte frame takes about 3.5 ms at 115200 baud, so an odometry and IMU pair about 9 ms), the robot's TX queue and the polling delay (up to 5 ms). Odometry and IMU frames from the same tick often carry the same stamp.
 - Robot data and other ROS data (the LiDAR scan, for example) are matched only through these ROS stamps. A robot-to-ROS clock offset is not estimated. Better matching would need an offset estimate from `t_us` against the arrival time, or an explicit time-sync message. Neither exists.
 - The 50 Hz rate is nominal: the odometry is sent on every 20th control tick, and a tick runs at least 1 ms apart.
 
