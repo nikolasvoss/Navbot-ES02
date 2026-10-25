@@ -2,13 +2,12 @@
 #define LINK_UART_H
 
 #include <Arduino.h>
+#include "BoardConfig.h"
 #include "imu.h"
 
 // UART1 connects the ESP32 to the ros2_pc (NavBot link, see
 // docs/robot/software/interfaces/ros2-uart-protocol.md).
 // Firmware pin numbers: RX = GPIO20, TX = GPIO19 (opposite of the PCB net names RX1/TX1).
-#define LINK_UART_RX_PIN 20
-#define LINK_UART_TX_PIN 19
 #define LINK_UART_BAUD 500000
 
 // 1 kHz / 20 = 50 Hz

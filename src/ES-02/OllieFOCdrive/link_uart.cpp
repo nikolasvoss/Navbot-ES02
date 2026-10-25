@@ -26,7 +26,7 @@ void LinkSend(navbot_link_v1_Message& msg) {
 
 void LinkUartInit() {
   Serial1.setTxBufferSize(512);
-  Serial1.begin(LINK_UART_BAUD, SERIAL_8N1, LINK_UART_RX_PIN, LINK_UART_TX_PIN);
+  Serial1.begin(LINK_UART_BAUD, SERIAL_8N1, board::kLinkUartRxPin, board::kLinkUartTxPin);
 }
 
 void LinkPublishOdometry(uint32_t sampleTimeUs, double leftWheelAngleRad, double rightWheelAngleRad, const imu::Snapshot& imuSnapshot) {

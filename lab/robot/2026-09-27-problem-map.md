@@ -1,0 +1,21 @@
+# Navbot-ES02 troubleshooting: separate observations
+
+Status: open
+
+As of 2026-09-27. The labels below denote **symptoms**, not proven independent defects. They may be related; the data so far do not show whether they share a common cause. For details and limitations, read the respective case file.
+
+| Case | Observation | Evidence so far | Open question of its own |
+| --- | --- | --- | --- |
+| **A: Oscillation while standing** | In earlier CH5 balance tests, strong motion; with gentle diagnostic gains, much calmer and, according to the user, stable on its own. The slight oscillation observed later at yaw P=10 was a back-and-forth tilt about the wheel axis. | [Balance case file](2026-09-27-balance-and-power.md), in particular `control-ch5-2*.log` and the P=6 and yaw tests documented there. | Which feedback path and which gain values explain the remaining motion while standing? |
+| **B: Voltage dip / shutdown on activation** | In earlier CH5 tests, strong board ADC dips and recordings that ended; the user also saw a dip directly at the battery pack with an oscilloscope. One logged earlier test continued after a brief dip, so not every voltage minimum corresponds to a restart. | [Balance case file](2026-09-27-balance-and-power.md), `balance-trace*.log`; oscilloscope observation only as a user report, without a curve or current measurement. | What causes the pack dip, and which event actually shuts off the motors/receiver? |
+| **C: Increasing tipping while driving** | While standing still, stable according to the user; during fast driving via CH3, increasing tipping and acceleration in both directions of travel. When stopping after forward driving, according to the user, it sometimes rolls backward and occasionally tips over. CH8=2 during the fast driving test; touchscreen not connected. | [Driving case file](2026-09-27-drive-instability.md). The first CH5-off baseline contains too many serial corruptions to evaluate motion behavior; **no usable driving trace yet**. | Which quantities grow during driving or ringing: speed setpoint/error, `BodyX`, tilt setpoint, motor targets, or supply dip? |
+| **D: Slight directional deviation** | Forward slightly to the right; backward often straight, but uncertain. | User report in the [driving case file](2026-09-27-drive-instability.md); no measurement series. | Reproducible, and tied to CH4/yaw command, motor/wheel difference, or something else? |
+| **E: Calibration / servo observation** | According to the user, `C1` and `C-1` moved the addressed servo in the same direction; several stored zero points reappeared after a restart. | User report and startup messages in the [balance case file](2026-09-27-balance-and-power.md); no independent servo angle measurement. | Is the command interpretation or servo reaction reproducible and relevant to A–D? |
+
+## Shared context and limits
+
+- According to the user, the robot ran about two days before the tests. A flash of the GitHub default firmware preceded the standing oscillation in time. The earlier firmware state and the settings at the time are unknown; a firmware cause is therefore not proven.
+- According to the code, the calibration values are stored in ESP32 NVS (`Preferences`), and some values reappeared after a restart. Serial live PID gains are not stored permanently. Old and new traces correspond to different local firmware states; their mapping is given in the balance case file.
+- The local working copy is modified and not committed. Currently `DIAGNOSTIC_LIVE_TUNING_DEFAULTS=1` is set, so the gentle values are loaded at startup; original GitHub gains and live changes must not be confused. The binary actually flashed has not been read back by hash.
+- An observed voltage dip may be a consequence of high actuator demand or may influence its behavior. The data so far do not establish a general sequence or a common cause for A–E.
+- Hardware notes and measurement limits are in the [hardware overview](../../docs/robot/hardware/system-overview.md), the [sensor diagnostic guide](../../docs/robot/software/sensor-diagnostic-mode.md), and the [USB/serial notes](../../docs/robot/software/usb-serial-flashing.md). Keep new measurements under a unique file name with documented switch positions.

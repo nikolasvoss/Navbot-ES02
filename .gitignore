@@ -5,8 +5,12 @@ src/ES-02/OllieFOCdrive/build/
 # Captured serial traces and local analysis artifacts
 *.log
 *-diagnose-*.md
+!/lab/*/captures/**
 
 # Python cache files
 __pycache__/
 *.py[cod]
-TASK_STATE.md
+./TASK_STATE.md
+# Local task files (see AGENTS.md, "Where files go")
+/work/
+/TASK_STATE.md
