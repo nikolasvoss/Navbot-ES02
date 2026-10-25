@@ -2,9 +2,10 @@
 # Builds the firmware on the desktop PC (which has the ESP32 toolchain) and
 # copies the binaries to build/flash on this machine, ready for upload_firmware.py.
 # The current local branch must be pushed: the desktop builds origin/<branch>.
+# Usage: build_remote.sh [ssh-target]   (default: desktop)
 set -euo pipefail
 
-remote_host=desktop
+remote_host="${1:-desktop}"
 remote_repo='~/Dokumente/Bastelei/roboter/Navbot-ES02'
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
