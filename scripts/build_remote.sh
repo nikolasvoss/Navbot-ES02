@@ -31,5 +31,3 @@ REMOTE
 mkdir -p "$repo_root/build/flash"
 rsync -a --delete "$remote_host:$remote_repo/build/flash/" "$repo_root/build/flash/"
 echo "Firmware delivered to $repo_root/build/flash"
-echo "Next: close the serial MCP connection, keep balance disabled, then flash with the"
-echo "navbot_flash MCP tool flash_firmware, build directory: $repo_root/build/flash"
