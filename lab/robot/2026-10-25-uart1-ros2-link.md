@@ -24,3 +24,7 @@ Flashed and wired to the Pi. The link failed until the STC8H1K08 on the line was
 ## 2026-10-26 update
 
 The two branches above were merged. The link runs at 500000 baud with the USB pad release, the boot pin check and the periodic link counters from the first branch, and the 20 ms send schedule and `Imu.t_us` from the second. Before the merge, a build without the pad release carried clean 500000-baud frames once the STC8H1K08 was disconnected, so the STC was the cause. The merged build has not been flashed.
+
+## 2026-10-26 merged build on the robot
+
+Built `feature/esp32-ros2-uart-interface` (commit `0c5e5f9`) with `scripts/build_remote.sh` and flashed it with `scripts/upload_firmware.py` (esptool; hash verified). Boot log: `Link: GPIO19 drive low reads 0, high reads 1` and `Link: UART1 500000 baud RX=20 TX=19 usbPad=0`. A 10 s capture on `/dev/ttyAMA3` at 500000 baud gave 1002 CRC-valid frames, none bad, no `seq` gaps, 4.9 KB/s. `WheelOdometry` and `Imu` each 501 frames at 20.000 ms mean interval (50.0 Hz; min 18.64, max 20.43 ms). This confirms the USB pad release, the pin check and the 20 ms schedule together on 500000 baud. Status stays open for the loop-timing item in the [roadmap](../../docs/robot/plans/roadmap.md).
