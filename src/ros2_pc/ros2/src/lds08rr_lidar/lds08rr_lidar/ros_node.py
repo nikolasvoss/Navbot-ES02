@@ -21,11 +21,12 @@ from .source import SourceConfig
 MAP_FRAME = "map"
 BASE_FRAME = "base_link"
 SENSOR_FRAME = "lds08rr"
-# Pose of the LiDAR in base_link. Not measured yet: zero means the sensor sits at the base_link origin
-# with its zero bearing along the robot's forward axis.
+# Pose of the LiDAR in base_link. The sensor sits at the rotation center. A point straight ahead of the robot
+# reads 240 degrees clockwise on the LiDAR page (user observation, 2026-10-26). to_laserscan negates bearings,
+# so ahead is +120 degrees in the lds08rr frame and the frame is rotated -120 degrees against base_link.
 SENSOR_MOUNT_X_M = 0.0
 SENSOR_MOUNT_Y_M = 0.0
-SENSOR_MOUNT_YAW_RAD = 0.0
+SENSOR_MOUNT_YAW_RAD = -math.radians(120.0)
 
 BIN_COUNT = 360
 RANGE_MIN_M = 0.01
