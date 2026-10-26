@@ -4,31 +4,12 @@
 #include <Arduino.h>
 
 #include "filter.h"
-#include "touchscreen.h"
-
-#define ADJUSTMENT_PARAM_BALANCE_SPEED_YAW_ROLL 0
-#define ADJUSTMENT_PARAM_BALL_PUSHING 1  // For tuning main balance and movement PID loops
-
-#define COMMUNICATION_OBJECT_TWO_WHEEL_BALANCE 0    // Two-wheel balance mode
-#define COMMUNICATION_OBJECT_SIMPLEFOC_STUDIO 1     // SimpleFOC Studio host computer
-#define COMMUNICATION_OBJECT_CONTROL_DUAL_MOTORS 2  // Control dual motors
 
 #define ROBOT_NOT_TUMBLING 0  // Robot is not tumbling
 #define ROBOT_TUMBLING 1      // Robot is tumbling
 
 #define REMOTE_CONTROL_PID_GAINS_MODE_OFF 0
-#define REMOTE_CONTROL_PID_GAINS_MODE_ON_WITHOUT_TOUCH 1
-#define REMOTE_CONTROL_PID_GAINS_MODE_ON_WITH_TOUCH 2
-
-#define REMOTE_CONTROL_PM_POSTURE_MODE 0  // Posture control mode
-#define REMOTE_CONTROL_PM_MARK_MODE 1     // Mark control mode
-
-#define REMOTE_CONTROL_ROLL_MODE_MANUAL 0
-#define REMOTE_CONTROL_ROLL_MODE_AUTO 1
-
-#define REMOTE_CONTROL_ATTITUDE_MODE_DEFAULT 0
-#define REMOTE_CONTROL_ATTITUDE_MODE_PITCHING_ADJUST 1  // Pitching adjustment mode
-#define REMOTE_CONTROL_ATTITUDE_MODE_BALL_POISE 2       // Ball poise mode
+#define REMOTE_CONTROL_PID_GAINS_MODE_ON 1
 
 class MyPIDController {
  public:

@@ -1,6 +1,6 @@
-# Touchscreen stand
+# Stand mounting holes
 
-The file [`touchscreenstand.stl`](../../../cad/robot/touchscreenstand.stl) contains the 3D-printed stand for the touchscreen. This page describes only the mounting holes.
+The file [`touchscreenstand.stl`](../../../cad/robot/touchscreenstand.stl) contains a 3D-printed stand. This page describes only the mounting holes.
 
 ## Mounting holes
 

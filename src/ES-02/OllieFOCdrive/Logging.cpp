@@ -15,7 +15,6 @@
 
 namespace {
 constexpr UBaseType_t kQueueDepth = Logging::kQueueDepth;
-constexpr size_t kLineBufferSize = 384;
 constexpr uint32_t kSenderTaskStackDepth = 4096;
 constexpr UBaseType_t kSenderTaskPriority = 1;
 constexpr uint32_t kSelectedDebugMinIntervalUs = 2500;
@@ -79,7 +78,7 @@ Logging::Result enqueue(LoggingInternal::Record &record) {
 
 void senderTask(void *) {
   LoggingInternal::Record record;
-  char line[kLineBufferSize];
+  char line[LoggingInternal::kLineBufferSize];
   for (;;) {
     if (xQueueReceive(logQueue, &record, portMAX_DELAY) != pdTRUE) continue;
 
@@ -215,9 +214,6 @@ Result submit(const DriveSample &sample) {
 
 Result submit(const DebugSample &sample) {
   if (!isValidDebugSelector(sample.selector)) return Result::Invalid;
-  if ((sample.selector == DebugSelector::K26 || sample.selector == DebugSelector::K40) &&
-      sample.payload.touchPoint.state != 0 && sample.payload.touchPoint.state != 1)
-    return Result::Invalid;
 
   const ProfileSnapshot profile = snapshotProfile();
   if (profile.profile != Profile::SelectedDebug) return Result::Suppressed;

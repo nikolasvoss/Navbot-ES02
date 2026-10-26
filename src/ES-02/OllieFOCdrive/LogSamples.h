@@ -44,7 +44,6 @@ struct TraceSample {
   uint32_t timestampMs;
   uint32_t sequence;
   int32_t gainMode;
-  int32_t postureOrMarkMode;
   float minimumBatteryRawV;
   float batteryV;
   float rollOk;
@@ -64,8 +63,6 @@ struct ControlSample {
   float rollOk;
   float yawRateRadPerSec;
   float bodyTurn;
-  float angleError;
-  float angleOutput;
   float yawError;
   float yawOutput;
   float leftMotorTarget;
@@ -79,11 +76,6 @@ struct BalanceSample {
   int32_t gainMode;
   float minimumBatteryRawV;
   float rollOk;
-  float angleError;
-  float angleProportional;
-  float angleIntegral;
-  float angleDerivative;
-  float bodyX;
   float leftMotorTarget;
   float rightMotorTarget;
   int32_t maxServoRange;
@@ -95,30 +87,30 @@ struct DriveSample {
   int32_t gainMode;
   float minimumBatteryRawV;
   float batteryV;
+  uint32_t imuSequence;
+  uint32_t imuReadTimeUs;
+  float imuDtSec;
+  uint32_t imuAcceptedSamples;
+  uint32_t imuLongGapCount;
+  uint32_t imuMaxIntervalUs;
+  uint32_t controlStartUs;
+  uint32_t controlExecutionUs;
+  uint32_t maxLoopEntryIntervalUs;
   float requestedSpeed;
-  float effectiveSpeed;
   float leftWheelVelocity;
   float rightWheelVelocity;
   float controlDtSec;
-  float speedError;
-  float speedProportional;
-  float speedIntegral;
-  float speedDerivative;
-  float speedOutput;
-  float driveBodyXRaw;
-  float bodyX;
-  float bodyPitchFiltered;
   float rollOk;
-  float angleOutput;
-  float angleProportional;
-  float angleIntegral;
-  float angleDerivative;
-  float wheelSpeedFeedbackOutput;
   float leftMotorTarget;
   float rightMotorTarget;
-  float ballX;
-  float touchXFiltered;
-  float bodyPitch;
+  float leftCurrentSetpoint;
+  float rightCurrentSetpoint;
+  float leftVoltageQ;
+  float rightVoltageQ;
+  float leftShaftVelocity;
+  float rightShaftVelocity;
+  float batteryInstantRawV;
+  float batteryInstantFilteredV;
   int32_t maxServoRange;
 };
 
@@ -142,33 +134,12 @@ enum class DebugSelector : uint8_t {
   K17,
   K18,
   K19,
-  K20,
-  K21,
-  K22,
-  K23,
-  K24,
-  K25,
-  K26,
-  K27,
-  K28,
-  K29,
-  K30,
-  K31,
-  K32,
-  K33,
-  K34,
-  K35,
-  K36,
-  K37,
-  K38,
-  K39,
-  K40,
-  K41,
-  K42,
-  K43,
-  K44,
-  K45,
+  K33 = 33,
+  K43 = 43,
+  K45 = 45,
   K46 = 46,
+  K47 = 47,
+  K48 = 48,
   K60 = 60,
   K61,
   K62,
@@ -188,7 +159,7 @@ enum class DebugSelector : uint8_t {
 };
 
 constexpr int kSelectedDebugFirst = 1;
-constexpr int kSelectedDebugLast = 46;
+constexpr int kSelectedDebugLast = 48;
 constexpr int kChannelDebugFirst = 60;
 constexpr int kChannelDebugLast = 75;
 
@@ -223,8 +194,6 @@ struct ControllerGains {
   float kd;
 };
 struct ControllerGainsSet {
-  ControllerGains angle;
-  ControllerGains speed;
   ControllerGains yaw;
   float dtSec;
 };
@@ -258,73 +227,14 @@ struct SensorAngles {
 struct ServoOffsets {
   float servo[4];
 };
-struct BalanceGeometry {
-  float bodyX;
-  float bodyRoll;
-  float bodyHeightM;
-};
-struct BalanceState {
-  float rollOk;
-  float bodyPitch;
-};
-struct PidState {
-  float error;
-  float integralLimit;
-  float integral;
-  float integralOutput;
-  float output;
-};
-struct PidCoefficients {
-  float kp;
-  float ki;
-  float kd;
-};
-struct TouchPoint {
-  int32_t state;
-  int32_t x;
-  int32_t y;
-};
-struct TouchFilteredPoint {
-  int32_t x;
-  int32_t y;
-  float xFiltered;
-  float yFiltered;
-};
-struct PidDerivative {
-  float derivative;
-};
-struct TouchState {
-  int32_t state;
-  int32_t start;
-};
-struct BallPosition {
-  float x;
-  float xFiltered;
-  float y;
-  float yFiltered;
-};
-struct BalanceOutputPair {
-  float bodyPitch;
-  float controllerOutput;
-};
-struct RollOutputState {
-  float rollOk;
-  float bodyPitch;
-  float output;
-};
 struct VoltageState {
   int32_t adc;
   float filteredV;
   float voltageV;
 };
-struct TuningState {
-  int32_t enabled;
-  float targetBodyHeightM;
-};
 struct TumbleState {
   int32_t tumbled;
   float rollOk;
-  float angleError;
 };
 struct ChannelState {
   float seconds;
@@ -333,47 +243,11 @@ struct ChannelState {
 struct CurrentSetpoint {
   float amperes;
 };
-struct BallBalanceGeometry {
-  float ballX;
-  float bodyRoll;
-  float bodyHeightM;
-};
-struct PidIntegralState {
-  float integralLimit;
-  float integral;
-  float integralOutput;
-  float output;
-};
 struct PidIntegralOutputState {
   float integralLimit;
   float integral;
   float integralOutput;
-  float auxiliary;
   float output;
-};
-struct FilteredGeometry {
-  float bodyPitch;
-  float bodyRoll;
-  float bodyHeightM;
-  float slideStep;
-  float ballX;
-  float ballY;
-};
-struct PidTuningState {
-  float kp;
-  float ki;
-  float kd;
-  float derivative;
-  float output;
-};
-struct RollCorrection {
-  float rollOk;
-  float bodyPitch;
-  float correctedBodyPitch;
-};
-struct BodyPitchState {
-  float filteredDeg;
-  float rawDeg;
 };
 struct GyroFftSample {
   uint32_t timestampUs;
@@ -383,6 +257,26 @@ struct GyroFftSample {
   float gyroXFiltered;
   float gyroYFiltered;
   float gyroZFiltered;
+};
+struct ImuCadenceSample {
+  uint32_t sequence;
+  uint32_t readTimeUs;
+  float dtSec;
+  uint32_t acceptedSamples;
+  uint32_t longGapCount;
+  uint32_t maxIntervalUs;
+};
+struct MotorStateSample {
+  float leftTarget;
+  float rightTarget;
+  float leftCurrentSetpoint;
+  float rightCurrentSetpoint;
+  float leftVoltageQ;
+  float rightVoltageQ;
+  float leftShaftVelocity;
+  float rightShaftVelocity;
+  float batteryRawV;
+  float batteryFilteredV;
 };
 
 union DebugPayload {
@@ -396,30 +290,14 @@ union DebugPayload {
   ScalarPair pair;
   SensorAngles sensorAngles;
   ServoOffsets servoOffsets;
-  BalanceGeometry balanceGeometry;
-  BalanceState balanceState;
-  PidState pidState;
-  PidCoefficients pidCoefficients;
-  TouchPoint touchPoint;
-  TouchFilteredPoint touchFilteredPoint;
-  PidDerivative pidDerivative;
-  TouchState touchState;
-  BallPosition ballPosition;
-  BalanceOutputPair balanceOutputPair;
-  RollOutputState rollOutput;
   VoltageState voltageState;
-  TuningState tuningState;
   TumbleState tumbleState;
   ChannelState channelState;
   CurrentSetpoint currentSetpoint;
-  BallBalanceGeometry ballBalanceGeometry;
-  PidIntegralState pidIntegralState;
   PidIntegralOutputState pidIntegralOutputState;
-  FilteredGeometry filteredGeometry;
-  PidTuningState pidTuningState;
-  RollCorrection rollCorrection;
-  BodyPitchState bodyPitchState;
   GyroFftSample gyroFft;
+  ImuCadenceSample imuCadence;
+  MotorStateSample motorState;
 };
 
 struct DebugSample {

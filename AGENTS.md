@@ -39,7 +39,15 @@ Rules:
 
 Before changing USB, serial, telemetry, or flashing behavior, read the [USB/serial documentation](docs/robot/software/usb-serial-flashing.md). Recheck device names and board settings before each flash.
 
-Build the default firmware from the project root with `python3 scripts/build_firmware.py`. The script writes Arduino CLI output to `build/flash`; pass `--help` for sketch, board, output, and build-property options. To flash a compiled build, use the configured `navbot_flash` MCP tool `flash_firmware` and pass the absolute build directory from the active worktree. Do not infer that the board is disconnected from an empty sandbox `/dev` or Arduino CLI `operation not permitted`; check the serial MCP `list_ports` before reporting it as disconnected. Close the serial MCP connection before flashing. Keep balance disabled and motor outputs safe.
+This machine (the CM5) has no ESP32 toolchain. To build remotely and flash:
+
+1. Commit your changes and run `git push`.
+2. Run `scripts/build_remote.sh [ssh-target]` (default `desktop`). It builds the pushed branch on the desktop PC and delivers the binaries to `build/flash`.
+3. Flash the absolute path of `build/flash` with `flash_firmware`. Where that MCP tool is not configured, run `python3 scripts/upload_firmware.py <absolute path of build/flash>` instead.
+
+Do not check the desktop for `arduino-cli` or the repo yourself: both are installed there, but only in a login shell, which the script uses.
+
+On a machine with the toolchain, build the default firmware from the project root with `python3 scripts/build_firmware.py`. The script writes Arduino CLI output to `build/flash`; pass `--help` for sketch, board, output, and build-property options. To flash a compiled build, use the configured `navbot_flash` MCP tool `flash_firmware` and pass the absolute build directory from the active worktree. Do not infer that the board is disconnected from an empty sandbox `/dev` or Arduino CLI `operation not permitted`; check the serial MCP `list_ports` before reporting it as disconnected. Close the serial MCP connection before flashing. Keep balance disabled and motor outputs safe.
 
 ## How to use the hardware documentation
 

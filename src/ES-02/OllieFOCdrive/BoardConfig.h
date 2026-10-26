@@ -32,8 +32,9 @@ constexpr int kImuSpiMosiPin = 9;
 constexpr int kImuSpiMisoPin = 10;
 constexpr int kImuSpiCsPin = 13;
 
-constexpr int kTouchUartRxPin = 20;
-constexpr int kTouchUartTxPin = 19;
+// UART1 to the ros2_pc. Firmware RX is GPIO20 (net TX1), TX is GPIO19 (net RX1).
+constexpr int kLinkUartRxPin = 20;
+constexpr int kLinkUartTxPin = 19;
 
 constexpr int kSbusRxPin = 1;
 constexpr int kSbusTxPin = 2;

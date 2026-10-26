@@ -6,7 +6,8 @@
 namespace LoggingInternal {
 namespace {
 
-int appendf(char *buffer, size_t capacity, size_t &length, const char *format, ...) {
+__attribute__((format(printf, 4, 5))) int appendf(char *buffer, size_t capacity, size_t &length,
+                                                   const char *format, ...) {
   if (length >= capacity) return -1;
   va_list args;
   va_start(args, format);
@@ -46,11 +47,8 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
           return -1;
       return appendf(buffer, capacity, length, " sbus_dt_ms:%.2f \n", p.receiverChannels.frameDtMs);
     case Logging::DebugSelector::K9:
-      return appendf(
-          buffer, capacity, length, " PP:%.2f PI:%.2f PD:%.2f SP:%.2f SI:%.2f SD:%.2f YP:%.2f YI:%.2f YD:%.2fdt:%.6f\n",
-          p.controllerGains.angle.kp, p.controllerGains.angle.ki, p.controllerGains.angle.kd,
-          p.controllerGains.speed.kp, p.controllerGains.speed.ki, p.controllerGains.speed.kd, p.controllerGains.yaw.kp,
-          p.controllerGains.yaw.ki, p.controllerGains.yaw.kd, p.controllerGains.dtSec);
+      return appendf(buffer, capacity, length, " YP:%.2f YI:%.2f YD:%.2fdt:%.6f\n", p.controllerGains.yaw.kp,
+                     p.controllerGains.yaw.ki, p.controllerGains.yaw.kd, p.controllerGains.dtSec);
     case Logging::DebugSelector::K10:
       return appendf(buffer, capacity, length, " twoKp:%.2f twoKi:%.2f Roll:%.2f Pitch:%.2fIMUdt:%.6f\n",
                      p.mahony.twoKp, p.mahony.twoKi, p.mahony.rollDeg, p.mahony.pitchDeg, p.mahony.imuDtSec);
@@ -80,101 +78,34 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
       return appendf(buffer, capacity, length, " servo1:%.2f servo2:%.2f servo3:%.2f servo4:%.2f\n",
                      p.servoOffsets.servo[0], p.servoOffsets.servo[1], p.servoOffsets.servo[2],
                      p.servoOffsets.servo[3]);
-    case Logging::DebugSelector::K20:
-      return appendf(buffer, capacity, length, " vra:%.6f BodyRoll:%.6f BodyHeightM:%.6f\n",
-                     p.ballBalanceGeometry.ballX, p.ballBalanceGeometry.bodyRoll, p.ballBalanceGeometry.bodyHeightM);
-    case Logging::DebugSelector::K21:
-      return appendf(buffer, capacity, length, " roll_ok:%.6f BodyPitching:%.6f\n", p.balanceState.rollOk,
-                     p.balanceState.bodyPitch);
-    case Logging::DebugSelector::K22:
-      return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f out:%.5f\n", p.pidIntegralState.integralLimit,
-                     p.pidIntegralState.integral, p.pidIntegralState.integralOutput, p.pidIntegralState.output);
-    case Logging::DebugSelector::K23:
-      return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f A:%.5f out:%.5f\n",
-                     p.pidIntegralOutputState.integralLimit, p.pidIntegralOutputState.integral,
-                     p.pidIntegralOutputState.integralOutput, p.pidIntegralOutputState.auxiliary,
-                     p.pidIntegralOutputState.output);
-    case Logging::DebugSelector::K24:
-      return appendf(buffer, capacity, length, " EN:%.2f HZ:%.5f\n", p.pair.first, p.pair.second);
-    case Logging::DebugSelector::K25:
-      return appendf(buffer, capacity, length, " LpfOut:%.6f BodyPitching:%.6f\n", p.bodyPitchState.filteredDeg,
-                     p.bodyPitchState.rawDeg);
-    case Logging::DebugSelector::K26:
-      if (p.touchPoint.state == 1)
-        return appendf(buffer, capacity, length, "  aX:%d  aY:%d\n", static_cast<int>(p.touchPoint.x),
-                       static_cast<int>(p.touchPoint.y));
-      if (p.touchPoint.state == 0)
-        return appendf(buffer, capacity, length, "  tX:%d  tY:%d\n", static_cast<int>(p.touchPoint.x),
-                       static_cast<int>(p.touchPoint.y));
-      return 0;
-    case Logging::DebugSelector::K27:
-      return appendf(buffer, capacity, length, "  aX:%d  aY:%d  aXF:%.2f  aYF:%.2f\n",
-                     static_cast<int>(p.touchFilteredPoint.x), static_cast<int>(p.touchFilteredPoint.y),
-                     p.touchFilteredPoint.xFiltered, p.touchFilteredPoint.yFiltered);
-    case Logging::DebugSelector::K28:
-      return appendf(buffer, capacity, length, "  P:%.2f  R:%.5f  H:%.5f  S:%.2f  vra:%.2f  vra:%.2f\n",
-                     p.filteredGeometry.bodyPitch, p.filteredGeometry.bodyRoll, p.filteredGeometry.bodyHeightM,
-                     p.filteredGeometry.slideStep, p.filteredGeometry.ballX, p.filteredGeometry.ballY);
-    case Logging::DebugSelector::K29:
-      return appendf(buffer, capacity, length, " Kp:%.6f Ki:%.6f Kd:%.6f deriv:%.2f out:%.2f\n", p.pidTuningState.kp,
-                     p.pidTuningState.ki, p.pidTuningState.kd, p.pidTuningState.derivative, p.pidTuningState.output);
-    case Logging::DebugSelector::K30:
-      return appendf(buffer, capacity, length, " deriv:%.2f\n", p.pidDerivative.derivative);
-    case Logging::DebugSelector::K31:
-      return appendf(buffer, capacity, length, " E:%.6f it:%.5f il:%.5f oI:%.5f out:%.5f\n", p.pidState.error,
-                     p.pidState.integralLimit, p.pidState.integral, p.pidState.integralOutput, p.pidState.output);
-    case Logging::DebugSelector::K32:
-      return appendf(buffer, capacity, length, " RP:%.6f RI:%.6f RD:%.6f\n", p.pidCoefficients.kp, p.pidCoefficients.ki,
-                     p.pidCoefficients.kd);
     case Logging::DebugSelector::K33:
-      return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f A:%.5f out:%.5f\n",
+      return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f out:%.5f\n",
                      p.pidIntegralOutputState.integralLimit, p.pidIntegralOutputState.integral,
-                     p.pidIntegralOutputState.integralOutput, p.pidIntegralOutputState.auxiliary,
-                     p.pidIntegralOutputState.output);
-    case Logging::DebugSelector::K34:
-      return appendf(buffer, capacity, length, " Kp:%.6f Ki:%.6f Kd:%.6f deriv:%.2f out:%.2f\n", p.pidTuningState.kp,
-                     p.pidTuningState.ki, p.pidTuningState.kd, p.pidTuningState.derivative, p.pidTuningState.output);
-    case Logging::DebugSelector::K35:
-      return appendf(buffer, capacity, length, " deriv:%.2f\n", p.pidDerivative.derivative);
-    case Logging::DebugSelector::K36:
-      return appendf(buffer, capacity, length, " state:%d start:%d\n", static_cast<int>(p.touchState.state),
-                     static_cast<int>(p.touchState.start));
-    case Logging::DebugSelector::K37:
-      return appendf(buffer, capacity, length, " sbus_vra:%.2f sbus_vraf:%.2f sbus_vrb:%.2f sbus_vrbf:%.2f\n",
-                     p.ballPosition.x, p.ballPosition.xFiltered, p.ballPosition.y, p.ballPosition.yFiltered);
-    case Logging::DebugSelector::K38:
-      return appendf(buffer, capacity, length, " X OUT:%.2f Y OUT:%.2f\n", p.balanceOutputPair.bodyPitch,
-                     p.balanceOutputPair.controllerOutput);
-    case Logging::DebugSelector::K39:
-      return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f out:%.5f\n", p.pidIntegralState.integralLimit,
-                     p.pidIntegralState.integral, p.pidIntegralState.integralOutput, p.pidIntegralState.output);
-    case Logging::DebugSelector::K40:
-      if (p.touchPoint.state == 1)
-        return appendf(buffer, capacity, length, "  aX:%d  aY:%d\n", static_cast<int>(p.touchPoint.x),
-                       static_cast<int>(p.touchPoint.y));
-      if (p.touchPoint.state == 0)
-        return appendf(buffer, capacity, length, "  tX:%d  tY:%d\n", static_cast<int>(p.touchPoint.x),
-                       static_cast<int>(p.touchPoint.y));
-      return 0;
-    case Logging::DebugSelector::K41:
-      return appendf(buffer, capacity, length, " roll_ok:%.5f pa:%.5f out:%.5f\n", p.rollOutput.rollOk,
-                     p.rollOutput.bodyPitch, p.rollOutput.output);
-    case Logging::DebugSelector::K42:
-      return appendf(buffer, capacity, length, " P:%.5f P1:%.5f P3:%.5f\n", p.rollCorrection.rollOk,
-                     p.rollCorrection.bodyPitch, p.rollCorrection.correctedBodyPitch);
+                     p.pidIntegralOutputState.integralOutput, p.pidIntegralOutputState.output);
     case Logging::DebugSelector::K43:
       return appendf(buffer, capacity, length, " Vdat:%d Vdatf:%.2f V:%.5f\n", static_cast<int>(p.voltageState.adc),
                      p.voltageState.filteredV, p.voltageState.voltageV);
-    case Logging::DebugSelector::K44:
-      return appendf(buffer, capacity, length, " PidParameterTuning:%d TargetBodyHeightM:%.6f\n",
-                     static_cast<int>(p.tuningState.enabled), p.tuningState.targetBodyHeightM);
     case Logging::DebugSelector::K45:
-      return appendf(buffer, capacity, length, " RobotTumble:%d roll_ok:%.6f Angle_Pid.error:%.6f\n",
-                     static_cast<int>(p.tumbleState.tumbled), p.tumbleState.rollOk, p.tumbleState.angleError);
+      return appendf(buffer, capacity, length, " RobotTumble:%d roll_ok:%.6f\n",
+                     static_cast<int>(p.tumbleState.tumbled), p.tumbleState.rollOk);
     case Logging::DebugSelector::K46:
       return appendf(buffer, capacity, length, "%lu,%.7f,%.7f,%.7f,%.7f,%.7f,%.7f\n",
                      static_cast<unsigned long>(p.gyroFft.timestampUs), p.gyroFft.gyroX, p.gyroFft.gyroY,
                      p.gyroFft.gyroZ, p.gyroFft.gyroXFiltered, p.gyroFft.gyroYFiltered, p.gyroFft.gyroZFiltered);
+    case Logging::DebugSelector::K47:
+      return appendf(buffer, capacity, length, "IMU_CADENCE,%lu,%lu,%.6f,%lu,%lu,%lu\n",
+                     static_cast<unsigned long>(p.imuCadence.sequence),
+                     static_cast<unsigned long>(p.imuCadence.readTimeUs), p.imuCadence.dtSec,
+                     static_cast<unsigned long>(p.imuCadence.acceptedSamples),
+                     static_cast<unsigned long>(p.imuCadence.longGapCount),
+                     static_cast<unsigned long>(p.imuCadence.maxIntervalUs));
+    case Logging::DebugSelector::K48:
+      return appendf(buffer, capacity, length,
+                     "MOTORS,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+                     p.motorState.leftTarget, p.motorState.rightTarget, p.motorState.leftCurrentSetpoint,
+                     p.motorState.rightCurrentSetpoint, p.motorState.leftVoltageQ, p.motorState.rightVoltageQ,
+                     p.motorState.leftShaftVelocity, p.motorState.rightShaftVelocity,
+                     p.motorState.batteryRawV, p.motorState.batteryFilteredV);
     default:
       if (Logging::isChannelDebugSelector(static_cast<int>(sample.selector)))
         return appendf(buffer, capacity, length, "%.3f,%d\n", p.channelState.seconds,
@@ -206,9 +137,8 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
     case RecordKind::Trace: {
       const Logging::TraceSample &s = record.payload.trace;
       return snprintf(
-          buffer, capacity, "TRACE,%lu,%d,%d,%.3f,%.3f,%.2f,%.2f,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%lu,%lu,%lu\n",
-          static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode),
-          static_cast<int>(s.postureOrMarkMode), s.minimumBatteryRawV, s.batteryV, s.rollOk, s.pitchOk,
+          buffer, capacity, "TRACE,%lu,%d,%.3f,%.3f,%.2f,%.2f,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%lu,%lu,%lu\n",
+          static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode), s.minimumBatteryRawV, s.batteryV, s.rollOk, s.pitchOk,
           static_cast<int>(s.servoAngle[0]), static_cast<int>(s.servoAngle[1]), static_cast<int>(s.servoAngle[2]),
           static_cast<int>(s.servoAngle[3]), static_cast<int>(s.servoRange[0]), static_cast<int>(s.servoRange[1]),
           static_cast<int>(s.servoRange[2]), static_cast<int>(s.servoRange[3]), s.leftMotorTarget, s.rightMotorTarget,
@@ -218,35 +148,48 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
     case RecordKind::Control: {
       const Logging::ControlSample &s = record.payload.control;
       return snprintf(buffer, capacity,
-                      "CTRL,%lu,%d,%.3f,%.3f,%.2f,%.4f,%.4f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
+                      "CTRL,%lu,%d,%.3f,%.3f,%.2f,%.4f,%.4f,%.2f,%.2f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
                       static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode), s.minimumBatteryRawV,
-                      s.batteryV, s.rollOk, s.yawRateRadPerSec, s.bodyTurn, s.angleError, s.angleOutput, s.yawError,
+                      s.batteryV, s.rollOk, s.yawRateRadPerSec, s.bodyTurn, s.yawError,
                       s.yawOutput, s.leftMotorTarget, s.rightMotorTarget, static_cast<int>(s.maxServoRange),
                       static_cast<unsigned long>(s.sequence), static_cast<unsigned long>(droppedRecords),
                       static_cast<unsigned long>(writeFailures));
     }
     case RecordKind::Balance: {
       const Logging::BalanceSample &s = record.payload.balance;
-      return snprintf(buffer, capacity, "BAL,%lu,%d,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.4f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
+      return snprintf(buffer, capacity, "BAL,%lu,%d,%.3f,%.2f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
                       static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode), s.minimumBatteryRawV,
-                      s.rollOk, s.angleError, s.angleProportional, s.angleIntegral, s.angleDerivative, s.bodyX,
-                      s.leftMotorTarget, s.rightMotorTarget, static_cast<int>(s.maxServoRange),
+                      s.rollOk, s.leftMotorTarget, s.rightMotorTarget, static_cast<int>(s.maxServoRange),
                       static_cast<unsigned long>(s.sequence), static_cast<unsigned long>(droppedRecords),
                       static_cast<unsigned long>(writeFailures));
     }
     case RecordKind::Drive: {
       const Logging::DriveSample &s = record.payload.drive;
-      return snprintf(buffer, capacity,
-                      "DRIVE,%lu,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.6f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%."
-                      "4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.3f,%.3f,%.3f,%d,%lu,%lu,%lu\n",
-                      static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode), s.minimumBatteryRawV,
-                      s.batteryV, s.requestedSpeed, s.effectiveSpeed, s.leftWheelVelocity, s.rightWheelVelocity,
-                      s.controlDtSec, s.speedError, s.speedProportional, s.speedIntegral, s.speedDerivative,
-                      s.speedOutput, s.driveBodyXRaw, s.bodyX, s.bodyPitchFiltered, s.rollOk, s.angleOutput,
-                      s.angleProportional, s.angleIntegral, s.angleDerivative, s.wheelSpeedFeedbackOutput,
-                      s.leftMotorTarget, s.rightMotorTarget, s.ballX, s.touchXFiltered, s.bodyPitch,
-                      static_cast<int>(s.maxServoRange), static_cast<unsigned long>(s.sequence),
-                      static_cast<unsigned long>(droppedRecords), static_cast<unsigned long>(writeFailures));
+      const int written = snprintf(buffer, capacity, "DRIVE,%lu,%d,%.3f,%.3f,%lu,%lu,%.6f,%lu,%lu,%lu,%lu,%lu,%lu",
+                           static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode),
+                           s.minimumBatteryRawV, s.batteryV, static_cast<unsigned long>(s.imuSequence),
+                           static_cast<unsigned long>(s.imuReadTimeUs), s.imuDtSec,
+                           static_cast<unsigned long>(s.imuAcceptedSamples),
+                           static_cast<unsigned long>(s.imuLongGapCount), static_cast<unsigned long>(s.imuMaxIntervalUs),
+                           static_cast<unsigned long>(s.controlStartUs), static_cast<unsigned long>(s.controlExecutionUs),
+                           static_cast<unsigned long>(s.maxLoopEntryIntervalUs));
+      if (written < 0 || static_cast<size_t>(written) >= capacity) return -1;
+      size_t length = static_cast<size_t>(written);
+      // One conversion per argument, in DRIVE_COLUMNS order from index 13 (ch3_target) to uart_write_failures.
+      return appendf(buffer, capacity, length,
+                     ",%.3f,%.3f,%.3f,%.6f"                     // ch3_target, motor1/2 velocity_f, tick_dt
+                     ",%.3f"                                    // roll_ok
+                     ",%.4f,%.4f,%.4f,%.4f,%.4f,%.4f"           // motor targets, current_sp, voltage_q
+                     ",%.4f,%.4f,%.3f,%.3f"                     // shaft velocities, battery raw/filtered
+                     ",%d"                                      // servo range
+                     ",%lu,%lu,%lu\n",                          // sequence, logger_dropped, uart_write_failures
+                     s.requestedSpeed, s.leftWheelVelocity, s.rightWheelVelocity, s.controlDtSec,
+                     s.rollOk, s.leftMotorTarget,
+                     s.rightMotorTarget, s.leftCurrentSetpoint, s.rightCurrentSetpoint, s.leftVoltageQ, s.rightVoltageQ,
+                     s.leftShaftVelocity, s.rightShaftVelocity, s.batteryInstantRawV, s.batteryInstantFilteredV,
+                     static_cast<int>(s.maxServoRange),
+                     static_cast<unsigned long>(s.sequence), static_cast<unsigned long>(droppedRecords),
+                     static_cast<unsigned long>(writeFailures));
     }
     case RecordKind::Debug:
       return formatDebug(record.payload.debug, buffer, capacity);

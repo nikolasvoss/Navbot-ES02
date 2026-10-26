@@ -1,6 +1,6 @@
 # Use the sensor diagnostic mode
 
-The sensor diagnostic mode reads the IMU, battery ADC, and SBUS receiver without initializing motor or servo control. It holds the two motor-driver enable pins low and returns from normal setup before initializing BLE, FOC, servos, or balance control. The source currently sets `SENSOR_DIAGNOSTIC_MODE` to `0`. Set it to `1` and rebuild to enable this procedure.
+The sensor diagnostic mode reads the IMU, battery ADC, and SBUS receiver without initializing motor or servo control. It holds the two motor-driver enable pins low and returns from normal setup before initializing FOC, servos, or balance control. The source currently sets `SENSOR_DIAGNOSTIC_MODE` to `0`. Set it to `1` and rebuild to enable this procedure.
 
 Support the robot mechanically during this check. The legs do not move in diagnostic mode. This mode does not establish safe or stable behavior under motor load.
 
@@ -46,7 +46,7 @@ Send `K0` to stop the stream. The selector resets when the board restarts.
 
 ## Plot an RC channel while the robot runs
 
-Use the normal firmware with `SENSOR_DIAGNOSTIC_MODE=0`. Connect SerialPlot to the CH340 port at 115200 baud. Set DTR and RTS off, then choose ASCII input, comma delimiters, and two channels.
+Use the normal firmware with `SENSOR_DIAGNOSTIC_MODE=0`. Connect SerialPlot to the CH340 port at 576000 baud (`kSerialBaudRate`). Set DTR and RTS off, then choose ASCII input, comma delimiters, and two channels.
 
 In SerialPlot's Commands tab, send `K60` for receiver channel 1, `K61` for channel 2, and so on through `K75` for channel 16. End each command with a newline. The firmware sends uptime in seconds and the selected channel's latest raw SBUS value at 20 Hz. Send `K0` to stop. Use SerialPlot's snapshot feature to save the plotted data as CSV.
 

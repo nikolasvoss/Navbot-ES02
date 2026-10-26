@@ -10,7 +10,7 @@
 #include "Scenarios.h"
 
 int main() {
-  DebugTelemetry::TelemetryState state{0, 0};
+  DebugTelemetry::TelemetryState state{0, 0, 0};
   std::string line;
   while (std::getline(std::cin, line)) {
     std::istringstream words(line);
