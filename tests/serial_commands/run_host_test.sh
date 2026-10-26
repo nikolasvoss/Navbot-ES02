@@ -17,5 +17,7 @@ end = source.index("\n};", start) + len("\n};")
 (target / "command_table.inc").write_text(source[start:end])
 PY
 
-g++ -std=c++17 -Wall -Wextra -Werror -I"$temp_dir" "$repo_root/tests/serial_commands/test_serial_command_router.cpp" -o "$temp_dir/test_serial_command_router"
+g++ -std=c++17 -Wall -Wextra -Werror -I"$temp_dir" \
+  "$repo_root/src/ES-02/OllieFOCdrive/MotorDiagnostic.cpp" \
+  "$repo_root/tests/serial_commands/test_serial_command_router.cpp" -o "$temp_dir/test_serial_command_router"
 "$temp_dir/test_serial_command_router"

@@ -25,11 +25,76 @@ void compareFixture(const std::map<std::string, std::string> &fixtures, const st
                     const LoggingInternal::Record &record) {
   const std::map<std::string, std::string>::const_iterator fixture = fixtures.find(key);
   require(fixture != fixtures.end(), "format fixture is missing");
-  char actual[384];
+  char actual[LoggingInternal::kLineBufferSize];
   const int length = LoggingInternal::formatRecord(record, actual, sizeof(actual), 0, 0);
-  require(length == static_cast<int>(fixture->second.size()) &&
-              std::memcmp(actual, fixture->second.data(), fixture->second.size()) == 0,
-          "typed formatter differs from the checked-in legacy output fixture");
+  if (length != static_cast<int>(fixture->second.size()) ||
+      std::memcmp(actual, fixture->second.data(), fixture->second.size()) != 0) {
+    std::fprintf(stderr, "formatter fixture mismatch for %s: actual='%.*s' expected='%s'\n", key.c_str(),
+                 length > 0 ? length : 0, actual, fixture->second.c_str());
+    require(false, "typed formatter differs from the checked-in legacy output fixture");
+  }
+}
+
+// Every DRIVE float at -9999.0 and every integer at its widest printable value: the longest row a
+// DRIVE record can print. The sender line buffer must hold it.
+void fillWidestDrive(Logging::DriveSample &d) {
+  const uint32_t u = 0xffffffffu;
+  const float f = -9999.0f;
+  d.timestampMs = d.sequence = d.imuSequence = d.imuReadTimeUs = d.imuAcceptedSamples = u;
+  d.imuLongGapCount = d.imuMaxIntervalUs = d.controlStartUs = d.controlExecutionUs = d.maxLoopEntryIntervalUs = u;
+  d.gainMode = d.maxServoRange = -999;
+  d.minimumBatteryRawV = d.batteryV = d.imuDtSec = f;
+  d.requestedSpeed = d.leftWheelVelocity = d.rightWheelVelocity = d.controlDtSec = f;
+  d.rollOk = f;
+  d.leftMotorTarget = d.rightMotorTarget = d.leftCurrentSetpoint = d.rightCurrentSetpoint = f;
+  d.leftVoltageQ = d.rightVoltageQ = d.leftShaftVelocity = d.rightShaftVelocity = f;
+  d.batteryInstantRawV = d.batteryInstantFilteredV = f;
+}
+
+// Column i of the DRIVE row (0-based, after the tag, in DRIVE_COLUMNS order) holds the value i + 1.
+// logger_dropped (column 31) and uart_write_failures (column 32) are formatRecord arguments 31 and 32.
+// scripts/capture_balance_trace.py reads these values back and checks each one against its column name.
+void fillDistinctDrive(Logging::DriveSample &d) {
+  d.timestampMs = 1;                 // time_ms
+  d.gainMode = 2;                    // ch5_mode
+  d.minimumBatteryRawV = 3;          // voltage_min_raw_v
+  d.batteryV = 4;                    // voltage_filtered_v
+  d.imuSequence = 5;                 // imu_sequence
+  d.imuReadTimeUs = 6;               // imu_read_time_us
+  d.imuDtSec = 7;                    // imu_dt_s
+  d.imuAcceptedSamples = 8;          // imu_accepted_samples
+  d.imuLongGapCount = 9;             // imu_long_gap_count
+  d.imuMaxIntervalUs = 10;            // imu_max_interval_us
+  d.controlStartUs = 11;              // control_start_us
+  d.controlExecutionUs = 12;          // control_execution_us
+  d.maxLoopEntryIntervalUs = 13;      // max_loop_entry_interval_us
+  d.requestedSpeed = 14;              // ch3_target
+  d.leftWheelVelocity = 15;           // motor1_velocity_f
+  d.rightWheelVelocity = 16;          // motor2_velocity_f
+  d.controlDtSec = 17;                // tick_dt_s
+  d.rollOk = 18;                      // roll_ok
+  d.leftMotorTarget = 19;             // motor1_target
+  d.rightMotorTarget = 20;            // motor2_target
+  d.leftCurrentSetpoint = 21;         // motor1_current_sp
+  d.rightCurrentSetpoint = 22;        // motor2_current_sp
+  d.leftVoltageQ = 23;                // motor1_voltage_q
+  d.rightVoltageQ = 24;               // motor2_voltage_q
+  d.leftShaftVelocity = 25;           // motor1_shaft_velocity
+  d.rightShaftVelocity = 26;          // motor2_shaft_velocity
+  d.batteryInstantRawV = 27;          // battery_raw_instant_v
+  d.batteryInstantFilteredV = 28;     // battery_filtered_instant_v
+  d.maxServoRange = 29;               // max_servo_range_deg
+  d.sequence = 30;                    // sequence
+}
+
+void printDistinctDrive() {
+  LoggingInternal::Record record{};
+  record.kind = LoggingInternal::RecordKind::Drive;
+  fillDistinctDrive(record.payload.drive);
+  char line[LoggingInternal::kLineBufferSize];
+  const int length = LoggingInternal::formatRecord(record, line, sizeof(line), 31, 32);
+  require(length > 0 && static_cast<size_t>(length) < sizeof(line), "distinct DRIVE row did not format");
+  std::fwrite(line, 1, static_cast<size_t>(length), stdout);
 }
 
 void verifyFormatters(const char *fixturePath) {
@@ -45,7 +110,7 @@ void verifyFormatters(const char *fixturePath) {
       value.replace(position, 2, "\n");
     fixtures[line.substr(0, separator)] = value;
   }
-  require(fixtures.size() == 67, "format fixture does not cover every active selector and profile");
+  require(fixtures.size() == 46, "format fixture does not cover every active selector and profile");
 
   const LoggingInternal::RecordKind kinds[] = {
       LoggingInternal::RecordKind::Diagnostic, LoggingInternal::RecordKind::Trace,
@@ -57,7 +122,12 @@ void verifyFormatters(const char *fixturePath) {
     compareFixture(fixtures, "csv." + std::to_string(i), record);
   }
 
-  for (int selector = 1; selector <= 46; ++selector) {
+  for (int selector = 1; selector <= 48; ++selector) {
+    if (selector == 20 || selector == 21 || selector == 22 || selector == 23 || selector == 24 || selector == 25 ||
+        selector == 26 || selector == 27 || selector == 28 || selector == 29 || selector == 30 || selector == 31 ||
+        selector == 32 || selector == 34 || selector == 35 || selector == 36 || selector == 37 || selector == 38 ||
+        selector == 39 || selector == 40 || selector == 41 || selector == 42 || selector == 44)
+      continue;  // Removed selectors have no formatter.
     LoggingInternal::Record record{};
     record.kind = LoggingInternal::RecordKind::Debug;
     record.payload.debug.selector = static_cast<Logging::DebugSelector>(selector);
@@ -70,7 +140,7 @@ void verifyFormatters(const char *fixturePath) {
     compareFixture(fixtures, "debug." + std::to_string(selector), record);
   }
 
-  char actual[384];
+  char actual[LoggingInternal::kLineBufferSize];
   LoggingInternal::Record message{};
   message.kind = LoggingInternal::RecordKind::Message;
   message.payload.message.tagLength = 3;
@@ -81,7 +151,16 @@ void verifyFormatters(const char *fixturePath) {
   require(messageLength == 10 && std::string(actual, messageLength) == "imu: read\n",
           "bounded message formatter changed its line layout");
 
-  require(sizeof(LoggingInternal::Record) <= 168, "queue record exceeds its memory budget");
+  require(sizeof(LoggingInternal::Record) <= 224, "queue record exceeds its memory budget");
+  LoggingInternal::Record widestDrive{};
+  widestDrive.kind = LoggingInternal::RecordKind::Drive;
+  fillWidestDrive(widestDrive.payload.drive);
+  char widestLine[LoggingInternal::kLineBufferSize];
+  const int widestLength = LoggingInternal::formatRecord(widestDrive, widestLine, sizeof(widestLine), 0xffffffffu,
+                                                         0xffffffffu);
+  require(widestLength > 0 && static_cast<size_t>(widestLength) < sizeof(widestLine),
+          "widest DRIVE row exceeds the sender line buffer");
+  std::printf("drive_row_widest_bytes=%d sender_line_bytes=%zu\n", widestLength, sizeof(widestLine));
   std::printf("queue_record_bytes=%zu queue_depth=%u queue_storage_bytes=%zu formatters=all_profiles\n",
               sizeof(LoggingInternal::Record), static_cast<unsigned>(Logging::kQueueDepth),
               sizeof(LoggingInternal::Record) * Logging::kQueueDepth);
@@ -233,6 +312,7 @@ int main(int argc, char **argv) {
   else if (std::strcmp(mode, "writefail") == 0) verifyShortWrite();
   else if (std::strcmp(mode, "startfail") == 0) verifyStartFailure();
   else if (std::strcmp(mode, "pace") == 0) verifySelectedPacing();
+  else if (std::strcmp(mode, "drive") == 0) printDistinctDrive();
   else verifyFormatters(argc > 2 ? argv[2] : "tests/serial_logger/logging_formats.txt");
   std::fflush(stdout);
   std::_Exit(0);

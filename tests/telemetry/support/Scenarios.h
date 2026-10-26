@@ -30,7 +30,7 @@ inline void fill(Filler& g, DebugTelemetry::PidStatus& p) {
   p.outP = g.f(); p.outI = g.f(); p.outD = g.f(); p.output = g.f(); p.error = g.f();
 }
 
-// Variant 0: balance running. 1: gains on but tumbling. 2: gains off, touch state outside {0,1}.
+// Variant 0: balance running. 1: gains on but tumbling. 2: gains off.
 inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, int tick) {
   static const uint32_t kGate[4] = {0, 3, 7, 14};
   Filler g(variant);
@@ -45,6 +45,8 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   s.sequence = 100 + tick;
   s.readTimeUs = 3000000u + 1000u * tick;
   s.dtSec = g.f();
+  in.imuTiming = {4000000u + static_cast<uint32_t>(tick), 20u + static_cast<uint32_t>(variant),
+                  2500u + static_cast<uint32_t>(tick)};
   fill(g, s.accelerationG);
   fill(g, s.angularVelocityRadPerSec);
   fill(g, s.filteredAccelerationG);
@@ -68,6 +70,11 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   in.motor1Target = g.f();
   in.motor2Target = g.f();
   in.motor2CurrentSetpoint = g.f();
+  in.motor1CurrentSetpoint = g.f();
+  in.motor1VoltageQ = g.f();
+  in.motor2VoltageQ = g.f();
+  in.motor1ShaftVelocity = g.f();
+  in.motor2ShaftVelocity = g.f();
   in.sensor1Angle = g.f();
   in.sensor1MechanicalAngle = g.f();
   in.sensor2Angle = g.f();
@@ -76,54 +83,27 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   for (int i = 0; i < 18; ++i) in.sbusChannels[i] = static_cast<int16_t>(172 + 41 * i + variant);
   in.sbusFrameIntervalMs = 14 + variant;
 
-  fill(g, in.anglePid);
-  fill(g, in.speedPid);
   fill(g, in.yawPid);
-  fill(g, in.rollPid);
-  fill(g, in.touchXPid);
-  fill(g, in.touchYPid);
-
-  DebugTelemetry::TouchStatus& t = in.touch;
-  t.XPressDat = g.u16(); t.YPressDat = g.u16();
-  t.XPdat = g.i16(); t.YPdat = g.i16(); t.XLdat = g.i16(); t.YLdat = g.i16();
-  t.XPdatF = g.f(); t.YPdatF = g.f();
-  t.state = static_cast<uint8_t>(variant == 0 ? 1 : (variant == 1 ? 0 : 2));
-  t.start = g.i32();
 
   in.servoTrims = {g.f(), g.f(), g.f(), g.f()};
   for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = g.i32();
 
-  in.topBallX = g.f();
-  in.topBallY = g.f();
-  in.sbusTopBallXSmoothed = g.f();
-  in.sbusTopBallYSmoothed = g.f();
 
-  in.bodyRoll = g.f();
-  in.bodyPitching = g.f();
-  in.bodyPitchingFiltered = g.f();
-  in.bodyRollFiltered = g.f();
-  in.bodyPitchCorrection = g.f();
-  in.bodyHeightCommandM = g.f();
-  in.bodyHeightCommandFilteredM = g.f();
   in.bodyTurn = g.f();
-  in.bodyX = g.f();
-  in.bodyCommandFilteringEnabled = g.f();
-  in.bodyCommandFilterCutoffHz = g.f();
 
   in.movementSpeed = g.f();
-  in.driveEffectiveSpeed = g.f();
-  in.driveSpeedBodyXRaw = g.f();
-  in.wheelVelocityFeedbackCorrection = g.f();
 
   in.voltageAdc = static_cast<uint16_t>(700 + 11 * tick + variant);
   in.voltageAdcFiltered = g.f();
   in.voltage = g.f();
+  in.batteryInstantRawV = g.f();
+  in.batteryInstantFilteredV = g.f();
+  in.controlStartUs = 5000000u + 1000u * tick;
+  in.controlExecutionUs = 800u + 20u * tick;
+  in.maxLoopEntryIntervalUs = 1200u + 50u * tick;
 
   in.pidGainsMode = variant == 2 ? 0 : (variant == 0 ? 2 : 1);
-  in.postureOrMarkMode = 1 + variant;
   in.robotTumble = variant == 1 ? 2 : 0;
-  in.pidParameterTuning = 1.0f + variant;
-  in.targetBodyHeightOverrideM = g.f();
   return in;
 }
 
@@ -138,7 +118,7 @@ std::string recordAll(Runner run) {
       for (int due = 1; due >= 0; --due) {
         Recording::reset();
         Recording::dueResult = due == 1;
-        DebugTelemetry::TelemetryState state{static_cast<uint16_t>(650 + variant), 0};
+        DebugTelemetry::TelemetryState state{static_cast<uint16_t>(650 + variant), 0, 0};
         for (int tick = 0; tick < 4; ++tick) {
           const DebugTelemetry::TelemetryInputs in = makeInputs(variant, selection, tick);
           const size_t before = Recording::events().size();

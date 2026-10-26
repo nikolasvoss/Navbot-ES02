@@ -5,19 +5,14 @@ ServoControl::ServoControl(int servo1Pin, int servo2Pin, int servo3Pin, int serv
     : servo1Pin(servo1Pin), servo2Pin(servo2Pin), servo3Pin(servo3Pin), servo4Pin(servo4Pin) {}
 
 // Initialize PWM channels for servos
-void ServoControl::initialize() {
+void ServoControl::initialize(int startAngle) {
   ledcAttach(servo1Pin, PWM_FREQUENCY, PWM_RESOLUTION);
   ledcAttach(servo2Pin, PWM_FREQUENCY, PWM_RESOLUTION);
   ledcAttach(servo3Pin, PWM_FREQUENCY, PWM_RESOLUTION);
   ledcAttach(servo4Pin, PWM_FREQUENCY, PWM_RESOLUTION);
 
-  // Set initial angle of four servos to 0 degrees
-  setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);
-  delay(22);
-  setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);
-  delay(22);
-  setServosAngle(1, 0, -1, 0, -1, 0, 1, 0, 1);
-  delay(22);
+  // Hold the pose the legs were left in, so attaching does not move them
+  setServosAngle(1, startAngle, -1, startAngle, -1, startAngle, 1, startAngle, 1);
 }
 
 // Set angles for four servos

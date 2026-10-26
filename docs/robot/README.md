@@ -8,14 +8,15 @@ The robot is the ESP32-S3 controller board and everything attached to it: wheel 
 - [Electronics reference](hardware/electronics-reference.md): power paths, GPIOs, connectors, and firmware interfaces.
 - [Charger module](hardware/charger-module.md): the on-board 2S charger (IP2326), its pads, and the resistor-set limits.
 - [Netlist](hardware/netlist.md): every component pad and net, for targeted search.
-- [Touchscreen stand](hardware/touchscreenstand.md): stand dimensions and robot mounting holes.
+- [Mounting holes](hardware/touchscreenstand.md): robot mounting-hole pattern, also used by the lidar stand.
 
 ## Software
 
-- [Control flow](software/control-flow.md): how the balance and drive control works.
+- [Balance controller](software/balance-controller.md): states, remote switches, faults, commissioning and trim, as implemented.
+- [Control flow](software/control-flow.md): how the balance and drive control works (older overview, predates the balance controller page).
 - [RC channel map](software/rc-channel-map.md): SBUS channel assignment in the firmware.
-- [Tuned control defaults](software/tuned-defaults.md): startup gains and how they were chosen.
 - [Trace capture and live tuning](software/trace-capture.md): serial trace modes, capture scripts, and live gain commands.
+- [Motor commissioning](software/motor-commissioning.md): bounded per-wheel current and voltage identification, manual resistance method, KV fit, and the pending commissioning record.
 - [Sensor diagnostic mode](software/sensor-diagnostic-mode.md): motor-free sensor streaming.
 - [USB, serial, and flashing](software/usb-serial-flashing.md): verified connection facts and flashing.
 - [Firmware build design](software/firmware-build-design.md): the build command and its options.
@@ -23,3 +24,4 @@ The robot is the ESP32-S3 controller board and everything attached to it: wheel 
 ## Plans
 
 - [Roadmap](plans/roadmap.md)
+- [Robust standing and driving control](plans/robust-control-system.md): proposed control chain, payload trim, vibration checks, and staged tuning.

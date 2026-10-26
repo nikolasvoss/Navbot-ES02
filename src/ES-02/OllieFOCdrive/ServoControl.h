@@ -16,8 +16,8 @@ class ServoControl {
  public:
   // Constructor, allows users to input custom pins
   ServoControl(int servo1Pin, int servo2Pin, int servo3Pin, int servo4Pin);
-  // Initialize servos
-  void initialize();
+  // Attach the servos and hold startAngle (degrees) on all four
+  void initialize(int startAngle);
   // Set angles for four servos
   void setServosAngle(int direction1, int angle1, int direction2, int angle2, int direction3, int angle3,
                       int direction4, int angle4, float dt_ms);
