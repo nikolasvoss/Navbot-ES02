@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Builds the firmware on the desktop PC (which has the ESP32 toolchain) and
 # copies the binaries to build/flash on this machine, ready for upload_firmware.py.
-# Pushes the current branch to origin, then the desktop builds origin/<branch>.
-# Uncommitted changes are not built.
+# The current branch must be committed and pushed: the desktop builds origin/<branch>.
 # Usage: build_remote.sh [ssh-target]   (default: desktop)
 set -euo pipefail
 
@@ -13,9 +12,12 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 branch="$(git -C "$repo_root" branch --show-current)"
 [[ -n "$branch" ]] || { echo "error: detached HEAD, check out a branch first." >&2; exit 1; }
 
-[[ -z "$(git -C "$repo_root" status --porcelain --untracked-files=no)" ]] \
-  || echo "warning: uncommitted changes are not part of this build." >&2
-git -C "$repo_root" push --quiet origin "$branch"
+git -C "$repo_root" fetch --quiet origin "$branch"
+if [[ -n "$(git -C "$repo_root" status --porcelain --untracked-files=no)" \
+   || "$(git -C "$repo_root" rev-parse HEAD)" != "$(git -C "$repo_root" rev-parse "origin/$branch")" ]]; then
+  echo "error: commit and push $branch first (git push); the desktop builds origin/$branch." >&2
+  exit 1
+fi
 
 echo "Building $branch on $remote_host"
 ssh "$remote_host" bash -l -s -- "$branch" <<REMOTE
