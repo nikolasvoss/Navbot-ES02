@@ -1,6 +1,6 @@
 # Robust standing and driving control
 
-Status: proposal, not implemented. Prepared on 2026-10-22 against source revision `ba1a36b16b979fe4ed94c41ac580a77a72c3da2b`.
+Status: Packages 1 to 3 carry their own status lines below, and Package 4 (the controller module) is implemented and described in [Balance controller](../software/balance-controller.md). Packages 5 to 7 have no status recorded yet, and Package 8 (documentation) is under way. Prepared on 2026-10-22 against source revision `ba1a36b16b979fe4ed94c41ac580a77a72c3da2b`.
 
 The user reports that the ROS 2 PC and rotating LiDAR are now mounted on the robot. The immediate goal is reliable standing and low-to-medium-speed driving with that complete payload. Manual payload-balance trim must work through either an RC knob or a saved constant. This proposal replaces coupled actuator paths with one explicit control chain and a staged tuning procedure.
 

@@ -1,7 +1,7 @@
 # Navbot-ES02 control: developer overview
 
-As of 2026-10-08 · Based on the firmware in [OllieFOCdrive.ino](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino). This page explains the compiled **two-wheel / master mode** on the ESP32-S3. It describes the code, not automatically the state of a robot flashed later. Live-changed PID values are lost on restart.
-> The state machine, remote switches, faults, and commissioning added in Package 4 are described in [Balance controller](balance-controller.md). This page predates them.
+As of 2026-10-26 · Based on the firmware in [OllieFOCdrive.ino](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino). This page explains the compiled **two-wheel / master mode** on the ESP32-S3. It describes the code, not automatically the state of a robot flashed later. Live-changed PID values are lost on restart.
+> The states, remote switches, faults, and commissioning of the balance controller are described in [Balance controller](balance-controller.md). This page gives the overview of the signal flow.
 
 
 ## The idea in one sentence
@@ -34,15 +34,13 @@ The IMU sits on the MAIN board according to the PCB draft. Each wheel motor has 
 
 ### Which controllers affect what?
 
-There is no balance, speed, roll, or ball controller in the sketch since Package 3. Both wheel targets are 0 A (set in `runControlTick()`), and the legs hold the fixed standing pose: each servo at a fixed 20 degrees (trims do not apply), with no inverse kinematics. Package 4 adds the balance controller. See the [robust control plan](../plans/robust-control-system.md#package-4-controller-module).
-
-The yaw loop is not computed either: `yawPid` keeps its settings from Commander `Y`, but no code updates its output since Package 3 row 9. Package 4 replaces it with a yaw-rate term.
+The sketch runs one `BalanceController` (a state machine plus the control math, see [Balance controller](balance-controller.md)). On every control tick it receives the tilt and tilt rate from the IMU, the wheel speeds, the bus voltage, and the remote request. It returns a current for each wheel and the drive enable. The wheel current comes from a tilt term, gyro damping, a yaw-rate term, and a speed loop that moves the tilt reference. Per-wheel current envelopes limit the output. The old speed PI to `bodyX`, the roll and ball controllers, and the touchscreen and Bluetooth paths were removed. The legs hold the fixed standing pose (every servo at the same angle, trims do not apply, no inverse kinematics).
 
 ### What happens on a drive command?
 
-1. CH3 is mapped to `movementSpeed`. No controller reads it since the speed loop was removed.
-2. The IMU supplies the tilt angle `correctedRollDegrees` via Mahony. No controller uses it since Package 3 row 6.
-3. CH4 sets `bodyTurn`. No controller reads it yet (package 4).
+1. CH3 sets the speed request (`request.speedMps`, forward is positive, up to `speedCapMps`, 0.3 m/s). The controller shapes it with acceleration and brake limits, and the speed loop turns the speed error into a tilt reference.
+2. The IMU supplies the tilt angle via Mahony. The controller latches a Fall fault when the tilt stays beyond 35 degrees for 20 ms.
+3. CH4 sets the yaw-rate request (left is positive, up to `yawRateCapRadPerSec`, 1.0 rad/s). The yaw term turns the difference to the gyro Z rate into a differential wheel current.
 4. SimpleFOC receives each wheel's current target and computes the motor drive via FOC/PWM. Since Package 2 the motor mode is `torque` with `TorqueControlType::estimated_current`. The target in amperes is converted to `voltage.q = I · phase_resistance + back-EMF` and clamped to `voltage_limit` (4.2 V). The current is therefore an estimate, not a sensed value; the optional current sensing loops are compiled out. `current_limit` (about 0.73 A) is the derived stall current at the voltage ceiling, not a measured battery-current limit.
 
 The behavior is coupled through the mechanics: a servo movement changes the position, and a wheel movement changes tilt and wheel speed. A tremor can therefore appear in both actuator groups, even when the trigger comes from only one branch.
@@ -51,21 +49,24 @@ The behavior is coupled through the mechanics: a servo movement changes the posi
 
 | Input | Effect in the current two-wheel code |
 | --- | --- |
-| **CH1, CH2** | Unused since Package 3 row 8 (body roll, leg height, and pitch were removed). |
-| **CH3** | Drive request `movementSpeed`, normally ±15. Parsed only; no controller reads it. |
-| **CH4** | Turn request `bodyTurn`, range about ±11 rad/s after the sign reversal in the code. |
-| **CH5** | 0: balance off. 1 and 2: balance on, which gates the calibration refusal and the motor diagnostic. The wheel targets stay 0 A either way. |
-| **CH6, CH8, CH9, CH10** | Unused since Package 3 row 8 (posture, attitude, and ball modes were removed). |
-| **CH7** | Unused since Package 3 row 1 (roll control was removed). |
+| **CH1, CH2** | Unused (body roll, leg height, and pitch were removed). |
+| **CH3** | Speed request, forward stick positive, scaled to plus and minus 0.3 m/s. Ignored in Commissioning. |
+| **CH4** | Yaw-rate request, left stick positive, scaled to plus and minus 1.0 rad/s. |
+| **CH5** | Enable. Raw below 592 is off; 592 or above is on. Only the change from off to on starts Arming; off takes every state to Disabled and clears a fault. |
+| **CH6** | Save request for the trim (raw 992 or above), only in Commissioning. |
+| **CH7** | Commissioning (raw 992 or above). |
+| **CH8, CH10** | Unused. |
+| **CH9** | Trim knob, plus and minus 3 degrees, only in Commissioning. |
 
 SBUS is the only remote-control source and is read exactly once per loop.
 
 ## Timing, units and filters
 
 - On every `loop()` pass, `motor.move()` and `motor.loopFOC()` run. The outer control block runs from `controlTimestepSec >= 0.001 s`. This is a **minimum threshold**, not a guaranteed 1 kHz rate. A stored standstill trace measured a median tick of about 1.66 ms. Under other load, it can differ. The 2026-10-22 voltage-sweep capture ([2 V log](../../../lab/robot/captures/2026-10-22-package1-t7-voltage-sweep-2v.log)) measured 424 loop passes per second, with a mean accepted IMU read interval of 2.36 ms (`imu_mean_interval_s` 0.002358 s). With the 1024-byte serial TX buffer (capture `lab/robot/captures/2026-10-22-package1-t10-after-tx-buffer.log`, wheels clear, balance off) the loop runs about 521 passes per second, the mean accepted IMU interval is 1.92 ms, and the maximum loop-entry interval is 2.5 ms instead of 7.3 ms. The remaining pass time of about 1.9 ms is not profiled, so the outer control block still does not run at 1 kHz.
+- On 2026-10-26 the DRIVE telemetry measured a median control tick of about 1.37 ms and an IMU accepted-read rate of 680 Hz, while the IMU outputs 1 kHz. See [the roadmap item](../plans/roadmap.md#speed-up-the-main-loop-pass).
 - The IMU is read over SPI in the main pass. Acceleration and gyro are low-pass filtered and fused with Mahony into the attitude angle. The yaw controller uses `attitude.gyro.z`, which is the scaled raw gyro value, not `gyrof.z`.
 - The wheel speed is computed as encoder angle difference divided by the **measured interval between encoder reads** (`micros()`), in every state, then smoothed with a SimpleFOC low-pass filter. It is forward-positive; the motor sign is applied only in `WheelBoundary`.
-- `correctedRollDegrees`/`correctedPitchDegrees` are angles in degrees after subtracting stored zero points. The gyro supplies rad/s. The wheel targets are amperes in torque mode (0 A now).
+- `correctedRollDegrees`/`correctedPitchDegrees` are angles in degrees after subtracting stored zero points. The gyro supplies rad/s. The wheel targets are amperes in torque mode, set by the balance controller.
 
 ### Biquad filters and sample rates
 
