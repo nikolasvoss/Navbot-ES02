@@ -23,7 +23,7 @@ Optional parameters: `baud` (500000), `odom_frame` (`odom`), `base_frame` (`base
 
 Unverified, before relying on the output:
 
-- The track width is not measured. The bridge does not guess it.
+- The track width is 113 mm and the wheel diameter 38.3 mm ([robot hardware overview](../../robot/hardware/system-overview.md#key-findings-and-consequences)). The bridge has no defaults and does not guess them: pass `-p wheel_radius_m:=0.019 -p wheel_separation_m:=0.113`. The track width is a hand measurement; an odometry turn test on the floor would confirm it.
 - The forward direction of the wheel angles was checked on the link on 2026-10-25: both angles grow when the wheels roll forward ([lab note](../../../lab/integration/2026-10-25-odometry-signs-and-rate.md)). The left/right mapping is not verified (both wheels were rolled together), and neither are the signs of the `/odom` twist. Roll one wheel at a time to check the mapping.
 - The IMU frame `imu_link` has no `base_link` to `imu_link` TF yet.
 - Stamps are the ROS receive time, not the robot's sample time. The robot's IMU read time (`Imu.t_us`) is decoded but not published, because nothing converts robot time into ROS time. Covariances are zero.
