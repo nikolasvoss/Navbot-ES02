@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import os
 import signal
 import subprocess
 import time
 from array import array
+from collections import deque
 from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import Callable
 
 MAP_STALE_AFTER_SEC = 10.0  # slam_toolbox publishes /map every 2 s
 POSE_STALE_AFTER_SEC = 10.0
+ODOM_STALE_AFTER_SEC = 2.0  # the bridge publishes /odom at about 50 Hz
+ODOM_RATE_WINDOW_SEC = 2.0
 DEFAULT_SLAM_DIR = Path.home() / ".local/share/navbot/slam"
 BASE_PARAMS = Path(__file__).with_name("slam_toolbox.yaml")
 
@@ -39,6 +43,11 @@ class SlamState:
         self._grid_at: float | None = None
         self._pose: dict | None = None
         self._pose_at: float | None = None
+        self._odom: dict | None = None
+        self._odom_at: float | None = None
+        self._odom_times: deque[float] = deque()
+        self._odom_path_m = 0.0
+        self._correction: dict | None = None
 
     def set_grid(self, grid: dict) -> None:
         with self._lock:
@@ -48,14 +57,33 @@ class SlamState:
         with self._lock:
             self._pose, self._pose_at = {"x": x, "y": y, "yaw": yaw}, self._clock() - age_sec
 
+    def set_odom(self, x: float, y: float, yaw: float, linear: float, angular: float) -> None:
+        """Latest wheel odometry in the odom frame; also accumulates path length and the message rate."""
+        with self._lock:
+            now = self._clock()
+            if self._odom is not None:
+                self._odom_path_m += math.hypot(x - self._odom["x"], y - self._odom["y"])
+            self._odom, self._odom_at = {"x": x, "y": y, "yaw": yaw, "linear": linear, "angular": angular}, now
+            self._odom_times.append(now)
+            while self._odom_times[0] < now - ODOM_RATE_WINDOW_SEC:
+                self._odom_times.popleft()
+
+    def set_correction(self, x: float, y: float, yaw: float) -> None:
+        """map -> odom transform: how far SLAM has moved the robot away from pure wheel odometry."""
+        with self._lock:
+            self._correction = {"x": x, "y": y, "yaw": yaw}
+
     def clear(self) -> None:
         with self._lock:
             self._grid = self._grid_at = self._pose = self._pose_at = None
+            self._correction = None
 
     def snapshot(self) -> dict:
         now = self._clock()
         with self._lock:
             grid, grid_at, pose, pose_at = self._grid, self._grid_at, self._pose, self._pose_at
+            odom, odom_at, correction = self._odom, self._odom_at, self._correction
+            odom_path_m, odom_times = self._odom_path_m, list(self._odom_times)
         map_age = None if grid_at is None else now - grid_at
         pose_age = None if pose_at is None else now - pose_at
         pose_fresh = pose is not None and pose_age <= POSE_STALE_AFTER_SEC
@@ -67,8 +95,17 @@ class SlamState:
             state = "no_pose"
         else:
             state = "mapping"
+        odom_age = None if odom_at is None else now - odom_at
+        odom_fresh = odom is not None and odom_age <= ODOM_STALE_AFTER_SEC
+        odom_rate = None
+        if odom_fresh and len(odom_times) > 1 and odom_times[-1] > odom_times[0]:
+            odom_rate = (len(odom_times) - 1) / (odom_times[-1] - odom_times[0])
         return {
             "state": state,
+            "odom": None if odom is None else {
+                **odom, "fresh": odom_fresh, "age_sec": odom_age, "rate_hz": odom_rate, "path_m": odom_path_m,
+            },
+            "correction": correction if pose_fresh else None,
             "map": grid,
             "pose": pose if pose_fresh else None,
             "map_age_sec": map_age,
@@ -245,6 +282,15 @@ class SlamControl:
             self._process.stop()
             self._store.delete()
             self._process.start()
+
+    def reload(self) -> str | None:
+        """Drops the current map and restarts slam_toolbox on the saved one."""
+        with self._lock:
+            if not self._store.exists():
+                return "No saved map to load"
+            self._process.stop()
+            self._process.start()
+            return None
 
     def status(self) -> dict:
         return {

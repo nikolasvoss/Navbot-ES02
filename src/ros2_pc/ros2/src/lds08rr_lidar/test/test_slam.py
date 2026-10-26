@@ -147,6 +147,19 @@ def test_slam_control_saves_then_deletes_and_restarts_slam(tmp_path):
     assert process.calls == ["stop", "start"]
 
 
+def test_slam_control_reload_restarts_slam_only_with_a_saved_map(tmp_path):
+    process = FakeProcess()
+    control = SlamControl(MapStore(tmp_path), process, write_serialized_map)
+
+    assert control.reload() == "No saved map to load"
+    assert process.calls == []
+
+    control.save()
+    assert control.reload() is None
+    assert process.calls == ["stop", "start"]
+    assert control.status()["saved_map"]["exists"] is True
+
+
 def test_slam_control_reports_a_failed_save(tmp_path):
     control = SlamControl(MapStore(tmp_path), FakeProcess(), lambda filename: "boom")
     assert control.save() == "boom"
@@ -157,6 +170,8 @@ class FakeControl:
     def __init__(self, error=None):
         self.error = error
         self.deleted = 0
+        self.reloaded = 0
+        self.reload_error = None
 
     def status(self):
         return {"process": {"state": "running"}, "saved_map": {"exists": False, "saved_at": None}}
@@ -167,6 +182,10 @@ class FakeControl:
     def delete(self):
         self.deleted += 1
 
+    def reload(self):
+        self.reloaded += 1
+        return self.reload_error
+
 
 def make_client(tmp_path, slam, control):
     runtime = LidarRuntime(SourceConfig(mode="demo"), driver_factory=lambda *_: None)
@@ -176,7 +195,7 @@ def make_client(tmp_path, slam, control):
 def test_slam_actions_are_refused_without_a_running_control(tmp_path):
     client = make_client(tmp_path, SlamState(), None)
     refused = {"ok": False, "error": "SLAM is not running on this service"}
-    for path in ("/slam/save", "/slam/delete"):
+    for path in ("/slam/save", "/slam/delete", "/slam/reset"):
         response = client.post(path)
         assert response.status_code == 409
         assert response.get_json() == refused
@@ -206,3 +225,37 @@ def test_web_save_and_delete_drive_the_control(tmp_path):
     assert control.deleted == 1
     cleared = client.get("/map.json").get_json()
     assert cleared["state"] == "waiting" and cleared["map"] is None
+
+
+def test_web_reset_reloads_the_saved_map_and_clears_the_view(tmp_path):
+    slam = SlamState()
+    control = FakeControl()
+    client = make_client(tmp_path, slam, control)
+    slam.set_grid(grid_to_dict(1, 1, 0.05, 0.0, 0.0, [0]))
+
+    control.reload_error = "No saved map to load"
+    response = client.post("/slam/reset")
+    assert response.status_code == 409
+    assert response.get_json() == {"ok": False, "error": "No saved map to load"}
+    assert client.get("/map.json").get_json()["map"] is not None
+
+    control.reload_error = None
+    assert client.post("/slam/reset").get_json() == {"ok": True}
+    assert client.get("/map.json").get_json()["map"] is None
+
+
+def test_odom_accumulates_path_and_goes_stale():
+    clock = FakeClock()
+    slam = SlamState(clock=clock)
+    assert slam.snapshot()["odom"] is None
+    for i in range(5):
+        clock.now = i * 0.1
+        slam.set_odom(0.3 * i, 0.4 * i, 0.1, 0.2, 0.0)
+    shown = slam.snapshot()["odom"]
+    assert shown["path_m"] == pytest.approx(2.0)
+    assert shown["rate_hz"] == pytest.approx(10.0)
+    assert shown["fresh"]
+
+    clock.now = 10.0
+    shown = slam.snapshot()["odom"]
+    assert not shown["fresh"] and shown["rate_hz"] is None

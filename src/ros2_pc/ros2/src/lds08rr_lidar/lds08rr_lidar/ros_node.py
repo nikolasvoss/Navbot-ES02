@@ -8,7 +8,7 @@ import rclpy.time
 from builtin_interfaces.msg import Time
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import TransformStamped
-from nav_msgs.msg import OccupancyGrid
+from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, LaserScan
@@ -21,12 +21,17 @@ from .source import SourceConfig
 from .tilt_gate import TiltGate, config_from_mount, roll_from_quaternion
 
 MAP_FRAME = "map"
+ODOM_FRAME = "odom"
 BASE_FRAME = "base_link"
 SENSOR_FRAME = "lds08rr"
 
 BIN_COUNT = 360
 RANGE_MIN_M = 0.01
 RANGE_MAX_M = 30.0
+
+
+def yaw_from_quaternion(q) -> float:
+    return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
 def to_laserscan(scan, stamp) -> LaserScan:
@@ -99,6 +104,7 @@ class LidarNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self.create_subscription(OccupancyGrid, "/map", self.on_map, map_qos)
+        self.create_subscription(Odometry, "/odom", self.on_odom, 10)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         # odom -> base_link comes from navbot_link_bridge (ESP32 wheel odometry); only the sensor mount is ours.
@@ -114,13 +120,22 @@ class LidarNode(Node):
             info.origin.position.x, info.origin.position.y, message.data,
         ))
 
+    def on_odom(self, message: Odometry) -> None:
+        p, twist = message.pose.pose, message.twist.twist
+        self.slam.set_odom(p.position.x, p.position.y, yaw_from_quaternion(p.orientation), twist.linear.x, twist.angular.z)
+
     def update_pose(self) -> None:
+        try:
+            correction = self.tf_buffer.lookup_transform(MAP_FRAME, ODOM_FRAME, rclpy.time.Time()).transform
+            self.slam.set_correction(correction.translation.x, correction.translation.y, yaw_from_quaternion(correction.rotation))
+        except TransformException:
+            pass
         try:
             transform = self.tf_buffer.lookup_transform(MAP_FRAME, BASE_FRAME, rclpy.time.Time())
         except TransformException:
             return
         t, q = transform.transform.translation, transform.transform.rotation
-        yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        yaw = yaw_from_quaternion(q)
         age = (self.get_clock().now() - rclpy.time.Time.from_msg(transform.header.stamp)).nanoseconds / 1e9
         self.slam.set_pose(t.x, t.y, yaw, age_sec=max(age, 0.0))
 

@@ -72,6 +72,16 @@ def make_lidar_app(
         slam.clear()
         return jsonify(ok=True)
 
+    @app.post("/slam/reset")
+    def slam_reset():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        error = control.reload()
+        if error is not None:
+            return jsonify(ok=False, error=error), 409
+        slam.clear()
+        return jsonify(ok=True)
+
     @app.get("/radar/")
     def radar_page():
         # The radar page is served unchanged; only the hub navigation is injected.

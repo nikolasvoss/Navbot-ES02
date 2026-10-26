@@ -23,6 +23,7 @@
     #map { width: 100%; height: 100%; min-height: 0; display: block; background: #111c25; border-radius: .35rem; cursor: grab; touch-action: none; }
     #map.dragging { cursor: grabbing; }
     #map.following { cursor: default; }
+    h2 { margin: .9rem 0 .5rem; font-size: 1rem; color: #cbd5e1; }
     dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .38rem .65rem; margin: 0; }
     dt { color: #9fb0bd; white-space: nowrap; }
     dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
@@ -74,8 +75,19 @@
         <dt>SLAM process</dt><dd id="slamProcess">–</dd>
         <dt>Saved map</dt><dd id="savedMap">–</dd>
       </dl>
+      <h2>Wheel odometry</h2>
+      <dl>
+        <dt>Odom x, y</dt><dd id="odomXY">–</dd>
+        <dt>Odom heading</dt><dd id="odomYaw">–</dd>
+        <dt>Speed</dt><dd id="odomSpeed">–</dd>
+        <dt>Turn rate</dt><dd id="odomTurn">–</dd>
+        <dt>Distance driven</dt><dd id="odomPath">–</dd>
+        <dt>Odom rate</dt><dd id="odomRate">–</dd>
+        <dt>SLAM correction</dt><dd id="slamCorrection">–</dd>
+      </dl>
       <div class="actions">
         <button id="saveMap" type="button" disabled>Save map</button>
+        <button id="resetMap" type="button" disabled title="Discard the current map and load the saved one">Reset map</button>
         <button id="deleteMap" type="button" disabled>Delete map and start over</button>
       </div>
       <p id="actionResult" class="note" role="status"></p>
@@ -89,9 +101,11 @@
     const LABELS = { waiting: 'Waiting for map', stale: 'SLAM not updating', no_pose: 'Map, no pose', mapping: 'Mapping' };
     let serverHasControl = false;
     let actionRunning = false;
+    let hasSavedMap = false;
 
     function syncButtons() {
       for (const id of ['saveMap', 'deleteMap']) $(id).disabled = actionRunning || !serverHasControl;
+      $('resetMap').disabled = actionRunning || !serverHasControl || !hasSavedMap;
     }
 
     async function runAction(path, doneText) {
@@ -110,6 +124,11 @@
     }
 
     $('saveMap').addEventListener('click', () => runAction('/slam/save', 'Map saved.'));
+    $('resetMap').addEventListener('click', () => {
+      if (confirm('Discard the current map, including anything not saved, and load the saved map?')) {
+        runAction('/slam/reset', 'Saved map is loading.');
+      }
+    });
     $('deleteMap').addEventListener('click', () => {
       if (confirm('Delete the saved map and restart mapping from scratch?')) {
         runAction('/slam/delete', 'Map deleted; mapping restarts from scratch.');
@@ -344,6 +363,16 @@
         $('mapSize').textContent = m ? `${(m.width * m.resolution).toFixed(1)} × ${(m.height * m.resolution).toFixed(1)} m` : '–';
         $('mapCells').textContent = m ? `${m.width} × ${m.height}` : '–';
         $('mapRes').textContent = m ? `${(m.resolution * 100).toFixed(0)} cm/cell` : '–';
+        const o = slam.odom, live = o && o.fresh;
+        const deg = (rad) => (rad * 180 / Math.PI).toFixed(1) + '°';
+        $('odomXY').textContent = live ? `${o.x.toFixed(2)}, ${o.y.toFixed(2)} m` : '–';
+        $('odomYaw').textContent = live ? deg(o.yaw) : '–';
+        $('odomSpeed').textContent = live ? `${o.linear.toFixed(2)} m/s` : '–';
+        $('odomTurn').textContent = live ? `${(o.angular * 180 / Math.PI).toFixed(0)} °/s` : '–';
+        $('odomPath').textContent = o ? `${o.path_m.toFixed(2)} m` : '–';
+        $('odomRate').textContent = live && o.rate_hz != null ? `${o.rate_hz.toFixed(0)} Hz` : (o ? 'stale' : 'no /odom');
+        const c = slam.correction;
+        $('slamCorrection').textContent = c ? `${Math.hypot(c.x, c.y).toFixed(2)} m, ${deg(c.yaw)}` : '–';
         const p = slam.pose;
         $('poseXY').textContent = p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)} m` : '–';
         $('poseYaw').textContent = p ? `${(p.yaw * 180 / Math.PI).toFixed(0)}°` : '–';
@@ -355,6 +384,7 @@
           : 'unavailable';
         $('savedMap').textContent = saved && saved.exists ? new Date(saved.saved_at * 1000).toLocaleString() : (control ? 'none' : '–');
         serverHasControl = Boolean(control);
+        hasSavedMap = Boolean(saved && saved.exists);
         syncButtons();
         setMap(m, p);
       } catch (error) {
