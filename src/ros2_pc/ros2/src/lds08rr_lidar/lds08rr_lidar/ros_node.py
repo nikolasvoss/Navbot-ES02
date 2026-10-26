@@ -9,15 +9,16 @@ from builtin_interfaces.msg import Time
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import OccupancyGrid
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.node import Node
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Imu, LaserScan
 from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
 
 from .mount import SENSOR_MOUNT_X_M, SENSOR_MOUNT_Y_M, SENSOR_MOUNT_YAW_RAD
 from .runtime import LidarRuntime
 from .slam import SlamState, grid_to_dict
 from .source import SourceConfig
+from .tilt_gate import TiltGate, config_from_mount, roll_from_quaternion
 
 MAP_FRAME = "map"
 BASE_FRAME = "base_link"
@@ -79,6 +80,11 @@ class LidarNode(Node):
             durability=DurabilityPolicy.VOLATILE,
         )
         self.scan_publisher = self.create_publisher(LaserScan, "/scan", scan_qos)
+        # /scan stays raw; slam_toolbox reads the tilt-gated copy.
+        self.slam_scan_publisher = self.create_publisher(LaserScan, "/scan_slam", scan_qos)
+        self.tilt_gate = TiltGate(config_from_mount())
+        self._logged_gate_state: str | None = None
+        self.create_subscription(Imu, "/imu/data", self.on_imu, qos_profile_sensor_data)
         self.status_publisher = self.create_publisher(DiagnosticArray, "/lidar/status", 10)
         self.runtime = LidarRuntime(config, on_scan=self.publish_scan)
         self._ros_publish_error: str | None = None
@@ -151,11 +157,40 @@ class LidarNode(Node):
         else:
             ros_stamp = stamp.to_msg()
         try:
-            self.scan_publisher.publish(to_laserscan(scan, ros_stamp))
+            message = to_laserscan(scan, ros_stamp)
+            self.scan_publisher.publish(message)
+            self.publish_slam_scan(message)
         except Exception as exc:
             self._ros_publish_error = f"{type(exc).__name__}: {exc}"
         else:
             self._ros_publish_error = None
+
+    def on_imu(self, message: Imu) -> None:
+        q = message.orientation
+        stamp = rclpy.time.Time.from_msg(message.header.stamp).nanoseconds / 1e9
+        self.tilt_gate.add_imu(stamp, roll_from_quaternion(q.x, q.y, q.z, q.w))
+
+    def publish_slam_scan(self, message: LaserScan) -> None:
+        start = rclpy.time.Time.from_msg(message.header.stamp).nanoseconds / 1e9
+        ranges = self.tilt_gate.apply(message.ranges, message.angle_min, message.angle_increment, start, message.scan_time)
+        if self.tilt_gate.state != self._logged_gate_state:
+            self._logged_gate_state = self.tilt_gate.state
+            text = {
+                "unconfigured": "tilt gating off: mount.py lacks scan height, IMU roll sign or level roll; /scan_slam = /scan",
+                "no_imu": "tilt gating paused: no fresh /imu/data covers the scan; /scan_slam = /scan",
+                "active": "tilt gating active on /scan_slam",
+            }[self._logged_gate_state]
+            self.get_logger().info(text)
+        if ranges is None:
+            return
+        gated = LaserScan()
+        gated.header = message.header
+        gated.angle_min, gated.angle_max, gated.angle_increment = message.angle_min, message.angle_max, message.angle_increment
+        gated.time_increment, gated.scan_time = message.time_increment, message.scan_time
+        gated.range_min, gated.range_max = message.range_min, message.range_max
+        gated.ranges = ranges
+        gated.intensities = message.intensities
+        self.slam_scan_publisher.publish(gated)
 
     def publish_status(self) -> None:
         status = self.runtime.snapshot()

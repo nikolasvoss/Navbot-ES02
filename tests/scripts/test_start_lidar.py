@@ -250,8 +250,9 @@ def test_ros_subscriber_receives_demo_and_ctrl_c_exits_cleanly():
     observer = rclpy.create_node("lidar_acceptance_observer", context=context)
     executor = SingleThreadedExecutor(context=context)
     executor.add_node(observer)
-    scans, statuses = [], []
+    scans, slam_scans, statuses = [], [], []
     observer.create_subscription(LaserScan, "/scan", scans.append, qos_profile_sensor_data)
+    observer.create_subscription(LaserScan, "/scan_slam", slam_scans.append, qos_profile_sensor_data)
     observer.create_subscription(DiagnosticArray, "/lidar/status", statuses.append, 10)
     port = free_port()
     process = subprocess.Popen(
@@ -261,13 +262,17 @@ def test_ros_subscriber_receives_demo_and_ctrl_c_exits_cleanly():
     try:
         wait_for_state(f"http://127.0.0.1:{port}/status.json", "demo")
         deadline = time.monotonic() + 8
-        while time.monotonic() < deadline and not (scans and statuses):
+        while time.monotonic() < deadline and not (scans and slam_scans and statuses):
             executor.spin_once(timeout_sec=0.1)
-        assert scans and statuses
+        assert scans and slam_scans and statuses
         assert scans[-1].header.frame_id == "lds08rr"
         assert len(scans[-1].ranges) == 360
         assert any(0.1 < distance < 6.0 for distance in scans[-1].ranges)
         assert scans[-1].scan_time == pytest.approx(0.2)
+        # Tilt gating is unconfigured until the mount is measured, so the SLAM copy passes through.
+        raw = {(scan.header.stamp.sec, scan.header.stamp.nanosec): list(scan.ranges) for scan in scans}
+        gated = slam_scans[-1]
+        assert list(gated.ranges) == raw[(gated.header.stamp.sec, gated.header.stamp.nanosec)]
         fields = {item.key: item.value for item in statuses[-1].status[0].values}
         assert fields["mode"] == "demo"
         process.send_signal(signal.SIGINT)

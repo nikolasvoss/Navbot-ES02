@@ -1,10 +1,10 @@
-# slam_toolbox online async mapping from /scan, seeded by wheel odometry (odom -> base_link TF from navbot_link_bridge).
+# slam_toolbox online async mapping from /scan_slam (tilt-gated /scan), seeded by wheel odometry (odom -> base_link TF from navbot_link_bridge).
 slam_toolbox:
   ros__parameters:
     odom_frame: odom
     map_frame: map
     base_frame: base_link
-    scan_topic: /scan
+    scan_topic: /scan_slam
     mode: mapping
     use_scan_matching: true
     use_scan_barycenter: true

@@ -99,7 +99,9 @@ def run(argv=None) -> int:
 
         runtime = LidarRuntime(config)
     try:
-        app = make_lidar_app(runtime, slam=getattr(node, "slam", None), control=control)
+        app = make_lidar_app(
+            runtime, slam=getattr(node, "slam", None), control=control, tilt_gate=getattr(node, "tilt_gate", None),
+        )
         server = make_server(args.host, args.port, app, threaded=True)
     except Exception:
         if node is not None:

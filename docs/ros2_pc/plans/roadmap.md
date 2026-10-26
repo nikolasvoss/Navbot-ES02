@@ -81,6 +81,12 @@ The existing web hub shows the occupancy map, sensor pose, and mapping status un
 - [x] Both physical rotation directions checked on a fresh SLAM map. User confirmation: the blue pose arrow now follows both rotation directions correctly.
 - [ ] Check known left/right positions and the physical angle zero point.
 
+### Tilt gating for the balancing robot
+
+- [x] `/scan_slam` carries tilt-gated scans for `slam_toolbox`: whole scans over 0.06 rad pitch are dropped and beams that would reach the floor become +inf; `/scan` stays raw. See the [software guide](../software/lds08rr-lidar.md#tilt-gating-for-slam). Unit tests cover the geometry; gating passes scans through until the mount is measured.
+- [ ] Measure scan-plane height, IMU roll sign for nose-down, and IMU roll at a level scan plane; enter them in `mount.py`.
+- [ ] Verify on the robot: `/map.json` shows `tilt_gate.state` `active`, floor hits disappear from the map while balancing and driving, and the drop counters stay plausible.
+
 ### Planned: save and load maps
 
 - [ ] Save and load named maps in the existing SLAM tab. Use the existing `slam_toolbox` services for serializing and deserializing the pose graph so that mapping can continue later.

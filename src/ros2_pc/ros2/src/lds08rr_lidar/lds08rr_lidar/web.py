@@ -26,7 +26,9 @@ class FreshScanBuffer:
         return {**scan, "points": points}
 
 
-def make_lidar_app(runtime, slam: SlamState | None = None, control=None, radar_web: Path | None = DEFAULT_RADAR_WEB):
+def make_lidar_app(
+    runtime, slam: SlamState | None = None, control=None, radar_web: Path | None = DEFAULT_RADAR_WEB, tilt_gate=None,
+):
     from flask import Flask, abort, jsonify, render_template, send_from_directory
 
     app = Flask(__name__)
@@ -45,7 +47,11 @@ def make_lidar_app(runtime, slam: SlamState | None = None, control=None, radar_w
 
     @app.get("/map.json")
     def map_json():
-        return jsonify({**slam.snapshot(), "control": control.status() if control is not None else None})
+        return jsonify({
+            **slam.snapshot(),
+            "control": control.status() if control is not None else None,
+            "tilt_gate": tilt_gate.snapshot() if tilt_gate is not None else None,
+        })
 
     @app.post("/slam/save")
     def slam_save():
