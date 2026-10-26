@@ -75,5 +75,5 @@ Consequences:
 ## Next steps
 
 1. Done on 2026-10-26: pins, levels and the 500 kBd link work on the robot. The cause of the earlier failure was an unpowered STC8H1K08 on the line ([lab note](../../../lab/robot/2026-10-25-stc8h1k08-backpowers-uart1.md)). GPIO19/20 are the USB Serial/JTAG pads and power up in USB mode, so `LinkUartInit()` releases them (`USB_SERIAL_JTAG.conf0.usb_pad_enable = 0`) before opening UART1 and logs `usbPad=` at boot. A build without this release also carried clean frames, so the release is a safeguard, not the fix.
-2. Done: the track width is 113 mm and the forward sign was checked (both wheel angles grow when rolled forward). The left/right mapping and the `/odom` twist signs are not yet checked. The bridge takes the wheel radius and the track width as required parameters.
+2. Done: the track width is 113 mm and the forward sign was checked (both wheel angles grow when rolled forward). The left/right mapping was checked with a turn test on 2026-10-26 ([lab note](../../../lab/integration/2026-10-26-odometry-turn-test.md)); the `/odom` twist signs are not yet checked. The bridge takes the wheel radius and the track width as required parameters.
 3. Map `Battery`, `Status` and `Log` in the ROS 2 bridge to `sensor_msgs/BatteryState`, `diagnostic_msgs` and `/rosout`.

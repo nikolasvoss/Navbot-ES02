@@ -45,11 +45,20 @@ How gyro heading works (`odometry.py`):
 
 The gyro rate on the link is `filteredAngularVelocityRadPerSec.z` (`src/ES-02/OllieFOCdrive/imu.cpp`): the firmware subtracts the stored gyro bias from the raw counts, then scales and low-pass filters them. The bias is measured once by the explicit gyro calibration (refused while balancing) and loaded from the calibration store at boot; it does not track temperature. A remaining bias shows as a slow, steady `/odom` yaw drift while the robot stands still; recalibrate the gyro if the drift is visible over a minute.
 
+## Turn test results
+
+A 3-turn counter-clockwise spin on 2026-10-26 ([lab note](../../../lab/integration/2026-10-26-odometry-turn-test.md)) gave:
+
+- `gyro_yaw_sign` is **+1**: positive `gz` is counter-clockwise seen from above. The gyro read 1080.4° for 1080°.
+- The left/right wheel mapping is correct: the wheel yaw is positive for a counter-clockwise turn.
+- Wheel yaw over-reads by a factor of 1.135 with `wheel_radius_m:=0.01915` and `wheel_separation_m:=0.113`. Wheel yaw scales with radius / separation, so the effective ratio is 0.149; with the measured radius that is an effective separation of 0.128 m. Gyro heading avoids this error. The boot service keeps the measured 0.113 m, which only affects the wheel-yaw fallback.
+
+Repeat the test with `python3 scripts/odometry_turn_test.py --turns <n>` while the bridge runs in wheel heading mode: mark the floor, turn the robot on the spot exactly `n` turns (positive counter-clockwise seen from above), stop on the mark and press Ctrl-C. The JSON gives `track_width_m`, `left_right_mapping`, `gyro_yaw_sign` and `gyro_scale`. Stop on the mark before Ctrl-C; any movement after it falsifies the result.
+
 Unverified, before relying on the output:
 
-- The track width is 113 mm and the wheel diameter 38.3 mm ([robot hardware overview](../../robot/hardware/system-overview.md#key-findings-and-consequences)). The bridge has no defaults and does not guess them: pass `-p wheel_radius_m:=0.01915 -p wheel_separation_m:=0.113`. The track width is a hand measurement; an odometry turn test on the floor would confirm it.
-- The forward direction of the wheel angles was checked on the link on 2026-10-25: both angles grow when the wheels roll forward ([lab note](../../../lab/integration/2026-10-25-odometry-signs-and-rate.md)). The left/right mapping is not verified (both wheels were rolled together), and neither are the signs of the `/odom` twist. Roll one wheel at a time to check the mapping.
-- The sign of `gyro_yaw_sign` is not verified. The balance controller uses yaw rate = +1 × gyro z (`kYawRateSign`), which does not say whether +gz is counter-clockwise from above. Hand test: start with `heading_source:=gyro`, turn the robot counter-clockwise seen from above by about 90°, and check that the `/odom` yaw rises by about +1.57 rad (`ros2 topic echo /odom`, quaternion z ≈ +0.71 from 0). If it falls, use the other sign.
+- The wheel diameter is 38.3 mm and the hand-measured track width 113 mm ([robot hardware overview](../../robot/hardware/system-overview.md#key-findings-and-consequences)). The bridge has no defaults and does not guess them: pass `-p wheel_radius_m:=0.01915 -p wheel_separation_m:=0.113`. The turn test shows that their ratio is 13.5 % off for yaw (see above). The radius alone, which sets the `/odom` distance, is not checked; push the robot straight along a tape measure and compare `/odom` x.
+- The signs of the `/odom` twist are not checked on the robot.
 - The IMU frame `imu_link` has no `base_link` to `imu_link` TF yet.
 - Stamps are the ROS receive time, not the robot's sample time. The robot's IMU read time (`Imu.t_us`) is decoded but not published, because nothing converts robot time into ROS time. Covariances are zero.
 
