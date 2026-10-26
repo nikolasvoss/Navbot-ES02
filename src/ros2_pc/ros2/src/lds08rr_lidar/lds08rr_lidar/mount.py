@@ -10,9 +10,9 @@ SENSOR_MOUNT_Y_M = 0.0
 SENSOR_MOUNT_YAW_RAD = -math.radians(120.0)
 
 # Tilt gating for SLAM (tilt_gate.py). None means not measured yet; gating stays off until all three are set.
-SCAN_PLANE_HEIGHT_M = None  # scan plane above the floor, robot at balance
-IMU_ROLL_TO_PITCH_SIGN = None  # +1 or -1: body pitch (positive nose-down, REP-103) = sign * (imu roll - level roll)
-IMU_ROLL_LEVEL_RAD = None  # raw /imu/data roll while the scan plane is level
+SCAN_PLANE_HEIGHT_M = 0.122  # scan plane above the floor, robot held with the scan plane level
+IMU_ROLL_TO_PITCH_SIGN = -1  # +1 or -1: body pitch (positive nose-down, REP-103) = sign * (imu roll - level roll)
+IMU_ROLL_LEVEL_RAD = -0.0035  # raw /imu/data roll while the scan plane is level
 
 # Tuning, not measurements.
 MAX_SCAN_PITCH_RAD = 0.06  # a scan whose window saw more pitch than this is dropped

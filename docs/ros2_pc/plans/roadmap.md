@@ -84,7 +84,7 @@ The existing web hub shows the occupancy map, sensor pose, and mapping status un
 ### Tilt gating for the balancing robot
 
 - [x] `/scan_slam` carries tilt-gated scans for `slam_toolbox`: whole scans over 0.06 rad pitch are dropped and beams that would reach the floor become +inf; `/scan` stays raw. See the [software guide](../software/lds08rr-lidar.md#tilt-gating-for-slam). Unit tests cover the geometry; gating passes scans through until the mount is measured.
-- [ ] Measure scan-plane height, IMU roll sign for nose-down, and IMU roll at a level scan plane; enter them in `mount.py`.
+- [x] Measure scan-plane height (0.122 m), IMU roll sign for nose-down (−1), and IMU roll at a level scan plane (−0.0035 rad); entered in `mount.py` on 2026-10-26.
 - [ ] Verify on the robot: `/map.json` shows `tilt_gate.state` `active`, floor hits disappear from the map while balancing and driving, and the drop counters stay plausible.
 
 ### Planned: save and load maps

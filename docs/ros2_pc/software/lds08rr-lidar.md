@@ -98,11 +98,15 @@ The right column of the `/slam` tab also lists wheel odometry from `/odom`: the 
 
 `/map.json` reports `tilt_gate` with `state` (`unconfigured`, `no_imu`, or `active`), `scans_dropped`, and `beams_dropped`.
 
-Gating stays off until three measurements are entered in `mount.py`:
+Gating needs three measurements in `mount.py`; it stays off while any of them is `None`. The user measured them on 2026-10-26:
 
-1. `SCAN_PLANE_HEIGHT_M`: with the robot at its balance point, measure the height of the scan plane (the middle of the LiDAR's optical window) above the floor with a ruler, in metres.
-2. `IMU_ROLL_TO_PITCH_SIGN`: with the bridge running, watch `ros2 topic echo /imu/data` and tilt the robot nose-down by hand. Convert the orientation to roll (`roll_from_quaternion` in `tilt_gate.py`). If roll grows, the sign is `+1`; if it shrinks, `-1`.
-3. `IMU_ROLL_LEVEL_RAD`: hold the robot so the scan plane is level (or let it balance on level floor) and read the roll in radians. `/imu/data` carries the raw Mahony roll without the firmware's trim correction, so the level value is not zero in general.
+| Constant | Value | How it was measured |
+| --- | --- | --- |
+| `SCAN_PLANE_HEIGHT_M` | 0.122 m | Floor to the middle of the LiDAR's optical window, robot held with the scan plane level. The robot pivots about the wheel axis, but within `MAX_SCAN_PITCH_RAD` the height changes by less than 1 mm, so a constant is enough. |
+| `IMU_ROLL_TO_PITCH_SIGN` | −1 | Roll from `/imu/data` (`roll_from_quaternion` in `tilt_gate.py`) falls when the robot is tipped nose-down by hand. |
+| `IMU_ROLL_LEVEL_RAD` | −0.0035 rad | Roll while a level on top of the LiDAR reads level. `/imu/data` carries the raw Mahony roll without the firmware's trim correction, so this is not zero in general. |
+
+`config_from_mount()` refuses a height outside 0–1 m, a sign other than ±1 and a level roll beyond ±π, so a value in centimetres or degrees stops the service instead of silently disabling the floor check.
 
 Restart `navbot-lidar.service` after editing `mount.py`. The gating has not run on the robot yet.
 

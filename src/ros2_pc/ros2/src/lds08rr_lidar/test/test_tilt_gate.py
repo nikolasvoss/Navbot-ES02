@@ -87,8 +87,25 @@ def test_unconfigured_passes_through():
     assert gate.snapshot() == {"state": "unconfigured", "scans_dropped": 0, "beams_dropped": 0}
 
 
-def test_mount_constants_are_unmeasured():
+def test_measured_mount_constants_configure_the_gate():
+    result = config_from_mount()
+    assert (result.scan_height_m, result.roll_to_pitch_sign, result.level_roll_rad) == (0.122, -1, -0.0035)
+
+
+def test_missing_mount_measurement_turns_the_gate_off(monkeypatch):
+    monkeypatch.setattr("lds08rr_lidar.mount.IMU_ROLL_LEVEL_RAD", None)
     assert config_from_mount() is None
+
+
+@pytest.mark.parametrize("name, value", [
+    ("SCAN_PLANE_HEIGHT_M", 12.2),
+    ("IMU_ROLL_TO_PITCH_SIGN", 0),
+    ("IMU_ROLL_LEVEL_RAD", -4.0),
+])
+def test_mount_constants_in_wrong_units_are_refused(monkeypatch, name, value):
+    monkeypatch.setattr(f"lds08rr_lidar.mount.{name}", value)
+    with pytest.raises(ValueError):
+        config_from_mount()
 
 
 @pytest.mark.parametrize("start, end", [(-0.1, 0.05), (0.15, 0.3), (-2.0, -0.2)])

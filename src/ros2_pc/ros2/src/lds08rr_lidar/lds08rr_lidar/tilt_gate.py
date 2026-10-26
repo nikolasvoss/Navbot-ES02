@@ -37,6 +37,12 @@ def config_from_mount() -> TiltConfig | None:
     measured = (mount.SCAN_PLANE_HEIGHT_M, mount.IMU_ROLL_TO_PITCH_SIGN, mount.IMU_ROLL_LEVEL_RAD)
     if any(value is None for value in measured):
         return None
+    if not 0.0 < mount.SCAN_PLANE_HEIGHT_M < 1.0:
+        raise ValueError(f"SCAN_PLANE_HEIGHT_M must be in metres (0..1), got {mount.SCAN_PLANE_HEIGHT_M}")
+    if mount.IMU_ROLL_TO_PITCH_SIGN not in (1, -1):
+        raise ValueError(f"IMU_ROLL_TO_PITCH_SIGN must be 1 or -1, got {mount.IMU_ROLL_TO_PITCH_SIGN}")
+    if not abs(mount.IMU_ROLL_LEVEL_RAD) < math.pi:
+        raise ValueError(f"IMU_ROLL_LEVEL_RAD must be in radians, got {mount.IMU_ROLL_LEVEL_RAD}")
     return TiltConfig(
         scan_height_m=mount.SCAN_PLANE_HEIGHT_M,
         roll_to_pitch_sign=mount.IMU_ROLL_TO_PITCH_SIGN,
