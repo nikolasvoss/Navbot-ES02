@@ -19,7 +19,13 @@ from .slam import SlamState, grid_to_dict
 from .source import SourceConfig
 
 MAP_FRAME = "map"
+BASE_FRAME = "base_link"
 SENSOR_FRAME = "lds08rr"
+# Pose of the LiDAR in base_link. Not measured yet: zero means the sensor sits at the base_link origin
+# with its zero bearing along the robot's forward axis.
+SENSOR_MOUNT_X_M = 0.0
+SENSOR_MOUNT_Y_M = 0.0
+SENSOR_MOUNT_YAW_RAD = 0.0
 
 BIN_COUNT = 360
 RANGE_MIN_M = 0.01
@@ -55,6 +61,18 @@ def to_laserscan(scan, stamp) -> LaserScan:
     return message
 
 
+def sensor_mount_transform(stamp) -> TransformStamped:
+    transform = TransformStamped()
+    transform.header.stamp = stamp
+    transform.header.frame_id = BASE_FRAME
+    transform.child_frame_id = SENSOR_FRAME
+    transform.transform.translation.x = SENSOR_MOUNT_X_M
+    transform.transform.translation.y = SENSOR_MOUNT_Y_M
+    transform.transform.rotation.z = math.sin(SENSOR_MOUNT_YAW_RAD / 2.0)
+    transform.transform.rotation.w = math.cos(SENSOR_MOUNT_YAW_RAD / 2.0)
+    return transform
+
+
 class LidarNode(Node):
     def __init__(self, config: SourceConfig) -> None:
         super().__init__("lds08rr_lidar")
@@ -81,14 +99,9 @@ class LidarNode(Node):
         self.create_subscription(OccupancyGrid, "/map", self.on_map, map_qos)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        # No wheel odometry yet: odom is fixed to the sensor and scan matching does the tracking.
+        # odom -> base_link comes from navbot_link_bridge (ESP32 wheel odometry); only the sensor mount is ours.
         self.static_tf = StaticTransformBroadcaster(self)
-        identity = TransformStamped()
-        identity.header.stamp = self.get_clock().now().to_msg()
-        identity.header.frame_id = "odom"
-        identity.child_frame_id = SENSOR_FRAME
-        identity.transform.rotation.w = 1.0
-        self.static_tf.sendTransform(identity)
+        self.static_tf.sendTransform(sensor_mount_transform(self.get_clock().now().to_msg()))
         self.create_timer(0.5, self.update_pose)
         self._serialize_client = None
 

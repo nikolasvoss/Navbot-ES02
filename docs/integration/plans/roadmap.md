@@ -14,4 +14,6 @@ Status: the protocol (COBS, CRC-16, Protobuf), the firmware sender for `WheelOdo
 - [x] Track width 113 mm (2026-10-26) and wheel diameter 38.3 mm (2026-10-24) are documented in the [robot hardware overview](../../robot/hardware/system-overview.md#key-findings-and-consequences). The control firmware uses a radius of 0.019 m. The bridge has no default for either parameter; pass `wheel_radius_m` and `wheel_separation_m`.
 - [ ] Check the left/right mapping and the `/odom` twist signs on the robot. The forward sign is done (2026-10-25: both wheel angles grow when rolled forward); roll one wheel at a time to check left and right. The wheel boundary signs themselves were measured on 2026-10-22.
 - [ ] Define the static TF `base_link` to `imu_link` from the IMU mounting. `/imu/data` is in the sensor frame.
-- [ ] Align the SLAM branch (`feat/slam`): it binds `odom` statically to `lds08rr`. With the bridge, that becomes a static TF `base_link` to `lds08rr`, and the static `odom` to `lds08rr` TF goes away.
+- [x] Align the SLAM branch (`feat/slam`): the static `odom` to `lds08rr` TF is gone, the LiDAR service publishes a static TF `base_link` to `lds08rr`, and `slam_toolbox` runs with `base_frame: base_link`. Not yet run on the robot.
+- [ ] Measure the LiDAR mounting pose in `base_link` and set `SENSOR_MOUNT_*` in `ros_node.py` (now zero), then run SLAM with the bridge on the robot and compare the map pose against a driven path.
+- [ ] Start `navbot_link_bridge` automatically with the LiDAR service; nothing launches it today, and SLAM needs it.
