@@ -115,7 +115,7 @@ class LidarNode(Node):
 
     def update_pose(self) -> None:
         try:
-            transform = self.tf_buffer.lookup_transform(MAP_FRAME, SENSOR_FRAME, rclpy.time.Time())
+            transform = self.tf_buffer.lookup_transform(MAP_FRAME, BASE_FRAME, rclpy.time.Time())
         except TransformException:
             return
         t, q = transform.transform.translation, transform.transform.rotation
