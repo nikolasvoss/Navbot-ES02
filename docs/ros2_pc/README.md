@@ -11,7 +11,7 @@ The ros2_pc is the onboard computer that runs ROS 2, with its carrier board and 
 
 ## Software
 
-- [LDS08RR LiDAR software](software/lds08rr-lidar.md): setup, demo, ROS 2 topics, and boot service.
+- [LDS08RR LiDAR software](software/lds08rr-lidar.md): setup, demo, ROS 2 topics, boot service, web hub, and SLAM.
 - [HMMD ROS 2 developer guide](software/hmmd-ros2.md): build, startup, browser, topics, and recording.
 
 ## Plans

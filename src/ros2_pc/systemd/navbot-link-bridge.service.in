@@ -1,0 +1,18 @@
+[Unit]
+Description=Navbot ESP32 link bridge (odometry, TF and IMU)
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=@UID@
+Group=@GID@
+SupplementaryGroups=dialout
+ExecStart=@EXEC_START@
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

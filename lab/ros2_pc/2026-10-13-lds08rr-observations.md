@@ -119,3 +119,7 @@ Observation: A second user sketch (side and top view) and the user's chat answer
 Evidence: [combined sketch](../../docs/ros2_pc/assets/lds08rr-dimension-sketch.jpg), the user's answers in chat on 2026-10-13, the updated [dimension record](../../cad/ros2_pc/lds08rr-dimensions.json), and the [simplified STEP model](../../cad/ros2_pc/lds08rr-simple.step) built from [lds08rr_simple.py](../../cad/ros2_pc/lds08rr_simple.py).
 
 Practical consequence: The earlier warning against subtracting 17.6 from 28.0 no longer applies, because the reference surfaces are now confirmed. The values are still sketch values, not measurements. The 59.0 mm housing width and the 80.9 mm overall length disagree by about 1.4 mm with a housing concentric to the rotor. Measure this before relying on the clearance on the housing side opposite the motor.
+
+## 2026-10-26 update: wheel odometry replaces the identity odom TF
+
+The SLAM checks above ran with a static identity `odom` to `lds08rr` TF and no wheel odometry, so `slam_toolbox` saw the sensor as the only motion source. On branch `feat/slam` that TF is gone: `navbot_link_bridge` publishes `odom` to `base_link` from the ESP32 wheel odometry, and the LiDAR service publishes a static `base_link` to `lds08rr` TF with a zero offset (the LiDAR sits at the robot's rotation centre). SLAM with this setup has not run on the robot yet, so none of the results above describe it. Current behavior: [LiDAR software](../../docs/ros2_pc/software/lds08rr-lidar.md#web-hub-and-slam).

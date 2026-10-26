@@ -47,7 +47,7 @@ rotation direction, measurement accuracy, and electrical acceptance remain open.
 - Display in RViz with a separate sensor coordinate system.
 - Recording and playback with rosbag2, and display of missing scans.
 - Prepare mounting on the Navbot, including weight, power supply, a clear field of view,
-  and the transform to the robot coordinate system.
+  and the transform to the robot coordinate system (the static TF `base_link` → `lds08rr`; the LiDAR sits at the rotation centre, so its offset is zero).
 
 ### Done when
 
@@ -67,9 +67,9 @@ Status: Planned, not started yet.
 
 High-rate telemetry and recordings from the ESP32 will in future run over the UART connection to the ros2_pc and be recorded there, for example with rosbag2. The ESP32 does not run its own Wi-Fi logging service; the earlier Wi-Fi logging proposals have been removed. Format, rate, and recording scope are still to be defined.
 
-## 4. LiDAR-only SLAM in the web hub
+## 4. SLAM in the web hub
 
-Status: Live mapping with `slam_toolbox` confirmed on the ros2_pc. The angle sign in the ROS adapter is corrected and tested, and the user confirmed the physical rotation direction. Further calibration and persistent storage are open.
+Status: Live mapping with `slam_toolbox` confirmed on the ros2_pc with the sensor as the only motion source (2026-10-15 and 2026-10-19); SLAM with the ESP32 wheel odometry has not run on the robot yet. The angle sign in the ROS adapter is corrected and tested, and the user confirmed the physical rotation direction. Further calibration and persistent storage are open.
 
 The existing web hub shows the occupancy map, sensor pose, and mapping status under `/slam`. In the live test on 2026-10-15, scans arrived at about 5 Hz, and map and pose reacted to sensor movement. The [hardware observations](../../../lab/ros2_pc/2026-10-13-lds08rr-observations.md) contain measurements and the limits of the acceptance.
 
@@ -88,4 +88,4 @@ The existing web hub shows the occupancy map, sensor pose, and mapping status un
 - [ ] Optionally export the occupancy map as image and YAML through the existing SaveMap service. This export alone does not replace a resumable pose graph.
 - [ ] Check saving, SLAM restart, and loading to resume, without a connected radar. Without saving, the current map is lost when SLAM ends.
 
-No new web framework. Wheel odometry now comes from the ESP32 through `navbot_link_bridge`. SLAM now starts supervised inside `navbot-lidar.service`; the former separate `navbot-slam.service` is gone. One map is stored in `~/.local/share/navbot/slam/` and loaded at startup (see the [software guide](../software/lds08rr-lidar.md#web-hub-and-slam)). Saving, loading, and deleting are not yet checked on the ros2_pc. The radar page and radar launcher stay unchanged.
+No new web framework. Wheel odometry comes from the ESP32 through `navbot_link_bridge` (TF `odom` → `base_link`); the LiDAR service publishes the static TF `base_link` → `lds08rr`. SLAM now starts supervised inside `navbot-lidar.service`; the former separate `navbot-slam.service` is gone. One map is stored in `~/.local/share/navbot/slam/` and loaded at startup (see the [software guide](../software/lds08rr-lidar.md#web-hub-and-slam)). Saving, loading, and deleting are not yet checked on the ros2_pc. The radar page and radar launcher stay unchanged.

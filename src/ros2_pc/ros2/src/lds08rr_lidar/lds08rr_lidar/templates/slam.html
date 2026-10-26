@@ -79,7 +79,7 @@
         <button id="deleteMap" type="button" disabled>Delete map and start over</button>
       </div>
       <p id="actionResult" class="note" role="status"></p>
-      <p class="note">SLAM starts with the LiDAR service. The saved map loads on every start, which assumes the robot starts where that map began. Mapping runs <code>slam_toolbox</code> on LiDAR scans only; there is no wheel odometry, so move the sensor slowly. Map and pose come from ROS topics <code>/map</code> and TF <code>map</code> → <code>lds08rr</code>. Angle zero and rotation direction of the LiDAR are uncalibrated, so the map may be mirrored or rotated.</p>
+      <p class="note">SLAM starts with the LiDAR service. The saved map loads on every start, which assumes the robot starts where that map began. Mapping runs <code>slam_toolbox</code> on LiDAR scans with the wheel odometry from the NavBot link bridge; without that service no scans are processed. Map and pose come from ROS topics <code>/map</code> and TF <code>map</code> → <code>lds08rr</code>. Angle zero and rotation direction of the LiDAR are uncalibrated, so the map may be mirrored or rotated.</p>
     </section>
   </main>
   <script>
