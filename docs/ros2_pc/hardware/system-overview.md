@@ -27,13 +27,13 @@ J8 is the carrier's 40-pin GPIO header. Physical pin numbers follow the [carrier
 | 10 | GPIO15 / UART0 RX | LiDAR `TX` | Connected |
 | 11 | GPIO17 | Reserved for an external sink on LiDAR `M−`; never wired directly | Reserved, inactive |
 | 29 | GPIO5 / UART2 RX | HMMD TX | Planned |
-| 21 | GPIO9 / UART3 RX | ESP32 link: receives the robot's TX (GPIO19) | Chosen 2026-10-25, not wired |
-| 24 | GPIO8 / UART3 TX | ESP32 link: drives the robot's RX (GPIO20) | Chosen 2026-10-25, not wired |
+| 21 | GPIO9 / UART3 RX | ESP32 link: receives the robot's TX (GPIO19) | Wired; link working (2026-10-26) |
+| 24 | GPIO8 / UART3 TX | ESP32 link: drives the robot's RX (GPIO20) | Wired; link working (2026-10-26) |
 
 Notes:
 
 - The LiDAR and the HMMD guide both name pin 6 for ground. J8 has further GND pins (9, 14, 20, 25, 30, 34, 39); use a separate one when wiring both.
-- The ESP32 link wires cross over: ros2_pc TX (pin 24) to ESP32 GPIO20 (RX), ros2_pc RX (pin 21) to ESP32 GPIO19 (TX), plus a common ground from another GND pin. GPIO8/9 are also the default SPI0 CE0/MISO pins and I2C0 pins, which no project use claims. UART3 on GPIO8/9 needs a boot overlay and a reboot, like UART2 below; the device is expected to appear as `/dev/ttyAMA3` but this is not confirmed on the running image.
+- The ESP32 link wires cross over: ros2_pc TX (pin 24) to ESP32 GPIO20 (RX), ros2_pc RX (pin 21) to ESP32 GPIO19 (TX), plus a common ground from another GND pin. GPIO8/9 are also the default SPI0 CE0/MISO pins and I2C0 pins, which no project use claims. UART3 on GPIO8/9 needs a boot overlay and a reboot, like UART2 below; the device appears as `/dev/ttyAMA3` (confirmed on the running image, 2026-10-26).
 - UART2 is not enabled yet. It needs a boot overlay and a reboot; the [HMMD guide](../software/hmmd-ros2.md) has the steps. Confirm the resulting `/dev/ttyAMA*` path on the running image before use.
 - J8 logic is 3.3 V. The ros2_pc does not tolerate 5 V on a GPIO. The LiDAR's `M−` idles at 5 V.
 - The total GPIO load is limited to 50 mA across all pins. See the [electrical limits](ros2-pc-carrier-board.md#electrical-limits).

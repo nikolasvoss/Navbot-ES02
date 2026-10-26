@@ -1,6 +1,6 @@
 # ros2_pc setup for the robot link
 
-Everything the ros2_pc needs for the [NavBot link](ros2-uart-protocol.md) that the repository checkout does not provide: operating system and packages, the boot configuration for the link UART, serial permissions, and checks. Run the commands on the ros2_pc. Nothing here has been run against the robot yet; the UART steps are unverified on the target image.
+Everything the ros2_pc needs for the [NavBot link](ros2-uart-protocol.md) that the repository checkout does not provide: operating system and packages, the boot configuration for the link UART, serial permissions, and checks. Run the commands on the ros2_pc. Nothing here has been run against the robot yet; the UART path was checked on 2026-10-26 (`/dev/ttyAMA3` carried the robot's frames at 500000 baud), but the bridge itself has not run against the robot.
 
 ## 1. Operating system and ROS 2
 
@@ -32,7 +32,7 @@ The ros2_pc side is on GPIO8 (TX, J8 pin 24) and GPIO9 (RX, J8 pin 21), see the 
    Check that the overlay exists on the installed image before rebooting: `dtoverlay -h uart3-pi5`.
 2. Reboot.
 3. Check the pin functions: `pinctrl get 8-9` must show the UART3 TX and RX functions on GPIO8 and GPIO9.
-4. Find the device path. Do not infer it from the UART number: list `/dev/ttyAMA*`, and compare with `dmesg | grep -i tty`. `/dev/ttyAMA3` is expected but not confirmed. Note the path, since it is the bridge's `port` parameter.
+4. Find the device path. Do not infer it from the UART number: list `/dev/ttyAMA*`, and compare with `dmesg | grep -i tty`. `/dev/ttyAMA3` is confirmed on the current image (2026-10-26). Note the path, since it is the bridge's `port` parameter.
 5. Make sure no serial console, getty or other service uses the port, and that the bridge is the only reader. UART0 (`/dev/ttyAMA0`) belongs to the LiDAR and UART2 to the HMMD radar; do not reuse them.
 
 Wiring and levels are physical and cannot be set in software: cross TX and RX, join the grounds, and keep both ends at 3.3 V logic. The robot side is GPIO20 (RX) and GPIO19 (TX), opposite to the PCB net names RX1/TX1. Verify the pins and the voltage on the boards before connecting.

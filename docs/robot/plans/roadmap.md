@@ -59,7 +59,6 @@ The diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) streams its CSV continuously f
 
 - Run the serial command router in `diagnosticLoop()`, so that the stream can be stopped and selected.
 - Add the ten raw SBUS channel values to the diagnostic output, or allow `K8` and `K60`-`K75` in diagnostic mode, update [sensor_monitor.py](../../../scripts/sensor_monitor.py), and add a test for its parser in `tests/scripts/`.
-- Correct the [sensor diagnostic guide](../software/sensor-diagnostic-mode.md): its RC-plot section says 115200 baud, but the firmware uses 576000 (`kSerialBaudRate`).
 
 ## Switch the LiDAR off after a fall
 

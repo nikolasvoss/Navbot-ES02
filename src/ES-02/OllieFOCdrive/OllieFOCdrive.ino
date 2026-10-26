@@ -92,8 +92,9 @@ constexpr WheelMotorParams kRightWheelMotor{5.75f, 76.7f};
 // operator's decision; it is not tested separately.
 constexpr float kWheelKvSafetyFactor = 1.8f;
 
-// Balance configuration, built once. Gains are zero, so the demand is zero. The envelope can still command a small
-// braking current above roughly 50 rad/s, because the plan requires outputs inside the envelope.
+// Balance configuration, built once. The balance and yaw gains below are the working values (tilt 8 A/rad, gyro
+// damping 0.4), so the controller commands real wheel current as soon as it arms and runs. The envelope can also
+// command a small braking current above roughly 50 rad/s, because the plan requires outputs inside the envelope.
 // Each value is one of: existing constant (named), plan (decision or stated number), or an uncommissioned placeholder.
 const Config &balanceConfig() {
   static const Config config = [] {
@@ -163,7 +164,7 @@ const Config &balanceConfig() {
     c.saveRequestSpeedTolMps = 0.02f;            // uncommissioned: proposed starting value, m/s
     c.saveRequestYawTolRadPerSec = 0.05f;        // uncommissioned: proposed starting value, rad/s
 
-    // Balance and yaw law (passive: zero)
+    // Balance and yaw law
     c.tiltPAPerRad = 8.0f;                       // uncommissioned: A/rad (5 deg lean asks 0.70 A)
     c.gyroDampingAPerRadPerSec = 0.4f;           // uncommissioned: A/(rad/s) (1 rad/s asks 0.4 A)
     c.yawPAPerRadPerSec = 0.6f;                  // uncommissioned: A/(rad/s) (1 rad/s yaw error asks 0.6 A per side)

@@ -46,7 +46,7 @@ Send `K0` to stop the stream. The selector resets when the board restarts.
 
 ## Plot an RC channel while the robot runs
 
-Use the normal firmware with `SENSOR_DIAGNOSTIC_MODE=0`. Connect SerialPlot to the CH340 port at 115200 baud. Set DTR and RTS off, then choose ASCII input, comma delimiters, and two channels.
+Use the normal firmware with `SENSOR_DIAGNOSTIC_MODE=0`. Connect SerialPlot to the CH340 port at 576000 baud (`kSerialBaudRate`). Set DTR and RTS off, then choose ASCII input, comma delimiters, and two channels.
 
 In SerialPlot's Commands tab, send `K60` for receiver channel 1, `K61` for channel 2, and so on through `K75` for channel 16. End each command with a newline. The firmware sends uptime in seconds and the selected channel's latest raw SBUS value at 20 Hz. Send `K0` to stop. Use SerialPlot's snapshot feature to save the plotted data as CSV.
 

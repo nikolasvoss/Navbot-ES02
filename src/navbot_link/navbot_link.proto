@@ -1,5 +1,5 @@
 // NavBot link: ESP32 <-> ROS2 PC over UART.
-// Wire format: see docs/robot/software/interfaces/ros2-uart-protocol.md
+// Wire format: see docs/integration/software/ros2-uart-protocol.md
 syntax = "proto3";
 package navbot.link.v1;
 

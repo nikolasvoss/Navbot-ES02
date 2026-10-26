@@ -1,6 +1,6 @@
 # ESP32 ↔ ros2_pc UART protocol (NavBot link v1)
 
-Status: **specification, firmware sender for `WheelOdometry` and `Imu` (50 Hz each), and ROS 2 bridge `navbot_link_bridge` for both.** The firmware sender and the bridge are untested on hardware.
+Status: **specification, firmware sender for `WheelOdometry` and `Imu` (50 Hz each), and ROS 2 bridge `navbot_link_bridge` for both.** The firmware sender was checked on the robot on 2026-10-26 (50 Hz, no lost frames, also while the robot balanced); the bridge has not run against the robot.
 
 ## Design
 
@@ -58,7 +58,7 @@ The robot and the ros2_pc run on unsynchronized clocks, and nothing converts one
 Consequences:
 
 - Velocities and yaw rate come from robot-clock differences (`t_us`), so they are not affected by link jitter. A consumer that needs IMU sample spacing must take it from `Imu.t_us` differences, not from ROS stamps.
-- Absolute stamps on `/odom`, the `odom` to `base_link` TF and `/imu/data` are arrival times. They lag the true sample by the transmission time (under 1 ms for these frames at 500 kBd), the robot's TX queue and the polling delay (up to 5 ms). Odometry and IMU frames from the same tick often carry the same stamp.
+- Absolute stamps on `/odom`, the `odom` to `base_link` TF and `/imu/data` are arrival times. They lag the true sample by the transmission time (20 µs per byte at 500 kBd: about 0.8 ms for an odometry frame of about 40 bytes and up to 1.4 ms for an `Imu` frame of up to 70 bytes), the robot's TX queue and the polling delay (up to 5 ms). Odometry and IMU frames from the same tick often carry the same stamp.
 - Robot data and other ROS data (the LiDAR scan, for example) are matched only through these ROS stamps. A robot-to-ROS clock offset is not estimated. Better matching would need an offset estimate from `t_us` against the arrival time, or an explicit time-sync message. Neither exists.
 - The send is checked once per control tick, right after the wheel read, so the data is at most one tick old. Each send moves the 20 ms deadline forward by exactly 20 ms (`LinkScheduleDue()` in `link_schedule.h`, period `LINK_ODOMETRY_PERIOD_US`), so the average rate is 50 Hz. A frame goes out on the first tick at or after its deadline, so single intervals jitter by up to one control tick (measured period about 1.41 ms, [lab note](../../../lab/integration/2026-10-25-odometry-signs-and-rate.md)): between about 18.6 and 21.4 ms. After a stall of a full period or more (a blocking calibration step, for example), one frame is sent and the schedule restarts 20 ms later; missed frames are not caught up. Use `t_us` for deltas, not the nominal rate.
 

@@ -465,6 +465,11 @@ int main() {
         [](Measurements &m, Request &) { m.tiltRateRadPerSec = 0.2f; },
         [](Measurements &, Request &r) { r.speedMps = 0.1f; },
         [](Measurements &, Request &r) { r.yawRateRadPerSec = -0.1f; },
+        // One wheel just outside the 5 rad/s arming band, in each direction; the other wheel is at rest.
+        [](Measurements &m, Request &) { m.leftWheelRadPerSec = 6.0f; },
+        [](Measurements &m, Request &) { m.leftWheelRadPerSec = -6.0f; },
+        [](Measurements &m, Request &) { m.rightWheelRadPerSec = 6.0f; },
+        [](Measurements &m, Request &) { m.rightWheelRadPerSec = -6.0f; },
     };
     for (const Case &c : cases) {
       Measurements m = good;
