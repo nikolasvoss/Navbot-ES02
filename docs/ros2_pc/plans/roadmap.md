@@ -69,7 +69,7 @@ High-rate telemetry and recordings from the ESP32 will in future run over the UA
 
 ## 4. SLAM in the web hub
 
-Status: Live mapping with `slam_toolbox` confirmed on the ros2_pc with the sensor as the only motion source (2026-10-15 and 2026-10-19); SLAM with the ESP32 wheel odometry has not run on the robot yet. The angle sign in the ROS adapter is corrected and tested, and the user confirmed the physical rotation direction. Further calibration and persistent storage are open.
+Status: Live mapping with `slam_toolbox` confirmed on the ros2_pc with the sensor as the only motion source (2026-10-15 and 2026-10-19); SLAM with the ESP32 wheel odometry has not run on the robot yet. The angle sign in the ROS adapter is corrected and tested, and the user confirmed the physical rotation direction. Supervised start and one persistent map (save, load at start, delete) are implemented and verified on the ros2_pc ([lab note](../../../lab/ros2_pc/2026-10-19-slam-supervised-verification.md)); calibration is open.
 
 The existing web hub shows the occupancy map, sensor pose, and mapping status under `/slam`. In the live test on 2026-10-15, scans arrived at about 5 Hz, and map and pose reacted to sensor movement. The [hardware observations](../../../lab/ros2_pc/2026-10-13-lds08rr-observations.md) contain measurements and the limits of the acceptance.
 
@@ -83,15 +83,13 @@ The existing web hub shows the occupancy map, sensor pose, and mapping status un
 
 ### Tilt gating for the balancing robot
 
-- [x] `/scan_slam` carries tilt-gated scans for `slam_toolbox`: whole scans over 0.06 rad pitch are dropped and beams that would reach the floor become +inf; `/scan` stays raw. See the [software guide](../software/lds08rr-lidar.md#tilt-gating-for-slam). Unit tests cover the geometry; gating passes scans through until the mount is measured.
+- [x] `/scan_slam` carries tilt-gated scans for `slam_toolbox`: whole scans over 0.06 rad pitch are dropped and beams that would reach the floor become +inf; `/scan` stays raw. See the [software guide](../software/lds08rr-lidar.md#tilt-gating-for-slam). Unit tests cover the geometry.
 - [x] Measure scan-plane height (0.122 m), IMU roll sign for nose-down (−1), and IMU roll at a level scan plane (−0.0035 rad); entered in `mount.py` on 2026-10-26.
 - [ ] Verify on the robot: `/map.json` shows `tilt_gate.state` `active`, floor hits disappear from the map while balancing and driving, and the drop counters stay plausible.
 
-### Planned: save and load maps
+### Planned: more map handling
 
-- [ ] Save and load named maps in the existing SLAM tab. Use the existing `slam_toolbox` services for serializing and deserializing the pose graph so that mapping can continue later.
-- [ ] Store maps in a persistent data directory outside the build and install directories; list existing maps and confirm success or failure of saving or loading in the web tab.
+- [ ] Several named maps with a list in the SLAM tab.
 - [ ] Optionally export the occupancy map as image and YAML through the existing SaveMap service. This export alone does not replace a resumable pose graph.
-- [ ] Check saving, SLAM restart, and loading to resume, without a connected radar. Without saving, the current map is lost when SLAM ends.
 
-No new web framework. Wheel odometry comes from the ESP32 through `navbot_link_bridge` (TF `odom` → `base_link`); the LiDAR service publishes the static TF `base_link` → `lds08rr`. SLAM now starts supervised inside `navbot-lidar.service`; the former separate `navbot-slam.service` is gone. One map is stored in `~/.local/share/navbot/slam/` and loaded at startup (see the [software guide](../software/lds08rr-lidar.md#web-hub-and-slam)). Saving, loading, and deleting are not yet checked on the ros2_pc. The radar page and radar launcher stay unchanged.
+No new web framework. Wheel odometry comes from the ESP32 through `navbot_link_bridge` (TF `odom` → `base_link`); the LiDAR service publishes the static TF `base_link` → `lds08rr`. SLAM now starts supervised inside `navbot-lidar.service`; the former separate `navbot-slam.service` is gone. One map is stored in `~/.local/share/navbot/slam/` and loaded at startup (see the [software guide](../software/lds08rr-lidar.md#web-hub-and-slam)). Saving, loading, and deleting were checked on the ros2_pc on 2026-10-19. The radar page and radar launcher stay unchanged.
