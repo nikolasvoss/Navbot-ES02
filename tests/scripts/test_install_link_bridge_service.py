@@ -35,3 +35,29 @@ def test_unit_refuses_to_render_when_the_package_is_not_built(tmp_path, monkeypa
     monkeypatch.setattr(INSTALLER, "WORKSPACE_SETUP", tmp_path / "missing.bash")
     with pytest.raises(FileNotFoundError, match="build the package first"):
         INSTALLER.render_unit()
+
+
+def _built(tmp_path, monkeypatch):
+    for name, attr in (("ros_setup.bash", "ROS_SETUP"), ("workspace_setup.bash", "WORKSPACE_SETUP")):
+        path = tmp_path / name
+        path.write_text("")
+        monkeypatch.setattr(INSTALLER, attr, path)
+
+
+def test_unit_defaults_to_wheel_heading(tmp_path, monkeypatch):
+    _built(tmp_path, monkeypatch)
+    unit = INSTALLER.render_unit()
+    assert "heading_source" not in unit and "gyro_yaw_sign" not in unit
+
+
+def test_unit_passes_gyro_heading_and_sign(tmp_path, monkeypatch):
+    _built(tmp_path, monkeypatch)
+    unit = INSTALLER.render_unit("gyro", -1)
+    assert "-p heading_source:=gyro -p gyro_yaw_sign:=-1" in unit
+
+
+@pytest.mark.parametrize("source, sign", [("gyro", None), ("gyro", 0), ("compass", 1)])
+def test_unit_refuses_invalid_heading(tmp_path, monkeypatch, source, sign):
+    _built(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        INSTALLER.render_unit(source, sign)

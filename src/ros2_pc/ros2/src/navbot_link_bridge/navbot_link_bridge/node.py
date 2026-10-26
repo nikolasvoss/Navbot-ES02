@@ -13,7 +13,7 @@ from sensor_msgs.msg import Imu
 from tf2_ros import TransformBroadcaster
 
 from navbot_link_bridge.bridge import ImuSample, LinkBridge
-from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState
+from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState, gyro_yaw_sign_for
 
 POLL_HZ = 200
 WARN_INTERVAL_S = 5.0
@@ -48,6 +48,8 @@ class LinkBridgeNode(Node):
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("imu_frame", "imu_link")
         self.declare_parameter("publish_tf", True)
+        self.declare_parameter("heading_source", "wheels")
+        self.declare_parameter("gyro_yaw_sign", 0)
 
         self._port = self.get_parameter("port").value
         if not self._port:
@@ -59,12 +61,19 @@ class LinkBridgeNode(Node):
         self._imu_frame = self.get_parameter("imu_frame").value
         self._publish_tf = self.get_parameter("publish_tf").value
 
-        self._bridge = LinkBridge(
-            DiffDriveOdometry(
-                self.get_parameter("wheel_radius_m").value,
-                self.get_parameter("wheel_separation_m").value,
+        try:
+            gyro_yaw_sign = gyro_yaw_sign_for(
+                self.get_parameter("heading_source").value, self.get_parameter("gyro_yaw_sign").value
             )
+        except ValueError as exc:
+            self.get_logger().fatal(f"{exc}, e.g. -p heading_source:=gyro -p gyro_yaw_sign:=1")
+            raise SystemExit(2)
+        self._odometry = DiffDriveOdometry(
+            self.get_parameter("wheel_radius_m").value,
+            self.get_parameter("wheel_separation_m").value,
+            gyro_yaw_sign,
         )
+        self._bridge = LinkBridge(self._odometry)
         self._odom_pub = self.create_publisher(Odometry, "odom", 10)
         self._imu_pub = self.create_publisher(Imu, "imu/data", 10)
         self._tf = TransformBroadcaster(self)
@@ -75,6 +84,8 @@ class LinkBridgeNode(Node):
 
         self._last_warn_s = -WARN_INTERVAL_S
         self._warned_counts = (0, 0, 0)
+        self._last_fallback_warn_s = -WARN_INTERVAL_S
+        self._warned_fallbacks = 0
         self._restarts_logged = 0
         self.create_timer(1.0 / POLL_HZ, self._on_timer)
 
@@ -157,6 +168,14 @@ class LinkBridgeNode(Node):
             )
             self._warned_counts = counts
             self._last_warn_s = now
+
+        fallbacks = self._odometry.gyro_fallbacks
+        if fallbacks != self._warned_fallbacks and now - self._last_fallback_warn_s >= WARN_INTERVAL_S:
+            self.get_logger().warning(
+                f"gyro heading: {fallbacks} odometry steps used wheel yaw (no fresh IMU sample)"
+            )
+            self._warned_fallbacks = fallbacks
+            self._last_fallback_warn_s = now
 
     def close(self) -> None:
         if self._ser is not None:

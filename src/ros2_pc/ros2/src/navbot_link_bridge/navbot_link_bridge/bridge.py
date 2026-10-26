@@ -51,6 +51,7 @@ class LinkBridge:
                 if state is not None:
                     results.append(state)
             elif body == "imu":
+                self._odometry.add_gyro(msg.imu.t_us, msg.imu.gz)
                 results.append(_imu_sample(msg.imu))
         return results
 

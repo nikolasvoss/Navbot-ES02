@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import os
 import shlex
 import subprocess
@@ -19,7 +20,7 @@ WHEEL_RADIUS_M = "0.01915"  # 38.3 mm wheel diameter
 WHEEL_SEPARATION_M = "0.113"  # measured track width
 
 
-def render_unit() -> str:
+def render_unit(heading_source: str = "wheels", gyro_yaw_sign: int | None = None) -> str:
     uid, gid = os.getuid(), os.getgid()
     required = (TEMPLATE, ROS_SETUP, WORKSPACE_SETUP)
     missing = [str(path) for path in required if not path.is_file()]
@@ -29,6 +30,14 @@ def render_unit() -> str:
             "docs/integration/software/navbot-link-bridge.md): " + ", ".join(missing)
         )
 
+    heading_args = []
+    if heading_source == "gyro":
+        if gyro_yaw_sign not in (1, -1):
+            raise ValueError("--heading-source gyro requires --gyro-yaw-sign 1 or -1")
+        heading_args = ["-p", "heading_source:=gyro", "-p", f"gyro_yaw_sign:={gyro_yaw_sign}"]
+    elif heading_source != "wheels":
+        raise ValueError(f"unknown heading source {heading_source!r}")
+
     shell_command = (
         f"source {shlex.quote(str(ROS_SETUP))} && source {shlex.quote(str(WORKSPACE_SETUP))} && exec "
         + shlex.join([
@@ -36,6 +45,7 @@ def render_unit() -> str:
             "-p", f"port:={LINK_PORT}",
             "-p", f"wheel_radius_m:={WHEEL_RADIUS_M}",
             "-p", f"wheel_separation_m:={WHEEL_SEPARATION_M}",
+            *heading_args,
         ])
     )
     values = {
@@ -50,15 +60,20 @@ def render_unit() -> str:
 
 
 def main() -> int:
-    if len(sys.argv) != 1:
-        print("Usage: python3 scripts/install_link_bridge_service.py", file=sys.stderr)
-        return 2
+    parser = argparse.ArgumentParser(description="Install and start the navbot_link_bridge systemd service.")
+    parser.add_argument("--heading-source", choices=("wheels", "gyro"), default="wheels",
+                        help="yaw from wheel differential (default) or from the IMU gyro")
+    parser.add_argument("--gyro-yaw-sign", type=int, choices=(1, -1),
+                        help="required with --heading-source gyro: maps IMU gz to ROS +yaw (CCW from above)")
+    args = parser.parse_args()
+    if args.heading_source == "gyro" and args.gyro_yaw_sign is None:
+        parser.error("--heading-source gyro requires --gyro-yaw-sign 1 or -1")
     if os.getuid() == 0:
         print("Run this installer as the link bridge service user, without sudo.", file=sys.stderr)
         return 2
 
     try:
-        unit = render_unit()
+        unit = render_unit(args.heading_source, args.gyro_yaw_sign)
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as temporary:
             temporary.write(unit)
             temporary.flush()
