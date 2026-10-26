@@ -43,7 +43,7 @@ This machine (the CM5) has no ESP32 toolchain. To build remotely and flash:
 
 1. Commit your changes and run `git push`.
 2. Run `scripts/build_remote.sh [ssh-target]` (default `desktop`). It builds the pushed branch on the desktop PC and delivers the binaries to `build/flash`.
-3. Flash the absolute path of `build/flash` with `flash_firmware`.
+3. Flash the absolute path of `build/flash` with `flash_firmware`. Where that MCP tool is not configured, run `python3 scripts/upload_firmware.py <absolute path of build/flash>` instead.
 
 Do not check the desktop for `arduino-cli` or the repo yourself: both are installed there, but only in a login shell, which the script uses.
 
