@@ -4,6 +4,7 @@ from pathlib import Path
 
 from lds2d.viz import ScanBuffer
 
+from .mount import robot_bearing_deg
 from .slam import SlamState
 
 DEFAULT_RADAR_WEB = Path(__file__).resolve().parents[2] / "hmmd_radar" / "web"
@@ -19,7 +20,10 @@ class FreshScanBuffer:
         status = self.runtime.snapshot()
         if status.state not in ("live", "demo") or status.scans_received == 0:
             return self.empty
-        return self.buffer.latest()
+        scan = self.buffer.latest()
+        # The page plots bearings from the robot's front, not from the sensor's own zero.
+        points = [{**point, "angle": robot_bearing_deg(point["angle"])} for point in scan["points"]]
+        return {**scan, "points": points}
 
 
 def make_lidar_app(runtime, slam: SlamState | None = None, control=None, radar_web: Path | None = DEFAULT_RADAR_WEB):

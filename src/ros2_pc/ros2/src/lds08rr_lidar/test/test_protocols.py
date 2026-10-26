@@ -118,6 +118,7 @@ def test_runtime_discards_first_partial_rotation_and_hides_stale_plot():
         fresh = client.get("/scan.json").get_json()
         assert fresh["n"] == 1
         assert fresh["points"][0]["dist"] == 777
+        assert fresh["points"][0]["angle"] == pytest.approx(120)
 
         time.sleep(2.05)
         assert runtime.snapshot().state == "stale"
@@ -345,3 +346,10 @@ def test_radar_tab_is_absent_not_broken_when_radar_files_missing(tmp_path):
     client = make_lidar_app(runtime, radar_web=tmp_path / "missing").test_client()
     assert client.get("/radar/").status_code == 404
     assert client.get("/lidar").status_code == 200
+
+
+@pytest.mark.parametrize("sensor_angle, robot_angle", [(240, 0), (0, 120), (150, 270)])
+def test_lidar_page_bearings_are_measured_from_the_robot_front(sensor_angle, robot_angle):
+    from lds08rr_lidar.mount import robot_bearing_deg
+
+    assert robot_bearing_deg(sensor_angle) == pytest.approx(robot_angle)

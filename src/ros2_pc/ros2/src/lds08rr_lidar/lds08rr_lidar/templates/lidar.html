@@ -89,7 +89,7 @@
         <p>UART0 uses J8 pin 8 (GPIO14 TX) and pin 10 (GPIO15 RX). LiDAR TX is received on <code>/dev/ttyAMA0</code>; leave LiDAR RX disconnected.</p>
         <p>Use J8 pin 4 for 5 V and pin 6 for ground only after supply and current checks. No motor GPIO or PWM output is enabled.</p>
         <p>M− is reported at 5 V idle and needs an external transistor sink. TX is reported at 3 V peak; the earlier DMM reading was 1.8 V. The 15 October 2026 capture and live UART scans confirm Camsense at 115200 baud, 8N1. Voltage levels were not independently measured.</p>
-        <p>Angle zero and direction are native and uncalibrated. See <code>docs/ros2_pc/hardware/lds08rr-lidar.md</code> for setup and evidence.</p>
+        <p>0° is the robot's front and angles grow clockwise; the front was set from one user reading and is not otherwise calibrated. See <code>docs/ros2_pc/hardware/lds08rr-lidar.md</code> for setup and evidence.</p>
         <p>Software uses the LDS08RR Camsense driver from <code>lds2d[viz]==0.7.0</code>.</p>
         <p>On the robot, install ROS 2 Jazzy and create the documented Python environment:</p>
         <pre>python3 -m venv --system-site-packages "$HOME/.venvs/navbot-lidar"
