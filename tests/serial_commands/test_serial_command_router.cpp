@@ -68,7 +68,6 @@ COMMAND_CALLBACK(setMahonyKp)
 COMMAND_CALLBACK(setMahonyKi)
 COMMAND_CALLBACK(selectDebugLog)
 COMMAND_CALLBACK(selectCalibration)
-COMMAND_CALLBACK(setYawPid)
 #undef COMMAND_CALLBACK
 
 #include "../../src/ES-02/OllieFOCdrive/SerialCommandRouter.h"
@@ -80,27 +79,26 @@ int main() {
   commander.com_port = &output;
   SerialCommandRouter router;
 
-  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 12);
+  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 11);
   const char *expectedCallbacks[] = {"handleM1MotionCommand", "handleM1Command", "zeroBiasServo1", "zeroBiasServo2",
                                     "zeroBiasServo3", "zeroBiasServo4", "setImuLowPassCutoff", "setMahonyKp",
-                                    "setMahonyKi", "selectDebugLog", "selectCalibration", "setYawPid"};
-  const char ids[] = "TMABCDZQIKEY";
+                                    "setMahonyKi", "selectDebugLog", "selectCalibration"};
+  const char ids[] = "TMABCDZQIKE";
   for (size_t i = 0; ids[i]; ++i) {
     Stream input(std::string(1, ids[i]) + "\n");
     router.run(input, commander, commandEntries);
     assert(calls[i] == std::string(expectedCallbacks[i]) + ":\n");
   }
-  assert(calls.size() == 12);
-  assert(calls[11] == "setYawPid:\n");
+  assert(calls.size() == 11);
 
   calls.clear();
-  Stream yawInput("YP?\nYI2\nYD\nYL\n");
-  router.run(yawInput, commander, commandEntries);
-  assert((calls == std::vector<std::string>{"setYawPid:P?\n", "setYawPid:I2\n", "setYawPid:D\n", "setYawPid:L\n"}));
+  Stream multiLineInput("KP?\nKI2\nKD\nKL\n");
+  router.run(multiLineInput, commander, commandEntries);
+  assert((calls == std::vector<std::string>{"selectDebugLog:P?\n", "selectDebugLog:I2\n", "selectDebugLog:D\n", "selectDebugLog:L\n"}));
 
   Stream helpInput("?\n");
   router.run(helpInput, commander, commandEntries);
-  assert(output.output().find("Y:yawPidSettings\n") != std::string::npos);
+  assert(output.output().find("K:my Select\n") != std::string::npos);
 
   const int builtinCalls = commander.builtins;
   Stream builtinInput("@3\n#5\n");
@@ -114,36 +112,36 @@ int main() {
   assert(commander.verbose == VerboseMode::machine_readable);
   assert(commander.decimal_places == 5);
   const std::string outputBeforeMachineCommand = output.output();
-  Stream machineInput("YI\n");
+  Stream machineInput("KI\n");
   router.run(machineInput, commander, commandEntries);
-  assert(output.output().substr(outputBeforeMachineCommand.size()) == "Y");
+  assert(output.output().substr(outputBeforeMachineCommand.size()) == "K");
   const std::string outputBeforeMachineHelp = output.output();
   Stream machineHelpInput("?\n");
   router.run(machineHelpInput, commander, commandEntries);
-  assert(output.output().substr(outputBeforeMachineHelp.size()).find("?Y:yawPidSettings\n") != std::string::npos);
+  assert(output.output().substr(outputBeforeMachineHelp.size()).find("?K:my Select\n") != std::string::npos);
 
   calls.clear();
-  Stream partialInput("Y");
+  Stream partialInput("K");
   router.run(partialInput, commander, commandEntries);
   assert(calls.empty());
   partialInput.feed("P?\n");
   router.run(partialInput, commander, commandEntries);
-  assert((calls == std::vector<std::string>{"setYawPid:P?\n"}));
+  assert((calls == std::vector<std::string>{"selectDebugLog:P?\n"}));
 
   calls.clear();
-  Stream exactCapacityInput("Y" + std::string(18, '2') + "\n");
+  Stream exactCapacityInput("K" + std::string(18, '2') + "\n");
   router.run(exactCapacityInput, commander, commandEntries);
-  assert((calls == std::vector<std::string>{"setYawPid:" + std::string(18, '2') + "\n"}));
+  assert((calls == std::vector<std::string>{"selectDebugLog:" + std::string(18, '2') + "\n"}));
 
   calls.clear();
-  Stream malformedCapacityInput("Y" + std::string(18, 'x') + "\n");
+  Stream malformedCapacityInput("K" + std::string(18, 'x') + "\n");
   router.run(malformedCapacityInput, commander, commandEntries);
-  assert((calls == std::vector<std::string>{"setYawPid:" + std::string(18, 'x') + "\n"}));
+  assert((calls == std::vector<std::string>{"selectDebugLog:" + std::string(18, 'x') + "\n"}));
 
   calls.clear();
-  Stream crlfInput("YI2\r\n");
+  Stream crlfInput("KI2\r\n");
   router.run(crlfInput, commander, commandEntries);
-  assert((calls == std::vector<std::string>{"setYawPid:I2\r"}));
+  assert((calls == std::vector<std::string>{"selectDebugLog:I2\r"}));
 
   calls.clear();
   parsedMotorCommands.clear();
@@ -164,7 +162,7 @@ int main() {
 
   calls.clear();
   std::string continuousCommands;
-  for (int i = 0; i < 30; ++i) continuousCommands += "YI\n";
+  for (int i = 0; i < 30; ++i) continuousCommands += "KI\n";
   Stream continuousInput(continuousCommands);
   router.run(continuousInput, commander, commandEntries);
   assert(calls.size() == SerialCommandRouter::kByteBudgetPerRun / 3);
@@ -176,9 +174,9 @@ int main() {
   assert(calls.size() == 30);
 
   calls.clear();
-  Stream overlongInput("Y" + std::string(24, '1') + "\nYI\n");
+  Stream overlongInput("K" + std::string(24, '1') + "\nKI\n");
   router.run(overlongInput, commander, commandEntries);
-  assert((calls == std::vector<std::string>{"setYawPid:I\n"}));
+  assert((calls == std::vector<std::string>{"selectDebugLog:I\n"}));
 
   // Commander's 20-character limit: a 19-character T line plus its newline is dispatched, while a
   // 20-character T line plus its newline is discarded whole, so the next line still runs.
@@ -190,19 +188,19 @@ int main() {
   assert(parsedMotorCommands.size() == 1 && parsedMotorCommands[0]);
   calls.clear();
   parsedMotorCommands.clear();
-  Stream overWidthCurrent("T -0.020 -0.020 2000\nYI\n");
+  Stream overWidthCurrent("T -0.020 -0.020 2000\nKI\n");
   router.run(overWidthCurrent, commander, commandEntries);
-  assert((calls == std::vector<std::string>{"setYawPid:I\n"}));
+  assert((calls == std::vector<std::string>{"selectDebugLog:I\n"}));
   assert(parsedMotorCommands.empty());
 
   commander.echo = true;
   commander.verbose = VerboseMode::user_friendly;
   const std::string outputBeforeEcho = output.output();
   calls.clear();
-  Stream echoInput("YI\n");
+  Stream echoInput("KI\n");
   router.run(echoInput, commander, commandEntries);
-  assert(output.output().substr(outputBeforeEcho.size()) == "YI\n");
-  assert((calls == std::vector<std::string>{"setYawPid:I\n"}));
+  assert(output.output().substr(outputBeforeEcho.size()) == "KI\n");
+  assert((calls == std::vector<std::string>{"selectDebugLog:I\n"}));
   commander.echo = false;
 
   commander.verbose = VerboseMode::nothing;
@@ -211,10 +209,10 @@ int main() {
   router.run(quietHelpInput, commander, commandEntries);
   assert(output.output() == outputBeforeQuietHelp);
   commander.echo = true;
-  Stream quietEchoInput("YI\n");
+  Stream quietEchoInput("KI\n");
   router.run(quietEchoInput, commander, commandEntries);
   assert(output.output() == outputBeforeQuietHelp);
-  assert(calls.back() == "setYawPid:I\n");
+  assert(calls.back() == "selectDebugLog:I\n");
   commander.echo = false;
   calls.clear();
   Stream unknownInput("X123\n");

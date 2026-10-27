@@ -283,9 +283,6 @@ float debugLogSelector = 0;   // Selects debug data and the log profile.
 float calibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Calibrate gyroscope  2: Calibrate Euler
                               // angle  3: Calibrate servo
 
-PIDController yawPidSettings(4, 0, 0, 0, 0);
-
-
 float pidTimestepSec = 0.01;
 
 MyPIDController yawPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
@@ -316,9 +313,6 @@ void selectDebugLog(char *cmd) {
   command.scalar(&debugLogSelector, cmd);
   RobotLogCapture::setProfileForSelector(static_cast<int>(debugLogSelector));
 }
-
-// Cb prefix: Commander callback.
-void setYawPid(char *cmd) { command.pid(&yawPidSettings, cmd); }
 
 // Wheel Motors and Drivers
 // m1 is the left wheel and m2 the right wheel; speeds are forward positive (see WheelBoundary.h).
@@ -663,7 +657,6 @@ const SerialCommandEntry commandEntries[] = {
     {'I', setMahonyKi, "my TwoKi"},
     {'K', selectDebugLog, "my Select"},
     {'E', selectCalibration, "my CalibrationSelect"},
-    {'Y', setYawPid, "yawPidSettings"},
 };
 
 SerialCommandRouter serialCommandRouter;

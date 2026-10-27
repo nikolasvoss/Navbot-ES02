@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 
-TUNE_COMMAND = re.compile(r"(?:Y[PIDL]([-+]?(?:\d+(?:\.\d*)?|\.\d+))?|K(?:0|9|55|56|57|58))\Z")
+TRACE_SELECT_COMMAND = re.compile(r"K(?:0|9|55|56|57|58)\Z")
 
 # Mirror the firmware caps in MotorDiagnostic.h; the firmware refuses anything larger too.
 # Wheel-clear runs only (default caps, lowered 2026-10-22): 2.0 V and 60 rad/s, 5000 ms lease, 0.35 A.
@@ -64,7 +64,7 @@ def motion_command_allowed(command):
 def interactive_command(text):
     """Return the command to send for one line of stdin, or None if it is not whitelisted."""
     command = text.strip().upper()
-    if TUNE_COMMAND.fullmatch(command) or motion_command_allowed(command):
+    if TRACE_SELECT_COMMAND.fullmatch(command) or motion_command_allowed(command):
         return command
     return None
 
@@ -95,7 +95,7 @@ def main():
     parser.add_argument("--trace-mode", type=int, choices=(55, 56, 57, 58), default=55,
                         help="55: actuator trace (default); 56: angle/yaw; 57: balance P/I/D; 58: drive-stop trace")
     parser.add_argument("--interactive", action="store_true",
-                        help="send Y/K tuning commands and bounded T/M motor commands from stdin "
+                        help="send K trace-selection commands and bounded T/M motor commands from stdin "
                              "while recording; prints every tenth trace row")
     args = parser.parse_args()
     if args.seconds <= 0:
@@ -126,7 +126,7 @@ def main():
             else:
                 print(f"Recording for {args.seconds:g} s. Switch CH5 once while the robot is supported.", flush=True)
             if args.interactive:
-                print("Type tuning commands and press Enter (for example YP10, K0). "
+                print("Type commands and press Enter (for example K0). "
                       "Motor commands (T/M) need balance off.", flush=True)
             deadline = time.monotonic() + args.seconds
             trace_count = 0

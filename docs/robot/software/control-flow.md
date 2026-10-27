@@ -84,7 +84,7 @@ This recording confirms the diagnostic telemetry clock and stationary smoothing.
 
 ## Current parameters: start values and CH5 modes
 
-No balance gains are active. The yaw gain starts at `YP4`, `YI0`, `YD0`, `YL0`, and later serial changes remain valid until restart. Package 4 defines the new gain set.
+No balance gains are active. Package 4 defines the new gain set.
 
 ## Enable and protection in the code
 
