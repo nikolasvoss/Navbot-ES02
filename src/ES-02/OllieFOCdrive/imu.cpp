@@ -201,6 +201,7 @@ void calibrateGyroBiasBlocking() {
   int32_t gyroYSum = 0;
   int32_t gyroZSum = 0;
   int validSamples = 0;
+  bool movedReported = false;
   while (validSamples < kGyroCalibrationSamples) {
     ICM42688RawSample raw{};
     if (!readIMUDataIfReady(raw)) {
@@ -214,10 +215,14 @@ void calibrateGyroBiasBlocking() {
       gyroYSum += raw.gyroscopeY;
       gyroZSum += raw.gyroscopeZ;
       ++validSamples;
+      movedReported = false;
     } else {
-      Logging::message(Logging::Level::Info, "IMU", "x=%d y=%d z=%d Device moved during calibration. Restarting...",
-                       static_cast<int>(raw.gyroscopeX), static_cast<int>(raw.gyroscopeY),
-                       static_cast<int>(raw.gyroscopeZ));
+      if (!movedReported) {
+        movedReported = true;
+        Logging::message(Logging::Level::Info, "IMU", "x=%d y=%d z=%d Device moved during calibration. Restarting...",
+                         static_cast<int>(raw.gyroscopeX), static_cast<int>(raw.gyroscopeY),
+                         static_cast<int>(raw.gyroscopeZ));
+      }
       gyroXSum = 0;
       gyroYSum = 0;
       gyroZSum = 0;

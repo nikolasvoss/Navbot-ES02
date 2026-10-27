@@ -16,7 +16,7 @@ constexpr uint32_t kLinkStatsEverySends = 100;  // 2 s at 50 Hz
 constexpr size_t kUartQueueBytes = 1024;
 // Holds a 576-byte logger line plus the frames that arrive while the CH340 drains it.
 constexpr size_t kUsbQueueBytes = 2560;
-constexpr uint32_t kWriterStackBytes = 3072;
+constexpr uint32_t kWriterStackBytes = 4096;
 constexpr UBaseType_t kWriterPriority = 2;  // above the logger sender (1) so a long text line does not hold up frames
 constexpr TickType_t kBlockingPushTimeoutTicks = 200;
 
