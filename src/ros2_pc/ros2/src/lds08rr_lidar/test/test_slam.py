@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("flask")
+
 from lds08rr_lidar.runtime import LidarRuntime
 from lds08rr_lidar.slam import MapStore, SlamControl, SlamProcess, SlamState, grid_to_dict
 from lds08rr_lidar.source import SourceConfig
@@ -87,6 +89,36 @@ def test_map_store_refuses_a_partial_serialized_map(tmp_path):
     assert Path(f"{tmp_base}.data").exists()
 
 
+def test_map_store_keeps_the_old_pair_when_the_commit_fails(tmp_path, monkeypatch):
+    store = MapStore(tmp_path)
+    for suffix in (".data", ".posegraph"):
+        Path(f"{store.base}{suffix}").write_text("old", encoding="utf-8")
+    tmp_base = tmp_path / "map.saving"
+    Path(f"{tmp_base}.data").write_text("new", encoding="utf-8")
+    Path(f"{tmp_base}.posegraph").write_text("new", encoding="utf-8")
+
+    real_replace = os.replace
+    def failing_replace(src, dst):
+        if str(src).endswith("map.saving.posegraph"):
+            raise OSError("disk full")
+        real_replace(src, dst)
+    monkeypatch.setattr(os, "replace", failing_replace)
+    with pytest.raises(OSError):
+        store.commit(tmp_base)
+    monkeypatch.undo()
+
+    assert Path(f"{store.base}.data").read_text(encoding="utf-8") == "old"
+    assert Path(f"{store.base}.posegraph").read_text(encoding="utf-8") == "old"
+
+
+def test_slam_process_survives_a_command_that_raises(tmp_path):
+    process = SlamProcess(lambda: 1 / 0, tmp_path / "slam.log", restart_delay=0.05)
+    process.start()
+    wait_until(lambda: process.status()["restarts"] >= 2)
+    assert process.status()["error"] == "ZeroDivisionError: division by zero"
+    process.stop()
+
+
 def test_slam_process_runs_stops_and_starts_again(tmp_path):
     process = SlamProcess(lambda: [sys.executable, "-c", "import time; time.sleep(60)"], tmp_path / "slam.log")
     for _ in range(2):
@@ -160,6 +192,18 @@ def test_slam_control_reload_restarts_slam_only_with_a_saved_map(tmp_path):
     assert control.status()["saved_map"]["exists"] is True
 
 
+def test_slam_control_restarts_slam_when_the_delete_fails(tmp_path):
+    class BrokenStore(MapStore):
+        def delete(self):
+            raise PermissionError("read-only")
+
+    process = FakeProcess()
+    control = SlamControl(BrokenStore(tmp_path), process, write_serialized_map)
+    with pytest.raises(PermissionError):
+        control.delete()
+    assert process.calls == ["stop", "start"]
+
+
 def test_slam_control_reports_a_failed_save(tmp_path):
     control = SlamControl(MapStore(tmp_path), FakeProcess(), lambda filename: "boom")
     assert control.save() == "boom"
@@ -225,6 +269,18 @@ def test_web_save_and_delete_drive_the_control(tmp_path):
     assert control.deleted == 1
     cleared = client.get("/map.json").get_json()
     assert cleared["state"] == "waiting" and cleared["map"] is None
+
+
+def test_web_refuses_cross_site_posts(tmp_path):
+    control = FakeControl()
+    client = make_client(tmp_path, SlamState(), control)
+    for headers in ({"Origin": "http://evil.example"}, {"Sec-Fetch-Site": "cross-site"}):
+        response = client.post("/slam/delete", headers=headers)
+        assert response.status_code == 403
+    assert control.deleted == 0
+    same = client.post("/slam/delete", headers={"Origin": "http://localhost"})
+    assert same.get_json() == {"ok": True}
+    assert control.deleted == 1
 
 
 def test_web_reset_reloads_the_saved_map_and_clears_the_view(tmp_path):

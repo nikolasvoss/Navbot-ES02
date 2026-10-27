@@ -194,3 +194,16 @@ def test_heading_parameters(source, sign, expected):
 def test_invalid_heading_parameters_raise(source, sign):
     with pytest.raises(ValueError):
         gyro_yaw_sign_for(source, sign)
+
+
+def test_gyro_nan_sample_is_a_gap_not_a_poisoned_pose():
+    odom = gyro_odometry()
+    odom.update(0, 0.0, 0.0)
+    odom.add_gyro(0, 0.0)
+    odom.add_gyro(20_000, float("nan"))
+    state = odom.update(20_000, 0.02, 0.02)
+    assert state.x_m == pytest.approx(0.02 * RADIUS)
+    assert state.yaw_rad == pytest.approx(0.0)
+    odom.add_gyro(40_000, 0.0)
+    state = odom.update(40_000, 0.04, 0.04)
+    assert state.x_m == pytest.approx(0.04 * RADIUS)

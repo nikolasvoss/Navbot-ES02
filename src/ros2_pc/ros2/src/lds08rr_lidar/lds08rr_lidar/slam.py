@@ -137,8 +137,22 @@ class MapStore:
         for path in (tmp_data, tmp_graph):
             if not path.exists():
                 raise FileNotFoundError(f"serialized map missing: {path}")
-        os.replace(tmp_data, self._file(".data"))
-        os.replace(tmp_graph, self._file(".posegraph"))
+        # Keep the old pair until both new files are in place so a failure never leaves a mismatched pair.
+        pairs = [(tmp_data, self._file(".data")), (tmp_graph, self._file(".posegraph"))]
+        backups = []
+        try:
+            for tmp, final in pairs:
+                if final.exists():
+                    backup = Path(f"{final}.old")
+                    os.replace(final, backup)
+                    backups.append((backup, final))
+                os.replace(tmp, final)
+        except OSError:
+            for backup, final in backups:
+                os.replace(backup, final)
+            raise
+        for backup, _ in backups:
+            backup.unlink(missing_ok=True)
 
     def delete(self) -> None:
         self._file(".posegraph").unlink(missing_ok=True)
@@ -212,7 +226,7 @@ class SlamProcess:
             child = None
             try:
                 child = self._spawn(stop_event)
-            except OSError as exc:
+            except Exception as exc:  # the supervisor must outlive any failure to build or start the command
                 with self._lock:
                     self._error = f"{type(exc).__name__}: {exc}"
             if child is not None:
@@ -267,21 +281,23 @@ class SlamControl:
 
     def save(self) -> str | None:
         with self._lock:
-            tmp = self._store.directory / "map.saving"
+            tmp = self._store.directory / f"map.saving.{time.time_ns()}"
             error = self._serialize(str(tmp))
             if error is not None:
                 return error
             try:
                 self._store.commit(tmp)
-            except FileNotFoundError as exc:
+            except OSError as exc:
                 return str(exc)
             return None
 
     def delete(self) -> None:
         with self._lock:
             self._process.stop()
-            self._store.delete()
-            self._process.start()
+            try:
+                self._store.delete()
+            finally:
+                self._process.start()
 
     def reload(self) -> str | None:
         """Drops the current map and restarts slam_toolbox on the saved one."""

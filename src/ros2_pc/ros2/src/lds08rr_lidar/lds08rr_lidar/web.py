@@ -30,9 +30,22 @@ class FreshScanBuffer:
 def make_lidar_app(
     runtime, slam: SlamState | None = None, control=None, radar_web: Path | None = DEFAULT_RADAR_WEB, tilt_gate=None, ros=None,
 ):
-    from flask import Flask, abort, jsonify, render_template, send_from_directory
+    from flask import Flask, abort, jsonify, render_template, request, send_from_directory
+    from urllib.parse import urlsplit
 
     app = Flask(__name__)
+
+    @app.before_request
+    def refuse_cross_site_posts():
+        # A browser sends Origin on every cross-site POST; scripts without one (curl) pass.
+        if request.method != "POST":
+            return None
+        origin = request.headers.get("Origin")
+        if request.headers.get("Sec-Fetch-Site") == "cross-site" or (
+            origin is not None and urlsplit(origin).netloc != request.host
+        ):
+            return jsonify(ok=False, error="Cross-site request refused"), 403
+        return None
     scan_buffer = FreshScanBuffer(runtime)
     slam = slam if slam is not None else SlamState()
     monitor = ServiceMonitor(runtime, control=control, ros=ros, slam=slam)

@@ -47,6 +47,9 @@ class GyroYaw:
         self.rebase()
 
     def add(self, t_us: int, gz_rad_s: float) -> None:
+        if not math.isfinite(gz_rad_s):
+            self._gap = True
+            return
         rate = self._sign * gz_rad_s
         if self._prev is not None:
             prev_t_us, prev_rate = self._prev

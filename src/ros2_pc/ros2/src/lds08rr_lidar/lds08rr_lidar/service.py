@@ -93,7 +93,7 @@ def run(argv=None) -> int:
             rclpy.init()
             node = LidarNode(config)
             runtime = node.runtime
-            control = build_slam_control(node)
+            control = None if args.demo else build_slam_control(node)
     if runtime is None:
         from .runtime import LidarRuntime
 
