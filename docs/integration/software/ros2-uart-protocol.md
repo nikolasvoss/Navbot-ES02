@@ -25,7 +25,7 @@ Both directions use the same format. Transport: ESP32 UART1 (the former touchscr
 
 ## Catalog, subscriptions, parameters and actions
 
-The schema also defines the messages for the entry table of the [logging and control plan](../plans/logging-and-control-link.md). **The firmware does not send or answer them yet**; only the PC library and its test firmware use them.
+The schema also defines the messages for the entry table of the [logging and control plan](../plans/logging-and-control-link.md). **The firmware does not send or answer them yet**; only the PC library, [navlink](navlink.md) and its test firmware use them.
 
 | PC → robot | Reply | Meaning |
 | --- | --- | --- |
@@ -84,7 +84,7 @@ Consequences:
 - [generate_link_proto.sh](../../../scripts/generate_link_proto.sh): regenerates the nanopb C code in `src/ES-02/OllieFOCdrive/src/navbot_link/` and the Python protobuf module `navbot_link_pb2.py` in `src/navbot_link/`. It needs `nanopb_generator` 0.4.9.1 and `protoc` 3.21.x on `PATH`; the script refuses other versions. Run it after every schema change.
 - The nanopb 0.4.9.1 encode runtime is vendored in the same folder. Do not edit the generated `navbot_link.pb.*` files.
 - Firmware: `link_frame` (pure C++, frames one `Message`) and `link_uart` (UART1 init, sequence and time stamps, non-blocking send, odometry and IMU publish).
-- PC: the Python package [navbot_link](../../../src/navbot_link/) has no ROS dependency and is shared by the ROS 2 bridge and the host tools. [framing.py](../../../src/navbot_link/framing.py) holds `encode_frame` and `FrameDecoder`, which returns payloads and, for a printable chunk that is not a valid frame, `Text`. `protocol.py` holds the catalog types, the 4-byte value codec and the per-port `seq` tracker; `link.py` holds the `Link` client.
+- PC: the Python package [navbot_link](../../../src/navbot_link/) has no ROS dependency and is shared by the ROS 2 bridge and the host tools. [framing.py](../../../src/navbot_link/framing.py) holds `encode_frame` and `FrameDecoder`, which returns payloads and, for a printable chunk that is not a valid frame, `Text`. `protocol.py` holds the catalog types, the 4-byte value codec and the per-port `seq` tracker; `link.py` holds the `Link` client and `capture.py` the CSV writer and presets used by [navlink](navlink.md).
 - ROS 2 bridge: [navbot_link_bridge](../../../src/ros2_pc/ros2/src/navbot_link_bridge/) (`bridge.py` decodes frames, `odometry.py` integrates wheel angles, `node.py` is the rclpy node). Its `setup.py` installs `navbot_link` next to the bridge. Build and run steps: [ros2_pc software](navbot-link-bridge.md).
 - Tests: `PYTHONPATH=src:src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test` (bridge: the firmware literal frames including the IMU `t_us`, seq gaps and restarts; odometry: straight line, spin, `micros()` wrap) and `python3 -m pytest -q tests/navbot_link` (framing: CRC check value `0x29B1`, COBS vectors, resync after garbage, raw text between USB frames).
 - Host test: `bash tests/link/run_host_test.sh` encodes an odometry and an IMU `Message` (with `t_us`) with the firmware encoder and compares the frame bytes to literal vectors.

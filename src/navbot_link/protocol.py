@@ -59,7 +59,9 @@ class Catalog:
 
     def _find(self, name: str, kinds: set[Kind], what: str) -> Entry:
         for entry in self.entries:
-            if entry.name == name and entry.kind in kinds:
+            if entry.name == name:
+                if entry.kind not in kinds:
+                    raise UnknownName(f"{name} is not a {what} (kind {entry.kind.name.lower()})")
                 return entry
         raise UnknownName(f"unknown {what} {name}")
 
