@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import threading
+import time
 
 import rclpy.time
 
@@ -112,6 +113,7 @@ class LidarNode(Node):
         self.static_tf.sendTransform(sensor_mount_transform(self.get_clock().now().to_msg()))
         self.create_timer(0.5, self.update_pose)
         self._serialize_client = None
+        self._last_seen: dict[str, float] = {}
 
     def on_map(self, message: OccupancyGrid) -> None:
         info = message.info
@@ -120,7 +122,18 @@ class LidarNode(Node):
             info.origin.position.x, info.origin.position.y, message.data,
         ))
 
+    def topic_age(self, topic: str) -> float | None:
+        seen = self._last_seen.get(topic)
+        return None if seen is None else time.monotonic() - seen
+
+    def publisher_count(self, topic: str) -> int:
+        return self.count_publishers(topic)
+
+    def node_exists(self, name: str) -> bool:
+        return name in self.get_node_names()
+
     def on_odom(self, message: Odometry) -> None:
+        self._last_seen["/odom"] = time.monotonic()
         p, twist = message.pose.pose, message.twist.twist
         self.slam.set_odom(p.position.x, p.position.y, yaw_from_quaternion(p.orientation), twist.linear.x, twist.angular.z)
 
@@ -181,6 +194,7 @@ class LidarNode(Node):
             self._ros_publish_error = None
 
     def on_imu(self, message: Imu) -> None:
+        self._last_seen["/imu/data"] = time.monotonic()
         q = message.orientation
         stamp = rclpy.time.Time.from_msg(message.header.stamp).nanoseconds / 1e9
         self.tilt_gate.add_imu(stamp, roll_from_quaternion(q.x, q.y, q.z, q.w))

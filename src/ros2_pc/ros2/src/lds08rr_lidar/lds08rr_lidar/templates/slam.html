@@ -49,7 +49,7 @@
   {% include "_nav.html" %}
   <header class="top">
     <h1>Navbot SLAM</h1>
-    <span id="stateBadge" class="badge">Connecting</span>
+    <span id="stateBadge" class="badge pill" data-level="unknown">Connecting</span>
   </header>
   <main class="grid">
     <section class="mapView" aria-label="SLAM map">
@@ -64,7 +64,6 @@
     </section>
     <section class="sidebar" aria-label="SLAM status">
       <dl>
-        <dt>SLAM</dt><dd id="slamState">–</dd>
         <dt>LiDAR</dt><dd id="lidarState">–</dd>
         <dt>Map size</dt><dd id="mapSize">–</dd>
         <dt>Map cells</dt><dd id="mapCells">–</dd>
@@ -98,7 +97,10 @@
     const canvas = document.querySelector('#map');
     const ctx = canvas.getContext('2d');
     const $ = (id) => document.getElementById(id);
-    const LABELS = { waiting: 'Waiting for map', stale: 'SLAM not updating', no_pose: 'Map, no pose', mapping: 'Mapping' };
+    // Map progress while slam_toolbox is healthy; any service fault comes from /services.json instead.
+    const MAP_STATES = {
+      waiting: ['Waiting for map', 'unknown'], no_pose: ['Map, no pose', 'warn'], mapping: ['Mapping', 'ok'],
+    };
     let serverHasControl = false;
     let actionRunning = false;
     let hasSavedMap = false;
@@ -353,12 +355,20 @@
       return off;
     }
 
+    function setState(id, text, level) {
+      $(id).textContent = text;
+      $(id).dataset.level = level;
+    }
+
     async function refresh() {
       try {
-        const [slam, lidar] = await Promise.all([getJson('/map.json'), getJson('/status.json')]);
-        $('stateBadge').textContent = LABELS[slam.state] || slam.state;
-        $('slamState').textContent = LABELS[slam.state] || slam.state;
-        $('lidarState').textContent = lidar.state;
+        const [slam, services] = await Promise.all([getJson('/map.json'), getJson('/services.json')]);
+        const svc = Object.fromEntries(services.map((row) => [row.key, row]));
+        const slamRow = svc.slam;
+        const [mapText, mapLevel] = MAP_STATES[slam.state] || [slam.state, 'unknown'];
+        if (slamRow.level === 'ok') setState('stateBadge', mapText, mapLevel);
+        else setState('stateBadge', slamRow.short, slamRow.level);
+        setState('lidarState', svc.lidar.short, svc.lidar.level);
         const m = slam.map;
         $('mapSize').textContent = m ? `${(m.width * m.resolution).toFixed(1)} × ${(m.height * m.resolution).toFixed(1)} m` : '–';
         $('mapCells').textContent = m ? `${m.width} × ${m.height}` : '–';
@@ -370,7 +380,9 @@
         $('odomSpeed').textContent = live ? `${o.linear.toFixed(2)} m/s` : '–';
         $('odomTurn').textContent = live ? `${(o.angular * 180 / Math.PI).toFixed(0)} °/s` : '–';
         $('odomPath').textContent = o ? `${o.path_m.toFixed(2)} m` : '–';
-        $('odomRate').textContent = live && o.rate_hz != null ? `${o.rate_hz.toFixed(0)} Hz` : (o ? 'stale' : 'no /odom');
+        const linkRow = svc.robot_link;
+        if (linkRow && linkRow.level !== 'ok') setState('odomRate', linkRow.short, linkRow.level);
+        else setState('odomRate', live && o.rate_hz != null ? `${o.rate_hz.toFixed(0)} Hz` : (o ? 'Stale' : 'No data'), live ? 'ok' : 'error');
         const c = slam.correction;
         $('slamCorrection').textContent = c ? `${Math.hypot(c.x, c.y).toFixed(2)} m, ${deg(c.yaw)}` : '–';
         const p = slam.pose;
@@ -379,16 +391,14 @@
         $('mapAge').textContent = slam.map_age_sec == null ? '–' : slam.map_age_sec.toFixed(0) + ' s';
         const control = slam.control;
         const saved = control && control.saved_map;
-        $('slamProcess').textContent = control
-          ? control.process.state + (control.process.restarts > 0 ? ` (restarts ${control.process.restarts})` : '')
-          : 'unavailable';
+        setState('slamProcess', slamRow.level === 'ok' ? 'Running' + (control.process.restarts > 0 ? ` (restarts ${control.process.restarts})` : '') : slamRow.short, slamRow.level);
         $('savedMap').textContent = saved && saved.exists ? new Date(saved.saved_at * 1000).toLocaleString() : (control ? 'none' : '–');
         serverHasControl = Boolean(control);
         hasSavedMap = Boolean(saved && saved.exists);
         syncButtons();
         setMap(m, p);
       } catch (error) {
-        $('stateBadge').textContent = 'Server unavailable';
+        setState('stateBadge', 'Unreachable', 'error');
         serverHasControl = false;
         syncButtons();
         setMap(null, null);

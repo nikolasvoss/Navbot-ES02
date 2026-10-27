@@ -4,6 +4,7 @@ from pathlib import Path
 
 from lds2d.viz import ScanBuffer
 
+from .health import ServiceMonitor, lidar_view
 from .mount import robot_bearing_deg
 from .slam import SlamState
 
@@ -27,13 +28,14 @@ class FreshScanBuffer:
 
 
 def make_lidar_app(
-    runtime, slam: SlamState | None = None, control=None, radar_web: Path | None = DEFAULT_RADAR_WEB, tilt_gate=None,
+    runtime, slam: SlamState | None = None, control=None, radar_web: Path | None = DEFAULT_RADAR_WEB, tilt_gate=None, ros=None,
 ):
     from flask import Flask, abort, jsonify, render_template, send_from_directory
 
     app = Flask(__name__)
     scan_buffer = FreshScanBuffer(runtime)
     slam = slam if slam is not None else SlamState()
+    monitor = ServiceMonitor(runtime, control=control, ros=ros, slam=slam)
     radar_dir = radar_web if radar_web is not None and (radar_web / "index.html").is_file() else None
 
     @app.get("/")
@@ -103,6 +105,12 @@ def make_lidar_app(
 
     @app.get("/status.json")
     def status_json():
-        return jsonify(runtime.status_dict())
+        status = runtime.status_dict()
+        level, label = lidar_view(status["state"])
+        return jsonify({**status, "level": level, "label": label})
+
+    @app.get("/services.json")
+    def services_json():
+        return jsonify(monitor.snapshot())
 
     return app

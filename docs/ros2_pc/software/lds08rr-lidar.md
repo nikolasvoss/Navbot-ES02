@@ -60,6 +60,8 @@ sudo systemctl daemon-reload
 
 `/status.json` reports waiting, invalid bytes, live, stale, and error states. The browser hides the polar plot when serial data is stale or the status server is unavailable. The same responsive status page is available at `/` and `/lidar`, with its JSON scan feed at `/scan.json`.
 
+`/services.json` reports one health row per service: the LiDAR sensor, the robot link (`navbot-link-bridge`), SLAM (`slam_toolbox`) and the radar. Each row has a level (`ok`, `warn` or `error`), a short state word and a longer message. The robot link row distinguishes a bridge that is not running (nothing publishes `/odom` or `/imu/data`) from a running bridge that gets no fresh data from the robot (check its power and the UART wiring). Every page colors state with one severity scale: green `ok`, amber `warn` (degraded, optional or recovering: `Demo`, `Restarting`, `Unavailable`, radar `Not running`) and red `error` (a service that delivers nothing: `No data`, `Invalid data`, `Stale`, `Error`, `Not running`); grey means unknown. The radar is started on demand, so it is only a warning. Every page polls the endpoint every 3 s and shows a status dot per service in the navigation bar, plus the state word (`No data`, `Invalid data`, `Stale`, `Error`, `Not running`, `Restarting`, `Unavailable`, `Unreachable`) when the service is not `ok`; hovering shows the long message. The LiDAR and SLAM pages use the same state words in their own state fields. The radar page keeps its own connection wording.
+
 Run the protocol, runtime, ROS conversion, launcher, and optional Playwright browser checks with the development environment active.
 
 ```bash

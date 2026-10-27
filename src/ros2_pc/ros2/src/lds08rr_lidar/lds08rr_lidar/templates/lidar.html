@@ -13,8 +13,6 @@
     a { color: #7dd3fc; }
     .top, .plotTools { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
     .badge { border: 1px solid #64748b; border-radius: 999px; padding: .3rem .65rem; font-weight: 700; }
-    .demo { border-color: #f59e0b; color: #fbbf24; }
-    .error { color: #fca5a5; }
     #summary { margin: 0; min-height: 1.4em; color: #cbd5e1; }
     [hidden] { display: none !important; }
     .grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: .65rem; min-height: 0; }
@@ -57,7 +55,7 @@
   {% include "_nav.html" %}
   <header class="top">
     <h1>Navbot LDS08RR</h1>
-    <span id="modeBadge" class="badge">Connecting</span>
+    <span id="modeBadge" class="badge pill" data-level="unknown">Connecting</span>
   </header>
   <p id="summary" role="status">Loading LiDAR status…</p>
   <main class="grid">
@@ -74,7 +72,6 @@
     <section class="sidebar" aria-label="Connection and hardware status">
       <h2>Connection</h2>
       <dl>
-        <dt>State</dt><dd id="state">Unknown</dd>
         <dt>Protocol</dt><dd id="protocol">Not selected</dd>
         <dt>Device</dt><dd id="device">Not selected</dd>
         <dt>Received bytes</dt><dd id="bytes">0</dd>
@@ -117,6 +114,18 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
     let targetRangeMm = 1000;
     let zoom = 1;
     let visible = false;
+    function summaryText(data) {
+      if (data.mode === 'demo') {
+        return data.state === 'demo' ? 'This animated scan is generated in software. It does not come from the LiDAR.' : 'The synthetic scan is not currently fresh.';
+      }
+      switch (data.state) {
+        case 'waiting': return data.bytes_received ? 'Receiving bytes, but no complete scan yet.' : `No bytes received on ${data.device}.`;
+        case 'invalid': return `Bytes received on ${data.device} are not valid scans.`;
+        case 'stale': return `No new scan for ${Math.round(data.last_scan_age_sec)} s.`;
+        case 'error': return 'The LiDAR reader failed and is retrying.';
+        default: return '';
+      }
+    }
 
     function setVisible(show, message) {
       visible = show;
@@ -228,15 +237,11 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
       try {
         const data = await fetchJson('/status.json', 2500);
         const demo = data.mode === 'demo';
+        const fresh = data.state === 'live' || data.state === 'demo';
         const badge = document.querySelector('#modeBadge');
-        badge.textContent = demo ? 'DEMO DATA · synthetic scan' : data.state.toUpperCase();
-        badge.className = `badge${demo ? ' demo' : ''}`;
-        document.querySelector('#summary').textContent = demo && data.state === 'demo'
-          ? 'This animated scan is generated in software. It does not come from the LiDAR.'
-          : demo
-            ? `DEMO ${data.state.toUpperCase()} · synthetic scan is not currently fresh.`
-            : `${data.state.toUpperCase()} · ${data.device || 'No serial device configured'}`;
-        document.querySelector('#state').textContent = data.state;
+        badge.textContent = demo && fresh ? 'Demo data · synthetic scan' : data.label;
+        badge.dataset.level = data.level;
+        document.querySelector('#summary').textContent = summaryText(data);
         document.querySelector('#protocol').textContent = data.protocol || 'Demo';
         document.querySelector('#device').textContent = data.device || 'None';
         document.querySelector('#bytes').textContent = data.bytes_received;
@@ -246,10 +251,10 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
         document.querySelector('#points').textContent = data.valid_points;
         const error = document.querySelector('#error');
         error.textContent = data.last_error || 'None';
-        error.className = data.last_error ? 'error error-row' : 'error-row';
+        error.dataset.level = data.last_error ? 'error' : 'ok';
         const canShow = data.scans_received > 0 && (data.state === 'live' || data.state === 'demo');
         if (!canShow) {
-          setVisible(false, data.state === 'live' ? 'Waiting for a complete scan.' : `${data.state.toUpperCase()}. The scan plot is hidden until data is fresh.`);
+          setVisible(false, data.state === 'live' ? 'Waiting for a complete scan.' : 'No scan to plot.');
           return;
         }
         const becameVisible = !visible;
@@ -257,11 +262,12 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
           setVisible(true, '');
         }
       } catch (error) {
-        document.querySelector('#modeBadge').textContent = 'SERVER UNAVAILABLE';
-        document.querySelector('#modeBadge').className = 'badge error';
+        document.querySelector('#modeBadge').textContent = 'Unreachable';
+        document.querySelector('#modeBadge').dataset.level = 'error';
         document.querySelector('#summary').textContent = `Status request failed: ${error.message}`;
         document.querySelector('#error').textContent = error.message;
-        setVisible(false, 'LiDAR status server unavailable.');
+        document.querySelector('#error').dataset.level = 'error';
+        setVisible(false, 'No scan to plot.');
       } finally {
         window.setTimeout(refresh, 1000);
       }
@@ -283,7 +289,8 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
         draw();
       } catch (error) {
         document.querySelector('#error').textContent = error.message;
-        setVisible(false, 'LiDAR scan request failed.');
+        document.querySelector('#error').dataset.level = 'error';
+        setVisible(false, 'No scan to plot.');
       } finally {
         window.setTimeout(pollScan, 120);
       }
