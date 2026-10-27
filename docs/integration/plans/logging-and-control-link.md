@@ -1,6 +1,6 @@
 # Logging, telemetry and control over the NavBot link
 
-Status: **proposal, not implemented.** It replaces the `K` log selectors, the CSV log profiles and the letter commands with one table of signals, parameters and actions, served over the [NavBot link protocol](../software/ros2-uart-protocol.md) on both the ros2_pc UART and the USB port. An independent review on 2026-10-27 checked an earlier version against the code; its findings are folded in.
+Status: **proposal, not implemented.** It replaces the `K` log selectors, the CSV log profiles and the letter commands with one table of signals, parameters and actions, served over the [NavBot link protocol](../software/ros2-uart-protocol.md) on both the ros2_pc UART and the USB port. An independent review on 2026-10-27 checked an earlier version against the code; its findings are folded in. The PC side ([navbot_link library and navlink](../software/navlink.md)) and the protocol additions ([protocol page](../software/ros2-uart-protocol.md)) have landed on branch `feat/link-pc-library`; the firmware side is pending.
 
 ## Goals
 
