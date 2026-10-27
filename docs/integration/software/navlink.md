@@ -80,7 +80,7 @@ speed_loop:
 `navbot_link.link.Link(port, baud)` opens the port; it also takes any object with `read()`, `write(data)` and `close()`. It runs one I/O thread.
 
 - `catalog()` reads the table once per connection and again after a robot restart. A `GetCatalog` without a reply is retried 3 times with a 0.5 s timeout.
-- `subscribe(names, rate_hz)` returns a `Subscription` with its slot (1 to 4). The library renews the 5 s lease every 2 s.
+- `subscribe(names, rate_hz)` returns a `Subscription` with the slot the robot assigned (1 to 4, shared by all ports). The library renews the 5 s lease every 2 s.
 - `get(name)`, `set(name, value)` and `call(name, **args)` return when the robot acknowledges. A refused request raises `LinkError` with the robot's reason. `call` is not retried, so a lost `Ack` never starts an action twice.
 - `events` is a queue in stream order: `Row`, `LogEvent`, `Text` (raw text from the USB port), `FramesLost`, `Restarted`, `SubscriptionEnded` and `Disconnected`.
 - A restart of the robot (its `seq` starts over) drops the catalog and ends every subscription, because table indices can change between builds.

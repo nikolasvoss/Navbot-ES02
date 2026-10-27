@@ -22,7 +22,6 @@ from navbot_link.protocol import (
     unpack_value,
 )
 
-MAX_SLOTS = 4
 MAX_SUBSCRIBED = 48
 LEASE_RENEW_S = 2.0  # firmware lease is 5 s
 
@@ -110,12 +109,24 @@ class Subscription:
 
 
 class _Waiter:
-    def __init__(self):
+    """One request attempt. `on_accept` runs on the I/O thread with the accepted
+    reply, before the next frame is dispatched."""
+
+    def __init__(self, what: str, on_accept):
+        self._what = what
+        self._on_accept = on_accept
         self._event = threading.Event()
-        self.reply = None
+        self.result = None
+        self.error: LinkError | None = None
 
     def resolve(self, reply) -> None:
-        self.reply = reply
+        if reply.WhichOneof("body") == "ack" and not reply.ack.accepted:
+            self.error = LinkError(f"{self._what} refused: {reply.ack.error}")
+        else:
+            try:
+                self.result = self._on_accept(reply)
+            except LinkError as exc:
+                self.error = exc
         self._event.set()
 
     def wait(self, timeout_s: float) -> bool:
@@ -196,24 +207,21 @@ class Link:
         self._request(pb.Message(call=pb.Call(id=entry.index, args=values)), retries=1)
 
     def subscribe(self, names, rate_hz: float | None = None) -> Subscription:
-        """rate_hz None or 0 streams every control tick."""
+        """rate_hz None or 0 streams every control tick. The robot picks the slot."""
         catalog = self.catalog()
         entries = tuple(catalog.signal(n) for n in names)
         if not entries or len(entries) > MAX_SUBSCRIBED:
             raise LinkError(f"a subscription takes 1 to {MAX_SUBSCRIBED} signals, got {len(entries)}")
-        with self._lock:
-            free = [s for s in range(1, MAX_SLOTS + 1) if s not in self._subs]
-            if not free:
-                raise LinkError(f"all {MAX_SLOTS} slots are in use")
-            sub = Subscription(free[0], entries, round(1e6 / rate_hz) if rate_hz else 0)
-            self._subs[sub.slot] = sub  # before the request: rows may beat the Ack
-        try:
-            self._request(_subscribe_message(sub))
-        except LinkError:
+        period_us = round(1e6 / rate_hz) if rate_hz else 0
+
+        def register(reply) -> Subscription:
+            # On the I/O thread: the slot's first row can follow the Ack directly.
+            sub = Subscription(_slot_of(reply.ack), entries, period_us)
             with self._lock:
-                self._subs.pop(sub.slot, None)
-            raise
-        return sub
+                self._subs[sub.slot] = sub
+            return sub
+
+        return self._request(_subscribe_message(Subscription(0, entries, period_us)), on_accept=register)
 
     def unsubscribe(self, slot: int) -> None:
         with self._lock:
@@ -224,10 +232,12 @@ class Link:
         return self._request(pb.Message(get_catalog=pb.GetCatalog(index=index)),
                              reply_key=("catalog", index)).catalog_entry
 
-    def _request(self, msg, *, reply_key=None, retries=None):
+    def _request(self, msg, *, reply_key=None, retries=None, on_accept=None):
+        """The accepted reply's Ack, its other reply, or what `on_accept` returns for it."""
         what = msg.WhichOneof("body")
+        on_accept = on_accept or (lambda reply: reply.ack if reply.WhichOneof("body") == "ack" else reply)
         for _ in range(retries or self._retries):
-            waiter = _Waiter()
+            waiter = _Waiter(what, on_accept)
             with self._lock:
                 seq = self._send_locked(msg)
                 keys = [("ack", seq)] + ([reply_key] if reply_key else [])
@@ -240,12 +250,9 @@ class Link:
                 with self._lock:
                     for key in keys:
                         self._waiters.pop(key, None)
-            reply = waiter.reply
-            if reply.WhichOneof("body") == "ack":
-                if not reply.ack.accepted:
-                    raise LinkError(f"{what} refused: {reply.ack.error}")
-                return reply.ack
-            return reply
+            if waiter.error is not None:
+                raise waiter.error
+            return waiter.result
         raise LinkError(f"no reply to {what}")
 
     def _send_locked(self, msg) -> int:
@@ -349,6 +356,13 @@ def check_args(entry: Entry, args: dict) -> list[float]:
             raise LinkError(f"{arg.name}={value:g} is outside [{arg.min:g}, {arg.max:g}]")
         values.append(value)
     return values
+
+
+def _slot_of(ack) -> int:
+    slot = int.from_bytes(ack.value, "little") if len(ack.value) == 4 else 0
+    if not slot:
+        raise LinkError(f"subscribe reply carries no slot (value {ack.value.hex() or 'empty'})")
+    return slot
 
 
 def _subscribe_message(sub: Subscription):

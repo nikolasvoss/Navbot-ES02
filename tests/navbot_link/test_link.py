@@ -123,6 +123,22 @@ def test_two_subscriptions_get_their_own_slots_and_unsubscribe_stops_one():
         assert fw.subscribed_slots() == [2]
 
 
+def test_the_robot_assigns_slots_across_ports_and_each_port_keeps_its_own():
+    fw = FakeFirmware()
+    uart = fw.add_port()
+    with open_link(fw) as usb_link, Link(MemoryTransport(fw, uart), clock=lambda: 0.0) as uart_link:
+        on_usb = usb_link.subscribe(["loop_count"], 100)
+        on_uart = uart_link.subscribe(["speed_target"], 100)
+        assert (on_usb.slot, on_uart.slot) == (1, 2)
+        uart_row = next_events(uart_link, 1, Row)[0]
+        assert (uart_row.slot, uart_row.values) == (2, (0.5,))
+        with pytest.raises(LinkError, match="^unsubscribe refused: slot in use$"):
+            uart_link.unsubscribe(1)
+        assert fw.subscribed_slots() == [1, 2]
+    # seq 15, subscribe{slot: 0, ids: [6], period_us: 10000}: slot 0 asks the robot to pick
+    assert fw.received[14] == bytes.fromhex("08 0f ba 01 06 12 01 06 18 90 4e")
+
+
 def test_lease_renewal_keeps_a_stream_alive_past_the_firmware_lease():
     renewing, idle = FakeFirmware(lease_s=0.3), FakeFirmware(lease_s=0.3)
     with open_link(renewing, renew_s=0.1) as a, open_link(idle, renew_s=60) as b:

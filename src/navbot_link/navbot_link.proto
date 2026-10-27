@@ -73,7 +73,8 @@ message Ack {
   uint32 command_id = 1;
   bool accepted = 2;
   string error = 3;
-  bytes value = 4;   // GetParam, SetParam: the value now in effect
+  bytes value = 4;   // GetParam, SetParam: the value now in effect.
+                     // Subscribe: the slot, u32 little-endian.
 }
 
 // Entry table: signals, parameters and actions. Wire IDs are table indices
@@ -100,13 +101,16 @@ message CatalogEntry {
   string build = 8;      // firmware build ID; set in the reply to index 0
 }
 
-// Sending the same slot again renews the 5 s lease or replaces the entry list.
+// slot 0 asks the robot for a free slot; the Ack carries it in value. A
+// nonzero slot renews the 5 s lease or replaces the entry list of a slot the
+// requesting port owns; another port's slot is refused with "slot in use".
 message Subscribe {
   uint32 slot = 1;
   repeated uint32 ids = 2;
   uint32 period_us = 3;  // 0 = every control tick
 }
 
+// Accepted for a free slot; another port's slot is refused with "slot in use".
 message Unsubscribe {
   uint32 slot = 1;
 }

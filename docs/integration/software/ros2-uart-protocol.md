@@ -30,12 +30,13 @@ The schema also defines the messages for the entry table of the [logging and con
 | PC → robot | Reply | Meaning |
 | --- | --- | --- |
 | `GetCatalog{index}` | `CatalogEntry` | One table entry: name, unit, `Kind` (`SIGNAL`, `SIGNAL_MIN`, `SIGNAL_MAX`, `PARAM`, `ACTION`), `Type` (`F32`, `I32`, `U32`, `BOOL`), and for an action its `Arg` names and bounds. Every entry carries `count`; the entry at index 0 also carries the firmware `build`. |
-| `Subscribe{slot, ids, period_us}` | `Ack` | Stream the entries `ids` (table indices) every `period_us` (0 = every control tick) as `SignalBatch` frames. Sending the same slot again renews the 5 s lease. |
-| `Unsubscribe{slot}` | `Ack` | Stop the slot. |
+| `Subscribe{slot, ids, period_us}` | `Ack` with `value` = slot | Stream the entries `ids` (table indices) every `period_us` (0 = every control tick) as `SignalBatch` frames. `slot = 0` asks the robot for a free slot; the `Ack` returns it in `value` as a u32. A nonzero slot renews the 5 s lease or replaces the entry list. |
+| `Unsubscribe{slot}` | `Ack` | Stop the slot. A free slot is accepted. |
 | `GetParam{id}`, `SetParam{id, value}` | `Ack` with `value` | Read or write one entry. `value` is 4 bytes little-endian, typed by the catalog. |
 | `Call{id, args}` | `Ack` | Start an action; `args` are floats in catalog order. |
 
 - `Ack.command_id` echoes the request's `Message.seq` (for `Command`, its `id`). A refused request has `accepted = false` and the reason in `error`.
+- The robot owns the slot table: 4 slots shared by all ports. A slot belongs to the port that subscribed it. `Subscribe` or `Unsubscribe` naming another port's slot is refused with `slot in use`, so two clients on two ports never collide.
 - `SignalBatch.rows` holds one or more rows of `[t_us u32][4-byte value per id]`, little-endian.
 - `Log.tag` names the source of a log line.
 - nanopb bounds: 48 ids per subscription (196-byte row), 4 action arguments, 24-character names. The largest `Message` encodes to 229 bytes, below the 252-byte payload limit.

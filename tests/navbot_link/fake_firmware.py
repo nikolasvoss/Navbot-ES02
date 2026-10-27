@@ -1,6 +1,7 @@
-"""A robot-side link endpoint for tests: answers GetCatalog, Subscribe,
-Unsubscribe, GetParam, SetParam and Call with Ack, and streams SignalBatch rows
-on a virtual control-tick clock. The clock advances one tick per produce() call
+"""A robot for tests: answers GetCatalog, Subscribe, Unsubscribe, GetParam,
+SetParam and Call with Ack, and streams SignalBatch rows on a virtual
+control-tick clock. It has one or more ports; slots are shared by all ports and
+owned by the port that subscribed them. The clock advances one tick per produce() call
 while a subscription is active and stands still otherwise, so rows and their
 t_us do not depend on PC timing. It is written from the protocol page, not from
 the PC library, and shares only framing and the generated schema with it."""
@@ -51,8 +52,20 @@ def speed_loop_table() -> list[FakeEntry]:
     ]
 
 
+MAX_SLOTS = 4
+
+
+@dataclass
+class _Port:
+    usb: bool
+    decoder: FrameDecoder = field(default_factory=FrameDecoder)
+    out: bytearray = field(default_factory=bytearray)
+    seq: int = 0
+
+
 @dataclass
 class _Sub:
+    port: int
     ids: list
     period_us: int
     deadline_us: int
@@ -65,30 +78,32 @@ class FakeFirmware:
     build: str = "fake-build-1"
     tick_us: int = 10_000
     lease_s: float = 5.0
-    usb: bool = False  # USB writer: 0x00 before each frame
+    usb: bool = False  # port 0 is a USB writer: 0x00 before each frame
     t_us: int = 1_000_000
 
     def __post_init__(self):
         self.received = []  # every decoded PC payload, in order
         self.calls = []  # (name, args) of started actions
-        self._decoder = FrameDecoder()
-        self._out = bytearray()
-        self._seq = 0
+        self._ports = [_Port(self.usb)]
         self._subs: dict[int, _Sub] = {}
         self._scheduled_logs = []  # (t_us, text, tag)
         self._lock = threading.Lock()
 
-
-    def receive(self, data: bytes) -> None:
+    def add_port(self, usb: bool = False) -> int:
         with self._lock:
-            for payload in self._decoder.feed(data):
+            self._ports.append(_Port(usb))
+            return len(self._ports) - 1
+
+    def receive(self, data: bytes, port: int = 0) -> None:
+        with self._lock:
+            for payload in self._ports[port].decoder.feed(data):
                 self.received.append(payload)
                 msg = pb.Message()
                 msg.ParseFromString(payload)
-                self._handle(msg)
+                self._handle(msg, port)
 
-    def produce(self) -> bytes:
-        """Run one control tick and return everything sent since the last call."""
+    def produce(self, port: int = 0) -> bytes:
+        """Run one control tick and return everything sent on `port` since the last call."""
         with self._lock:
             if self._subs:
                 self.t_us = (self.t_us + self.tick_us) & 0xFFFFFFFF
@@ -103,13 +118,14 @@ class FakeFirmware:
                     late = self.t_us - sub.deadline_us
                     sub.deadline_us = (self.t_us if late >= sub.period_us else sub.deadline_us) + sub.period_us
                     row = struct.pack("<I", self.t_us) + b"".join(self._read(i) for i in sub.ids)
-                    self._send(pb.Message(signal_batch=pb.SignalBatch(slot=slot, rows=row)))
-            out, self._out = bytes(self._out), bytearray()
+                    self._send(pb.Message(signal_batch=pb.SignalBatch(slot=slot, rows=row)), sub.port)
+            out = bytes(self._ports[port].out)
+            self._ports[port].out.clear()
             return out
 
-    def write_text(self, text: bytes) -> None:
+    def write_text(self, text: bytes, port: int = 0) -> None:
         with self._lock:
-            self._out += text
+            self._ports[port].out += text
 
     def log_at(self, t_us: int, text: str, tag: str) -> None:
         """Send a Log at the first tick at or after t_us."""
@@ -119,51 +135,66 @@ class FakeFirmware:
     def drop_frames(self, count: int) -> None:
         """The next frame's seq skips `count` values, as if they were lost."""
         with self._lock:
-            self._seq += count
+            for p in self._ports:
+                p.seq += count
 
     def restart(self) -> None:
         with self._lock:
-            self._seq = 0
+            for p in self._ports:
+                p.seq = 0
             self._subs.clear()
 
     def subscribed_slots(self) -> list[int]:
         with self._lock:
             return sorted(self._subs)
 
-
-    def _handle(self, msg) -> None:
+    def _handle(self, msg, port: int) -> None:
         body = msg.WhichOneof("body")
         req = getattr(msg, body)
+        ack = lambda **kw: self._ack(msg.seq, port, **kw)  # noqa: E731
         if body == "get_catalog":
             if req.index >= len(self.entries):
-                return self._ack(msg.seq, error=f"no entry {req.index}")
-            self._send(pb.Message(catalog_entry=self._catalog_entry(req.index)))
+                return ack(error=f"no entry {req.index}")
+            self._send(pb.Message(catalog_entry=self._catalog_entry(req.index)), port)
         elif body == "subscribe":
             bad = [i for i in req.ids if i >= len(self.entries) or self.entries[i].kind == E.ACTION]
             if bad:
-                return self._ack(msg.seq, error=f"not a signal: {bad[0]}")
-            old = self._subs.get(req.slot)
+                return ack(error=f"not a signal: {bad[0]}")
+            slot = req.slot
+            if slot == 0:
+                free = [s for s in range(1, MAX_SLOTS + 1) if s not in self._subs]
+                if not free:
+                    return ack(error=f"all {MAX_SLOTS} slots are in use")
+                slot = free[0]
+            elif slot not in self._subs:
+                return ack(error=f"no subscription in slot {slot}")
+            old = self._subs.get(slot)
+            if old and old.port != port:
+                return ack(error="slot in use")
             same = old and old.ids == list(req.ids) and old.period_us == req.period_us
             deadline = old.deadline_us if same else self.t_us + self.tick_us
-            self._subs[req.slot] = _Sub(list(req.ids), req.period_us, deadline, time.monotonic())
-            self._ack(msg.seq)
+            self._subs[slot] = _Sub(port, list(req.ids), req.period_us, deadline, time.monotonic())
+            ack(value=struct.pack("<I", slot))
         elif body == "unsubscribe":
+            old = self._subs.get(req.slot)
+            if old and old.port != port:
+                return ack(error="slot in use")
             self._subs.pop(req.slot, None)
-            self._ack(msg.seq)
+            ack()
         elif body == "get_param":
-            self._ack(msg.seq, value=self._read(req.id))
+            ack(value=self._read(req.id))
         elif body == "set_param":
             entry = self.entries[req.id]
             if entry.kind != E.PARAM:
-                return self._ack(msg.seq, error=f"{entry.name} is not a parameter")
+                return ack(error=f"{entry.name} is not a parameter")
             old = self._read(req.id)
             (entry.value,) = struct.unpack(_FMT[entry.type], req.value)
-            self._ack(msg.seq, value=self._read(req.id))
+            ack(value=self._read(req.id))
             self._log(f"{entry.name}: {_show(entry, old)} -> {_show(entry, req.value)}", "param")
         elif body == "call":
             entry = self.entries[req.id]
             self.calls.append((entry.name, [round(a, 6) for a in req.args]))
-            self._ack(msg.seq)
+            ack()
             self._log(f"{entry.name} started", "action")
 
     def _catalog_entry(self, index: int):
@@ -179,21 +210,23 @@ class FakeFirmware:
         value = e.value(self.t_us) if callable(e.value) else e.value
         return struct.pack(_FMT[e.type], value)
 
-    def _ack(self, seq: int, error: str = "", value: bytes = b"") -> None:
-        self._send(pb.Message(ack=pb.Ack(command_id=seq, accepted=not error, error=error, value=value)))
+    def _ack(self, seq: int, port: int, error: str = "", value: bytes = b"") -> None:
+        self._send(pb.Message(ack=pb.Ack(command_id=seq, accepted=not error, error=error, value=value)), port)
 
     def log(self, text: str, tag: str) -> None:
         with self._lock:
             self._log(text, tag)
 
     def _log(self, text: str, tag: str) -> None:
-        self._send(pb.Message(log=pb.Log(level=pb.Log.INFO, text=text, tag=tag)))
+        for port in range(len(self._ports)):
+            self._send(pb.Message(log=pb.Log(level=pb.Log.INFO, text=text, tag=tag)), port)
 
-    def _send(self, msg) -> None:
-        self._seq += 1
-        msg.seq = self._seq
+    def _send(self, msg, port: int) -> None:
+        p = self._ports[port]
+        p.seq += 1
+        msg.seq = p.seq
         msg.t_ms = self.t_us // 1000
-        self._out += (b"\x00" if self.usb else b"") + encode_frame(msg.SerializeToString())
+        p.out += (b"\x00" if p.usb else b"") + encode_frame(msg.SerializeToString())
 
 
 def _show(entry: FakeEntry, data: bytes) -> str:
@@ -202,18 +235,19 @@ def _show(entry: FakeEntry, data: bytes) -> str:
 
 
 class MemoryTransport:
-    """The Link's side of an in-memory wire to a FakeFirmware."""
+    """The Link's side of an in-memory wire to one port of a FakeFirmware."""
 
-    def __init__(self, firmware: FakeFirmware):
+    def __init__(self, firmware: FakeFirmware, port: int = 0):
         self.firmware = firmware
+        self.port = port
         self.closed = False
 
     def read(self) -> bytes:
         time.sleep(0.001)
-        return self.firmware.produce()
+        return self.firmware.produce(self.port)
 
     def write(self, data: bytes) -> None:
-        self.firmware.receive(data)
+        self.firmware.receive(data, self.port)
 
     def close(self) -> None:
         self.closed = True

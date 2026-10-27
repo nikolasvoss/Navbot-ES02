@@ -97,7 +97,7 @@ typedef struct _navbot_link_v1_Ack {
     uint32_t command_id;
     bool accepted;
     char error[65];
-    navbot_link_v1_Ack_value_t value; /* GetParam, SetParam: the value now in effect */
+    navbot_link_v1_Ack_value_t value; /* GetParam, SetParam: the value now in effect. */
 } navbot_link_v1_Ack;
 
 /* Entry table: signals, parameters and actions. Wire IDs are table indices
@@ -124,7 +124,9 @@ typedef struct _navbot_link_v1_CatalogEntry {
     char build[33]; /* firmware build ID; set in the reply to index 0 */
 } navbot_link_v1_CatalogEntry;
 
-/* Sending the same slot again renews the 5 s lease or replaces the entry list. */
+/* slot 0 asks the robot for a free slot; the Ack carries it in value. A
+ nonzero slot renews the 5 s lease or replaces the entry list of a slot the
+ requesting port owns; another port's slot is refused with "slot in use". */
 typedef struct _navbot_link_v1_Subscribe {
     uint32_t slot;
     pb_size_t ids_count;
@@ -132,6 +134,7 @@ typedef struct _navbot_link_v1_Subscribe {
     uint32_t period_us; /* 0 = every control tick */
 } navbot_link_v1_Subscribe;
 
+/* Accepted for a free slot; another port's slot is refused with "slot in use". */
 typedef struct _navbot_link_v1_Unsubscribe {
     uint32_t slot;
 } navbot_link_v1_Unsubscribe;
