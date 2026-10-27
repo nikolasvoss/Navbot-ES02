@@ -4,6 +4,8 @@ Frame on the wire:  COBS(payload || crc16_le(payload)) 0x00
 `payload` is a serialized navbot.link.v1.Message.
 """
 
+from dataclasses import dataclass
+
 CRC_INIT = 0xFFFF
 MAX_PAYLOAD = 252  # keeps COBS output single-block-friendly and RAM bounded
 
@@ -59,35 +61,62 @@ def encode_frame(payload: bytes) -> bytes:
     return cobs_encode(payload + crc16(payload).to_bytes(2, "little")) + b"\x00"
 
 
+@dataclass(frozen=True)
+class Text:
+    """Printable bytes between delimiters that are not a valid frame: ROM boot
+    output, panic dumps, stray prints."""
+
+    text: str
+
+
+_PRINTABLE = frozenset(range(0x20, 0x7F)) | {0x09, 0x0A, 0x0D}
+
+
 class FrameDecoder:
-    """Feed arbitrary byte chunks; returns the valid payloads, counts bad frames."""
+    """Feed arbitrary byte chunks; returns payloads (bytes) and Text in stream
+    order, and counts chunks that are neither."""
 
     def __init__(self):
         self._buf = bytearray()
         self.bad_frames = 0
 
     def feed(self, chunk: bytes) -> list:
-        frames = []
+        out = []
         for b in chunk:
             if b != 0:
                 self._buf.append(b)
-                if len(self._buf) > MAX_PAYLOAD + 8:  # runaway: resync at next 0x00
-                    self._buf.clear()
-                    self.bad_frames += 1
+                if len(self._buf) > MAX_PAYLOAD + 8:  # longer than any frame
+                    self._flush_unframed(out)
                 continue
             raw, self._buf = bytes(self._buf), bytearray()
-            if not raw:
-                continue
-            try:
-                body = cobs_decode(raw)
-            except ValueError:
-                self.bad_frames += 1
-                continue
-            if len(body) < 2 or crc16(body[:-2]) != int.from_bytes(body[-2:], "little"):
-                self.bad_frames += 1
-                continue
-            if len(body) - 2 > MAX_PAYLOAD:
-                self.bad_frames += 1
-                continue
-            frames.append(body[:-2])
-        return frames
+            if raw:
+                self._decode(raw, out)
+        return out
+
+    def flush(self) -> list:
+        """Call when the line has been idle longer than any gap inside a frame:
+        the robot writes whole frames, so pending bytes are then text without
+        its delimiter (a boot message, a crash dump)."""
+        out = []
+        if self._buf:
+            self._flush_unframed(out)
+        return out
+
+    def _flush_unframed(self, out: list) -> None:
+        raw, self._buf = bytes(self._buf), bytearray()
+        if _PRINTABLE.issuperset(raw):
+            out.append(Text(raw.decode("ascii")))
+        else:
+            self.bad_frames += 1
+
+    def _decode(self, raw: bytes, out: list) -> None:
+        try:
+            body = cobs_decode(raw)
+        except ValueError:
+            body = b""
+        if 2 <= len(body) <= MAX_PAYLOAD + 2 and crc16(body[:-2]) == int.from_bytes(body[-2:], "little"):
+            out.append(body[:-2])
+        elif _PRINTABLE.issuperset(raw):
+            out.append(Text(raw.decode("ascii")))
+        else:
+            self.bad_frames += 1

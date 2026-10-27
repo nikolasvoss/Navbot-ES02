@@ -1,0 +1,12 @@
+# Signal lists for `navlink capture --preset <name>` and `sub @<name>` in the
+# shell. rate_hz 0 streams every control tick. A preset that names a signal the
+# connected firmware does not have fails with "unknown signal <name>".
+#
+# TRACE, CTRL, BAL and DRIVE (K55 to K58) get presets once the firmware entry
+# table carries their signals.
+
+# The speed loop (BalanceController::speedLoopStep) runs every 20 ms;
+# 100 Hz shows every step.
+speed_loop:
+  rate_hz: 100
+  signals: [speed_target, speed_measured, speed_p, speed_i, tilt_ref, tilt_clipped]

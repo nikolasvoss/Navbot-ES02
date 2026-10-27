@@ -1,6 +1,6 @@
 # Logging, telemetry and control over the NavBot link
 
-Status: **proposal, not implemented.** It replaces the `K` log selectors, the CSV log profiles and the letter commands with one table of signals, parameters and actions, served over the [NavBot link protocol](../software/ros2-uart-protocol.md) on both the ros2_pc UART and the USB port. An independent review on 2026-10-27 checked an earlier version against the code; its findings are folded in.
+Status: **proposal, not implemented.** It replaces the `K` log selectors, the CSV log profiles and the letter commands with one table of signals, parameters and actions, served over the [NavBot link protocol](../software/ros2-uart-protocol.md) on both the ros2_pc UART and the USB port. An independent review on 2026-10-27 checked an earlier version against the code; its findings are folded in. The PC side ([navbot_link library and navlink](../software/navlink.md)) and the protocol additions ([protocol page](../software/ros2-uart-protocol.md)) have landed on branch `feat/link-pc-library`; the firmware side is pending.
 
 ## Goals
 
@@ -113,6 +113,7 @@ Not exposed as parameters: `Config` fields that copy motor constants SimpleFOC u
 A subscription is a list of entry IDs and a period in µs.
 
 - Up to 4 subscriptions at the same time, on any port, also two on one port (for example a 10 Hz dashboard log and a full-rate debug capture over UART1).
+- The firmware owns the slots. `Subscribe{slot: 0}` asks for a free one, and the `Ack` returns it in `value` (u32). A slot belongs to the port that subscribed it: only that port renews, replaces or unsubscribes it, and any other port gets `slot in use`. Clients on two ports therefore never pick the same slot.
 - Up to 48 entries per subscription, so one row (196 bytes) fits in a frame.
 - Rate: `period_us`, scheduled like odometry (`LinkScheduleDue()` in `link_schedule.h`). A row is taken on the first tick at or after the deadline. `period_us = 0` means every tick. The tick rate is not fixed: 424, then 521, then about 710 passes per second were measured as the code changed, so the period is set in time, not in ticks.
 - Each row carries `t_us`, the `micros()` value at the start of its tick. Rows from different subscriptions taken at the same tick carry the same `t_us`, which aligns them without a tick counter. Rows are not evenly spaced; analysis uses `t_us`.
@@ -155,13 +156,13 @@ Additions to `navbot_link.proto`; field numbers are placeholders. nanopb needs a
 message GetCatalog   { uint32 index = 1; }
 message CatalogEntry { uint32 index = 1; uint32 count = 2; string name = 3; string unit = 4;
                        Kind kind = 5; Type type = 6; repeated Arg args = 7; string build = 8; }
-message Subscribe    { uint32 slot = 1; repeated uint32 ids = 2; uint32 period_us = 3; } // renew = same message
+message Subscribe    { uint32 slot = 1; repeated uint32 ids = 2; uint32 period_us = 3; } // slot 0 = allocate; renew = same slot
 message Unsubscribe  { uint32 slot = 1; }
 message SignalBatch  { uint32 slot = 1; bytes rows = 2; }  // rows: [t_us u32][value 4 B]... little-endian
 message GetParam     { uint32 id = 1; }
 message SetParam     { uint32 id = 1; bytes value = 2; }
 message Call         { uint32 id = 1; repeated float args = 2; }
-message Ack          { uint32 command_id = 1; bool accepted = 2; string error = 3; bytes value = 4; }
+message Ack          { uint32 command_id = 1; bool accepted = 2; string error = 3; bytes value = 4; } // value: param value, or the subscribed slot
 message Log          { Level level = 1; uint32 code = 2; string text = 3; string tag = 4; }
 ```
 

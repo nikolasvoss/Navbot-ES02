@@ -4,8 +4,9 @@ from dataclasses import dataclass
 
 from google.protobuf.message import DecodeError
 
-from navbot_link_bridge import navbot_link_pb2
-from navbot_link_bridge.framing import FrameDecoder
+from navbot_link import navbot_link_pb2
+from navbot_link.framing import FrameDecoder
+from navbot_link.protocol import SeqTracker
 from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState
 
 
@@ -23,25 +24,34 @@ class LinkBridge:
     def __init__(self, odometry: DiffDriveOdometry):
         self._odometry = odometry
         self._decoder = FrameDecoder()
-        self._prev_seq = None
+        self._seq = SeqTracker()
         self.decode_errors = 0
-        self.lost_frames = 0
-        self.restarts = 0
 
     @property
     def bad_frames(self) -> int:
         return self._decoder.bad_frames
 
+    @property
+    def lost_frames(self) -> int:
+        return self._seq.lost_frames
+
+    @property
+    def restarts(self) -> int:
+        return self._seq.restarts
+
     def feed(self, chunk: bytes) -> list[OdometryState | ImuSample]:
         results = []
         for payload in self._decoder.feed(chunk):
+            if not isinstance(payload, bytes):
+                continue  # raw text
             msg = navbot_link_pb2.Message()
             try:
                 msg.ParseFromString(payload)
             except DecodeError:
                 self.decode_errors += 1
                 continue
-            self._track_seq(msg.seq)
+            if self._seq.observe(msg.seq).restarted:
+                self._odometry.rebase()  # keep the pose
 
             body = msg.WhichOneof("body")
             if body == "odom":
@@ -54,18 +64,6 @@ class LinkBridge:
                 self._odometry.add_gyro(msg.imu.t_us, msg.imu.gz)
                 results.append(_imu_sample(msg.imu))
         return results
-
-    def _track_seq(self, seq: int) -> None:
-        # A sender counts from 1 and a uint32 would take years to wrap, so a
-        # non-increasing seq means the robot restarted: start a new baseline
-        # and keep the pose.
-        if self._prev_seq is not None:
-            if seq <= self._prev_seq:
-                self.restarts += 1
-                self._odometry.rebase()
-            elif seq - self._prev_seq > 1:
-                self.lost_frames += seq - self._prev_seq - 1
-        self._prev_seq = seq
 
 
 def _imu_sample(imu) -> ImuSample:

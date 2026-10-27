@@ -30,6 +30,37 @@ PB_BIND(navbot_link_v1_Command, navbot_link_v1_Command, AUTO)
 PB_BIND(navbot_link_v1_Ack, navbot_link_v1_Ack, AUTO)
 
 
+PB_BIND(navbot_link_v1_GetCatalog, navbot_link_v1_GetCatalog, AUTO)
+
+
+PB_BIND(navbot_link_v1_CatalogEntry, navbot_link_v1_CatalogEntry, AUTO)
+
+
+PB_BIND(navbot_link_v1_CatalogEntry_Arg, navbot_link_v1_CatalogEntry_Arg, AUTO)
+
+
+PB_BIND(navbot_link_v1_Subscribe, navbot_link_v1_Subscribe, AUTO)
+
+
+PB_BIND(navbot_link_v1_Unsubscribe, navbot_link_v1_Unsubscribe, AUTO)
+
+
+PB_BIND(navbot_link_v1_SignalBatch, navbot_link_v1_SignalBatch, AUTO)
+
+
+PB_BIND(navbot_link_v1_GetParam, navbot_link_v1_GetParam, AUTO)
+
+
+PB_BIND(navbot_link_v1_SetParam, navbot_link_v1_SetParam, AUTO)
+
+
+PB_BIND(navbot_link_v1_Call, navbot_link_v1_Call, AUTO)
+
+
+
+
+
+
 
 
 

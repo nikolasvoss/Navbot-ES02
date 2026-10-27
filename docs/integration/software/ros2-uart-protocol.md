@@ -21,13 +21,32 @@ frame = COBS( payload || crc16_le(payload) ) || 0x00
 payload = serialized navbot.link.v1.Message   (<= 252 bytes)
 ```
 
-Both directions use the same format. Transport: ESP32 UART1 (the former touchscreen port, now removed), **2000000 baud, 8N1**, RX = GPIO20, TX = GPIO19 in the firmware (`link_uart.h`). The firmware opens the port at startup and sends `WheelOdometry` and `Imu` in normal mode. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: wheel odometry (`WheelOdometry`), sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), and PC→robot `Command` with `Ack`.
+Both directions use the same format. Transport: ESP32 UART1 (the former touchscreen port, now removed), **2000000 baud, 8N1**, RX = GPIO20, TX = GPIO19 in the firmware (`link_uart.h`). The firmware opens the port at startup and sends `WheelOdometry` and `Imu` in normal mode. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: wheel odometry (`WheelOdometry`), sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), PC→robot `Command` with `Ack`, and the catalog and subscription messages below.
+
+## Catalog, subscriptions, parameters and actions
+
+The schema also defines the messages for the entry table of the [logging and control plan](../plans/logging-and-control-link.md). **The firmware does not send or answer them yet**; only the PC library, [navlink](navlink.md) and its test firmware use them.
+
+| PC → robot | Reply | Meaning |
+| --- | --- | --- |
+| `GetCatalog{index}` | `CatalogEntry` | One table entry: name, unit, `Kind` (`SIGNAL`, `SIGNAL_MIN`, `SIGNAL_MAX`, `PARAM`, `ACTION`), `Type` (`F32`, `I32`, `U32`, `BOOL`), and for an action its `Arg` names and bounds. Every entry carries `count`; the entry at index 0 also carries the firmware `build`. |
+| `Subscribe{slot, ids, period_us}` | `Ack` with `value` = slot | Stream the entries `ids` (table indices) every `period_us` (0 = every control tick) as `SignalBatch` frames. `slot = 0` asks the robot for a free slot; the `Ack` returns it in `value` as a u32. A nonzero slot renews the 5 s lease or replaces the entry list. |
+| `Unsubscribe{slot}` | `Ack` | Stop the slot. A free slot is accepted. |
+| `GetParam{id}`, `SetParam{id, value}` | `Ack` with `value` | Read or write one entry. `value` is 4 bytes little-endian, typed by the catalog. |
+| `Call{id, args}` | `Ack` | Start an action; `args` are floats in catalog order. |
+
+- `Ack.command_id` echoes the request's `Message.seq` (for `Command`, its `id`). A refused request has `accepted = false` and the reason in `error`.
+- The robot owns the slot table: 4 slots shared by all ports. A slot belongs to the port that subscribed it. `Subscribe` or `Unsubscribe` naming another port's slot is refused with `slot in use`, so two clients on two ports never collide.
+- `SignalBatch.rows` holds one or more rows of `[t_us u32][4-byte value per id]`, little-endian.
+- `Log.tag` names the source of a log line.
+- nanopb bounds: 48 ids per subscription (196-byte row), 4 action arguments, 24-character names. The largest `Message` encodes to 229 bytes, below the 252-byte payload limit.
 
 ## Rules
 
 - Receivers ignore unknown fields and unknown `body` types.
 - The sender never blocks on a full UART; it drops the frame and counts it. The firmware count is not sent yet, so `Status.dropped_frames` stays unused until `Status` is sent.
 - A receiver treats a frame with a bad CRC as lost. It does not try to repair it.
+- The robot's writer hands each frame to the port whole, with no pause inside it. The PC library treats bytes still waiting for a delimiter after 250 ms of silence as text (a boot message or crash dump without a trailing `0x00`), so a gap inside one frame must stay well below 250 ms.
 - Safety does not depend on this link. The robot keeps balance and fall handling locally and must stop or hold safely when `Command` frames stop.
 
 ## Odometry
@@ -64,12 +83,12 @@ Consequences:
 
 ## Code
 
-- [generate_link_proto.sh](../../../scripts/generate_link_proto.sh): regenerates the nanopb C code in `src/ES-02/OllieFOCdrive/src/navbot_link/` and the Python protobuf module in `src/ros2_pc/ros2/src/navbot_link_bridge/navbot_link_bridge/`. It needs `nanopb_generator` 0.4.9.1 and `protoc` 3.21.x on `PATH`; the script refuses other versions. Run it after every schema change.
+- [generate_link_proto.sh](../../../scripts/generate_link_proto.sh): regenerates the nanopb C code in `src/ES-02/OllieFOCdrive/src/navbot_link/` and the Python protobuf module `navbot_link_pb2.py` in `src/navbot_link/`. It needs `nanopb_generator` 0.4.9.1 and `protoc` 3.21.x on `PATH`; the script refuses other versions. Run it after every schema change.
 - The nanopb 0.4.9.1 encode runtime is vendored in the same folder. Do not edit the generated `navbot_link.pb.*` files.
 - Firmware: `link_frame` (pure C++, frames one `Message`) and `link_uart` (UART1 init, sequence and time stamps, non-blocking send, odometry and IMU publish).
-- [framing.py](../../../src/ros2_pc/ros2/src/navbot_link_bridge/navbot_link_bridge/framing.py): `encode_frame`, `FrameDecoder` (stdlib only).
-- ROS 2 bridge: [navbot_link_bridge](../../../src/ros2_pc/ros2/src/navbot_link_bridge/) (`bridge.py` decodes frames, `odometry.py` integrates wheel angles, `node.py` is the rclpy node). Build and run steps: [ros2_pc software](navbot-link-bridge.md).
-- Tests: `PYTHONPATH=src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test` (framing: CRC check value `0x29B1`, COBS vectors, resync after garbage; bridge: the firmware literal frames including the IMU `t_us`, seq gaps and restarts; odometry: straight line, spin, `micros()` wrap).
+- PC: the Python package [navbot_link](../../../src/navbot_link/) has no ROS dependency and is shared by the ROS 2 bridge and the host tools. [framing.py](../../../src/navbot_link/framing.py) holds `encode_frame` and `FrameDecoder`, which returns payloads and, for a printable chunk that is not a valid frame, `Text`. `protocol.py` holds the catalog types, the 4-byte value codec and the per-port `seq` tracker; `link.py` holds the `Link` client and `capture.py` the CSV writer and presets used by [navlink](navlink.md).
+- ROS 2 bridge: [navbot_link_bridge](../../../src/ros2_pc/ros2/src/navbot_link_bridge/) (`bridge.py` decodes frames, `odometry.py` integrates wheel angles, `node.py` is the rclpy node). Its `setup.py` installs `navbot_link` next to the bridge. Build and run steps: [ros2_pc software](navbot-link-bridge.md).
+- Tests: `PYTHONPATH=src:src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test` (bridge: the firmware literal frames including the IMU `t_us`, seq gaps and restarts; odometry: straight line, spin, `micros()` wrap) and `python3 -m pytest -q tests/navbot_link` (framing: CRC check value `0x29B1`, COBS vectors, resync after garbage, raw text between USB frames; the `Link` client against a fake firmware) and `python3 -m pytest -q tests/scripts/test_navlink.py` (`navlink`).
 - Host test: `bash tests/link/run_host_test.sh` encodes an odometry and an IMU `Message` (with `t_us`) with the firmware encoder and compares the frame bytes to literal vectors.
 
 ## Next steps

@@ -1,8 +1,8 @@
 import pytest
 
-from navbot_link_bridge import navbot_link_pb2
+from navbot_link import navbot_link_pb2
 from navbot_link_bridge.bridge import ImuSample, LinkBridge
-from navbot_link_bridge.framing import encode_frame
+from navbot_link.framing import encode_frame
 from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState
 
 # Frames produced by the firmware encoder (tests/link/test_link_frame.cpp).
