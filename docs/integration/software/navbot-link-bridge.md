@@ -23,7 +23,7 @@ ros2 run navbot_link_bridge navbot_link_bridge --ros-args -p port:=/dev/ttyAMA3 
 
 To start the bridge at boot like the LiDAR service, run `python3 scripts/install_link_bridge_service.py` as the service user, without sudo. It needs the build above and writes `navbot-link-bridge.service` with `/dev/ttyAMA3`, `wheel_radius_m:=0.01915` and `wheel_separation_m:=0.113`; edit the constants in the script to change them. Pass `--heading-source gyro --gyro-yaw-sign <1|-1>` to install it with gyro heading (see below). The `/slam` tab depends on this service.
 
-Optional parameters: `baud` (500000), `odom_frame` (`odom`), `base_frame` (`base_link`), `imu_frame` (`imu_link`), `publish_tf` (`true`). The node reopens the port every second after an error, so a power-cycled robot reconnects.
+Optional parameters: `baud` (2000000), `odom_frame` (`odom`), `base_frame` (`base_link`), `imu_frame` (`imu_link`), `publish_tf` (`true`). The node reopens the port every second after an error, so a power-cycled robot reconnects.
 
 ## Heading source
 

@@ -41,7 +41,7 @@ class LinkBridgeNode(Node):
     def __init__(self):
         super().__init__("navbot_link_bridge")
         self.declare_parameter("port", "")
-        self.declare_parameter("baud", 500000)
+        self.declare_parameter("baud", 2000000)
         self.declare_parameter("wheel_radius_m", 0.0)
         self.declare_parameter("wheel_separation_m", 0.0)
         self.declare_parameter("odom_frame", "odom")

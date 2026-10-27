@@ -21,7 +21,7 @@ frame = COBS( payload || crc16_le(payload) ) || 0x00
 payload = serialized navbot.link.v1.Message   (<= 252 bytes)
 ```
 
-Both directions use the same format. Transport: ESP32 UART1 (the former touchscreen port, now removed), **500000 baud, 8N1**, RX = GPIO20, TX = GPIO19 in the firmware (`link_uart.h`). The firmware opens the port at startup and sends `WheelOdometry` and `Imu` in normal mode. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: wheel odometry (`WheelOdometry`), sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), and PC→robot `Command` with `Ack`.
+Both directions use the same format. Transport: ESP32 UART1 (the former touchscreen port, now removed), **2000000 baud, 8N1**, RX = GPIO20, TX = GPIO19 in the firmware (`link_uart.h`). The firmware opens the port at startup and sends `WheelOdometry` and `Imu` in normal mode. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: wheel odometry (`WheelOdometry`), sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), and PC→robot `Command` with `Ack`.
 
 ## Rules
 
@@ -41,7 +41,7 @@ Normal mode sends one `WheelOdometry` and one `Imu` on a 20 ms schedule (50 Hz e
 - `Imu` values use SI units. Axes are the IMU sensor frame, not a robot body frame. Acceleration and angular rate are the filtered values.
 - `Imu.t_us` is `micros()` at the IMU read (`imu::Snapshot::readTimeUs`), a host timestamp, not the sensor's own. Use it for IMU deltas, not `t_ms`. Firmware older than this field leaves it unset, which decodes as 0.
 
-The first hardware test on 2026-10-25 ran at 115200 baud; the link now runs at the design value of 500000 baud. Measured on the robot on 2026-10-26: 4.96 kB/s for `WheelOdometry` and `Imu` at 50 Hz each, about 10 % of the 50 kB/s the line carries ([lab note](../../../lab/integration/2026-10-25-odometry-signs-and-rate.md)). `LINK_UART_BAUD` in `link_uart.h` and the bridge's `baud` parameter must match.
+The first hardware test on 2026-10-25 ran at 115200 baud; the link runs at 2000000 baud (raised from 500000 on 2026-10-27; 921600, 2000000 and 3000000 each ran with 0 bad and 0 lost frames, 2000000 for 120 s, so 2000000 was kept with margin). Measured on the robot on 2026-10-26: 4.96 kB/s for `WheelOdometry` and `Imu` at 50 Hz each, about 2.5 % of the 200 kB/s the line carries at 2000000 baud ([lab note](../../../lab/integration/2026-10-25-odometry-signs-and-rate.md)). `LINK_UART_BAUD` in `link_uart.h` and the bridge's `baud` parameter must match.
 
 ## Time stamps
 

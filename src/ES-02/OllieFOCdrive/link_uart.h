@@ -9,7 +9,7 @@
 // UART1 connects the ESP32 to the ros2_pc (NavBot link, see
 // docs/integration/software/ros2-uart-protocol.md).
 // Firmware pin numbers: RX = GPIO20, TX = GPIO19 (opposite of the PCB net names RX1/TX1).
-#define LINK_UART_BAUD 500000
+#define LINK_UART_BAUD 2000000
 
 // WheelOdometry/Imu send period: 50 Hz on average, checked once per control tick (see link_schedule.h).
 #define LINK_ODOMETRY_PERIOD_US 20000

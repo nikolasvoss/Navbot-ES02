@@ -1,6 +1,6 @@
 # ros2_pc setup for the robot link
 
-Everything the ros2_pc needs for the [NavBot link](ros2-uart-protocol.md) that the repository checkout does not provide: operating system and packages, the boot configuration for the link UART, serial permissions, and checks. Run the commands on the ros2_pc. Nothing here has been run against the robot yet; the UART path was checked on 2026-10-26 (`/dev/ttyAMA3` carried the robot's frames at 500000 baud), but the bridge itself has not run against the robot.
+Everything the ros2_pc needs for the [NavBot link](ros2-uart-protocol.md) that the repository checkout does not provide: operating system and packages, the boot configuration for the link UART, serial permissions, and checks. Run the commands on the ros2_pc. Nothing here has been run against the robot yet; the UART path was checked on 2026-10-26 (`/dev/ttyAMA3` carried the robot's frames at 2000000 baud), but the bridge itself has not run against the robot.
 
 ## 1. Operating system and ROS 2
 
@@ -55,7 +55,7 @@ Build the bridge as described in the [bridge page](navbot-link-bridge.md). Start
 
 With the robot powered, balance disabled and motor outputs safe:
 
-1. The bridge logs `opened <port> at 500000 baud`. `cannot open` means a wrong path or missing group.
+1. The bridge logs `opened <port> at 2000000 baud`. `cannot open` means a wrong path or missing group.
 2. `ros2 topic hz /odom` and `ros2 topic hz /imu/data` show about 50 Hz (see the [protocol rules](ros2-uart-protocol.md#rules)).
 3. The bridge reports no `bad_frames`, `decode_errors` or `lost_frames` growth. A burst at start is normal while it resynchronises.
 4. Roll the robot forward by hand: `/odom` twist must be positive.
