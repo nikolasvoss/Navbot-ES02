@@ -180,6 +180,33 @@ def test_an_unconfirmed_unsubscribe_keeps_the_slot_until_its_lease_has_run_out()
         assert (link.slots, fw.subscribed_slots()) == ((), [])
 
 
+def test_a_refused_subscribe_ends_nothing_even_while_renewals_run():
+    fw = FakeFirmware()
+    other = fw.add_port()
+    with Link(MemoryTransport(fw, other), clock=lambda: 0.0) as other_link:
+        for _ in range(4):
+            other_link.subscribe(["loop_count"], 10)
+        with open_link(fw, renew_s=0.001) as link:
+            with pytest.raises(LinkError, match="^subscribe refused: all 4 slots are in use$"):
+                link.subscribe(["loop_count"], 10)
+            time.sleep(0.1)
+            events = []
+            while not link.events.empty():
+                events.append(link.events.get_nowait())
+        assert [e for e in events if isinstance(e, SubscriptionEnded)] == []
+        assert fw.subscribed_slots() == [1, 2, 3, 4]
+
+
+def test_renewals_whose_ack_is_lost_are_forgotten():
+    fw = FakeFirmware()
+    transport = LossyTransport(fw, lose=())
+    with Link(transport, clock=lambda: 0.0, renew_s=0.01) as link:
+        link.subscribe(["loop_count"], 10)
+        transport.lose = {"subscribe"}
+        time.sleep(0.2)
+        assert len(link._renewals) == 1  # only the latest round waits for its Ack
+
+
 def test_seq_gap_is_reported_and_a_restart_ends_subscriptions():
     fw = FakeFirmware()
     with open_link(fw) as link:

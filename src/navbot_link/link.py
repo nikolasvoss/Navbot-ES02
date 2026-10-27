@@ -328,6 +328,9 @@ class Link:
                 with self._lock:
                     for slot in [s for s, t in self._releasing.items() if t <= time.monotonic()]:
                         del self._subs[slot], self._releasing[slot]
+                    # An Ack still missing from the previous round is lost; a
+                    # refusal would come back for this round's request too.
+                    self._renewals.clear()
                     for sub in self._subs.values():
                         if sub.slot in self._releasing:
                             continue
