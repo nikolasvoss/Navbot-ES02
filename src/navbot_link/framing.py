@@ -94,8 +94,9 @@ class FrameDecoder:
         return out
 
     def flush(self) -> list:
-        """Call when the line is idle: a frame never stays half-sent, so pending
-        bytes are text without its delimiter (a boot message, a crash dump)."""
+        """Call when the line has been idle longer than any gap inside a frame:
+        the robot writes whole frames, so pending bytes are then text without
+        its delimiter (a boot message, a crash dump)."""
         out = []
         if self._buf:
             self._flush_unframed(out)

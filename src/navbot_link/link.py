@@ -26,6 +26,10 @@ from navbot_link.protocol import (
 MAX_SUBSCRIBED = 48
 LEASE_S = 5.0
 LEASE_RENEW_S = 2.0
+# Pending bytes count as text once the line has been idle this long. The robot
+# writes whole frames, so this only has to exceed a gap inside one frame
+# (scheduling, a USB packet boundary), not the time between frames.
+IDLE_FLUSH_S = 0.25
 
 
 class Transport(Protocol):
@@ -316,9 +320,15 @@ class Link:
 
     def _serve(self) -> None:
         next_renew = time.monotonic() + self._renew_s
+        last_rx = time.monotonic()
         while not self._stop.is_set():
             chunk = self._transport.read()
-            for item in self._decoder.feed(chunk) if chunk else self._decoder.flush():
+            if chunk:
+                last_rx = time.monotonic()
+                items = self._decoder.feed(chunk)
+            else:
+                items = self._decoder.flush() if time.monotonic() - last_rx >= IDLE_FLUSH_S else []
+            for item in items:
                 if isinstance(item, Text):
                     self.events.put(item)
                 else:

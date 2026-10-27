@@ -46,6 +46,7 @@ The schema also defines the messages for the entry table of the [logging and con
 - Receivers ignore unknown fields and unknown `body` types.
 - The sender never blocks on a full UART; it drops the frame and counts it. The firmware count is not sent yet, so `Status.dropped_frames` stays unused until `Status` is sent.
 - A receiver treats a frame with a bad CRC as lost. It does not try to repair it.
+- The robot's writer hands each frame to the port whole, with no pause inside it. The PC library treats bytes still waiting for a delimiter after 250 ms of silence as text (a boot message or crash dump without a trailing `0x00`), so a gap inside one frame must stay well below 250 ms.
 - Safety does not depend on this link. The robot keeps balance and fall handling locally and must stop or hold safely when `Command` frames stop.
 
 ## Odometry

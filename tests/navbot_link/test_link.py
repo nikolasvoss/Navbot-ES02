@@ -293,6 +293,34 @@ def test_an_error_on_the_io_thread_disconnects_instead_of_hanging(monkeypatch):
         assert time.monotonic() - started < 0.1
 
 
+def test_a_frame_that_stalls_halfway_is_not_split():
+    class StallingTransport(MemoryTransport):
+        """Once `stall` is set, delivers each burst in two halves 100 ms apart."""
+
+        stall = False
+        _rest, _rest_at = b"", 0.0
+
+        def read(self):
+            if self._rest:
+                time.sleep(0.001)
+                if time.monotonic() < self._rest_at:
+                    return b""
+                out, self._rest = self._rest, b""
+                return out
+            data = super().read()
+            if self.stall and len(data) > 1:
+                self._rest, self._rest_at = data[len(data) // 2:], time.monotonic() + 0.1
+                return data[:len(data) // 2]
+            return data
+
+    transport = StallingTransport(FakeFirmware())
+    with Link(transport, clock=lambda: 0.0) as link:
+        link.catalog()
+        transport.stall = True
+        assert link.get("speed_kp") == 0.07999999821186066
+        assert link.bad_frames == 0
+
+
 def test_no_reply_raises_after_retries():
     class Silent:
         def read(self):
