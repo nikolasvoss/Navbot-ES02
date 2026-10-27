@@ -62,8 +62,8 @@ Unverified, before relying on the output:
 - The IMU frame `imu_link` has no `base_link` to `imu_link` TF yet.
 - Stamps are the ROS receive time, not the robot's sample time. The robot's IMU read time (`Imu.t_us`) is decoded but not published, because nothing converts robot time into ROS time. Covariances are zero.
 
-Test the framing, decoding and odometry logic without ROS. The tests need `pytest` and `protobuf`.
+Test the decoding and odometry logic without ROS. The tests need `pytest` and `protobuf`. The framing lives in the shared [navbot_link](../../../src/navbot_link/) package, which `setup.py` installs next to the bridge; its tests are in `tests/navbot_link`.
 
 ```bash
-PYTHONPATH=src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test
+PYTHONPATH=src:src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test
 ```
