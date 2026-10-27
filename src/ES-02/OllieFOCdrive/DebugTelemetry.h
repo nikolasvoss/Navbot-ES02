@@ -6,26 +6,11 @@
 
 namespace DebugTelemetry {
 
-struct PidStatus {
-  float Kp;
-  float Ki;
-  float Kd;
-  float deriv;
-  float integral;
-  float iLimit;
-  float outP;
-  float outI;
-  float outD;
-  float output;
-  float error;
-};
-
 // Snapshot of the sketch state read by the debug selections, taken once per control tick.
 struct TelemetryInputs {
   int selection;
   uint32_t nowMs;
   uint32_t controlGateSequence;
-  bool balanceActive;  // Balance gains enabled and the robot is not tumbling.
 
   imu::Snapshot imu;
   imu::TimingStatistics imuTiming;
@@ -52,8 +37,6 @@ struct TelemetryInputs {
 
   int16_t sbusChannels[18];
   int sbusFrameIntervalMs;
-
-  PidStatus yawPid;
 
   ServoTrimsDegrees servoTrims;
   int servoTraceAngle[4];

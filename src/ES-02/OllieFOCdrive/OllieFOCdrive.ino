@@ -278,15 +278,9 @@ uint32_t busReadTimeUs = 0;
 
 bool balanceActive() { return balanceOutput.state != State::Disabled; }
 
-//  Create PID controller instance
 float debugLogSelector = 0;   // Selects debug data and the log profile.
 float calibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Calibrate gyroscope  2: Calibrate Euler
                               // angle  3: Calibrate servo
-
-float pidTimestepSec = 0.01;
-
-MyPIDController yawPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
-
 
 void setMahonyKp(char *cmd) {
   float value = 0.0f;
@@ -769,11 +763,6 @@ void readSbus() {
   }
 }
 
-DebugTelemetry::PidStatus pidStatus(const MyPIDController &pid) {
-  return {pid.Kp,   pid.Ki,   pid.Kd,   pid.deriv,  pid.integral, pid.iLimit,
-          pid.outP, pid.outI, pid.outD, pid.output, pid.error};
-}
-
 /**
  * @brief Collects the sketch state read by the debug selections for DebugTelemetry.
  */
@@ -782,7 +771,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.selection = (int)debugLogSelector;
   in.nowMs = millis();
   in.controlGateSequence = controlGateSequence;
-  in.balanceActive = balanceActive();
 
   in.imu = imu::latest();
   in.imuTiming = imu::timingStatistics();
@@ -809,8 +797,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
 
   for (int i = 0; i < 18; ++i) in.sbusChannels[i] = sBus.channels[i];
   in.sbusFrameIntervalMs = sbusFrameIntervalMs;
-
-  in.yawPid = pidStatus(yawPid);
 
   in.servoTrims = servoTrims;
   for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = servoTraceAngle[i];

@@ -22,8 +22,7 @@ REPORT_FIELDS = {
         "motor1_target", "motor2_target",
     ),
     "CTRL": (
-        "voltage_min_raw_v", "voltage_filtered_v", "roll_deg",
-        "yaw_error", "yaw_output", "motor1_target", "motor2_target",
+        "voltage_min_raw_v", "voltage_filtered_v", "roll_deg", "motor1_target", "motor2_target",
     ),
     "BAL": (
         "voltage_min_raw_v", "roll_deg", "motor1_target", "motor2_target",

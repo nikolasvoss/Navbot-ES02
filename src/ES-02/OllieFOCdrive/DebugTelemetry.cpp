@@ -11,8 +11,6 @@ constexpr uint32_t kTraceGatePeriod = 7;
 constexpr int kTraceSelectorFirst = 55;
 constexpr int kTraceSelectorLast = 58;
 
-float whenActive(const TelemetryInputs &in, float value) { return in.balanceActive ? value : 0.0f; }
-
 int32_t maxOfFour(const int32_t values[4]) {
   int32_t largest = values[0];
   for (int i = 1; i < 4; ++i) {
@@ -125,20 +123,6 @@ bool fillReceiver(const TelemetryInputs &in, Logging::DebugPayload &payload) {
   return true;
 }
 
-// Selectors 9 and 33.
-bool fillPid(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
-  switch (selection) {
-    case 9:
-      payload.controllerGains = {{in.yawPid.Kp, in.yawPid.Ki, in.yawPid.Kd}, in.controlTimestepSec};
-      return true;
-    case 33:
-      payload.pidIntegralOutputState = {in.yawPid.iLimit, in.yawPid.integral, in.yawPid.outI, in.yawPid.output};
-      return true;
-    default:
-      return false;
-  }
-}
-
 // Selector 19.
 bool fillPose(int selection, const TelemetryInputs &in, Logging::DebugPayload &payload) {
   switch (selection) {
@@ -192,9 +176,6 @@ bool fillSelectedPayload(const TelemetryInputs &in, Logging::DebugPayload &paylo
       return fillWheels(selection, in, payload);
     case 8:
       return fillReceiver(in, payload);
-    case 9:
-    case 33:
-      return fillPid(selection, in, payload);
     case 19:
       return fillPose(selection, in, payload);
     case 43:
@@ -267,8 +248,6 @@ void submitControl(const TelemetryInputs &in, const TraceRow &row) {
   sample.rollOk = in.imu.correctedRollDegrees;
   sample.yawRateRadPerSec = in.imu.angularVelocityRadPerSec.z;
   sample.bodyTurn = in.bodyTurn;
-  sample.yawError = whenActive(in, in.yawPid.error);
-  sample.yawOutput = whenActive(in, in.yawPid.output);
   sample.leftMotorTarget = in.motor1Target;
   sample.rightMotorTarget = in.motor2Target;
   sample.maxServoRange = row.maxServoRange;

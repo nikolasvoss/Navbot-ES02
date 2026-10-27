@@ -60,6 +60,7 @@ class InteractiveWhitelistTest(unittest.TestCase):
         self.assertEqual(interactive_command("K0"), "K0")
         self.assertEqual(interactive_command("K58"), "K58")
         self.assertIsNone(interactive_command("YP0.04"))
+        self.assertIsNone(interactive_command("K9"))
         self.assertIsNone(interactive_command("E1"))
         self.assertIsNone(interactive_command("K1"))
         self.assertIsNone(interactive_command(""))

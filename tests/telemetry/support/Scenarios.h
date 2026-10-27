@@ -25,11 +25,6 @@ class Filler {
 
 inline void fill(Filler& g, imu::Vector3& v) { v.x = g.f(); v.y = g.f(); v.z = g.f(); }
 
-inline void fill(Filler& g, DebugTelemetry::PidStatus& p) {
-  p.Kp = g.f(); p.Ki = g.f(); p.Kd = g.f(); p.deriv = g.f(); p.integral = g.f(); p.iLimit = g.f();
-  p.outP = g.f(); p.outI = g.f(); p.outD = g.f(); p.output = g.f(); p.error = g.f();
-}
-
 // Variant 0: balance running. 1: gains on but tumbling. 2: gains off.
 inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, int tick) {
   static const uint32_t kGate[4] = {0, 3, 7, 14};
@@ -38,7 +33,6 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
   in.selection = selection;
   in.nowMs = 5000 + 50 * tick + variant;
   in.controlGateSequence = kGate[tick];
-  in.balanceActive = variant == 0;
 
   imu::Snapshot& s = in.imu;
   s.valid = true;
@@ -82,8 +76,6 @@ inline DebugTelemetry::TelemetryInputs makeInputs(int variant, int selection, in
 
   for (int i = 0; i < 18; ++i) in.sbusChannels[i] = static_cast<int16_t>(172 + 41 * i + variant);
   in.sbusFrameIntervalMs = 14 + variant;
-
-  fill(g, in.yawPid);
 
   in.servoTrims = {g.f(), g.f(), g.f(), g.f()};
   for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = g.i32();

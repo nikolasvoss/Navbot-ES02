@@ -46,9 +46,6 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
         if (appendf(buffer, capacity, length, " ch:%d", static_cast<int>(p.receiverChannels.channels[i])) < 0)
           return -1;
       return appendf(buffer, capacity, length, " sbus_dt_ms:%.2f \n", p.receiverChannels.frameDtMs);
-    case Logging::DebugSelector::K9:
-      return appendf(buffer, capacity, length, " YP:%.2f YI:%.2f YD:%.2fdt:%.6f\n", p.controllerGains.yaw.kp,
-                     p.controllerGains.yaw.ki, p.controllerGains.yaw.kd, p.controllerGains.dtSec);
     case Logging::DebugSelector::K10:
       return appendf(buffer, capacity, length, " twoKp:%.2f twoKi:%.2f Roll:%.2f Pitch:%.2fIMUdt:%.6f\n",
                      p.mahony.twoKp, p.mahony.twoKi, p.mahony.rollDeg, p.mahony.pitchDeg, p.mahony.imuDtSec);
@@ -78,10 +75,6 @@ int formatDebug(const Logging::DebugSample &sample, char *buffer, size_t capacit
       return appendf(buffer, capacity, length, " servo1:%.2f servo2:%.2f servo3:%.2f servo4:%.2f\n",
                      p.servoOffsets.servo[0], p.servoOffsets.servo[1], p.servoOffsets.servo[2],
                      p.servoOffsets.servo[3]);
-    case Logging::DebugSelector::K33:
-      return appendf(buffer, capacity, length, " it:%.5f il:%.5f oI:%.5f out:%.5f\n",
-                     p.pidIntegralOutputState.integralLimit, p.pidIntegralOutputState.integral,
-                     p.pidIntegralOutputState.integralOutput, p.pidIntegralOutputState.output);
     case Logging::DebugSelector::K43:
       return appendf(buffer, capacity, length, " Vdat:%d Vdatf:%.2f V:%.5f\n", static_cast<int>(p.voltageState.adc),
                      p.voltageState.filteredV, p.voltageState.voltageV);
@@ -148,10 +141,10 @@ int formatRecord(const Record &record, char *buffer, size_t capacity, uint32_t d
     case RecordKind::Control: {
       const Logging::ControlSample &s = record.payload.control;
       return snprintf(buffer, capacity,
-                      "CTRL,%lu,%d,%.3f,%.3f,%.2f,%.4f,%.4f,%.2f,%.2f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
+                      "CTRL,%lu,%d,%.3f,%.3f,%.2f,%.4f,%.4f,%.2f,%.2f,%d,%lu,%lu,%lu\n",
                       static_cast<unsigned long>(s.timestampMs), static_cast<int>(s.gainMode), s.minimumBatteryRawV,
-                      s.batteryV, s.rollOk, s.yawRateRadPerSec, s.bodyTurn, s.yawError,
-                      s.yawOutput, s.leftMotorTarget, s.rightMotorTarget, static_cast<int>(s.maxServoRange),
+                      s.batteryV, s.rollOk, s.yawRateRadPerSec, s.bodyTurn, s.leftMotorTarget, s.rightMotorTarget,
+                      static_cast<int>(s.maxServoRange),
                       static_cast<unsigned long>(s.sequence), static_cast<unsigned long>(droppedRecords),
                       static_cast<unsigned long>(writeFailures));
     }

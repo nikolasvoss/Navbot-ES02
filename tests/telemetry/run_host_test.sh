@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Compares the DebugTelemetry sample stream with golden_stream.txt, which was recorded from the
-# print_data() implementation that DebugTelemetry replaced.
+# print_data() implementation that DebugTelemetry replaced and re-recorded after each later deletion.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

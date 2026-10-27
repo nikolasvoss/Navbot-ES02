@@ -63,8 +63,6 @@ struct ControlSample {
   float rollOk;
   float yawRateRadPerSec;
   float bodyTurn;
-  float yawError;
-  float yawOutput;
   float leftMotorTarget;
   float rightMotorTarget;
   int32_t maxServoRange;
@@ -123,8 +121,7 @@ enum class DebugSelector : uint8_t {
   K6,
   K7,
   K8,
-  K9,
-  K10,
+  K10 = 10,
   K11,
   K12,
   K13,
@@ -134,7 +131,6 @@ enum class DebugSelector : uint8_t {
   K17,
   K18,
   K19,
-  K33 = 33,
   K43 = 43,
   K45 = 45,
   K46 = 46,
@@ -188,15 +184,6 @@ struct ReceiverChannels {
   int32_t channels[10];
   float frameDtMs;
 };
-struct ControllerGains {
-  float kp;
-  float ki;
-  float kd;
-};
-struct ControllerGainsSet {
-  ControllerGains yaw;
-  float dtSec;
-};
 struct MahonyAttitude {
   float twoKp;
   float twoKi;
@@ -243,12 +230,6 @@ struct ChannelState {
 struct CurrentSetpoint {
   float amperes;
 };
-struct PidIntegralOutputState {
-  float integralLimit;
-  float integral;
-  float integralOutput;
-  float output;
-};
 struct GyroFftSample {
   uint32_t timestampUs;
   float gyroX;
@@ -284,7 +265,6 @@ union DebugPayload {
   Attitude3 attitude;
   MotorVelocities motorVelocities;
   ReceiverChannels receiverChannels;
-  ControllerGainsSet controllerGains;
   MahonyAttitude mahony;
   ImuAxes imuAxes;
   ScalarPair pair;
@@ -294,7 +274,6 @@ union DebugPayload {
   TumbleState tumbleState;
   ChannelState channelState;
   CurrentSetpoint currentSetpoint;
-  PidIntegralOutputState pidIntegralOutputState;
   GyroFftSample gyroFft;
   ImuCadenceSample imuCadence;
   MotorStateSample motorState;

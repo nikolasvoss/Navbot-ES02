@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 
-TRACE_SELECT_COMMAND = re.compile(r"K(?:0|9|55|56|57|58)\Z")
+TRACE_SELECT_COMMAND = re.compile(r"K(?:0|55|56|57|58)\Z")
 
 # Mirror the firmware caps in MotorDiagnostic.h; the firmware refuses anything larger too.
 # Wheel-clear runs only (default caps, lowered 2026-10-22): 2.0 V and 60 rad/s, 5000 ms lease, 0.35 A.
@@ -40,7 +40,7 @@ DRIVE_COLUMNS = (
 )
 TRACE_HEADERS = {
     55: "TRACE,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,pitch_deg,servo1_cmd_deg,servo2_cmd_deg,servo3_cmd_deg,servo4_cmd_deg,servo1_range_deg,servo2_range_deg,servo3_range_deg,servo4_range_deg,motor1_target,motor2_target,sequence,logger_dropped,uart_write_failures",
-    56: "CTRL,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,gyro_z_rad_s,body_turn_command,yaw_error,yaw_output,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures",
+    56: "CTRL,time_ms,ch5_mode,voltage_min_raw_v,voltage_filtered_v,roll_deg,gyro_z_rad_s,body_turn_command,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures",
     57: "BAL,time_ms,ch5_mode,voltage_min_raw_v,roll_deg,motor1_target,motor2_target,max_servo_range_deg,sequence,logger_dropped,uart_write_failures",
     58: "DRIVE," + ",".join(DRIVE_COLUMNS),
 }
@@ -93,7 +93,7 @@ def main():
     parser.add_argument("--seconds", type=float, default=20, help="capture time after trace starts (default: 20)")
     parser.add_argument("--output", type=Path, default=Path("balance-trace.log"))
     parser.add_argument("--trace-mode", type=int, choices=(55, 56, 57, 58), default=55,
-                        help="55: actuator trace (default); 56: angle/yaw; 57: balance P/I/D; 58: drive-stop trace")
+                        help="55: actuator trace (default); 56: control; 57: balance P/I/D; 58: drive-stop trace")
     parser.add_argument("--interactive", action="store_true",
                         help="send K trace-selection commands and bounded T/M motor commands from stdin "
                              "while recording; prints every tenth trace row")
