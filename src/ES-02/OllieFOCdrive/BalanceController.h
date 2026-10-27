@@ -94,7 +94,7 @@ struct Output {
 
 struct Config {
   // Arming: all values uncommissioned.
-  uint32_t armingTimeoutUs = 0;          // uncommissioned
+  uint32_t armingTimeoutUs = 0;          // 0 holds Arming until the start conditions hold or the switch goes off
   float armingTiltWindowRad = 0.0f;      // uncommissioned
   float armingTiltRateRadPerSec = 0.0f;  // uncommissioned
   float armingRequestSpeedMps = 0.0f;    // uncommissioned

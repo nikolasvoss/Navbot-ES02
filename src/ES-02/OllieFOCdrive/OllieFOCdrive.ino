@@ -100,7 +100,7 @@ const Config &balanceConfig() {
   static const Config config = [] {
     Config c;
     // Arming
-    c.armingTimeoutUs = 3000000;                 // uncommissioned: proposed starting value, 3 s
+    c.armingTimeoutUs = 0;                       // no timeout: Arming waits until the start conditions hold or the switch goes off
     c.armingTiltWindowRad = 0.0872665f;          // uncommissioned: proposed starting value, rad (5 deg)
     c.armingTiltRateRadPerSec = 0.1f;            // uncommissioned: proposed starting value, rad/s
     c.armingRequestSpeedMps = 0.05f;             // uncommissioned: proposed starting value, m/s
