@@ -1,6 +1,6 @@
 # ESP32 ↔ ros2_pc UART protocol (NavBot link v1)
 
-Status: **specification, firmware sender for `WheelOdometry` and `Imu` (50 Hz each), and ROS 2 bridge `navbot_link_bridge` for both.** The firmware sender was checked on the robot on 2026-10-26 (50 Hz, no lost frames, also while the robot balanced); the bridge has not run against the robot.
+Status: **specification, firmware sender for `WheelOdometry` and `Imu` (50 Hz each), and ROS 2 bridge `navbot_link_bridge` for both.** The firmware sender was checked on the robot on 2026-10-26 (50 Hz, no lost frames, also while the robot balanced); the bridge has not run against the robot. The queue-and-writer-task transmit path (see [Transmit path](#transmit-path)) is host-tested but not yet checked on the robot.
 
 ## Design
 
@@ -44,9 +44,10 @@ The schema also defines the messages for the entry table of the [logging and con
 ## Rules
 
 - Receivers ignore unknown fields and unknown `body` types.
-- The sender never blocks on a full UART; it drops the frame and counts it. The firmware count is not sent yet, so `Status.dropped_frames` stays unused until `Status` is sent.
+- The sender never blocks and never writes a UART from the control loop. It encodes the frame and pushes it into the port's TX queue; a full queue drops the frame and counts it. The firmware count appears in the `Link` log line every 100 sends (`seq=… dropped=…`) and is not sent as `Status.dropped_frames` yet.
+- `seq` is a counter per port (UART1 and the USB port each start at 1 after a reset). A dropped frame still uses its number, so a gap on a port means a frame was lost on that port.
 - A receiver treats a frame with a bad CRC as lost. It does not try to repair it.
-- The robot's writer hands each frame to the port whole, with no pause inside it. The PC library treats bytes still waiting for a delimiter after 250 ms of silence as text (a boot message or crash dump without a trailing `0x00`), so a gap inside one frame must stay well below 250 ms.
+- The robot's writer task hands each frame to the port whole, with no pause inside it: it writes a frame only when `availableForWrite()` covers all of it, otherwise it waits one tick. The PC library treats bytes still waiting for a delimiter after 250 ms of silence as text (a boot message or crash dump without a trailing `0x00`), so a gap inside one frame must stay well below 250 ms.
 - Safety does not depend on this link. The robot keeps balance and fall handling locally and must stop or hold safely when `Command` frames stop.
 
 ## Odometry
@@ -85,11 +86,25 @@ Consequences:
 
 - [generate_link_proto.sh](../../../scripts/generate_link_proto.sh): regenerates the nanopb C code in `src/ES-02/OllieFOCdrive/src/navbot_link/` and the Python protobuf module `navbot_link_pb2.py` in `src/navbot_link/`. It needs `nanopb_generator` 0.4.9.1 and `protoc` 3.21.x on `PATH`; the script refuses other versions. Run it after every schema change.
 - The nanopb 0.4.9.1 encode runtime is vendored in the same folder. Do not edit the generated `navbot_link.pb.*` files.
-- Firmware: `link_frame` (pure C++, frames one `Message`) and `link_uart` (UART1 init, sequence and time stamps, non-blocking send, odometry and IMU publish).
+- Firmware: `link_frame` (pure C++, frames one `Message`), `link_tx` (pure C++: `LinkItemQueue`, `LinkWriter`, `LinkPort` with the per-port `seq`) and `link_uart` (UART1 init, one lock, queue and writer task per port, odometry and IMU publish).
 - PC: the Python package [navbot_link](../../../src/navbot_link/) has no ROS dependency and is shared by the ROS 2 bridge and the host tools. [framing.py](../../../src/navbot_link/framing.py) holds `encode_frame` and `FrameDecoder`, which returns payloads and, for a printable chunk that is not a valid frame, `Text`. `protocol.py` holds the catalog types, the 4-byte value codec and the per-port `seq` tracker; `link.py` holds the `Link` client and `capture.py` the CSV writer and presets used by [navlink](navlink.md).
 - ROS 2 bridge: [navbot_link_bridge](../../../src/ros2_pc/ros2/src/navbot_link_bridge/) (`bridge.py` decodes frames, `odometry.py` integrates wheel angles, `node.py` is the rclpy node). Its `setup.py` installs `navbot_link` next to the bridge. Build and run steps: [ros2_pc software](navbot-link-bridge.md).
 - Tests: `PYTHONPATH=src:src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test` (bridge: the firmware literal frames including the IMU `t_us`, seq gaps and restarts; odometry: straight line, spin, `micros()` wrap) and `python3 -m pytest -q tests/navbot_link` (framing: CRC check value `0x29B1`, COBS vectors, resync after garbage, raw text between USB frames; the `Link` client against a fake firmware) and `python3 -m pytest -q tests/scripts/test_navlink.py` (`navlink`).
-- Host test: `bash tests/link/run_host_test.sh` encodes an odometry and an IMU `Message` (with `t_us`) with the firmware encoder and compares the frame bytes to literal vectors.
+- Host test: `bash tests/link/run_host_test.sh` encodes an odometry and an IMU `Message` (with `t_us`) with the firmware encoder and compares the frame bytes to literal vectors. It also checks the TX path with literal bytes: a frame is written whole or not at all under partial `availableForWrite()`, a full queue drops and counts (and the next frame shows the seq gap), each port counts `seq` on its own, and the USB writer puts `0x00` before each frame and keeps text and frames in push order.
+
+## Transmit path
+
+```text
+control loop ── encode frame ──► TX queue UART1 ──► writer task ──► Serial1 (2000000 baud)
+logger, Commander, setup text ─► TX queue USB   ──► writer task ──► Serial  (576000 baud, CH340)
+control loop ── encode frame ──►   (no frame producer on USB yet)
+```
+
+- Each port has a byte-ring queue of whole items (1024 bytes on UART1, 2560 on USB), a spinlock around it and one writer task (core 0, priority 2). `LinkWriter::Pump` is the only code that writes to a UART. The control loop only pushes.
+- Odometry and `Imu` frames go to UART1 only. The USB queue has the frame path (with its own `seq`) but nothing produces frames for it until the subscriptions of the [logging and control plan](../plans/logging-and-control-link.md) land.
+- USB carries the old text and CSV logger output and the frames through one queue, so a text line never lands inside a frame. A frame is written whole after the previous item, with a `0x00` in front; a long text line goes out in pieces as the CH340 buffer allows. The logger sender task waits up to 200 ms for queue space, so CSV rows keep their lossless behavior. Commander replies, `IMU_TIMING`, SimpleFOC debug text and setup text come from the control loop or setup: they never wait, and text that does not fit is dropped and counted. Gyro calibration messages go through `Logging::message`.
+- Not yet moved: `Serial.println` in `ICM42688.cpp` on a failed device-ID check (setup only).
+- A request queue type exists (`LinkItemQueue` with the port number as tag); the receive side that fills it comes with the catalog and subscriptions.
 
 ## Next steps
 
