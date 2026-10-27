@@ -28,7 +28,7 @@ On connect, `navlink` reads the catalog entry by entry and resolves every name a
 | `sub <names\|@preset>... [@<Hz>] [-o file.csv]` | Starts a subscription. `@<Hz>` overrides the preset rate; without a rate it streams every control tick. Without `-o` the rows are printed. |
 | `unsub <slot>` | Stops a subscription and closes its file. |
 | `log on\|off` | Shows or hides log events and raw text. |
-| `quit` | Closes all files and exits. |
+| `quit` | Stops every subscription, closes all files and exits. |
 
 ```text
 navlink> sub @speed_loop -o speed-01.csv
@@ -80,7 +80,7 @@ speed_loop:
 `navbot_link.link.Link(port, baud)` opens the port; it also takes any object with `read()`, `write(data)` and `close()`. It runs one I/O thread.
 
 - `catalog()` reads the table once per connection and again after a robot restart. A `GetCatalog` without a reply is retried 3 times with a 0.5 s timeout.
-- `subscribe(names, rate_hz)` returns a `Subscription` with the slot the robot assigned (1 to 4, shared by all ports). The library renews the 5 s lease every 2 s.
+- `subscribe(names, rate_hz)` returns a `Subscription` with the slot the robot assigned (1 to 4, shared by all ports). The library renews the 5 s lease every 2 s. `unsubscribe(slot)` keeps the slot and its rows until the robot's `Ack` confirms. Without a reply it raises `NoReply`, stops renewing, and keeps the slot reserved until the 5 s lease has run out. `slots` lists the slots the link holds.
 - `get(name)`, `set(name, value)` and `call(name, **args)` return when the robot acknowledges. A refused request raises `LinkError` with the robot's reason. `call` is not retried, so a lost `Ack` never starts an action twice.
 - `events` is a queue in stream order: `Row`, `LogEvent`, `Text` (raw text from the USB port), `FramesLost`, `Restarted`, `SubscriptionEnded` and `Disconnected`.
 - A port error or an unexpected error on the I/O thread ends the link with `Disconnected(reason)`; pending and later requests raise `LinkError(reason)`. A `Log` level the schema does not name shows as its number. A reply value that is not 4 bytes raises `LinkError`.

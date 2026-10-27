@@ -35,6 +35,10 @@ class UnknownName(LinkError):
     pass
 
 
+class NoReply(LinkError):
+    """The robot did not answer; it may or may not have acted on the request."""
+
+
 @dataclass(frozen=True)
 class Arg:
     name: str

@@ -130,6 +130,15 @@ error: unknown signal nope
     assert rows and rows == expected_rows[:len(rows)]
 
 
+def test_shell_quit_stops_its_subscriptions(tmp_path):
+    fw = FakeFirmware()
+    csv = tmp_path / "quit.csv"
+    rc, out = run(["shell", "--port", "/dev/ttyAMA3"], fw,
+                  stdin=Script("log off", f"sub loop_count @10 -o {csv}", "quit"))
+    assert (rc, out) == (0, f"slot 1: 1 entries @ 10 Hz, 0.1 kB/s -> {csv}\n")
+    assert fw.subscribed_slots() == []
+
+
 def test_capture_over_a_serial_port(tmp_path):
     pty = PtyFirmware(FakeFirmware())
     csv = tmp_path / "pty.csv"

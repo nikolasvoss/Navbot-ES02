@@ -15,6 +15,7 @@ from navbot_link.protocol import (
     Catalog,
     Entry,
     LinkError,
+    NoReply,
     SeqTracker,
     entry_from_pb,
     pack_value,
@@ -23,7 +24,8 @@ from navbot_link.protocol import (
 )
 
 MAX_SUBSCRIBED = 48
-LEASE_RENEW_S = 2.0  # firmware lease is 5 s
+LEASE_S = 5.0
+LEASE_RENEW_S = 2.0
 
 
 class Transport(Protocol):
@@ -146,11 +148,13 @@ class Link:
     `events` in stream order."""
 
     def __init__(self, port, baud: int = 2_000_000, *, timeout_s: float = 0.5,
-                 retries: int = 3, renew_s: float = LEASE_RENEW_S, clock=time.monotonic):
+                 retries: int = 3, renew_s: float = LEASE_RENEW_S, lease_s: float = LEASE_S,
+                 clock=time.monotonic):
         self._transport: Transport = SerialTransport(port, baud) if isinstance(port, str) else port
         self._timeout_s = timeout_s
         self._retries = retries
         self._renew_s = renew_s
+        self._lease_s = lease_s
         self.events: queue.Queue = queue.Queue()
         self._decoder = FrameDecoder()
         self._seq_in = SeqTracker()
@@ -161,6 +165,7 @@ class Link:
         self._waiters: dict[tuple, _Waiter] = {}
         self._renewals: dict[int, int] = {}  # renewal request seq -> slot
         self._subs: dict[int, Subscription] = {}
+        self._releasing: dict[int, float] = {}  # slot -> monotonic time its lease has surely run out
         self._catalog: Catalog | None = None
         self._dead: str | None = None  # why the I/O thread stopped
         self._stop = threading.Event()
@@ -180,6 +185,12 @@ class Link:
     @property
     def bad_frames(self) -> int:
         return self._decoder.bad_frames
+
+    @property
+    def slots(self) -> tuple[int, ...]:
+        """Slots this link holds, including ones whose unsubscribe is unconfirmed."""
+        with self._lock:
+            return tuple(sorted(self._subs))
 
     def close(self) -> None:
         self._stop.set()
@@ -226,14 +237,30 @@ class Link:
             sub = Subscription(_slot_of(reply.ack), entries, period_us)
             with self._lock:
                 self._subs[sub.slot] = sub
+                self._releasing.pop(sub.slot, None)
             return sub
 
         return self._request(_subscribe_message(Subscription(0, entries, period_us)), on_accept=register)
 
     def unsubscribe(self, slot: int) -> None:
+        """Rows keep arriving until the robot confirms. Without a reply the slot
+        stays reserved, no longer renewed, until its lease has run out."""
+        with self._lock:
+            if slot in self._subs:
+                self._releasing[slot] = time.monotonic() + self._lease_s
+        try:
+            self._request(pb.Message(unsubscribe=pb.Unsubscribe(slot=slot)))
+        except NoReply:
+            raise
+        except LinkError:
+            self._forget(slot)
+            raise
+        self._forget(slot)
+
+    def _forget(self, slot: int) -> None:
         with self._lock:
             self._subs.pop(slot, None)
-        self._request(pb.Message(unsubscribe=pb.Unsubscribe(slot=slot)))
+            self._releasing.pop(slot, None)
 
     def _get_entry(self, index: int):
         return self._request(pb.Message(get_catalog=pb.GetCatalog(index=index)),
@@ -262,7 +289,7 @@ class Link:
             if waiter.error is not None:
                 raise waiter.error
             return waiter.result
-        raise LinkError(f"no reply to {what}")
+        raise NoReply(f"no reply to {what}")
 
     def _send_locked(self, msg) -> int:
         self._seq_out += 1
@@ -299,7 +326,11 @@ class Link:
             if time.monotonic() >= next_renew:
                 next_renew = time.monotonic() + self._renew_s
                 with self._lock:
+                    for slot in [s for s, t in self._releasing.items() if t <= time.monotonic()]:
+                        del self._subs[slot], self._releasing[slot]
                     for sub in self._subs.values():
+                        if sub.slot in self._releasing:
+                            continue
                         self._renewals[self._send_locked(_subscribe_message(sub))] = sub.slot
 
     def _dispatch(self, payload: bytes) -> None:
@@ -351,6 +382,7 @@ class Link:
         with self._lock:
             ended = sorted(self._subs)
             self._subs.clear()
+            self._releasing.clear()
             self._renewals.clear()
             self._catalog = None
             waiters, self._waiters = set(self._waiters.values()), {}

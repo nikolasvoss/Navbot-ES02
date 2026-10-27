@@ -4,7 +4,8 @@ import time
 import pytest
 
 from fake_firmware import FakeFirmware, MemoryTransport
-from navbot_link.framing import Text
+from navbot_link import navbot_link_pb2 as pb
+from navbot_link.framing import FrameDecoder, Text
 from navbot_link.link import Disconnected, FramesLost, Link, LogEvent, Restarted, Row, SubscriptionEnded
 from navbot_link.protocol import Arg, Entry, Kind, LinkError, Type
 
@@ -17,6 +18,20 @@ class RecordingTransport(MemoryTransport):
     def write(self, data: bytes) -> None:
         self.written.append(data)
         super().write(data)
+
+
+class LossyTransport(MemoryTransport):
+    """Drops the PC's frames whose body is in `lose`, as if the wire lost them."""
+
+    def __init__(self, firmware, lose):
+        super().__init__(firmware)
+        self.lose = set(lose)
+
+    def write(self, data: bytes) -> None:
+        msg = pb.Message()
+        msg.ParseFromString(FrameDecoder().feed(data)[0])
+        if msg.WhichOneof("body") not in self.lose:
+            super().write(data)
 
 
 def open_link(fw, **kwargs):
@@ -147,6 +162,22 @@ def test_lease_renewal_keeps_a_stream_alive_past_the_firmware_lease():
         time.sleep(0.8)
         assert renewing.subscribed_slots() == [1]
         assert idle.subscribed_slots() == []
+
+
+def test_an_unconfirmed_unsubscribe_keeps_the_slot_until_its_lease_has_run_out():
+    fw = FakeFirmware(lease_s=0.5)
+    transport = LossyTransport(fw, lose={"unsubscribe"})
+    with Link(transport, clock=lambda: 0.0, timeout_s=0.05, renew_s=0.05, lease_s=0.5) as link:
+        link.subscribe(["loop_count"], 100)
+        with pytest.raises(LinkError, match="^no reply to unsubscribe$"):
+            link.unsubscribe(1)
+        assert link.slots == (1,)
+        while not link.events.empty():
+            link.events.get_nowait()
+        row = next_events(link, 1, Row)[0]  # the robot still streams the slot
+        assert (row.slot, row.values) == (1, (row.t_us // 10_000,))
+        time.sleep(0.8)
+        assert (link.slots, fw.subscribed_slots()) == ((), [])
 
 
 def test_seq_gap_is_reported_and_a_restart_ends_subscriptions():

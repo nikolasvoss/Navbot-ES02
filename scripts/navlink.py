@@ -222,8 +222,10 @@ class Shell(cmd.Cmd):
     def do_unsub(self, arg):
         """unsub <slot>"""
         slot = int(arg)
-        self.link.unsubscribe(slot)
-        self._close_writer(slot)
+        try:
+            self.link.unsubscribe(slot)
+        finally:
+            self._close_writer(slot)
         self.say(f"slot {slot} closed")
 
     def do_log(self, arg):
@@ -233,7 +235,12 @@ class Shell(cmd.Cmd):
         self.show_logs = arg.strip() == "on"
 
     def do_quit(self, arg):
-        """quit"""
+        """quit: stops every subscription and closes all files."""
+        for slot in self.link.slots:
+            try:
+                self.link.unsubscribe(slot)
+            except LinkError:
+                pass  # the subscription expires with its lease
         for slot in list(self._writers):
             self._close_writer(slot)
         return True
