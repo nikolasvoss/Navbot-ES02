@@ -148,9 +148,9 @@ bool TestUsbPrefixAndSharedOrder() {
   uint8_t storage[256];
   LinkPort usb(storage, sizeof(storage), true);
   const uint8_t line[] = {'h', 'i', '\n'};
-  usb.queue.Push(kLinkItemRaw, line, sizeof(line));
+  usb.queue.PushOrDrop(kLinkItemRaw, line, sizeof(line));
   Send(usb);
-  usb.queue.Push(kLinkItemRaw, line, sizeof(line));
+  usb.queue.PushOrDrop(kLinkItemRaw, line, sizeof(line));
   FakeSink sink;
   bool ok = true;
 
@@ -180,7 +180,8 @@ bool TestRequestQueueKeepsPortAndPayload() {
   bool ok = true;
   ok &= Check("push port 0", requests.Push(0, a, sizeof(a)));
   ok &= Check("push port 1", requests.Push(1, b, sizeof(b)));
-  ok &= Check("full queue refuses and counts", !requests.Push(1, a, sizeof(a)) && requests.dropped() == 1);
+  ok &= Check("full queue refuses and counts", !requests.PushOrDrop(1, a, sizeof(a)) && requests.dropped() == 1);
+  ok &= Check("plain Push refuses without counting", !requests.Push(1, a, sizeof(a)) && requests.dropped() == 1);
 
   uint8_t tag = 0xFF;
   uint8_t out[LINK_MAX_ITEM_LEN];

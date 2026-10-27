@@ -7,30 +7,61 @@ namespace {
 constexpr size_t kHeaderLen = 2;
 }
 
+void LinkItemQueue::CopyIn(size_t pos, const uint8_t* data, size_t len) {
+  const size_t first = std::min(len, capacity_ - pos);
+  memcpy(storage_ + pos, data, first);
+  memcpy(storage_, data + first, len - first);
+}
+
+void LinkItemQueue::CopyOut(size_t pos, uint8_t* out, size_t len) const {
+  const size_t first = std::min(len, capacity_ - pos);
+  memcpy(out, storage_ + pos, first);
+  memcpy(out + first, storage_, len - first);
+}
+
 bool LinkItemQueue::Push(uint8_t tag, const uint8_t* data, size_t len) {
-  if (len == 0 || len > LINK_MAX_ITEM_LEN || used_ + kHeaderLen + len > capacity_) {
-    ++dropped_;
-    return false;
+  if (len == 0 || len > LINK_MAX_ITEM_LEN) return false;
+  if (lock_) lock_->Lock();
+  const bool fits = used_ + kHeaderLen + len <= capacity_;
+  if (fits) {
+    const uint16_t header = static_cast<uint16_t>((tag << 10) | len);
+    const uint8_t headerBytes[kHeaderLen] = {static_cast<uint8_t>(header & 0xFF), static_cast<uint8_t>(header >> 8)};
+    const size_t pos = (head_ + used_) % capacity_;
+    CopyIn(pos, headerBytes, kHeaderLen);
+    CopyIn((pos + kHeaderLen) % capacity_, data, len);
+    used_ += kHeaderLen + len;
   }
-  const uint16_t header = static_cast<uint16_t>((tag << 10) | len);
-  const uint8_t headerBytes[kHeaderLen] = {static_cast<uint8_t>(header & 0xFF), static_cast<uint8_t>(header >> 8)};
-  size_t pos = (head_ + used_) % capacity_;
-  for (size_t i = 0; i < kHeaderLen; ++i, pos = (pos + 1) % capacity_) storage_[pos] = headerBytes[i];
-  for (size_t i = 0; i < len; ++i, pos = (pos + 1) % capacity_) storage_[pos] = data[i];
-  used_ += kHeaderLen + len;
-  return true;
+  if (lock_) lock_->Unlock();
+  return fits;
+}
+
+bool LinkItemQueue::PushOrDrop(uint8_t tag, const uint8_t* data, size_t len) {
+  if (Push(tag, data, len)) return true;
+  NoteDrop();
+  return false;
+}
+
+void LinkItemQueue::NoteDrop() {
+  if (lock_) lock_->Lock();
+  ++dropped_;
+  if (lock_) lock_->Unlock();
 }
 
 bool LinkItemQueue::Pop(uint8_t& tag, uint8_t* out, size_t& len) {
-  if (used_ == 0) return false;
-  const uint16_t header = static_cast<uint16_t>(storage_[head_] | (storage_[(head_ + 1) % capacity_] << 8));
-  tag = static_cast<uint8_t>(header >> 10);
-  len = header & 0x3FF;
-  size_t pos = (head_ + kHeaderLen) % capacity_;
-  for (size_t i = 0; i < len; ++i, pos = (pos + 1) % capacity_) out[i] = storage_[pos];
-  head_ = pos;
-  used_ -= kHeaderLen + len;
-  return true;
+  if (lock_) lock_->Lock();
+  const bool any = used_ > 0;
+  if (any) {
+    uint8_t headerBytes[kHeaderLen];
+    CopyOut(head_, headerBytes, kHeaderLen);
+    const uint16_t header = static_cast<uint16_t>(headerBytes[0] | (headerBytes[1] << 8));
+    tag = static_cast<uint8_t>(header >> 10);
+    len = header & 0x3FF;
+    CopyOut((head_ + kHeaderLen) % capacity_, out, len);
+    head_ = (head_ + kHeaderLen + len) % capacity_;
+    used_ -= kHeaderLen + len;
+  }
+  if (lock_) lock_->Unlock();
+  return any;
 }
 
 size_t LinkWriter::Pump(LinkItemQueue& queue, LinkByteSink& sink) {
@@ -70,5 +101,5 @@ bool LinkPortSend(LinkPort& port, navbot_link_v1_Message& msg, uint32_t tMs) {
     port.queue.NoteDrop();
     return false;
   }
-  return port.queue.Push(kLinkItemFrame, frame, frameLen);
+  return port.queue.PushOrDrop(kLinkItemFrame, frame, frameLen);
 }
