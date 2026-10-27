@@ -5,7 +5,7 @@ import pytest
 
 from fake_firmware import FakeFirmware, MemoryTransport
 from navbot_link.framing import Text
-from navbot_link.link import FramesLost, Link, LogEvent, Restarted, Row, SubscriptionEnded
+from navbot_link.link import Disconnected, FramesLost, Link, LogEvent, Restarted, Row, SubscriptionEnded
 from navbot_link.protocol import Arg, Entry, Kind, LinkError, Type
 
 
@@ -197,6 +197,42 @@ def test_usb_port_passes_boot_text_through_between_frames():
         assert link.get("speed_ki") == 0.5
     assert text == [Text("E (1234) task_wdt: Task watchdog got triggered\r\n")]
     assert link.bad_frames == 0
+
+
+def test_a_log_level_the_schema_lacks_is_reported_by_number():
+    fw = FakeFirmware()
+    with open_link(fw) as link:
+        fw.log("from a newer build", "x", level=9)
+        assert next_events(link, 1, LogEvent) == [
+            LogEvent(t_ms=1000, level="9", code=0, text="from a newer build", tag="x")]
+        assert link.get("wheel_offset") == -3
+
+
+def test_a_reply_value_of_the_wrong_size_raises():
+    class ShortValues(FakeFirmware):
+        def _handle(self, msg, port):
+            if msg.WhichOneof("body") == "get_param":
+                return self._ack(msg.seq, port, value=b"\x01\x02")
+            super()._handle(msg, port)
+
+    with open_link(ShortValues()) as link:
+        with pytest.raises(LinkError, match="^value of 2 bytes, expected 4$"):
+            link.get("speed_kp")
+
+
+def test_an_error_on_the_io_thread_disconnects_instead_of_hanging(monkeypatch):
+    def broken(types, data):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("navbot_link.link.unpack_rows", broken)
+    fw = FakeFirmware()
+    with open_link(fw) as link:
+        link.subscribe(["loop_count"], 100)
+        assert next_events(link, 1, Disconnected) == [Disconnected("I/O thread failed: RuntimeError: boom")]
+        started = time.monotonic()
+        with pytest.raises(LinkError, match="^I/O thread failed: RuntimeError: boom$"):
+            link.get("speed_kp")
+        assert time.monotonic() - started < 0.1
 
 
 def test_no_reply_raises_after_retries():

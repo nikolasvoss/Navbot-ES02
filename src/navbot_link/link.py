@@ -130,6 +130,8 @@ class _Waiter:
         self._event.set()
 
     def fail(self, error: LinkError) -> None:
+        if self._event.is_set():
+            return  # already answered; the caller has not collected it yet
         self.error = error
         self._event.set()
 
@@ -160,6 +162,7 @@ class Link:
         self._renewals: dict[int, int] = {}  # renewal request seq -> slot
         self._subs: dict[int, Subscription] = {}
         self._catalog: Catalog | None = None
+        self._dead: str | None = None  # why the I/O thread stopped
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="navbot-link", daemon=True)
         self._thread.start()
@@ -243,6 +246,8 @@ class Link:
         for _ in range(retries or self._retries):
             waiter = _Waiter(what, on_accept)
             with self._lock:
+                if self._dead is not None:
+                    raise LinkError(self._dead)
                 seq = self._send_locked(msg)
                 keys = [("ack", seq)] + ([reply_key] if reply_key else [])
                 for key in keys:
@@ -267,13 +272,25 @@ class Link:
         return msg.seq
 
     def _run(self) -> None:
+        try:
+            self._serve()
+        except OSError as exc:  # pyserial's SerialException is an OSError
+            self._die(str(exc))
+        except Exception as exc:  # noqa: BLE001 - any bug here would stop the link silently
+            self._die(f"I/O thread failed: {type(exc).__name__}: {exc}")
+
+    def _die(self, reason: str) -> None:
+        with self._lock:
+            self._dead = reason
+            waiters, self._waiters = set(self._waiters.values()), {}
+        for waiter in waiters:
+            waiter.fail(LinkError(reason))
+        self.events.put(Disconnected(reason))
+
+    def _serve(self) -> None:
         next_renew = time.monotonic() + self._renew_s
         while not self._stop.is_set():
-            try:
-                chunk = self._transport.read()
-            except OSError as exc:  # pyserial's SerialException is an OSError
-                self.events.put(Disconnected(str(exc)))
-                return
+            chunk = self._transport.read()
             for item in self._decoder.feed(chunk) if chunk else self._decoder.flush():
                 if isinstance(item, Text):
                     self.events.put(item)
@@ -315,7 +332,8 @@ class Link:
                     self.events.put(Row(sub.slot, t_us, values))
         elif body == "log":
             log = msg.log
-            self.events.put(LogEvent(msg.t_ms, pb.Log.Level.Name(log.level), log.code, log.text, log.tag))
+            level = pb.Log.Level.Name(log.level) if log.level in pb.Log.Level.values() else str(log.level)
+            self.events.put(LogEvent(msg.t_ms, level, log.code, log.text, log.tag))
 
     def _on_ack(self, msg) -> None:
         ack = msg.ack

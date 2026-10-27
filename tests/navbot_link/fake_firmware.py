@@ -213,13 +213,13 @@ class FakeFirmware:
     def _ack(self, seq: int, port: int, error: str = "", value: bytes = b"") -> None:
         self._send(pb.Message(ack=pb.Ack(command_id=seq, accepted=not error, error=error, value=value)), port)
 
-    def log(self, text: str, tag: str) -> None:
+    def log(self, text: str, tag: str, level: int = pb.Log.INFO) -> None:
         with self._lock:
-            self._log(text, tag)
+            self._log(text, tag, level)
 
-    def _log(self, text: str, tag: str) -> None:
+    def _log(self, text: str, tag: str, level: int = pb.Log.INFO) -> None:
         for port in range(len(self._ports)):
-            self._send(pb.Message(log=pb.Log(level=pb.Log.INFO, text=text, tag=tag)), port)
+            self._send(pb.Message(log=pb.Log(level=level, text=text, tag=tag)), port)
 
     def _send(self, msg, port: int) -> None:
         p = self._ports[port]

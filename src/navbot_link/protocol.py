@@ -101,6 +101,8 @@ def pack_value(type_: Type, value) -> bytes:
 
 
 def unpack_value(type_: Type, data: bytes):
+    if len(data) != 4:
+        raise LinkError(f"value of {len(data)} bytes, expected 4")
     (value,) = struct.unpack(_FORMAT[type_], data)
     return bool(value) if type_ == Type.BOOL else value
 
