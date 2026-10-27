@@ -1,1 +1,13 @@
 navbot.link.v1.Log.text max_size:97
+navbot.link.v1.Log.tag max_size:17
+navbot.link.v1.Ack.error max_size:65
+navbot.link.v1.Ack.value max_size:4
+navbot.link.v1.CatalogEntry.name max_size:25
+navbot.link.v1.CatalogEntry.unit max_size:17
+navbot.link.v1.CatalogEntry.build max_size:33
+navbot.link.v1.CatalogEntry.args max_count:4
+navbot.link.v1.CatalogEntry.Arg.name max_size:17
+navbot.link.v1.Subscribe.ids max_count:48 int_size:IS_16
+navbot.link.v1.SignalBatch.rows max_size:196
+navbot.link.v1.SetParam.value max_size:4
+navbot.link.v1.Call.args max_count:4

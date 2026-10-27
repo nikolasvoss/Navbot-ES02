@@ -13,8 +13,16 @@ message Message {
     Status status = 12;
     Log log = 13;         // errors, warnings, info
     WheelOdometry odom = 14;
+    CatalogEntry catalog_entry = 15;
+    SignalBatch signal_batch = 16;
     Command command = 20; // PC -> robot
-    Ack ack = 21;
+    Ack ack = 21;         // robot -> PC, reply to every PC -> robot request
+    GetCatalog get_catalog = 22;
+    Subscribe subscribe = 23;
+    Unsubscribe unsubscribe = 24;
+    GetParam get_param = 25;
+    SetParam set_param = 26;
+    Call call = 27;
   }
 }
 
@@ -50,6 +58,7 @@ message Log {
   Level level = 1;
   uint32 code = 2;   // stable numeric error code, documented in the spec
   string text = 3;   // short, <= 96 bytes
+  string tag = 4;    // source, such as "param" or "imu"
 }
 
 message Command {
@@ -58,7 +67,67 @@ message Command {
   float turn_rad_s = 3;
 }
 
+// command_id echoes Command.id for a Command and the request's Message.seq
+// for every other request.
 message Ack {
   uint32 command_id = 1;
   bool accepted = 2;
+  string error = 3;
+  bytes value = 4;   // GetParam, SetParam: the value now in effect
+}
+
+// Entry table: signals, parameters and actions. Wire IDs are table indices
+// and change with the firmware build; the PC resolves names per connection.
+message GetCatalog {
+  uint32 index = 1;
+}
+
+message CatalogEntry {
+  enum Kind { KIND_UNSPECIFIED = 0; SIGNAL = 1; SIGNAL_MIN = 2; SIGNAL_MAX = 3; PARAM = 4; ACTION = 5; }
+  enum Type { TYPE_UNSPECIFIED = 0; F32 = 1; I32 = 2; U32 = 3; BOOL = 4; }
+  message Arg {
+    string name = 1;
+    float min = 2;
+    float max = 3;
+  }
+  uint32 index = 1;
+  uint32 count = 2;      // number of entries in the table
+  string name = 3;
+  string unit = 4;
+  Kind kind = 5;
+  Type type = 6;         // unset for ACTION
+  repeated Arg args = 7; // ACTION only
+  string build = 8;      // firmware build ID; set in the reply to index 0
+}
+
+// Sending the same slot again renews the 5 s lease or replaces the entry list.
+message Subscribe {
+  uint32 slot = 1;
+  repeated uint32 ids = 2;
+  uint32 period_us = 3;  // 0 = every control tick
+}
+
+message Unsubscribe {
+  uint32 slot = 1;
+}
+
+// rows: one or more rows of [t_us u32][value 4 B per subscribed id],
+// little-endian, values typed by the catalog.
+message SignalBatch {
+  uint32 slot = 1;
+  bytes rows = 2;
+}
+
+message GetParam {
+  uint32 id = 1;
+}
+
+message SetParam {
+  uint32 id = 1;
+  bytes value = 2;   // 4 bytes little-endian, typed by the catalog
+}
+
+message Call {
+  uint32 id = 1;
+  repeated float args = 2;  // in catalog order
 }

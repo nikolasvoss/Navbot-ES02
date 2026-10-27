@@ -27,6 +27,23 @@ typedef enum _navbot_link_v1_Log_Level {
     navbot_link_v1_Log_Level_FATAL = 5
 } navbot_link_v1_Log_Level;
 
+typedef enum _navbot_link_v1_CatalogEntry_Kind {
+    navbot_link_v1_CatalogEntry_Kind_KIND_UNSPECIFIED = 0,
+    navbot_link_v1_CatalogEntry_Kind_SIGNAL = 1,
+    navbot_link_v1_CatalogEntry_Kind_SIGNAL_MIN = 2,
+    navbot_link_v1_CatalogEntry_Kind_SIGNAL_MAX = 3,
+    navbot_link_v1_CatalogEntry_Kind_PARAM = 4,
+    navbot_link_v1_CatalogEntry_Kind_ACTION = 5
+} navbot_link_v1_CatalogEntry_Kind;
+
+typedef enum _navbot_link_v1_CatalogEntry_Type {
+    navbot_link_v1_CatalogEntry_Type_TYPE_UNSPECIFIED = 0,
+    navbot_link_v1_CatalogEntry_Type_F32 = 1,
+    navbot_link_v1_CatalogEntry_Type_I32 = 2,
+    navbot_link_v1_CatalogEntry_Type_U32 = 3,
+    navbot_link_v1_CatalogEntry_Type_BOOL = 4
+} navbot_link_v1_CatalogEntry_Type;
+
 /* Struct definitions */
 /* Sensor data. SI units; the field name carries the unit where it is not SI. */
 typedef struct _navbot_link_v1_Imu {
@@ -64,6 +81,7 @@ typedef struct _navbot_link_v1_Log {
     navbot_link_v1_Log_Level level;
     uint32_t code; /* stable numeric error code, documented in the spec */
     char text[97]; /* short, <= 96 bytes */
+    char tag[17]; /* source, such as "param" or "imu" */
 } navbot_link_v1_Log;
 
 typedef struct _navbot_link_v1_Command {
@@ -72,10 +90,75 @@ typedef struct _navbot_link_v1_Command {
     float turn_rad_s;
 } navbot_link_v1_Command;
 
+typedef PB_BYTES_ARRAY_T(4) navbot_link_v1_Ack_value_t;
+/* command_id echoes Command.id for a Command and the request's Message.seq
+ for every other request. */
 typedef struct _navbot_link_v1_Ack {
     uint32_t command_id;
     bool accepted;
+    char error[65];
+    navbot_link_v1_Ack_value_t value; /* GetParam, SetParam: the value now in effect */
 } navbot_link_v1_Ack;
+
+/* Entry table: signals, parameters and actions. Wire IDs are table indices
+ and change with the firmware build; the PC resolves names per connection. */
+typedef struct _navbot_link_v1_GetCatalog {
+    uint32_t index;
+} navbot_link_v1_GetCatalog;
+
+typedef struct _navbot_link_v1_CatalogEntry_Arg {
+    char name[17];
+    float min;
+    float max;
+} navbot_link_v1_CatalogEntry_Arg;
+
+typedef struct _navbot_link_v1_CatalogEntry {
+    uint32_t index;
+    uint32_t count; /* number of entries in the table */
+    char name[25];
+    char unit[17];
+    navbot_link_v1_CatalogEntry_Kind kind;
+    navbot_link_v1_CatalogEntry_Type type; /* unset for ACTION */
+    pb_size_t args_count;
+    navbot_link_v1_CatalogEntry_Arg args[4]; /* ACTION only */
+    char build[33]; /* firmware build ID; set in the reply to index 0 */
+} navbot_link_v1_CatalogEntry;
+
+/* Sending the same slot again renews the 5 s lease or replaces the entry list. */
+typedef struct _navbot_link_v1_Subscribe {
+    uint32_t slot;
+    pb_size_t ids_count;
+    uint16_t ids[48];
+    uint32_t period_us; /* 0 = every control tick */
+} navbot_link_v1_Subscribe;
+
+typedef struct _navbot_link_v1_Unsubscribe {
+    uint32_t slot;
+} navbot_link_v1_Unsubscribe;
+
+typedef PB_BYTES_ARRAY_T(196) navbot_link_v1_SignalBatch_rows_t;
+/* rows: one or more rows of [t_us u32][value 4 B per subscribed id],
+ little-endian, values typed by the catalog. */
+typedef struct _navbot_link_v1_SignalBatch {
+    uint32_t slot;
+    navbot_link_v1_SignalBatch_rows_t rows;
+} navbot_link_v1_SignalBatch;
+
+typedef struct _navbot_link_v1_GetParam {
+    uint32_t id;
+} navbot_link_v1_GetParam;
+
+typedef PB_BYTES_ARRAY_T(4) navbot_link_v1_SetParam_value_t;
+typedef struct _navbot_link_v1_SetParam {
+    uint32_t id;
+    navbot_link_v1_SetParam_value_t value; /* 4 bytes little-endian, typed by the catalog */
+} navbot_link_v1_SetParam;
+
+typedef struct _navbot_link_v1_Call {
+    uint32_t id;
+    pb_size_t args_count;
+    float args[4]; /* in catalog order */
+} navbot_link_v1_Call;
 
 /* One frame carries exactly one Message. Add fields; never reuse numbers. */
 typedef struct _navbot_link_v1_Message {
@@ -88,8 +171,16 @@ typedef struct _navbot_link_v1_Message {
         navbot_link_v1_Status status;
         navbot_link_v1_Log log; /* errors, warnings, info */
         navbot_link_v1_WheelOdometry odom;
+        navbot_link_v1_CatalogEntry catalog_entry;
+        navbot_link_v1_SignalBatch signal_batch;
         navbot_link_v1_Command command; /* PC -> robot */
-        navbot_link_v1_Ack ack;
+        navbot_link_v1_Ack ack; /* robot -> PC, reply to every PC -> robot request */
+        navbot_link_v1_GetCatalog get_catalog;
+        navbot_link_v1_Subscribe subscribe;
+        navbot_link_v1_Unsubscribe unsubscribe;
+        navbot_link_v1_GetParam get_param;
+        navbot_link_v1_SetParam set_param;
+        navbot_link_v1_Call call;
     } body;
 } navbot_link_v1_Message;
 
@@ -107,6 +198,14 @@ extern "C" {
 #define _navbot_link_v1_Log_Level_MAX navbot_link_v1_Log_Level_FATAL
 #define _navbot_link_v1_Log_Level_ARRAYSIZE ((navbot_link_v1_Log_Level)(navbot_link_v1_Log_Level_FATAL+1))
 
+#define _navbot_link_v1_CatalogEntry_Kind_MIN navbot_link_v1_CatalogEntry_Kind_KIND_UNSPECIFIED
+#define _navbot_link_v1_CatalogEntry_Kind_MAX navbot_link_v1_CatalogEntry_Kind_ACTION
+#define _navbot_link_v1_CatalogEntry_Kind_ARRAYSIZE ((navbot_link_v1_CatalogEntry_Kind)(navbot_link_v1_CatalogEntry_Kind_ACTION+1))
+
+#define _navbot_link_v1_CatalogEntry_Type_MIN navbot_link_v1_CatalogEntry_Type_TYPE_UNSPECIFIED
+#define _navbot_link_v1_CatalogEntry_Type_MAX navbot_link_v1_CatalogEntry_Type_BOOL
+#define _navbot_link_v1_CatalogEntry_Type_ARRAYSIZE ((navbot_link_v1_CatalogEntry_Type)(navbot_link_v1_CatalogEntry_Type_BOOL+1))
+
 
 
 
@@ -118,23 +217,52 @@ extern "C" {
 
 
 
+#define navbot_link_v1_CatalogEntry_kind_ENUMTYPE navbot_link_v1_CatalogEntry_Kind
+#define navbot_link_v1_CatalogEntry_type_ENUMTYPE navbot_link_v1_CatalogEntry_Type
+
+
+
+
+
+
+
+
+
 /* Initializer values for message structs */
 #define navbot_link_v1_Message_init_default      {0, 0, 0, {navbot_link_v1_Imu_init_default}}
 #define navbot_link_v1_Imu_init_default          {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define navbot_link_v1_WheelOdometry_init_default {0, 0, 0}
 #define navbot_link_v1_Battery_init_default      {0}
 #define navbot_link_v1_Status_init_default       {_navbot_link_v1_Status_Mode_MIN, 0, 0}
-#define navbot_link_v1_Log_init_default          {_navbot_link_v1_Log_Level_MIN, 0, ""}
+#define navbot_link_v1_Log_init_default          {_navbot_link_v1_Log_Level_MIN, 0, "", ""}
 #define navbot_link_v1_Command_init_default      {0, 0, 0}
-#define navbot_link_v1_Ack_init_default          {0, 0}
+#define navbot_link_v1_Ack_init_default          {0, 0, "", {0, {0}}}
+#define navbot_link_v1_GetCatalog_init_default   {0}
+#define navbot_link_v1_CatalogEntry_init_default {0, 0, "", "", _navbot_link_v1_CatalogEntry_Kind_MIN, _navbot_link_v1_CatalogEntry_Type_MIN, 0, {navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default}, ""}
+#define navbot_link_v1_CatalogEntry_Arg_init_default {"", 0, 0}
+#define navbot_link_v1_Subscribe_init_default    {0, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0}
+#define navbot_link_v1_Unsubscribe_init_default  {0}
+#define navbot_link_v1_SignalBatch_init_default  {0, {0, {0}}}
+#define navbot_link_v1_GetParam_init_default     {0}
+#define navbot_link_v1_SetParam_init_default     {0, {0, {0}}}
+#define navbot_link_v1_Call_init_default         {0, 0, {0, 0, 0, 0}}
 #define navbot_link_v1_Message_init_zero         {0, 0, 0, {navbot_link_v1_Imu_init_zero}}
 #define navbot_link_v1_Imu_init_zero             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define navbot_link_v1_WheelOdometry_init_zero   {0, 0, 0}
 #define navbot_link_v1_Battery_init_zero         {0}
 #define navbot_link_v1_Status_init_zero          {_navbot_link_v1_Status_Mode_MIN, 0, 0}
-#define navbot_link_v1_Log_init_zero             {_navbot_link_v1_Log_Level_MIN, 0, ""}
+#define navbot_link_v1_Log_init_zero             {_navbot_link_v1_Log_Level_MIN, 0, "", ""}
 #define navbot_link_v1_Command_init_zero         {0, 0, 0}
-#define navbot_link_v1_Ack_init_zero             {0, 0}
+#define navbot_link_v1_Ack_init_zero             {0, 0, "", {0, {0}}}
+#define navbot_link_v1_GetCatalog_init_zero      {0}
+#define navbot_link_v1_CatalogEntry_init_zero    {0, 0, "", "", _navbot_link_v1_CatalogEntry_Kind_MIN, _navbot_link_v1_CatalogEntry_Type_MIN, 0, {navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero}, ""}
+#define navbot_link_v1_CatalogEntry_Arg_init_zero {"", 0, 0}
+#define navbot_link_v1_Subscribe_init_zero       {0, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0}
+#define navbot_link_v1_Unsubscribe_init_zero     {0}
+#define navbot_link_v1_SignalBatch_init_zero     {0, {0, {0}}}
+#define navbot_link_v1_GetParam_init_zero        {0}
+#define navbot_link_v1_SetParam_init_zero        {0, {0, {0}}}
+#define navbot_link_v1_Call_init_zero            {0, 0, {0, 0, 0, 0}}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define navbot_link_v1_Imu_ax_tag                1
@@ -157,11 +285,37 @@ extern "C" {
 #define navbot_link_v1_Log_level_tag             1
 #define navbot_link_v1_Log_code_tag              2
 #define navbot_link_v1_Log_text_tag              3
+#define navbot_link_v1_Log_tag_tag               4
 #define navbot_link_v1_Command_id_tag            1
 #define navbot_link_v1_Command_speed_mps_tag     2
 #define navbot_link_v1_Command_turn_rad_s_tag    3
 #define navbot_link_v1_Ack_command_id_tag        1
 #define navbot_link_v1_Ack_accepted_tag          2
+#define navbot_link_v1_Ack_error_tag             3
+#define navbot_link_v1_Ack_value_tag             4
+#define navbot_link_v1_GetCatalog_index_tag      1
+#define navbot_link_v1_CatalogEntry_Arg_name_tag 1
+#define navbot_link_v1_CatalogEntry_Arg_min_tag  2
+#define navbot_link_v1_CatalogEntry_Arg_max_tag  3
+#define navbot_link_v1_CatalogEntry_index_tag    1
+#define navbot_link_v1_CatalogEntry_count_tag    2
+#define navbot_link_v1_CatalogEntry_name_tag     3
+#define navbot_link_v1_CatalogEntry_unit_tag     4
+#define navbot_link_v1_CatalogEntry_kind_tag     5
+#define navbot_link_v1_CatalogEntry_type_tag     6
+#define navbot_link_v1_CatalogEntry_args_tag     7
+#define navbot_link_v1_CatalogEntry_build_tag    8
+#define navbot_link_v1_Subscribe_slot_tag        1
+#define navbot_link_v1_Subscribe_ids_tag         2
+#define navbot_link_v1_Subscribe_period_us_tag   3
+#define navbot_link_v1_Unsubscribe_slot_tag      1
+#define navbot_link_v1_SignalBatch_slot_tag      1
+#define navbot_link_v1_SignalBatch_rows_tag      2
+#define navbot_link_v1_GetParam_id_tag           1
+#define navbot_link_v1_SetParam_id_tag           1
+#define navbot_link_v1_SetParam_value_tag        2
+#define navbot_link_v1_Call_id_tag               1
+#define navbot_link_v1_Call_args_tag             2
 #define navbot_link_v1_Message_seq_tag           1
 #define navbot_link_v1_Message_t_ms_tag          2
 #define navbot_link_v1_Message_imu_tag           10
@@ -169,8 +323,16 @@ extern "C" {
 #define navbot_link_v1_Message_status_tag        12
 #define navbot_link_v1_Message_log_tag           13
 #define navbot_link_v1_Message_odom_tag          14
+#define navbot_link_v1_Message_catalog_entry_tag 15
+#define navbot_link_v1_Message_signal_batch_tag  16
 #define navbot_link_v1_Message_command_tag       20
 #define navbot_link_v1_Message_ack_tag           21
+#define navbot_link_v1_Message_get_catalog_tag   22
+#define navbot_link_v1_Message_subscribe_tag     23
+#define navbot_link_v1_Message_unsubscribe_tag   24
+#define navbot_link_v1_Message_get_param_tag     25
+#define navbot_link_v1_Message_set_param_tag     26
+#define navbot_link_v1_Message_call_tag          27
 
 /* Struct field encoding specification for nanopb */
 #define navbot_link_v1_Message_FIELDLIST(X, a) \
@@ -181,8 +343,16 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (body,battery,body.battery),  11) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,status,body.status),  12) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,log,body.log),  13) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,odom,body.odom),  14) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,catalog_entry,body.catalog_entry),  15) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,signal_batch,body.signal_batch),  16) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,command,body.command),  20) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (body,ack,body.ack),  21)
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,ack,body.ack),  21) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,get_catalog,body.get_catalog),  22) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,subscribe,body.subscribe),  23) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,unsubscribe,body.unsubscribe),  24) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,get_param,body.get_param),  25) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,set_param,body.set_param),  26) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,call,body.call),  27)
 #define navbot_link_v1_Message_CALLBACK NULL
 #define navbot_link_v1_Message_DEFAULT NULL
 #define navbot_link_v1_Message_body_imu_MSGTYPE navbot_link_v1_Imu
@@ -190,8 +360,16 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (body,ack,body.ack),  21)
 #define navbot_link_v1_Message_body_status_MSGTYPE navbot_link_v1_Status
 #define navbot_link_v1_Message_body_log_MSGTYPE navbot_link_v1_Log
 #define navbot_link_v1_Message_body_odom_MSGTYPE navbot_link_v1_WheelOdometry
+#define navbot_link_v1_Message_body_catalog_entry_MSGTYPE navbot_link_v1_CatalogEntry
+#define navbot_link_v1_Message_body_signal_batch_MSGTYPE navbot_link_v1_SignalBatch
 #define navbot_link_v1_Message_body_command_MSGTYPE navbot_link_v1_Command
 #define navbot_link_v1_Message_body_ack_MSGTYPE navbot_link_v1_Ack
+#define navbot_link_v1_Message_body_get_catalog_MSGTYPE navbot_link_v1_GetCatalog
+#define navbot_link_v1_Message_body_subscribe_MSGTYPE navbot_link_v1_Subscribe
+#define navbot_link_v1_Message_body_unsubscribe_MSGTYPE navbot_link_v1_Unsubscribe
+#define navbot_link_v1_Message_body_get_param_MSGTYPE navbot_link_v1_GetParam
+#define navbot_link_v1_Message_body_set_param_MSGTYPE navbot_link_v1_SetParam
+#define navbot_link_v1_Message_body_call_MSGTYPE navbot_link_v1_Call
 
 #define navbot_link_v1_Imu_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, FLOAT,    ax,                1) \
@@ -229,7 +407,8 @@ X(a, STATIC,   SINGULAR, UINT32,   dropped_frames,    3)
 #define navbot_link_v1_Log_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UENUM,    level,             1) \
 X(a, STATIC,   SINGULAR, UINT32,   code,              2) \
-X(a, STATIC,   SINGULAR, STRING,   text,              3)
+X(a, STATIC,   SINGULAR, STRING,   text,              3) \
+X(a, STATIC,   SINGULAR, STRING,   tag,               4)
 #define navbot_link_v1_Log_CALLBACK NULL
 #define navbot_link_v1_Log_DEFAULT NULL
 
@@ -242,9 +421,71 @@ X(a, STATIC,   SINGULAR, FLOAT,    turn_rad_s,        3)
 
 #define navbot_link_v1_Ack_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   command_id,        1) \
-X(a, STATIC,   SINGULAR, BOOL,     accepted,          2)
+X(a, STATIC,   SINGULAR, BOOL,     accepted,          2) \
+X(a, STATIC,   SINGULAR, STRING,   error,             3) \
+X(a, STATIC,   SINGULAR, BYTES,    value,             4)
 #define navbot_link_v1_Ack_CALLBACK NULL
 #define navbot_link_v1_Ack_DEFAULT NULL
+
+#define navbot_link_v1_GetCatalog_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   index,             1)
+#define navbot_link_v1_GetCatalog_CALLBACK NULL
+#define navbot_link_v1_GetCatalog_DEFAULT NULL
+
+#define navbot_link_v1_CatalogEntry_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   index,             1) \
+X(a, STATIC,   SINGULAR, UINT32,   count,             2) \
+X(a, STATIC,   SINGULAR, STRING,   name,              3) \
+X(a, STATIC,   SINGULAR, STRING,   unit,              4) \
+X(a, STATIC,   SINGULAR, UENUM,    kind,              5) \
+X(a, STATIC,   SINGULAR, UENUM,    type,              6) \
+X(a, STATIC,   REPEATED, MESSAGE,  args,              7) \
+X(a, STATIC,   SINGULAR, STRING,   build,             8)
+#define navbot_link_v1_CatalogEntry_CALLBACK NULL
+#define navbot_link_v1_CatalogEntry_DEFAULT NULL
+#define navbot_link_v1_CatalogEntry_args_MSGTYPE navbot_link_v1_CatalogEntry_Arg
+
+#define navbot_link_v1_CatalogEntry_Arg_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, STRING,   name,              1) \
+X(a, STATIC,   SINGULAR, FLOAT,    min,               2) \
+X(a, STATIC,   SINGULAR, FLOAT,    max,               3)
+#define navbot_link_v1_CatalogEntry_Arg_CALLBACK NULL
+#define navbot_link_v1_CatalogEntry_Arg_DEFAULT NULL
+
+#define navbot_link_v1_Subscribe_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   slot,              1) \
+X(a, STATIC,   REPEATED, UINT32,   ids,               2) \
+X(a, STATIC,   SINGULAR, UINT32,   period_us,         3)
+#define navbot_link_v1_Subscribe_CALLBACK NULL
+#define navbot_link_v1_Subscribe_DEFAULT NULL
+
+#define navbot_link_v1_Unsubscribe_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   slot,              1)
+#define navbot_link_v1_Unsubscribe_CALLBACK NULL
+#define navbot_link_v1_Unsubscribe_DEFAULT NULL
+
+#define navbot_link_v1_SignalBatch_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   slot,              1) \
+X(a, STATIC,   SINGULAR, BYTES,    rows,              2)
+#define navbot_link_v1_SignalBatch_CALLBACK NULL
+#define navbot_link_v1_SignalBatch_DEFAULT NULL
+
+#define navbot_link_v1_GetParam_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   id,                1)
+#define navbot_link_v1_GetParam_CALLBACK NULL
+#define navbot_link_v1_GetParam_DEFAULT NULL
+
+#define navbot_link_v1_SetParam_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   id,                1) \
+X(a, STATIC,   SINGULAR, BYTES,    value,             2)
+#define navbot_link_v1_SetParam_CALLBACK NULL
+#define navbot_link_v1_SetParam_DEFAULT NULL
+
+#define navbot_link_v1_Call_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   id,                1) \
+X(a, STATIC,   REPEATED, FLOAT,    args,              2)
+#define navbot_link_v1_Call_CALLBACK NULL
+#define navbot_link_v1_Call_DEFAULT NULL
 
 extern const pb_msgdesc_t navbot_link_v1_Message_msg;
 extern const pb_msgdesc_t navbot_link_v1_Imu_msg;
@@ -254,6 +495,15 @@ extern const pb_msgdesc_t navbot_link_v1_Status_msg;
 extern const pb_msgdesc_t navbot_link_v1_Log_msg;
 extern const pb_msgdesc_t navbot_link_v1_Command_msg;
 extern const pb_msgdesc_t navbot_link_v1_Ack_msg;
+extern const pb_msgdesc_t navbot_link_v1_GetCatalog_msg;
+extern const pb_msgdesc_t navbot_link_v1_CatalogEntry_msg;
+extern const pb_msgdesc_t navbot_link_v1_CatalogEntry_Arg_msg;
+extern const pb_msgdesc_t navbot_link_v1_Subscribe_msg;
+extern const pb_msgdesc_t navbot_link_v1_Unsubscribe_msg;
+extern const pb_msgdesc_t navbot_link_v1_SignalBatch_msg;
+extern const pb_msgdesc_t navbot_link_v1_GetParam_msg;
+extern const pb_msgdesc_t navbot_link_v1_SetParam_msg;
+extern const pb_msgdesc_t navbot_link_v1_Call_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
 #define navbot_link_v1_Message_fields &navbot_link_v1_Message_msg
@@ -264,16 +514,34 @@ extern const pb_msgdesc_t navbot_link_v1_Ack_msg;
 #define navbot_link_v1_Log_fields &navbot_link_v1_Log_msg
 #define navbot_link_v1_Command_fields &navbot_link_v1_Command_msg
 #define navbot_link_v1_Ack_fields &navbot_link_v1_Ack_msg
+#define navbot_link_v1_GetCatalog_fields &navbot_link_v1_GetCatalog_msg
+#define navbot_link_v1_CatalogEntry_fields &navbot_link_v1_CatalogEntry_msg
+#define navbot_link_v1_CatalogEntry_Arg_fields &navbot_link_v1_CatalogEntry_Arg_msg
+#define navbot_link_v1_Subscribe_fields &navbot_link_v1_Subscribe_msg
+#define navbot_link_v1_Unsubscribe_fields &navbot_link_v1_Unsubscribe_msg
+#define navbot_link_v1_SignalBatch_fields &navbot_link_v1_SignalBatch_msg
+#define navbot_link_v1_GetParam_fields &navbot_link_v1_GetParam_msg
+#define navbot_link_v1_SetParam_fields &navbot_link_v1_SetParam_msg
+#define navbot_link_v1_Call_fields &navbot_link_v1_Call_msg
 
 /* Maximum encoded size of messages (where known) */
 #define NAVBOT_LINK_V1_NAVBOT_LINK_PB_H_MAX_SIZE navbot_link_v1_Message_size
-#define navbot_link_v1_Ack_size                  8
+#define navbot_link_v1_Ack_size                  80
 #define navbot_link_v1_Battery_size              5
+#define navbot_link_v1_Call_size                 26
+#define navbot_link_v1_CatalogEntry_Arg_size     28
+#define navbot_link_v1_CatalogEntry_size         214
 #define navbot_link_v1_Command_size              16
+#define navbot_link_v1_GetCatalog_size           6
+#define navbot_link_v1_GetParam_size             6
 #define navbot_link_v1_Imu_size                  51
-#define navbot_link_v1_Log_size                  106
-#define navbot_link_v1_Message_size              120
+#define navbot_link_v1_Log_size                  124
+#define navbot_link_v1_Message_size              229
+#define navbot_link_v1_SetParam_size             12
+#define navbot_link_v1_SignalBatch_size          205
 #define navbot_link_v1_Status_size               10
+#define navbot_link_v1_Subscribe_size            204
+#define navbot_link_v1_Unsubscribe_size          6
 #define navbot_link_v1_WheelOdometry_size        24
 
 #ifdef __cplusplus

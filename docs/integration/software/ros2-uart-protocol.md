@@ -21,7 +21,24 @@ frame = COBS( payload || crc16_le(payload) ) || 0x00
 payload = serialized navbot.link.v1.Message   (<= 252 bytes)
 ```
 
-Both directions use the same format. Transport: ESP32 UART1 (the former touchscreen port, now removed), **2000000 baud, 8N1**, RX = GPIO20, TX = GPIO19 in the firmware (`link_uart.h`). The firmware opens the port at startup and sends `WheelOdometry` and `Imu` in normal mode. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: wheel odometry (`WheelOdometry`), sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), and PC→robot `Command` with `Ack`.
+Both directions use the same format. Transport: ESP32 UART1 (the former touchscreen port, now removed), **2000000 baud, 8N1**, RX = GPIO20, TX = GPIO19 in the firmware (`link_uart.h`). The firmware opens the port at startup and sends `WheelOdometry` and `Imu` in normal mode. One `Message` carries a `seq` (gap = lost frame), `t_ms` (sender `millis()`) and exactly one `body`: wheel odometry (`WheelOdometry`), sensor data (`Imu`, `Battery`), `Status`, `Log` (levels DEBUG–FATAL with a stable numeric `code` and short text for errors), PC→robot `Command` with `Ack`, and the catalog and subscription messages below.
+
+## Catalog, subscriptions, parameters and actions
+
+The schema also defines the messages for the entry table of the [logging and control plan](../plans/logging-and-control-link.md). **The firmware does not send or answer them yet**; only the PC library and its test firmware use them.
+
+| PC → robot | Reply | Meaning |
+| --- | --- | --- |
+| `GetCatalog{index}` | `CatalogEntry` | One table entry: name, unit, `Kind` (`SIGNAL`, `SIGNAL_MIN`, `SIGNAL_MAX`, `PARAM`, `ACTION`), `Type` (`F32`, `I32`, `U32`, `BOOL`), and for an action its `Arg` names and bounds. Every entry carries `count`; the entry at index 0 also carries the firmware `build`. |
+| `Subscribe{slot, ids, period_us}` | `Ack` | Stream the entries `ids` (table indices) every `period_us` (0 = every control tick) as `SignalBatch` frames. Sending the same slot again renews the 5 s lease. |
+| `Unsubscribe{slot}` | `Ack` | Stop the slot. |
+| `GetParam{id}`, `SetParam{id, value}` | `Ack` with `value` | Read or write one entry. `value` is 4 bytes little-endian, typed by the catalog. |
+| `Call{id, args}` | `Ack` | Start an action; `args` are floats in catalog order. |
+
+- `Ack.command_id` echoes the request's `Message.seq` (for `Command`, its `id`). A refused request has `accepted = false` and the reason in `error`.
+- `SignalBatch.rows` holds one or more rows of `[t_us u32][4-byte value per id]`, little-endian.
+- `Log.tag` names the source of a log line.
+- nanopb bounds: 48 ids per subscription (196-byte row), 4 action arguments, 24-character names. The largest `Message` encodes to 229 bytes, below the 252-byte payload limit.
 
 ## Rules
 
