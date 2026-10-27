@@ -90,3 +90,18 @@ def test_non_protobuf_payload_counts_decode_error():
     assert bridge.feed(encode_frame(b"\xff\xff\xff")) == []
     assert bridge.decode_errors == 1
     assert bridge.bad_frames == 0
+
+
+def imu_frame(seq: int, t_us: int, gz: float) -> bytes:
+    msg = navbot_link_pb2.Message(seq=seq, t_ms=seq, imu=navbot_link_pb2.Imu(t_us=t_us, gz=gz))
+    return encode_frame(msg.SerializeToString())
+
+
+def test_gyro_heading_uses_imu_gz_from_the_link():
+    bridge = LinkBridge(DiffDriveOdometry(0.05, 0.2, gyro_yaw_sign=-1))
+    bridge.feed(odom_frame(1, 0, 0.0, 0.0) + imu_frame(2, 0, 0.5))
+    bridge.feed(odom_frame(3, 20_000, 0.0, 0.0) + imu_frame(4, 20_000, 0.5))
+    out = bridge.feed(odom_frame(5, 40_000, 1.0, -1.0))  # wheels disagree; gyro wins
+    assert len(out) == 1
+    assert out[0].yaw_rad == pytest.approx(-0.01)
+    assert out[0].angular_rad_s == pytest.approx(-0.5)

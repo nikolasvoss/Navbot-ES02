@@ -1,0 +1,52 @@
+<style>
+  /* Shared severity palette: ok green, warn amber, error red, unknown grey. Every page colors state through data-level. */
+  [data-level=ok] { --dot:#34d399; --fg:#a7f3d0; --bg:rgba(52,211,153,.14); --bd:#34d399 }
+  [data-level=warn] { --dot:#fbbf24; --fg:#fde68a; --bg:rgba(251,191,36,.14); --bd:#fbbf24 }
+  [data-level=error] { --dot:#f87171; --fg:#fecaca; --bg:rgba(248,113,113,.16); --bd:#f87171 }
+  [data-level=unknown] { --dot:#94a3b8; --fg:#cbd5e1; --bg:rgba(148,163,184,.12); --bd:#64748b }
+  .pill[data-level], [data-level] > .pill { color:var(--fg); background:var(--bg); border:1px solid var(--bd); border-radius:999px }
+  dd[data-level=warn], dd[data-level=error] { color:var(--fg); font-weight:700 }
+  .hub { display:flex; flex-wrap:nowrap; overflow:hidden; white-space:nowrap; gap:.4rem; padding:.4rem .75rem; background:#0b1218; font:600 14px system-ui,sans-serif }
+  .hub a { display:inline-flex; align-items:center; gap:.4rem; height:1.8rem; padding:0 .7rem; border:1px solid transparent; border-radius:.4rem; color:#edf3f7; text-decoration:none }
+  .hub a.active { background:#263744; border-color:#637887 }
+  .hub .chip { display:inline-flex; align-items:center; gap:.4rem; height:1.8rem; padding:0 .7rem; border:1px solid transparent; border-radius:.4rem; color:#cbd5e1; cursor:default }
+  .hub .chip.right { margin-left:auto }
+  .hub i { flex:none; width:.6rem; height:.6rem; border-radius:50%; background:var(--dot, #94a3b8) }
+  .hub em { font-style:normal; font-size:.85em; padding:.1rem .45rem }
+  .hub em:empty { display:none }
+  @media (max-width: 760px) { .hub em, .hub .chip b { display:none } }
+</style>
+<nav class="hub" aria-label="Pages and service status">
+  {% for key, href, label in (("lidar", "/lidar", "Lidar"), ("slam", "/slam", "SLAM"), ("radar", "/radar/", "Radar")) %}
+  <a href="{{ href }}" data-svc="{{ key }}" data-level="unknown"{% if key == active %} class="active" aria-current="page"{% endif %}><i></i><span>{{ label }}</span><em class="pill"></em></a>
+  {% endfor %}
+  <span class="chip right" data-svc="robot_link" data-level="unknown"><i></i><b>Robot link</b><em class="pill"></em></span>
+</nav>
+<script>
+(() => {
+  const chips = new Map([...document.querySelectorAll(".hub [data-svc]")].map((el) => [el.dataset.svc, el]));
+
+  function paint(key, level, text, title) {
+    const chip = chips.get(key);
+    chip.dataset.level = level;
+    chip.querySelector("em").textContent = text;
+    chip.title = title;
+  }
+
+  async function poll() {
+    try {
+      const response = await fetch("/services.json", { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      for (const row of await response.json()) {
+        paint(row.key, row.level, row.level === "ok" ? "" : row.short, `${row.name}: ${row.message}`);
+      }
+    } catch (error) {
+      for (const key of chips.keys()) paint(key, "unknown", "", "Status unknown");
+      paint("lidar", "error", "Unreachable", `navbot-lidar web service not reachable (${error.message})`);
+    }
+  }
+
+  poll();
+  setInterval(poll, 3000);
+})();
+</script>

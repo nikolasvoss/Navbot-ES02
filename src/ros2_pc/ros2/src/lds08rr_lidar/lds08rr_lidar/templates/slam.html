@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Navbot SLAM</title>
+  <style>
+    :root { color-scheme: dark; font: 15px system-ui, sans-serif; background: #101820; color: #edf3f7; }
+    * { box-sizing: border-box; }
+    body { height: 100dvh; margin: 0; padding: .75rem; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: .6rem; overflow: hidden; }
+    h1 { margin: 0; font-size: 1.35rem; }
+    .top, .mapTools { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+    .badge { border: 1px solid #64748b; border-radius: 999px; padding: .3rem .65rem; font-weight: 700; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: .65rem; min-height: 0; }
+    section { min-width: 0; min-height: 0; background: #18232d; border: 1px solid #354552; border-radius: .6rem; padding: .7rem; }
+    .mapView { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: .35rem; }
+    .sidebar { overflow-y: auto; }
+    .mapTools { justify-content: flex-end; flex-wrap: wrap; }
+    .follow { display: flex; align-items: center; gap: .35rem; white-space: nowrap; }
+    #viewLabel { margin-right: auto; color: #cbd5e1; font-variant-numeric: tabular-nums; }
+    .mapTools button { padding: 0; width: 2.4rem; height: 2.1rem; font-size: 1.25rem; cursor: pointer; }
+    .mapTools #fitView { width: auto; padding: 0 .7rem; font-size: inherit; }
+    #map { width: 100%; height: 100%; min-height: 0; display: block; background: #111c25; border-radius: .35rem; cursor: grab; touch-action: none; }
+    #map.dragging { cursor: grabbing; }
+    #map.following { cursor: default; }
+    h2 { margin: .9rem 0 .5rem; font-size: 1rem; color: #cbd5e1; }
+    dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .38rem .65rem; margin: 0; }
+    dt { color: #9fb0bd; white-space: nowrap; }
+    dd { margin: 0; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    .note { color: #cbd5e1; line-height: 1.4; }
+    .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
+    button { font: inherit; color: #edf3f7; background: #243442; border: 1px solid #64748b; border-radius: .4rem; padding: .5rem .8rem; }
+    button:disabled { opacity: .5; }
+    @media (max-width: 760px) {
+      body { height: auto; min-height: 100dvh; grid-template-rows: auto auto auto; overflow: auto; }
+      .grid { grid-template-columns: minmax(0, 1fr); }
+      #map { height: auto; aspect-ratio: 1; }
+      .mapTools { display: grid; grid-template-columns: minmax(0, 1fr) auto 48px 48px; }
+      #viewLabel { grid-column: 1 / -1; }
+      .follow { min-height: 44px; }
+      .follow input { width: 22px; height: 22px; }
+      .mapTools button { width: 48px; height: 48px; }
+      .mapTools #fitView { height: 48px; }
+      .sidebar { overflow: visible; }
+    }
+  </style>
+</head>
+<body>
+  {% include "_nav.html" %}
+  <header class="top">
+    <h1>Navbot SLAM</h1>
+    <span id="stateBadge" class="badge pill" data-level="unknown">Connecting</span>
+  </header>
+  <main class="grid">
+    <section class="mapView" aria-label="SLAM map">
+      <div class="mapTools">
+        <span id="viewLabel">View: waiting</span>
+        <label class="follow"><input id="follow" type="checkbox"> Center arrow</label>
+        <button id="fitView" type="button" title="Show the whole map">Fit</button>
+        <button id="zoomOut" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+        <button id="zoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+      </div>
+      <canvas id="map" aria-label="Occupancy grid map"></canvas>
+    </section>
+    <section class="sidebar" aria-label="SLAM status">
+      <dl>
+        <dt>LiDAR</dt><dd id="lidarState">–</dd>
+        <dt>Map size</dt><dd id="mapSize">–</dd>
+        <dt>Map cells</dt><dd id="mapCells">–</dd>
+        <dt>Resolution</dt><dd id="mapRes">–</dd>
+        <dt>Pose x, y</dt><dd id="poseXY">–</dd>
+        <dt>Heading</dt><dd id="poseYaw">–</dd>
+        <dt>Map update age</dt><dd id="mapAge">–</dd>
+        <dt>SLAM process</dt><dd id="slamProcess">–</dd>
+        <dt>Saved map</dt><dd id="savedMap">–</dd>
+      </dl>
+      <h2>Wheel odometry</h2>
+      <dl>
+        <dt>Odom x, y</dt><dd id="odomXY">–</dd>
+        <dt>Odom heading</dt><dd id="odomYaw">–</dd>
+        <dt>Speed</dt><dd id="odomSpeed">–</dd>
+        <dt>Turn rate</dt><dd id="odomTurn">–</dd>
+        <dt>Distance driven</dt><dd id="odomPath">–</dd>
+        <dt>Odom rate</dt><dd id="odomRate">–</dd>
+        <dt>SLAM correction</dt><dd id="slamCorrection">–</dd>
+      </dl>
+      <div class="actions">
+        <button id="saveMap" type="button" disabled>Save map</button>
+        <button id="resetMap" type="button" disabled title="Discard the current map and load the saved one">Reset map</button>
+        <button id="deleteMap" type="button" disabled>Delete map and start over</button>
+      </div>
+      <p id="actionResult" class="note" role="status"></p>
+      <p class="note">SLAM starts with the LiDAR service. The saved map loads on every start, which assumes the robot starts where that map began. Mapping runs <code>slam_toolbox</code> on LiDAR scans with the wheel odometry from the NavBot link bridge; without that service no scans are processed. Map and pose come from ROS topics <code>/map</code> and TF <code>map</code> → <code>base_link</code> (the robot, not the sensor). Angle zero and rotation direction of the LiDAR are uncalibrated, so the map may be mirrored or rotated.</p>
+    </section>
+  </main>
+  <script>
+    const canvas = document.querySelector('#map');
+    const ctx = canvas.getContext('2d');
+    const $ = (id) => document.getElementById(id);
+    // Map progress while slam_toolbox is healthy; any service fault comes from /services.json instead.
+    const MAP_STATES = {
+      waiting: ['Waiting for map', 'unknown'], no_pose: ['Map, no pose', 'warn'], mapping: ['Mapping', 'ok'],
+    };
+    let serverHasControl = false;
+    let actionRunning = false;
+    let hasSavedMap = false;
+
+    function syncButtons() {
+      for (const id of ['saveMap', 'deleteMap']) $(id).disabled = actionRunning || !serverHasControl;
+      $('resetMap').disabled = actionRunning || !serverHasControl || !hasSavedMap;
+    }
+
+    async function runAction(path, doneText) {
+      actionRunning = true;
+      syncButtons();
+      try {
+        const response = await fetch(path, { method: 'POST' });
+        const body = await response.json();
+        $('actionResult').textContent = body.ok ? doneText : (body.error || 'HTTP ' + response.status);
+      } catch (error) {
+        $('actionResult').textContent = 'Request failed: ' + error.message;
+      } finally {
+        actionRunning = false;
+        syncButtons();
+      }
+    }
+
+    $('saveMap').addEventListener('click', () => runAction('/slam/save', 'Map saved.'));
+    $('resetMap').addEventListener('click', () => {
+      if (confirm('Discard the current map, including anything not saved, and load the saved map?')) {
+        runAction('/slam/reset', 'Saved map is loading.');
+      }
+    });
+    $('deleteMap').addEventListener('click', () => {
+      if (confirm('Delete the saved map and restart mapping from scratch?')) {
+        runAction('/slam/delete', 'Map deleted; mapping restarts from scratch.');
+      }
+    });
+
+    async function getJson(path) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2500);
+      try {
+        const response = await fetch(path, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(path + ' ' + response.status);
+        return await response.json();
+      } finally { clearTimeout(timer); }
+    }
+
+    // View: zoom 1 fits the whole map; center is a world point in metres, null = map center.
+    const minZoom = 0.5, maxZoom = 40;
+    let zoom = 1;
+    let center = null;
+    let currentMap = null, currentPose = null, mapImage = null;
+    let drag = null;
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.round(rect.width * ratio), height = Math.round(rect.height * ratio);
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        draw();
+      }
+    }
+
+    function view() {
+      const ratio = window.devicePixelRatio || 1;
+      const width = canvas.width / ratio, height = canvas.height / ratio;
+      const m = currentMap;
+      const mapW = m.width * m.resolution, mapH = m.height * m.resolution;
+      const scale = Math.min(width / mapW, height / mapH) * zoom;   // pixels per metre
+      let c = center || { x: m.origin_x + mapW / 2, y: m.origin_y + mapH / 2 };
+      if ($('follow').checked && currentPose) c = currentPose;
+      return { ratio, width, height, scale, c,
+        sx: (x) => width / 2 + (x - c.x) * scale,
+        sy: (y) => height / 2 - (y - c.y) * scale };
+    }
+
+    function draw() {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      $('zoomIn').disabled = zoom >= maxZoom;
+      $('zoomOut').disabled = zoom <= minZoom;
+      if (!currentMap || !mapImage || !canvas.width) { $('viewLabel').textContent = 'View: waiting'; return; }
+      const m = currentMap, v = view();
+      ctx.setTransform(v.ratio, 0, 0, v.ratio, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      const left = v.sx(m.origin_x), top = v.sy(m.origin_y + m.height * m.resolution);
+      ctx.drawImage(mapImage, left, top, m.width * m.resolution * v.scale, m.height * m.resolution * v.scale);
+      const pose = currentPose;
+      if (pose) {
+        ctx.save();
+        ctx.translate(v.sx(pose.x), v.sy(pose.y));
+        ctx.rotate(-pose.yaw);
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-9, 8); ctx.lineTo(-9, -8); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      drawScaleBar(v);
+      $('viewLabel').textContent = `View: ${(v.width / v.scale).toFixed(1)} m wide`;
+    }
+
+    // Scale bar like on a geographic map: a round length (1, 2 or 5 × 10^n m) about 120 px long.
+    function drawScaleBar(v) {
+      const target = 120 / v.scale;
+      const power = Math.pow(10, Math.floor(Math.log10(target)));
+      const metres = [1, 2, 5, 10].map((f) => f * power).filter((d) => d <= target).pop() || power;
+      const length = metres * v.scale;
+      const text = metres >= 1 ? `${+metres.toFixed(1)} m` : `${Math.round(metres * 100)} cm`;
+      const x = (v.width - length) / 2, y = v.height - 14;
+      ctx.font = '600 13px system-ui, sans-serif';
+      const textWidth = ctx.measureText(text).width;
+      const boxWidth = Math.max(length, textWidth) + 12;
+      ctx.fillStyle = 'rgba(16, 24, 32, .78)';
+      ctx.fillRect((v.width - boxWidth) / 2, y - 26, boxWidth, 34);
+      ctx.strokeStyle = ctx.fillStyle = '#edf3f7';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y - 6); ctx.lineTo(x, y); ctx.lineTo(x + length, y); ctx.lineTo(x + length, y - 6);
+      ctx.stroke();
+      ctx.textBaseline = 'alphabetic';
+      ctx.textAlign = 'center';
+      ctx.fillText(text, v.width / 2, y - 10);
+      ctx.textAlign = 'start';
+    }
+
+    function setZoom(factor) {
+      if (currentMap && !center && !$('follow').checked) center = view().c;
+      zoom = Math.min(maxZoom, Math.max(minZoom, zoom * factor));
+      draw();
+    }
+
+    function syncFollow() {
+      canvas.classList.toggle('following', $('follow').checked);
+      if (!$('follow').checked && currentPose) center = { x: currentPose.x, y: currentPose.y };
+      draw();
+    }
+
+    $('zoomIn').addEventListener('click', () => setZoom(1.25));
+    $('zoomOut').addEventListener('click', () => setZoom(1 / 1.25));
+    $('fitView').addEventListener('click', () => {
+      $('follow').checked = false;
+      canvas.classList.remove('following');
+      zoom = 1; center = null;
+      draw();
+    });
+    $('follow').addEventListener('change', syncFollow);
+
+    // Zoom by factor, keeping the map point under canvas position (px, py) in place.
+    function zoomAt(factor, px, py) {
+      if (!currentMap) return;
+      const before = view();
+      const next = Math.min(maxZoom, Math.max(minZoom, zoom * factor));
+      if ($('follow').checked) { zoom = next; draw(); return; }
+      const wx = before.c.x + (px - before.width / 2) / before.scale;
+      const wy = before.c.y - (py - before.height / 2) / before.scale;
+      const scale = before.scale * next / zoom;
+      zoom = next;
+      center = { x: wx - (px - before.width / 2) / scale, y: wy + (py - before.height / 2) / scale };
+      draw();
+    }
+
+    function canvasPoint(event) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    }
+
+    canvas.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      const p = canvasPoint(event);
+      const lines = event.deltaMode === 1 ? 33 : event.deltaMode === 2 ? 400 : 1;
+      zoomAt(Math.exp(-event.deltaY * lines * 0.0015), p.x, p.y);
+    }, { passive: false });
+
+    // Pointers on the canvas: one drags the view (when not centering), two pinch-zoom.
+    const pointers = new Map();
+    function pinchInfo() {
+      const [a, b] = [...pointers.values()];
+      return { dist: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+    function startGesture() {
+      drag = null;
+      if (pointers.size === 1 && !$('follow').checked && currentMap) {
+        const [p] = pointers.values();
+        drag = { x: p.x, y: p.y, c: view().c };
+      } else if (pointers.size === 2) {
+        drag = { pinch: pinchInfo() };
+      }
+      canvas.classList.toggle('dragging', Boolean(drag && !drag.pinch));
+    }
+
+    canvas.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      canvas.setPointerCapture(event.pointerId);
+      pointers.set(event.pointerId, canvasPoint(event));
+      startGesture();
+    });
+    canvas.addEventListener('pointermove', (event) => {
+      if (!pointers.has(event.pointerId)) return;
+      pointers.set(event.pointerId, canvasPoint(event));
+      if (!drag || !currentMap) return;
+      if (drag.pinch && pointers.size === 2) {
+        const now = pinchInfo(), last = drag.pinch;
+        if (!$('follow').checked) {
+          const scale = view().scale;
+          center = { x: view().c.x - (now.x - last.x) / scale, y: view().c.y + (now.y - last.y) / scale };
+        }
+        zoomAt(last.dist > 0 ? now.dist / last.dist : 1, now.x, now.y);
+        drag.pinch = now;
+      } else if (!drag.pinch && pointers.size === 1) {
+        const [p] = pointers.values();
+        const scale = view().scale;
+        center = { x: drag.c.x - (p.x - drag.x) / scale, y: drag.c.y + (p.y - drag.y) / scale };
+        draw();
+      }
+    });
+    const endPointer = (event) => {
+      if (!pointers.delete(event.pointerId)) return;
+      startGesture();
+    };
+    canvas.addEventListener('pointerup', endPointer);
+    canvas.addEventListener('pointercancel', endPointer);
+    window.addEventListener('resize', resizeCanvas);
+    new ResizeObserver(resizeCanvas).observe(canvas);
+
+    function setMap(map, pose) {
+      currentPose = pose;
+      if (!map) { currentMap = mapImage = null; draw(); return; }
+      if (!currentMap || map.data !== currentMap.data || map.width !== currentMap.width || map.height !== currentMap.height) {
+        mapImage = renderMap(map);
+      }
+      currentMap = map;
+      draw();
+    }
+
+    function renderMap(map) {
+      const bytes = Uint8Array.from(atob(map.data), (c) => c.charCodeAt(0));
+      const image = ctx.createImageData(map.width, map.height);
+      for (let y = 0; y < map.height; y++) {
+        for (let x = 0; x < map.width; x++) {
+          const v = bytes[y * map.width + x];
+          const signed = v > 127 ? v - 256 : v;          // -1 unknown, 0..100 occupancy
+          const shade = signed < 0 ? 40 : 235 - Math.round(signed * 2.2);
+          const o = ((map.height - 1 - y) * map.width + x) * 4; // row 0 is the bottom
+          image.data[o] = image.data[o + 1] = image.data[o + 2] = shade;
+          image.data[o + 3] = 255;
+        }
+      }
+      const off = document.createElement('canvas');
+      off.width = map.width; off.height = map.height;
+      off.getContext('2d').putImageData(image, 0, 0);
+      return off;
+    }
+
+    function setState(id, text, level) {
+      $(id).textContent = text;
+      $(id).dataset.level = level;
+    }
+
+    async function refresh() {
+      try {
+        const [slam, services] = await Promise.all([getJson('/map.json'), getJson('/services.json')]);
+        const svc = Object.fromEntries(services.map((row) => [row.key, row]));
+        const slamRow = svc.slam;
+        const [mapText, mapLevel] = MAP_STATES[slam.state] || [slam.state, 'unknown'];
+        if (slamRow.level === 'ok') setState('stateBadge', mapText, mapLevel);
+        else setState('stateBadge', slamRow.short, slamRow.level);
+        setState('lidarState', svc.lidar.short, svc.lidar.level);
+        const m = slam.map;
+        $('mapSize').textContent = m ? `${(m.width * m.resolution).toFixed(1)} × ${(m.height * m.resolution).toFixed(1)} m` : '–';
+        $('mapCells').textContent = m ? `${m.width} × ${m.height}` : '–';
+        $('mapRes').textContent = m ? `${(m.resolution * 100).toFixed(0)} cm/cell` : '–';
+        const o = slam.odom, live = o && o.fresh;
+        const deg = (rad) => (rad * 180 / Math.PI).toFixed(1) + '°';
+        $('odomXY').textContent = live ? `${o.x.toFixed(2)}, ${o.y.toFixed(2)} m` : '–';
+        $('odomYaw').textContent = live ? deg(o.yaw) : '–';
+        $('odomSpeed').textContent = live ? `${o.linear.toFixed(2)} m/s` : '–';
+        $('odomTurn').textContent = live ? `${(o.angular * 180 / Math.PI).toFixed(0)} °/s` : '–';
+        $('odomPath').textContent = o ? `${o.path_m.toFixed(2)} m` : '–';
+        const linkRow = svc.robot_link;
+        if (linkRow && linkRow.level !== 'ok') setState('odomRate', linkRow.short, linkRow.level);
+        else setState('odomRate', live && o.rate_hz != null ? `${o.rate_hz.toFixed(0)} Hz` : (o ? 'Stale' : 'No data'), live ? 'ok' : 'error');
+        const c = slam.correction;
+        $('slamCorrection').textContent = c ? `${Math.hypot(c.x, c.y).toFixed(2)} m, ${deg(c.yaw)}` : '–';
+        const p = slam.pose;
+        $('poseXY').textContent = p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)} m` : '–';
+        $('poseYaw').textContent = p ? `${(p.yaw * 180 / Math.PI).toFixed(0)}°` : '–';
+        $('mapAge').textContent = slam.map_age_sec == null ? '–' : slam.map_age_sec.toFixed(0) + ' s';
+        const control = slam.control;
+        const saved = control && control.saved_map;
+        setState('slamProcess', slamRow.level === 'ok' ? 'Running' + (control.process.restarts > 0 ? ` (restarts ${control.process.restarts})` : '') : slamRow.short, slamRow.level);
+        $('savedMap').textContent = saved && saved.exists ? new Date(saved.saved_at * 1000).toLocaleString() : (control ? 'none' : '–');
+        serverHasControl = Boolean(control);
+        hasSavedMap = Boolean(saved && saved.exists);
+        syncButtons();
+        setMap(m, p);
+      } catch (error) {
+        setState('stateBadge', 'Unreachable', 'error');
+        serverHasControl = false;
+        syncButtons();
+        setMap(null, null);
+      }
+    }
+    resizeCanvas();
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>

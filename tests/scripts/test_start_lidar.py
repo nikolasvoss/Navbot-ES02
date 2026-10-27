@@ -41,6 +41,14 @@ def test_ssh_command_quotes_remote_path_and_forwards_port():
     assert url == "http://127.0.0.1:8181/lidar"
 
 
+def test_ssh_forwards_radar_bridge_only_when_requested():
+    command, _ = START_LIDAR.ssh_invocation("niko@cm5", "/home/niko/Navbot", ["--demo"], forward_radar=True)
+    assert command[3:7] == ["-L", "8081:127.0.0.1:8081", "-L", "9090:127.0.0.1:9090"]
+    assert command[-2] == "niko@cm5"
+    command, _ = START_LIDAR.ssh_invocation("niko@cm5", "/home/niko/Navbot", ["--demo"])
+    assert "9090:127.0.0.1:9090" not in command
+
+
 def test_ssh_does_not_accept_lan_bind():
     try:
         START_LIDAR.ssh_invocation("cm5", "/home/niko/Navbot", ["--demo", "--host", "0.0.0.0"])
@@ -242,8 +250,9 @@ def test_ros_subscriber_receives_demo_and_ctrl_c_exits_cleanly():
     observer = rclpy.create_node("lidar_acceptance_observer", context=context)
     executor = SingleThreadedExecutor(context=context)
     executor.add_node(observer)
-    scans, statuses = [], []
+    scans, slam_scans, statuses = [], [], []
     observer.create_subscription(LaserScan, "/scan", scans.append, qos_profile_sensor_data)
+    observer.create_subscription(LaserScan, "/scan_slam", slam_scans.append, qos_profile_sensor_data)
     observer.create_subscription(DiagnosticArray, "/lidar/status", statuses.append, 10)
     port = free_port()
     process = subprocess.Popen(
@@ -253,13 +262,17 @@ def test_ros_subscriber_receives_demo_and_ctrl_c_exits_cleanly():
     try:
         wait_for_state(f"http://127.0.0.1:{port}/status.json", "demo")
         deadline = time.monotonic() + 8
-        while time.monotonic() < deadline and not (scans and statuses):
+        while time.monotonic() < deadline and not (scans and slam_scans and statuses):
             executor.spin_once(timeout_sec=0.1)
-        assert scans and statuses
+        assert scans and slam_scans and statuses
         assert scans[-1].header.frame_id == "lds08rr"
         assert len(scans[-1].ranges) == 360
         assert any(0.1 < distance < 6.0 for distance in scans[-1].ranges)
         assert scans[-1].scan_time == pytest.approx(0.2)
+        # Tilt gating is unconfigured until the mount is measured, so the SLAM copy passes through.
+        raw = {(scan.header.stamp.sec, scan.header.stamp.nanosec): list(scan.ranges) for scan in scans}
+        gated = slam_scans[-1]
+        assert list(gated.ranges) == raw[(gated.header.stamp.sec, gated.header.stamp.nanosec)]
         fields = {item.key: item.value for item in statuses[-1].status[0].values}
         assert fields["mode"] == "demo"
         process.send_signal(signal.SIGINT)

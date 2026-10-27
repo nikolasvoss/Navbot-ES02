@@ -45,11 +45,11 @@ The user that runs the bridge needs access to the port:
 sudo usermod -aG dialout "$USER"
 ```
 
-Log in again afterwards. A systemd unit for the bridge would need `SupplementaryGroups=dialout`, as the [LiDAR unit](../../../src/ros2_pc/systemd/navbot-lidar.service.in) has. No unit for the bridge exists yet, so the bridge starts by hand.
+Log in again afterwards. The [bridge unit](../../../src/ros2_pc/systemd/navbot-link-bridge.service.in) sets `SupplementaryGroups=dialout`, as the [LiDAR unit](../../../src/ros2_pc/systemd/navbot-lidar.service.in) does, so the service itself does not depend on this group.
 
 ## 5. Build and run
 
-Build and start the bridge as described in the [bridge page](navbot-link-bridge.md), with the device path from step 3 and the measured wheel radius and track width.
+Build the bridge as described in the [bridge page](navbot-link-bridge.md). Start it by hand there with the device path from step 3 and the measured wheel radius and track width, or install the service (`python3 scripts/install_link_bridge_service.py`), which starts it at boot with `/dev/ttyAMA3`, a 0.01915 m wheel radius and a 0.113 m track width.
 
 ## 6. Checks
 
@@ -64,4 +64,3 @@ With the robot powered, balance disabled and motor outputs safe:
 
 - The robot firmware build and flash: see the [USB, serial and flashing guide](../../robot/software/usb-serial-flashing.md).
 - The LiDAR and HMMD radar setup and their services: see the [LiDAR software](../../ros2_pc/software/lds08rr-lidar.md) and the [HMMD guide](../../ros2_pc/software/hmmd-ros2.md).
-- Start at boot for the bridge: not implemented.

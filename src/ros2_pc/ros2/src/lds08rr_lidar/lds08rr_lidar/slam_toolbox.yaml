@@ -1,0 +1,26 @@
+# slam_toolbox online async mapping from /scan_slam (tilt-gated /scan), seeded by wheel odometry (odom -> base_link TF from navbot_link_bridge).
+slam_toolbox:
+  ros__parameters:
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: /scan_slam
+    mode: mapping
+    use_scan_matching: true
+    use_scan_barycenter: true
+    resolution: 0.05
+    max_laser_range: 8.0          # provisional; the LDS08RR range is not yet measured
+    map_update_interval: 2.0
+    minimum_time_interval: 0.1              # jeden Scan verarbeiten (5 Hz, Stempel streuen um 0,2 s)
+    correlation_search_space_dimension: 1.0 # ±0,5 m Suchfenster
+    coarse_search_angle_offset: 0.698       # ±40°
+    loop_search_maximum_distance: 6.0
+
+    # A scan is processed only after the odometry moved this far. A standing robot adds no scans.
+    minimum_travel_distance: 0.05
+    minimum_travel_heading: 0.1
+    throttle_scans: 1
+    transform_publish_period: 0.05
+    tf_buffer_duration: 30.0
+    do_loop_closing: true
+    debug_logging: false

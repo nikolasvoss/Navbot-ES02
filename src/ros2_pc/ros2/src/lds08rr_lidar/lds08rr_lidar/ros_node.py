@@ -1,19 +1,38 @@
 from __future__ import annotations
 
 import math
+import threading
+import time
+
+import rclpy.time
 
 from builtin_interfaces.msg import Time
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from geometry_msgs.msg import TransformStamped
+from nav_msgs.msg import OccupancyGrid, Odometry
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.node import Node
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Imu, LaserScan
+from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
 
+from .mount import SENSOR_MOUNT_X_M, SENSOR_MOUNT_Y_M, SENSOR_MOUNT_YAW_RAD
 from .runtime import LidarRuntime
+from .slam import SlamState, grid_to_dict
 from .source import SourceConfig
+from .tilt_gate import TiltGate, config_from_mount, roll_from_quaternion
+
+MAP_FRAME = "map"
+ODOM_FRAME = "odom"
+BASE_FRAME = "base_link"
+SENSOR_FRAME = "lds08rr"
 
 BIN_COUNT = 360
 RANGE_MIN_M = 0.01
 RANGE_MAX_M = 30.0
+
+
+def yaw_from_quaternion(q) -> float:
+    return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
 def to_laserscan(scan, stamp) -> LaserScan:
@@ -25,7 +44,7 @@ def to_laserscan(scan, stamp) -> LaserScan:
             continue
         if not RANGE_MIN_M <= distance <= RANGE_MAX_M:
             continue
-        index = int(round(point.angle_deg % 360.0)) % BIN_COUNT
+        index = int(round(-point.angle_deg % 360.0)) % BIN_COUNT
         if distance < ranges[index]:
             ranges[index] = distance
             intensities[index] = float(point.quality)
@@ -45,6 +64,18 @@ def to_laserscan(scan, stamp) -> LaserScan:
     return message
 
 
+def sensor_mount_transform(stamp) -> TransformStamped:
+    transform = TransformStamped()
+    transform.header.stamp = stamp
+    transform.header.frame_id = BASE_FRAME
+    transform.child_frame_id = SENSOR_FRAME
+    transform.transform.translation.x = SENSOR_MOUNT_X_M
+    transform.transform.translation.y = SENSOR_MOUNT_Y_M
+    transform.transform.rotation.z = math.sin(SENSOR_MOUNT_YAW_RAD / 2.0)
+    transform.transform.rotation.w = math.cos(SENSOR_MOUNT_YAW_RAD / 2.0)
+    return transform
+
+
 class LidarNode(Node):
     def __init__(self, config: SourceConfig) -> None:
         super().__init__("lds08rr_lidar")
@@ -55,10 +86,95 @@ class LidarNode(Node):
             durability=DurabilityPolicy.VOLATILE,
         )
         self.scan_publisher = self.create_publisher(LaserScan, "/scan", scan_qos)
+        # /scan stays raw; slam_toolbox reads the tilt-gated copy.
+        self.slam_scan_publisher = self.create_publisher(LaserScan, "/scan_slam", scan_qos)
+        self.tilt_gate = TiltGate(config_from_mount())
+        self._logged_gate_state: str | None = None
+        self.create_subscription(Imu, "/imu/data", self.on_imu, qos_profile_sensor_data)
         self.status_publisher = self.create_publisher(DiagnosticArray, "/lidar/status", 10)
         self.runtime = LidarRuntime(config, on_scan=self.publish_scan)
         self._ros_publish_error: str | None = None
         self.create_timer(1.0, self.publish_status)
+
+        # slam_toolbox publishes /map transient-local; the web page reads it from here.
+        self.slam = SlamState()
+        map_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.create_subscription(OccupancyGrid, "/map", self.on_map, map_qos)
+        self.create_subscription(Odometry, "/odom", self.on_odom, 10)
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        # odom -> base_link comes from navbot_link_bridge (ESP32 wheel odometry); only the sensor mount is ours.
+        self.static_tf = StaticTransformBroadcaster(self)
+        self.static_tf.sendTransform(sensor_mount_transform(self.get_clock().now().to_msg()))
+        self.create_timer(0.5, self.update_pose)
+        self._serialize_client = None
+        self._last_seen: dict[str, float] = {}
+
+    def on_map(self, message: OccupancyGrid) -> None:
+        info = message.info
+        self.slam.set_grid(grid_to_dict(
+            info.width, info.height, info.resolution,
+            info.origin.position.x, info.origin.position.y, message.data,
+        ))
+
+    def topic_age(self, topic: str) -> float | None:
+        seen = self._last_seen.get(topic)
+        return None if seen is None else time.monotonic() - seen
+
+    def publisher_count(self, topic: str) -> int:
+        return self.count_publishers(topic)
+
+    def node_exists(self, name: str) -> bool:
+        return name in self.get_node_names()
+
+    def on_odom(self, message: Odometry) -> None:
+        self._last_seen["/odom"] = time.monotonic()
+        p, twist = message.pose.pose, message.twist.twist
+        self.slam.set_odom(p.position.x, p.position.y, yaw_from_quaternion(p.orientation), twist.linear.x, twist.angular.z)
+
+    def update_pose(self) -> None:
+        try:
+            correction = self.tf_buffer.lookup_transform(MAP_FRAME, ODOM_FRAME, rclpy.time.Time()).transform
+            self.slam.set_correction(correction.translation.x, correction.translation.y, yaw_from_quaternion(correction.rotation))
+        except TransformException:
+            pass
+        try:
+            transform = self.tf_buffer.lookup_transform(MAP_FRAME, BASE_FRAME, rclpy.time.Time())
+        except TransformException:
+            return
+        t, q = transform.transform.translation, transform.transform.rotation
+        yaw = yaw_from_quaternion(q)
+        age = (self.get_clock().now() - rclpy.time.Time.from_msg(transform.header.stamp)).nanoseconds / 1e9
+        self.slam.set_pose(t.x, t.y, yaw, age_sec=max(age, 0.0))
+
+    def serialize_map(self, filename: str, timeout: float = 15.0) -> str | None:
+        try:
+            from slam_toolbox.srv import SerializePoseGraph
+        except ImportError as exc:
+            return f"slam_toolbox is unavailable: {exc}"
+        if self._serialize_client is None:
+            self._serialize_client = self.create_client(SerializePoseGraph, "/slam_toolbox/serialize_map")
+        if not self._serialize_client.wait_for_service(timeout_sec=2.0):
+            return "slam_toolbox serialize service unavailable"
+        request = SerializePoseGraph.Request()
+        request.filename = filename
+        # Called from the HTTP thread while the main thread spins the node.
+        finished = threading.Event()
+        future = self._serialize_client.call_async(request)
+        future.add_done_callback(lambda _: finished.set())
+        if not finished.wait(timeout):
+            return "serialize_map timed out"
+        if future.exception() is not None:
+            return f"serialize_map failed: {future.exception()}"
+        result = future.result().result
+        if result != 0:
+            return f"serialize_map failed with result {result}"
+        return None
 
     def publish_scan(self, scan, completed_at: float) -> None:
         stamp = self.get_clock().now()
@@ -69,11 +185,41 @@ class LidarNode(Node):
         else:
             ros_stamp = stamp.to_msg()
         try:
-            self.scan_publisher.publish(to_laserscan(scan, ros_stamp))
+            message = to_laserscan(scan, ros_stamp)
+            self.scan_publisher.publish(message)
+            self.publish_slam_scan(message)
         except Exception as exc:
             self._ros_publish_error = f"{type(exc).__name__}: {exc}"
         else:
             self._ros_publish_error = None
+
+    def on_imu(self, message: Imu) -> None:
+        self._last_seen["/imu/data"] = time.monotonic()
+        q = message.orientation
+        stamp = rclpy.time.Time.from_msg(message.header.stamp).nanoseconds / 1e9
+        self.tilt_gate.add_imu(stamp, roll_from_quaternion(q.x, q.y, q.z, q.w))
+
+    def publish_slam_scan(self, message: LaserScan) -> None:
+        start = rclpy.time.Time.from_msg(message.header.stamp).nanoseconds / 1e9
+        ranges = self.tilt_gate.apply(message.ranges, message.angle_min, message.angle_increment, start, message.scan_time)
+        if self.tilt_gate.state != self._logged_gate_state:
+            self._logged_gate_state = self.tilt_gate.state
+            text = {
+                "unconfigured": "tilt gating off: mount.py lacks scan height, IMU roll sign or level roll; /scan_slam = /scan",
+                "no_imu": "tilt gating paused: no fresh /imu/data covers the scan; /scan_slam = /scan",
+                "active": "tilt gating active on /scan_slam",
+            }[self._logged_gate_state]
+            self.get_logger().info(text)
+        if ranges is None:
+            return
+        gated = LaserScan()
+        gated.header = message.header
+        gated.angle_min, gated.angle_max, gated.angle_increment = message.angle_min, message.angle_max, message.angle_increment
+        gated.time_increment, gated.scan_time = message.time_increment, message.scan_time
+        gated.range_min, gated.range_max = message.range_min, message.range_max
+        gated.ranges = ranges
+        gated.intensities = message.intensities
+        self.slam_scan_publisher.publish(gated)
 
     def publish_status(self) -> None:
         status = self.runtime.snapshot()

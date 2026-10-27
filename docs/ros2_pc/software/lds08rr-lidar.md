@@ -60,12 +60,60 @@ sudo systemctl daemon-reload
 
 `/status.json` reports waiting, invalid bytes, live, stale, and error states. The browser hides the polar plot when serial data is stale or the status server is unavailable. The same responsive status page is available at `/` and `/lidar`, with its JSON scan feed at `/scan.json`.
 
+`/services.json` reports one health row per service: the LiDAR sensor, the robot link (`navbot-link-bridge`), SLAM (`slam_toolbox`) and the radar. Each row has a level (`ok`, `warn` or `error`), a short state word and a longer message. The robot link row distinguishes a bridge that is not running (nothing publishes `/odom` or `/imu/data`) from a running bridge that gets no fresh data from the robot (check its power and the UART wiring). Every page colors state with one severity scale: green `ok`, amber `warn` (degraded, optional or recovering: `Demo`, `Restarting`, `Unavailable`, radar `Not running`) and red `error` (a service that delivers nothing: `No data`, `Invalid data`, `Stale`, `Error`, `Not running`); grey means unknown. The radar is started on demand, so it is only a warning. Every page polls the endpoint every 3 s and shows a status dot per service in the navigation bar, plus the state word (`No data`, `Invalid data`, `Stale`, `Error`, `Not running`, `Restarting`, `Unavailable`, `Unreachable`) when the service is not `ok`; hovering shows the long message. The LiDAR and SLAM pages use the same state words in their own state fields. The radar page keeps its own connection wording.
+
 Run the protocol, runtime, ROS conversion, launcher, and optional Playwright browser checks with the development environment active.
 
 ```bash
 python3 -m pytest -q src/ros2_pc/ros2/src/lds08rr_lidar/test tests/scripts/test_start_lidar.py
 ```
 
+The ROS acceptance test publishes demo scans on `/scan`. Stop live LiDAR and SLAM before running it, or prefix the command with an unused domain such as `ROS_DOMAIN_ID=83` to isolate the test from live mapping.
+
 Install `pytest` and `playwright` in that environment, then run `python -m playwright install chromium` to include the browser acceptance check. ROS checks require the Jazzy environment above. Serial tests use Linux pseudo-terminals and recorded or constructed packet bytes.
 
 Automated checks use recorded and synthetic packets; live acceptance is recorded separately in the [LDS08RR hardware reference](../hardware/lds08rr-lidar.md), together with wiring, electrical limits, and remaining calibration checks.
+
+## Web hub and SLAM
+
+The LiDAR service on port 8081 is the single browser entry point with three tabs: `/lidar`, `/slam`, and `/radar/`. The radar tab serves the unchanged `hmmd_radar/web` page from the same server. It still needs the HMMD launcher's rosbridge on `ws://127.0.0.1:9090` and shows a connecting state while no radar is installed. Radar and SLAM stay optional; the LiDAR page works without them.
+
+SLAM starts with the LiDAR service when ROS 2 is active and `slam_toolbox` is installed (`sudo apt install ros-jazzy-slam-toolbox`). No second terminal is needed. The service supervises `slam_toolbox`, restarts it when it exits, and shows SLAM as unavailable when the package is missing. Parameters are in `src/ros2_pc/ros2/src/lds08rr_lidar/lds08rr_lidar/slam_toolbox.yaml`.
+
+The service keeps one map in `~/.local/share/navbot/slam/` (`map.posegraph` and `map.data`). Every start loads that map when it exists and mapping continues on it, assuming the robot starts where the saved map began. On the `/slam` tab, **Save map** overwrites the saved map with the current one. **Reset map** asks for confirmation, discards the current map including anything not saved, and restarts mapping on the saved map; it is disabled while no map is saved. **Delete map and start over** asks for confirmation, removes the saved map, and restarts mapping from an empty map. The SLAM log is `~/.local/share/navbot/slam/slam.log`.
+
+`slam_toolbox` uses the ESP32 wheel odometry. The [navbot_link_bridge](../../integration/software/navbot-link-bridge.md) must run and publish the TF `odom` → `base_link`; without it `slam_toolbox` receives no usable scans and the map does not grow. The LiDAR service publishes the static TF `base_link` → `lds08rr` (`SENSOR_MOUNT_*` in `mount.py`). The LiDAR sits at the robot's rotation centre, so the x and y offsets are zero. A point straight ahead of the robot reads 240° clockwise in the sensor's own bearings (user observation, 2026-10-26). The ROS adapter negates bearings, so ahead is +120° in the `lds08rr` frame, and the static TF rotates `lds08rr` by −120° against `base_link`. The LiDAR page adds the same 120° (`mount.py`), so 0° there is the robot's front and angles grow clockwise; `/scan.json` carries these robot bearings, while the ROS `/scan` keeps the sensor frame. The angle comes from the user's reading of the page and is not yet checked on the SLAM map. SLAM with the wheel odometry has not run on the robot yet, and the bridge needs the wheel radius and track width as parameters (see its page). Scan matching corrects the odometry, and a scan is processed only after the robot moved 5 cm or turned 0.1 rad. The `/slam` tab shows `/map`, the pose from TF `map` → `base_link` (the robot heading; the arrow would be rotated by the mount yaw if it used `lds08rr`), the process state, and the saved map. It reports "SLAM not updating" when the map is older than 10 s. The map fits the window; **+** and **−**, the mouse wheel, or a two-finger pinch zoom, **Fit** shows the whole map again, and **Center arrow** keeps the pose arrow in the middle. With centering off, drag the map with the left mouse button or a finger to move the view. A scale bar at the bottom center shows a round distance (for example 50 cm or 1 m) at the current zoom.
+
+The ROS adapter negates native LiDAR bearings before binning them into CCW-positive LaserScan angles. This corrects the sign mismatch behind the reported reversed SLAM heading. The user confirmed correct clockwise and counterclockwise pose-arrow rotation after the fix. Left/right and angle-zero calibration are tracked in the [roadmap](../plans/roadmap.md#4-slam-in-the-web-hub). Start a fresh SLAM map after changing angle conventions; do not combine scans from the previous convention.
+
+### Tilt gating for SLAM
+
+The robot balances, so the scan plane pitches forward and back. Reprojecting the ranges is not worth it (the range error is r·(1−cos θ), about 0.14 % at 3°). The real damage is that a beam tilted down reaches the floor and maps a phantom wall, and a strongly tilted scan sees different objects. The LiDAR service therefore publishes two scans: `/scan` stays raw for other consumers and debugging, and `/scan_slam` is the gated copy that `slam_toolbox` reads (`scan_topic` in `slam_toolbox.yaml`).
+
+The service subscribes to `/imu/data` from `navbot_link_bridge` and keeps 2 s of IMU roll; roll is the balance axis. Body pitch (positive nose-down, REP-103) is `IMU_ROLL_TO_PITCH_SIGN · (roll − IMU_ROLL_LEVEL_RAD)`. For each scan it takes the minimum and maximum pitch over the scan window (stamp to stamp + scan time, plus the IMU sample just before it). The logic is in `tilt_gate.py`:
+
+- If either extreme exceeds `MAX_SCAN_PITCH_RAD` (0.06 rad), the scan is not published on `/scan_slam`.
+- Otherwise a beam at robot bearing φ has elevation −θ·cos φ, and its endpoint height is `SCAN_PLANE_HEIGHT_M` + r·sin(elevation). If either extreme puts the endpoint below `FLOOR_MARGIN_M` (0.03 m), the beam becomes +inf. Bins are converted to robot bearings with the mount yaw.
+- If a measurement in `mount.py` is still `None`, or no IMU sample lies within 0.1 s of both window ends, the scan passes through unchanged. The service logs every change of gating state.
+
+The right column of the `/slam` tab also lists wheel odometry from `/odom`: the odom-frame pose and heading, speed, turn rate, distance driven since the page service started, the message rate, and the SLAM correction (the TF `map` → `odom` offset, in metres and degrees). `/map.json` carries these as `odom` (`fresh` is false after 2 s without a message) and `correction`. The odometry panel has only been tested with unit tests, not on the robot.
+
+`/map.json` reports `tilt_gate` with `state` (`unconfigured`, `no_imu`, or `active`), `scans_dropped`, and `beams_dropped`.
+
+Gating needs three measurements in `mount.py`; it stays off while any of them is `None`. The user measured them on 2026-10-26:
+
+| Constant | Value | How it was measured |
+| --- | --- | --- |
+| `SCAN_PLANE_HEIGHT_M` | 0.122 m | Floor to the middle of the LiDAR's optical window, robot held with the scan plane level. The robot pivots about the wheel axis, but within `MAX_SCAN_PITCH_RAD` the height changes by less than 1 mm, so a constant is enough. |
+| `IMU_ROLL_TO_PITCH_SIGN` | −1 | Roll from `/imu/data` (`roll_from_quaternion` in `tilt_gate.py`) falls when the robot is tipped nose-down by hand. |
+| `IMU_ROLL_LEVEL_RAD` | −0.0035 rad | Roll while a level on top of the LiDAR reads level. `/imu/data` carries the raw Mahony roll without the firmware's trim correction, so this is not zero in general. |
+
+`config_from_mount()` refuses a height outside 0–1 m, a sign other than ±1 and a level roll beyond ±π, so a value in centimetres or degrees stops the service instead of silently disabling the floor check.
+
+Restart `navbot-lidar.service` after editing `mount.py`. The gating has not run on the robot yet.
+
+`start_lidar.py --ssh` also forwards port 9090 for the radar tab when that local port is free. If it is taken, for example by an HMMD tunnel, the forward is skipped. Over plain LAN the radar tab still needs rosbridge reachable, but the HMMD launcher keeps rosbridge bound to 127.0.0.1.
+
+On 15 October 2026, the CM5 verified live UART0 scans, automatic `slam_toolbox` lifecycle activation, `/map`, TF, map growth during sensor movement, and the browser's Mapping state and pose arrow. That check used the former `slam.launch.py` and a separate `navbot-slam.service`; both are replaced by the supervised start inside the LiDAR service. It also ran before wheel odometry: a static identity `odom` → `lds08rr` TF stood in, so the sensor was the only motion source. Measurements and limitations are in the [hardware observations](../../../lab/ros2_pc/2026-10-13-lds08rr-observations.md).
+
+On 19 October 2026, with the same sensor-only setup, the CM5 verified the supervised start, map save, loading the saved map on restart, map delete with a fresh start, map growth while the sensor moves, restart after the SLAM node is killed, the stale state of a hung node, and a clean stop with no leftover processes ([observations](../../../lab/ros2_pc/2026-10-19-slam-supervised-verification.md)). A hung node shows as "SLAM not updating" but is not restarted. Quantitative trajectory accuracy, complete room coverage, and physical scan handedness also still require verification.

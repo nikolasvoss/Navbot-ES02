@@ -118,6 +118,7 @@ def test_runtime_discards_first_partial_rotation_and_hides_stale_plot():
         fresh = client.get("/scan.json").get_json()
         assert fresh["n"] == 1
         assert fresh["points"][0]["dist"] == 777
+        assert fresh["points"][0]["angle"] == pytest.approx(120)
 
         time.sleep(2.05)
         assert runtime.snapshot().state == "stale"
@@ -211,8 +212,42 @@ def test_ros_scan_conversion_uses_fixed_bins_metres_and_infinity():
     assert message.header.stamp.sec == 12
     assert message.ranges[0] == pytest.approx(0.8)
     assert message.intensities[0] == 20.0
-    assert message.ranges[1] == pytest.approx(0.5)
-    assert message.ranges[2] == float("inf")
+    assert message.ranges[359] == pytest.approx(0.5)
+    assert message.ranges[358] == float("inf")
+
+
+@pytest.mark.parametrize("native_angle, ros_bin", [
+    (90.0, 270), (-90.0, 90), (361.0, 359), (-361.0, 1),
+])
+def test_ros_scan_converts_clockwise_native_bearings(native_angle, ros_bin):
+    pytest.importorskip("rclpy")
+    pytest.importorskip("diagnostic_msgs.msg")
+    pytest.importorskip("sensor_msgs.msg")
+    from builtin_interfaces.msg import Time
+    from lds08rr_lidar.ros_node import to_laserscan
+
+    message = to_laserscan(Scan([ScanPoint(native_angle, 1200, 37)], 5.0), Time())
+    assert message.ranges[ros_bin] == pytest.approx(1.2)
+    assert message.intensities[ros_bin] == 37.0
+    assert message.ranges[360 - ros_bin] == float("inf")
+
+
+def test_ros_scan_wraparound_keeps_nearest_return_and_its_intensity():
+    pytest.importorskip("rclpy")
+    pytest.importorskip("diagnostic_msgs.msg")
+    pytest.importorskip("sensor_msgs.msg")
+    from builtin_interfaces.msg import Time
+    from lds08rr_lidar.ros_node import to_laserscan
+
+    scan = Scan([
+        ScanPoint(359.8, 900, 30),
+        ScanPoint(-0.1, 800, 20),
+        ScanPoint(360.2, 1000, 70),
+    ], 5.0)
+    message = to_laserscan(scan, Time())
+    assert message.ranges[0] == pytest.approx(0.8)
+    assert message.intensities[0] == 20.0
+    assert sum(value != float("inf") for value in message.ranges) == 1
 
 
 def test_module_tx_capture_decodes_literal_measurements(monkeypatch):
@@ -269,3 +304,52 @@ def test_real_serial_transport_reconnects_and_stops_without_bytes(tmp_path):
         for descriptor in (first_master, first_slave, second_master, second_slave):
             if descriptor is not None:
                 os.close(descriptor)
+
+
+def test_hub_serves_tabs_slam_map_and_radar_without_hardware(tmp_path):
+    import base64
+
+    from lds08rr_lidar.slam import SlamState, grid_to_dict
+
+    radar = tmp_path / "web"
+    radar.mkdir()
+    (radar / "index.html").write_text("<html><body><h1>HMMD radar data</h1></body></html>")
+    (radar / "style.css").write_text("body{}")
+    runtime = LidarRuntime(SourceConfig(mode="demo"), driver_factory=lambda *_: None)
+    slam = SlamState()
+    client = make_lidar_app(runtime, slam=slam, radar_web=radar).test_client()
+
+    for path in ("/lidar", "/slam"):
+        page = client.get(path).get_data(as_text=True)
+        assert 'href="/slam"' in page and 'href="/radar/"' in page and 'href="/lidar"' in page
+
+    radar_page = client.get("/radar/").get_data(as_text=True)
+    assert "HMMD radar data" in radar_page and 'href="/slam"' in radar_page
+    assert client.get("/radar/style.css").status_code == 200
+    assert client.get("/radar/../index.html").status_code == 404
+
+    empty = client.get("/map.json").get_json()
+    assert empty["state"] == "waiting" and empty["map"] is None
+
+    slam.set_grid(grid_to_dict(2, 1, 0.05, -1.0, -0.5, [-1, 100]))
+    assert client.get("/map.json").get_json()["state"] == "no_pose"
+    slam.set_pose(0.5, 0.25, 1.0)
+    shown = client.get("/map.json").get_json()
+    assert shown["state"] == "mapping"
+    assert shown["pose"] == {"x": 0.5, "y": 0.25, "yaw": 1.0}
+    assert list(base64.b64decode(shown["map"]["data"])) == [255, 100]
+    assert shown["map"]["width"] == 2 and shown["map"]["origin_x"] == -1.0
+
+
+def test_radar_tab_is_absent_not_broken_when_radar_files_missing(tmp_path):
+    runtime = LidarRuntime(SourceConfig(mode="demo"), driver_factory=lambda *_: None)
+    client = make_lidar_app(runtime, radar_web=tmp_path / "missing").test_client()
+    assert client.get("/radar/").status_code == 404
+    assert client.get("/lidar").status_code == 200
+
+
+@pytest.mark.parametrize("sensor_angle, robot_angle", [(240, 0), (0, 120), (150, 270)])
+def test_lidar_page_bearings_are_measured_from_the_robot_front(sensor_angle, robot_angle):
+    from lds08rr_lidar.mount import robot_bearing_deg
+
+    assert robot_bearing_deg(sensor_angle) == pytest.approx(robot_angle)
