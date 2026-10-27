@@ -26,3 +26,13 @@ c++ -std=c++11 -Wall -Wextra -Werror \
   -o "$build_dir/test_link_schedule"
 
 "$build_dir/test_link_schedule"
+
+c++ -std=c++11 -Wall -Wextra -Werror \
+  -I"$sketch_dir" \
+  "$sketch_dir/link_frame.cpp" \
+  "$sketch_dir/link_tx.cpp" \
+  "$repo_root/tests/link/test_link_tx.cpp" \
+  "$build_dir/pb_common.o" "$build_dir/pb_encode.o" "$build_dir/navbot_link.pb.o" \
+  -o "$build_dir/test_link_tx"
+
+"$build_dir/test_link_tx"
