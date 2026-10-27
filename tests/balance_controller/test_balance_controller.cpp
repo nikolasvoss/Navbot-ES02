@@ -506,6 +506,19 @@ int main() {
     assert(tick(bc, unstable, liveSwitch(start + kTimeoutUs + 1, true), config, start + kTimeoutUs + 1).state == State::Disabled);
   }
 
+  // A zero timeout keeps Arming indefinitely, and the controller starts once the conditions hold.
+  {
+    Config noTimeout = config;
+    noTimeout.armingTimeoutUs = 0;
+    Measurements unstable = good;
+    unstable.tiltRateRadPerSec = 1.0f;
+    BalanceController bc;
+    tick(bc, unstable, liveSwitch(1000, false), noTimeout, 1000);
+    assert(tick(bc, unstable, liveSwitch(2000, true), noTimeout, 2000).state == State::Arming);
+    assert(tick(bc, unstable, liveSwitch(2000 + 60000000u, true), noTimeout, 2000 + 60000000u).state == State::Arming);
+    assert(tick(bc, good, liveSwitch(2000 + 60001000u, true), noTimeout, 2000 + 60001000u).state == State::Run);
+  }
+
   // After a timeout, the switch held on cannot re-arm; a fresh edge is needed.
   {
     Measurements unstable = good;
