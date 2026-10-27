@@ -116,6 +116,7 @@ class Shell(cmd.Cmd):
         self.presets = presets
         self.show_logs = True
         self._writers: dict[int, CsvWriter] = {}
+        self._writers_lock = threading.Lock()  # the event thread writes, commands close
         self._out_lock = threading.Lock()
         self._catalog = link.catalog()
         self._pump = threading.Thread(target=self._drain_events, daemon=True)
@@ -198,11 +199,22 @@ class Shell(cmd.Cmd):
                 spec.append(w)
         names, preset_rate = resolve_signals(spec, self.presets)
         rate = rate if rate is not None else (preset_rate or 0)
-        params = read_params(self.link) if output else []
-        sub = self.link.subscribe(names, rate)
+        catalog = self.link.catalog()
+        entries = tuple(catalog.signal(n) for n in names)
+        writer = None
         if output:
             f = open(output, "w", newline="", encoding="utf-8")
-            self._writers[sub.slot] = CsvWriter(f, sub.entries, self.link.catalog().build, rate, params)
+            writer = CsvWriter(f, entries, catalog.build, rate, read_params(self.link))
+        # Held until the writer is registered, so the first rows cannot miss the file.
+        with self._writers_lock:
+            try:
+                sub = self.link.subscribe(names, rate)
+            except LinkError:
+                if writer is not None:
+                    writer.close()
+                raise
+            if writer is not None:
+                self._writers[sub.slot] = writer
         load = f", {(4 + 4 * len(names)) * rate / 1000:.1f} kB/s" if rate else ""
         self.say(f"slot {sub.slot}: {len(names)} entries @ {rate_text(rate)}{load}"
                  f"{' -> ' + output if output else ''}")
@@ -229,32 +241,36 @@ class Shell(cmd.Cmd):
     do_EOF = do_quit
 
     def _close_writer(self, slot: int) -> None:
-        writer = self._writers.pop(slot, None)
-        if writer is not None:
-            writer.close()
+        with self._writers_lock:
+            writer = self._writers.pop(slot, None)
+            if writer is not None:
+                writer.close()
 
     def _drain_events(self) -> None:
         while True:
             event = self.link.events.get()
             if isinstance(event, Row):
-                writer = self._writers.get(event.slot)
-                if writer is not None:
-                    writer.row(event)
-                else:
+                with self._writers_lock:
+                    writer = self._writers.get(event.slot)
+                    if writer is not None:
+                        writer.row(event)
+                if writer is None:
                     self.say(f"slot {event.slot} t_us={event.t_us} "
                              + " ".join(str(v) for v in event.values))
             elif isinstance(event, (LogEvent, FramesLost)):
-                for writer in list(self._writers.values()):
-                    writer.event(event)
+                with self._writers_lock:
+                    for writer in self._writers.values():
+                        writer.event(event)
                 if self.show_logs or isinstance(event, FramesLost):
                     self.say(describe(event))
             elif isinstance(event, Text):
                 if self.show_logs:
                     self.say(event.text.rstrip("\r\n"))
             elif isinstance(event, SubscriptionEnded):
-                writer = self._writers.get(event.slot)
-                if writer is not None:
-                    writer.event(event)
+                with self._writers_lock:
+                    writer = self._writers.get(event.slot)
+                    if writer is not None:
+                        writer.event(event)
                 self._close_writer(event.slot)
                 self.say(describe(event))
             elif isinstance(event, Restarted):

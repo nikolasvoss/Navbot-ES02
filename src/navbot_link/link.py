@@ -129,7 +129,7 @@ class Link:
     `events` in stream order."""
 
     def __init__(self, port, baud: int = 2_000_000, *, timeout_s: float = 0.5,
-                 retries: int = 3, renew_s: float = LEASE_RENEW_S):
+                 retries: int = 3, renew_s: float = LEASE_RENEW_S, clock=time.monotonic):
         self._transport: Transport = SerialTransport(port, baud) if isinstance(port, str) else port
         self._timeout_s = timeout_s
         self._retries = retries
@@ -139,7 +139,8 @@ class Link:
         self._seq_in = SeqTracker()
         self._lock = threading.Lock()
         self._seq_out = 0
-        self._started = time.monotonic()
+        self._clock = clock  # seconds; sets Message.t_ms of requests
+        self._started = clock()
         self._waiters: dict[tuple, _Waiter] = {}
         self._renewals: dict[int, int] = {}  # renewal request seq -> slot
         self._subs: dict[int, Subscription] = {}
@@ -250,7 +251,7 @@ class Link:
     def _send_locked(self, msg) -> int:
         self._seq_out += 1
         msg.seq = self._seq_out
-        msg.t_ms = int((time.monotonic() - self._started) * 1000) & 0xFFFFFFFF
+        msg.t_ms = int((self._clock() - self._started) * 1000) & 0xFFFFFFFF
         self._transport.write(encode_frame(msg.SerializeToString()))
         return msg.seq
 

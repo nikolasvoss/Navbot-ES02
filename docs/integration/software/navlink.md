@@ -52,8 +52,9 @@ The load is the row size, `4 + 4 × entries` bytes, times the rate, without fram
 # param speed_ki=0.5
 # param speed_i_on=1
 t_us,speed_target,speed_measured,speed_p,speed_i,tilt_ref,tilt_clipped
+1010000,0.5,0.125,-0.03125,0.001,0,1
+# log t_ms=1020 INFO [param] speed_kp: 0.08 -> 0.12
 1020000,0.5,0.25,-0.03125,0.002,0,0
-# log t_ms=1030 INFO [param] speed_kp: 0.08 -> 0.12
 1030000,0.5,0.375,-0.03125,0.003,0,1
 ```
 
@@ -83,3 +84,11 @@ speed_loop:
 - `get(name)`, `set(name, value)` and `call(name, **args)` return when the robot acknowledges. A refused request raises `LinkError` with the robot's reason. `call` is not retried, so a lost `Ack` never starts an action twice.
 - `events` is a queue in stream order: `Row`, `LogEvent`, `Text` (raw text from the USB port), `FramesLost`, `Restarted`, `SubscriptionEnded` and `Disconnected`.
 - A restart of the robot (its `seq` starts over) drops the catalog and ends every subscription, because table indices can change between builds.
+
+## Tests
+
+```bash
+python3 -m pytest -q tests/navbot_link tests/scripts/test_navlink.py
+```
+
+`tests/navbot_link/fake_firmware.py` implements the robot side of the catalog, subscription, parameter and action messages, with leases, seq gaps, restarts and USB text. Its clock advances one control tick per read while a subscription is active, so rows and `t_us` are reproducible. The tests run the library and `navlink` against it in memory and, for one capture, as a separate process on a pseudo-terminal. They check request bytes, CSV files and shell output against literal values. The example file above is the start of the preset capture test output.
