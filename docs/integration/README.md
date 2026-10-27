@@ -11,3 +11,4 @@ The integration system is the connection between the robot (ESP32-S3) and the ro
 ## Plans
 
 - [Roadmap](plans/roadmap.md)
+- [Logging, telemetry and control over the NavBot link](plans/logging-and-control-link.md): proposal to replace the `K` selectors, log profiles and letter commands with one table of signals, parameters and actions on both the ros2_pc UART and the USB port.

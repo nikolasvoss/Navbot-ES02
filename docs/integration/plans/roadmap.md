@@ -21,3 +21,19 @@ Status: the protocol (COBS, CRC-16, Protobuf), the firmware sender for `WheelOdo
 - [x] Align the SLAM branch (`feat/slam`): the static `odom` to `lds08rr` TF is gone, the LiDAR service publishes a static TF `base_link` to `lds08rr`, and `slam_toolbox` runs with `base_frame: base_link`. Not yet run on the robot.
 - [ ] Check the LiDAR yaw offset on the robot: `SENSOR_MOUNT_YAW_RAD` is −120° (ahead reads 240° clockwise on the LiDAR page). Push the robot straight forward and confirm the SLAM pose arrow points along the direction of travel. `SENSOR_MOUNT_X_M` and `SENSOR_MOUNT_Y_M` stay zero because the LiDAR sits at the robot's rotation centre.
 - [x] Start `navbot_link_bridge` at boot with `scripts/install_link_bridge_service.py` (unit and installer written, test passes). Not yet installed or run on the robot.
+
+## Decide the dashboard for logs and debug signals
+
+Context: the [logging and control proposal](logging-and-control-link.md) sends text logs and selectable signals over the NavBot link, both on UART1 to the ros2_pc and on the USB port as a backup. The ROS 2 bridge publishes them as topics. The protocol does not depend on this decision.
+
+Decision: which tool shows the live debug signals (plots for control tuning), the log messages, and the parameter get/set. Choose one:
+
+| Option | What it is | Runs on | Effort here |
+| --- | --- | --- | --- |
+| PlotJuggler | Desktop app for live time-series plots of ROS 2 topics; also opens CSV files. No logs or parameter panel. | Laptop with ROS 2, or the ros2_pc with a screen | Install only |
+| Foxglove | Web or desktop app; plots, log list, 3D view of the map and scan, parameter panel. Connects to `foxglove_bridge`, a ROS 2 node on the ros2_pc. | Any browser; bridge on the ros2_pc | Install `foxglove_bridge`, save a layout |
+| Own web page | Extend the LiDAR web service (`lds08rr_lidar/web.py`) with a signal plot, a log list and parameter fields. | Any browser | Write and maintain the page |
+
+Criteria: plot rate needed for control tuning (up to the control tick, about 700 Hz, decimated), whether the tool works without a ROS 2 install on the laptop, and maintenance effort.
+
+- [ ] Try PlotJuggler and Foxglove with the bridge's signal topic once it exists, then record the choice here.
