@@ -52,7 +52,6 @@ Disabled, Arming and Fault keep the drivers off. Run and Commissioning run the c
 - **Run to Commissioning** needs CH7 on and a live request; if the transfer check fails, the state stays in Run with `commissioningRefused=1`.
 - **Commissioning to Run** needs CH7 off, a live request, `trimValidated` and a working trim equal to the stored trim.
 - **Any fault** from Run or Commissioning goes to Fault: stale or invalid input, bad dt, fall, overspeed, invalid envelope or config, authority exhausted, tilt saturated (see the [faults](#faults-state-4) table).
-- **Fall recovery**: with CH5 still on, a Fall fault clears and the controller re-enters Arming once the tilt stays inside the arming window around the stored trim for `fallRecoveryDelayUs` (0.5 s, uncommissioned) with a live request and fresh IMU. Arming then checks all its conditions before Run. Other faults stay latched until CH5 is cycled.
 - **CH5 off** returns every state to Disabled and clears the fault.
 - A lost remote leaves Run and Commissioning unchanged; the request counts as zero. It holds Arming, and the timeout still applies.
 

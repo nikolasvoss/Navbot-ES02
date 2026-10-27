@@ -116,7 +116,6 @@ const Config &balanceConfig() {
     // Fall: the 35 deg tumble threshold of the former fall detector (existing constant)
     c.fallAngleRad = 35.0f * kDegreesToRadiansF;  // existing tumble threshold, rad
     c.fallDurationUs = 20000;                    // upstream: 20 control cycles at the nominal 1 kHz gate, 20 ms
-    c.fallRecoveryDelayUs = 500000;              // uncommissioned: proposed starting value, 0.5 s inside the arming window
 
     // Overspeed: the existing OverspeedGuard limit and debounce
     c.wheelOverspeedRadPerSec = OverspeedGuard::kLimitRadPerSec;   // existing constant, rad/s
