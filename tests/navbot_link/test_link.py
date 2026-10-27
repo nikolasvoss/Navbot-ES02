@@ -168,6 +168,26 @@ def test_seq_gap_is_reported_and_a_restart_ends_subscriptions():
         assert len(fw.received) - before == 14  # catalog read again
 
 
+def test_a_restart_during_a_call_fails_the_call():
+    class RestartingTransport(MemoryTransport):
+        restart_before_write = False
+
+        def write(self, data):
+            if self.restart_before_write:
+                self.firmware.restart()
+            super().write(data)
+
+    fw = FakeFirmware()
+    transport = RestartingTransport(fw)
+    with Link(transport, clock=lambda: 0.0) as link:
+        link.catalog()
+        transport.restart_before_write = True
+        with pytest.raises(LinkError, match="^robot restarted$"):
+            link.call("motor_reset")
+        assert next_events(link, 1, Restarted) == [Restarted()]
+    assert fw.calls == [("motor_reset", [])]
+
+
 def test_usb_port_passes_boot_text_through_between_frames():
     fw = FakeFirmware(usb=True)
     with open_link(fw) as link:
