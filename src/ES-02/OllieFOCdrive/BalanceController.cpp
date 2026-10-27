@@ -256,8 +256,7 @@ Output BalanceController::update(const Measurements &measurements, const Request
         if (ready && state_ == State::Arming && containsZero) {
           state_ = State::Run;
           resetRunTracking(config, nowUs);
-        } else if (state_ == State::Arming && config.armingTimeoutUs > 0 &&
-                   elapsedLongerThan(nowUs, armingStartUs_, config.armingTimeoutUs)) {
+        } else if (state_ == State::Arming && elapsedLongerThan(nowUs, armingStartUs_, config.armingTimeoutUs)) {
           state_ = State::Disabled;
         }
         break;
