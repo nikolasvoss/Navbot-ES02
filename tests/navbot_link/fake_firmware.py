@@ -70,6 +70,7 @@ class _Sub:
     period_us: int
     deadline_us: int
     renewed_s: float
+    batch: bytes = b""  # rows not sent yet
 
 
 @dataclass
@@ -80,13 +81,15 @@ class FakeFirmware:
     lease_s: float = 5.0
     usb: bool = False  # port 0 is a USB writer: 0x00 before each frame
     t_us: int = 1_000_000
+    stop_us: int | None = None  # the clock does not pass this time
+    batch_rows: int = 1  # rows per SignalBatch
 
     def __post_init__(self):
         self.received = []  # every decoded PC payload, in order
         self.calls = []  # (name, args) of started actions
         self._ports = [_Port(self.usb)]
         self._subs: dict[int, _Sub] = {}
-        self._scheduled_logs = []  # (t_us, text, tag)
+        self._scheduled = []  # (t_us, action) run at the first tick at or after t_us
         self._lock = threading.Lock()
 
     def add_port(self, usb: bool = False) -> int:
@@ -105,11 +108,11 @@ class FakeFirmware:
     def produce(self, port: int = 0) -> bytes:
         """Run one control tick and return everything sent on `port` since the last call."""
         with self._lock:
-            if self._subs:
+            if self._subs and self.t_us != self.stop_us:
                 self.t_us = (self.t_us + self.tick_us) & 0xFFFFFFFF
-            for item in [x for x in self._scheduled_logs if x[0] <= self.t_us]:
-                self._scheduled_logs.remove(item)
-                self._log(item[1], item[2])
+            for item in [x for x in self._scheduled if x[0] <= self.t_us]:
+                self._scheduled.remove(item)
+                item[1]()
             now_s = time.monotonic()
             for slot, sub in list(self._subs.items()):
                 if now_s - sub.renewed_s > self.lease_s:
@@ -117,8 +120,10 @@ class FakeFirmware:
                 elif self.t_us >= sub.deadline_us:
                     late = self.t_us - sub.deadline_us
                     sub.deadline_us = (self.t_us if late >= sub.period_us else sub.deadline_us) + sub.period_us
-                    row = struct.pack("<I", self.t_us) + b"".join(self._read(i) for i in sub.ids)
-                    self._send(pb.Message(signal_batch=pb.SignalBatch(slot=slot, rows=row)), sub.port)
+                    sub.batch += struct.pack("<I", self.t_us) + b"".join(self._read(i) for i in sub.ids)
+                    if len(sub.batch) == self.batch_rows * (4 + 4 * len(sub.ids)):
+                        self._send(pb.Message(signal_batch=pb.SignalBatch(slot=slot, rows=sub.batch)), sub.port)
+                        sub.batch = b""
             out = bytes(self._ports[port].out)
             self._ports[port].out.clear()
             return out
@@ -130,7 +135,12 @@ class FakeFirmware:
     def log_at(self, t_us: int, text: str, tag: str) -> None:
         """Send a Log at the first tick at or after t_us."""
         with self._lock:
-            self._scheduled_logs.append((t_us, text, tag))
+            self._scheduled.append((t_us, lambda: self._log(text, tag)))
+
+    def text_at(self, t_us: int, text: bytes, port: int = 0) -> None:
+        """Write raw text at the first tick at or after t_us."""
+        with self._lock:
+            self._scheduled.append((t_us, lambda: self._ports[port].out.extend(text)))
 
     def drop_frames(self, count: int) -> None:
         """The next frame's seq skips `count` values, as if they were lost."""
@@ -173,7 +183,8 @@ class FakeFirmware:
                 return ack(error="slot in use")
             same = old and old.ids == list(req.ids) and old.period_us == req.period_us
             deadline = old.deadline_us if same else self.t_us + self.tick_us
-            self._subs[slot] = _Sub(port, list(req.ids), req.period_us, deadline, time.monotonic())
+            self._subs[slot] = _Sub(port, list(req.ids), req.period_us, deadline, time.monotonic(),
+                                    old.batch if same else b"")
             ack(value=struct.pack("<I", slot))
         elif body == "unsubscribe":
             old = self._subs.get(req.slot)

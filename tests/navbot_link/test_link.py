@@ -83,6 +83,22 @@ def test_get_set_and_call_send_literal_requests_and_return_robot_values():
     assert fw.calls == [("motor_current", [0.5, -0.5, 200.0])]
 
 
+def test_a_call_whose_ack_is_lost_is_not_sent_again():
+    class AckLostForCalls(FakeFirmware):
+        def _handle(self, msg, port):
+            if msg.WhichOneof("body") == "call":
+                self.calls.append((self.entries[msg.call.id].name, list(msg.call.args)))
+                return  # started, but the Ack never arrives
+            super()._handle(msg, port)
+
+    fw = AckLostForCalls()
+    with open_link(fw, timeout_s=0.05) as link:
+        link.catalog()
+        with pytest.raises(LinkError, match="^no reply to call$"):
+            link.call("motor_reset")
+    assert fw.calls == [("motor_reset", [])]
+
+
 def test_robot_refusal_raises_with_its_reason():
     fw = FakeFirmware()
     with open_link(fw) as link:
@@ -126,6 +142,14 @@ def test_subscription_streams_typed_rows_at_the_requested_period():
         Row(1, 1_030_000, (0.375, True, 103, -3, 7.5)),
         Row(1, 1_050_000, (0.125, True, 105, -3, 7.5)),
     ]
+
+
+def test_a_signal_batch_with_several_rows_yields_each_row_in_order():
+    fw = FakeFirmware(batch_rows=3)
+    with open_link(fw) as link:
+        link.subscribe(["loop_count", "speed_target"])
+        rows = next_events(link, 6, Row)
+    assert rows == [Row(1, t, (t // 10_000, 0.5)) for t in range(1_010_000, 1_070_000, 10_000)]
 
 
 def test_two_subscriptions_get_their_own_slots_and_unsubscribe_stops_one():

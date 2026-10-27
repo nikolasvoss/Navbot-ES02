@@ -31,10 +31,15 @@ t_us,speed_target,speed_measured,speed_p,speed_i,tilt_ref,tilt_clipped
 """
 
 
-def run(argv, fw, stdin=None):
+def run(argv, fw, stdin=None, opened=None):
+    def open_link(port, baud):
+        link = Link(MemoryTransport(fw))
+        if opened is not None:
+            opened.append(link)
+        return link
+
     out = io.StringIO()
-    rc = navlink.main(argv, open_link=lambda port, baud: Link(MemoryTransport(fw)),
-                      stdin=stdin, stdout=out)
+    rc = navlink.main(argv, open_link=open_link, stdin=stdin, stdout=out)
     return rc, out.getvalue()
 
 
@@ -47,6 +52,17 @@ def test_capture_with_the_shipped_preset_writes_header_rows_and_log_comments(tmp
     assert (rc, out) == (0, f"5 rows, 6 signals @ 100 Hz -> {csv}\n")
     assert csv.read_text() == SPEED_LOOP_CSV
     assert fw.subscribed_slots() == []  # unsubscribed at the end
+
+
+def test_capture_prints_raw_text_from_the_robot_and_keeps_it_out_of_the_file(tmp_path, capsys):
+    fw = FakeFirmware(usb=True)
+    fw.text_at(1_030_000, b"I (5) stray print\r\n")
+    csv = tmp_path / "speed-02.csv"
+    rc, out = run(["capture", "--port", "/dev/ttyUSB0", "--preset", "speed_loop",
+                   "--seconds", "0.05", "-o", str(csv)], fw)
+    assert (rc, out) == (0, f"5 rows, 6 signals @ 100 Hz -> {csv}\n")
+    assert capsys.readouterr().err == "I (5) stray print\n"
+    assert csv.read_text() == SPEED_LOOP_CSV.replace("# log t_ms=1020 INFO [param] speed_kp: 0.08 -> 0.12\n", "")
 
 
 def test_capture_fails_on_a_signal_the_firmware_lacks(tmp_path, capsys):
@@ -84,8 +100,15 @@ def wait_until(predicate, timeout_s=2.0):
 
 
 def test_shell_session(tmp_path):
-    fw = FakeFirmware()
+    fw = FakeFirmware(stop_us=1_090_000)
     csv = tmp_path / "sub.csv"
+    opened = []
+
+    def all_rows_queued_and_taken():
+        wait_until(lambda: fw.t_us == fw.stop_us)
+        time.sleep(0.02)  # the link reads and queues the last row within a few ms
+        wait_until(opened[0].events.empty)
+
     stdin = Script(
         "log off",
         "list speed_k*",
@@ -99,12 +122,12 @@ def test_shell_session(tmp_path):
         "n",
         "call motor_current left_a=5 right_a=0 lease_ms=200",
         f"sub speed_target loop_count @50 -o {csv}",
-        lambda: wait_until(lambda: fw.t_us >= 1_100_000),
+        all_rows_queued_and_taken,
         "unsub 1",
         "sub nope",
         "quit",
     )
-    rc, out = run(["shell", "--port", "/dev/ttyAMA3"], fw, stdin=stdin)
+    rc, out = run(["shell", "--port", "/dev/ttyAMA3"], fw, stdin=stdin, opened=opened)
     assert rc == 0
     assert out == """\
 speed_kp                 param      f32  rad/(m/s)
@@ -122,12 +145,19 @@ slot 1 closed
 error: unknown signal nope
 """.format(csv=csv)
     assert fw.calls == [("motor_current", [0.5, 0.0, 200.0])]
-    lines = csv.read_text().splitlines()
-    assert lines[:6] == ["# build: fake-build-1", "# rate: 50 Hz", "# param speed_kp=0.12",
-                         "# param speed_ki=0.5", "# param speed_i_on=1", "t_us,speed_target,loop_count"]
-    expected_rows = [f"{t},0.5,{t // 10_000}" for t in range(1_010_000, 1_200_000, 20_000)]
-    rows = lines[6:]
-    assert rows and rows == expected_rows[:len(rows)]
+    assert csv.read_text() == """\
+# build: fake-build-1
+# rate: 50 Hz
+# param speed_kp=0.12
+# param speed_ki=0.5
+# param speed_i_on=1
+t_us,speed_target,loop_count
+1010000,0.5,101
+1030000,0.5,103
+1050000,0.5,105
+1070000,0.5,107
+1090000,0.5,109
+"""
 
 
 def test_shell_quit_stops_its_subscriptions(tmp_path):
