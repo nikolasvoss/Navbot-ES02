@@ -21,7 +21,7 @@ The current source has several paths that affect the same physical motion:
 | --- | --- | --- |
 | Speed PI changes `bodyX`, which changes the leg IK targets. Balance PID independently changes wheel velocity targets. | Driving changes both body geometry and wheel action. Servo lag, payload position, and balance tuning interact. | `runPostureController()` and `writeLegServos()` in the [sketch](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino). |
 | A braking-only wheel-speed correction is added alongside balance and yaw. | Wheel-speed feedback has two actuator paths. | `runPostureController()`. |
-| The balance PID sends tilt error to wheel velocity with P 5, I 200, D 0.11, and a stored-integral limit of 0.1 in the selected preset. | In a velocity cascade the tilt integral supplies the restoring stiffness (see [below](#why-not-a-velocity-command-balance-law)). The 0.1 limit caps that term at 20 wheel rad/s, beyond which the loop behaves as P+D only, which is unstable in the simple model. Stiffness, drift correction, and windup share one clamped state. | Sketch presets and `runPostureController()`; [PID implementation](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.h). |
+| The balance PID sends tilt error to wheel velocity with P 5, I 200, D 0.11, and a stored-integral limit of 0.1 in the selected preset. | In a velocity cascade the tilt integral supplies the restoring stiffness (see [below](#why-not-a-velocity-command-balance-law)). The 0.1 limit caps that term at 20 wheel rad/s, beyond which the loop behaves as P+D only, which is unstable in the simple model. Stiffness, drift correction, and windup share one clamped state. | Sketch presets and `runPostureController()`; the former `MyPIDController`. |
 | Wheel targets are clipped individually after mixing. | Steering can consume balance headroom; clipping changes the intended common/differential mix. | End of `runPostureController()`. |
 | Control runs after an elapsed-time threshold of 1 ms. IMU reads are data-ready gated, with coefficients designed for nominal 1 kHz. | Sensor ODR, accepted-read rate, control rate, and filter design rate need separate verification. | [IMU implementation](../../../src/ES-02/OllieFOCdrive/imu.cpp), [IMU settings](../../../src/ES-02/OllieFOCdrive/imu.h), sketch `loop()`. |
 | Wheel-speed differentiation uses measured time only with the diagnostic-defaults define enabled. | Gain comparisons across build settings can have different measurement scales. | `updateWheelVelocities()`. |
@@ -354,13 +354,7 @@ Done when: with wheels clear, the package 1 current command produces the expecte
 
 ### Package 3: remove the replaced control paths
 
-Status: implemented on 2026-10-22 as one commit per table row. The build and every host test pass. Not flashed: the unloaded run with balance disabled and the fixed pose on hardware are not yet confirmed. Only the `MyPIDController` row remains, until package 4.
-
-Delete in the same change, with their callers, Commander entries, telemetry fields, and tests:
-
-| Remove | Where |
-| --- | --- |
-| `MyPIDController` in [OllieFOCdrive.h](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.h) and `tests/pid/` | only if no user remains after package 4 |
+Status: implemented on 2026-10-22 as one commit per removed path. The build and every host test pass. Not flashed: the unloaded run with balance disabled and the fixed pose on hardware are not yet confirmed. `MyPIDController` and `tests/pid/` followed on 2026-10-27, after the unused yaw PID, their last user, was deleted.
 
 `runPostureController()` and `computeBodyPose()` disappear. The fixed pose writes `servoTraceAngle[i] = -servoTrimN` through `writeLegServos()` each tick, as decided above. `LegKinematics` then has no runtime caller; delete it and `tests/kinematics/` in the same change unless the IK fallback pose is needed. Servo calibration (`calibrationSelect` 3 through Commander `E`) keeps working with balance disabled.
 
@@ -469,7 +463,7 @@ Add `tests/balance_control/` with a `run_host_test.sh` following the existing pa
 - source timeout: speed ramps to zero at the braking cap, yaw goes to zero, balance continues;
 - `micros()` wraparound across freshness and `dt` checks.
 
-Existing suites to rerun: `tests/imu`, `tests/filter`, `tests/kinematics`, `tests/calibration`, `tests/calibration_store`, `tests/telemetry`, `tests/serial_commands`, `tests/scripts`, and `tests/pid` if it still exists.
+Existing suites to rerun: `tests/imu`, `tests/filter`, `tests/kinematics`, `tests/calibration`, `tests/calibration_store`, `tests/telemetry`, `tests/serial_commands`, and `tests/scripts`.
 
 ### Package 8: documentation after implementation
 

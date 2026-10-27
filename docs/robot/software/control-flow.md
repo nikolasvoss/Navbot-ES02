@@ -104,7 +104,6 @@ No balance gains are active. Package 4 defines the new gain set.
 | Wheel targets and fixed servo pose | `OllieFOCdrive.ino`: `runControlTick()` |
 | Remote control and modes | `OllieFOCdrive.ino`: `readSbus()` |
 | IMU fusion and posture offsets | `imu.cpp`: `imu::service()`; `MahonyFilter.cpp` |
-| PID calculation rule | `OllieFOCdrive.h`: `MyPIDController::compute()` |
 | Calibration and storage | `Calibration.cpp`, `CalibrationStore.cpp`; call in `OllieFOCdrive.ino`: `loop()` |
 | Servo output | `ServoControl.cpp`; trims in `zeroBias.servo1` through `zeroBias.servo4` |
 | K58 drive trace with controller parts | [README](trace-capture.md#capture-a-balance-shutdown), `scripts/capture_balance_trace.py` |
