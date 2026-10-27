@@ -12,6 +12,7 @@
 
 #include "Arduino.h"
 #include "LoggingInternal.h"
+#include "usb_out.h"
 
 namespace {
 constexpr UBaseType_t kQueueDepth = Logging::kQueueDepth;
@@ -93,7 +94,7 @@ void senderTask(void *) {
       continue;
     }
 
-    if (Serial.write(reinterpret_cast<const uint8_t *>(line), static_cast<size_t>(length)) !=
+    if (UsbWriteBlocking(reinterpret_cast<const uint8_t *>(line), static_cast<size_t>(length)) !=
         static_cast<size_t>(length)) {
       writeFailures.fetch_add(1, std::memory_order_relaxed);
       latchIncomplete(Logging::IncompleteReason::SenderWriteFailed);

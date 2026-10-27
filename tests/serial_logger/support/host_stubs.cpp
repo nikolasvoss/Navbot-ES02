@@ -141,3 +141,7 @@ BaseType_t xTaskCreatePinnedToCore(TaskFunction_t task, const char *, uint32_t, 
 }
 
 void failNextTaskCreation() { taskCreationFails = true; }
+
+#include "usb_out.h"
+
+size_t UsbWriteBlocking(const uint8_t *data, size_t len) { return Serial.write(data, len); }

@@ -38,14 +38,14 @@ class LoggingCommandStream : public Stream {
   int peek() override { return Serial.peek(); }
   size_t write(uint8_t value) override {
     if (motorDiagnosticOwnsOutput || Logging::profile() != Logging::Profile::Idle) return 1;
-    return Serial.write(value);
+    return LinkUsbPrint().write(value);
   }
   size_t write(const uint8_t *buffer, size_t size) override {
     if (motorDiagnosticOwnsOutput || Logging::profile() != Logging::Profile::Idle) return size;
-    return Serial.write(buffer, size);
+    return LinkUsbPrint().write(buffer, size);
   }
   void flush() override {
-    if (!motorDiagnosticOwnsOutput && Logging::profile() == Logging::Profile::Idle) Serial.flush();
+    // Nothing to flush: the writer task owns the UART.
   }
 };
 
@@ -608,10 +608,10 @@ void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params) {
 
 void initIMU(const imu::CalibrationValues &imuCalibration) {
   if (!imu::begin(imu::Settings{}, imuCalibration)) {
-    Serial.println("IMU initialization failed!");
+    LinkUsbPrint().println("IMU initialization failed!");
     while (1);
   }
-  Serial.println("IMU initialized successfully!");
+  LinkUsbPrint().println("IMU initialized successfully!");
 }
 
 void initRemoteControl() {
@@ -676,6 +676,7 @@ void setup() {
 
   Serial.setTxBufferSize(kSerialTxBufferBytes);
   Serial.begin(kSerialBaudRate);
+  LinkUsbInit();
   Logging::begin();
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
   servoTrims = loadedCalibration.servos;
@@ -685,14 +686,14 @@ void setup() {
   // TODO is this the right location?
   pinMode(board::kStatusLedPin, OUTPUT);
   digitalWrite(board::kStatusLedPin, LOW);
-  Serial.println("system run.");
+  LinkUsbPrint().println("system run.");
   delay(500);
 
 #if SENSOR_DIAGNOSTIC_MODE
   biquadFilterInitLPF(&voltageFilterLpf, 20, kDiagnosticLogSampleRateHz);
   diagnosticImuReady = imu::begin(imu::Settings{}, imuCalibration);
   sBus.begin();
-  Serial.printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n", (int)esp_reset_reason(),
+  LinkUsbPrint().printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n", (int)esp_reset_reason(),
                 diagnosticImuReady ? 1 : 0);
   Logging::setProfile(Logging::Profile::Diagnostic);
   return;
@@ -709,7 +710,7 @@ void setup() {
   initIMU(imuCalibration);
   initRemoteControl();
   LinkUartInit();
-  SimpleFOCDebug::enable(&Serial);  // TODO a more centralized way to enable debug sections would be nice
+  SimpleFOCDebug::enable(&LinkUsbPrint());  // TODO a more centralized way to enable debug sections would be nice
   initPositionSensors();
   initDrivers();
   configureWheelMotor(motor1, kLeftWheelMotor);
@@ -726,7 +727,7 @@ void setup() {
   motor2.target = 0;
 
 
-  Serial.println("Motor ready.");
+  LinkUsbPrint().println("Motor ready.");
 
   _delay(1000);
 }
@@ -989,7 +990,7 @@ void diagnosticLoop(void) {
     if (elapsedUs >= 1000000U) {
       const uint32_t acceptedSamples = timing.acceptedSamples - lastTimingAcceptedSamples;
       const float acceptedRateHz = static_cast<float>(acceptedSamples) * 1000000.0f / static_cast<float>(elapsedUs);
-      Serial.printf("IMU_TIMING,elapsed_us=%lu,accepted=%lu,rate_hz=%.1f,long_gap_total=%lu,max_interval_us=%lu\n",
+      LinkUsbPrint().printf("IMU_TIMING,elapsed_us=%lu,accepted=%lu,rate_hz=%.1f,long_gap_total=%lu,max_interval_us=%lu\n",
                     static_cast<unsigned long>(elapsedUs), static_cast<unsigned long>(acceptedSamples), acceptedRateHz,
                     static_cast<unsigned long>(timing.longGapCount), static_cast<unsigned long>(timing.maxIntervalUs));
       lastTimingReportUs = timingNowUs;

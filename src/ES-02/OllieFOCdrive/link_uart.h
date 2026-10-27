@@ -16,7 +16,15 @@
 
 void LinkUartInit();
 
-// Sends WheelOdometry, then Imu if the snapshot is valid. Never blocks; a frame that does not fit is dropped.
+// Starts the USB TX queue and its writer task. Call right after Serial.begin() and before anything writes to the USB port.
+void LinkUsbInit();
+
+// Print for text that the control loop or setup produces for the USB port. Never blocks; text that does not fit the
+// queue is dropped and counted.
+Print& LinkUsbPrint();
+
+// Queues WheelOdometry, then Imu if the snapshot is valid, for UART1. Never blocks and never touches the UART; a frame
+// that does not fit is dropped and counted.
 void LinkPublishOdometry(uint32_t sampleTimeUs, double leftWheelAngleRad, double rightWheelAngleRad, const imu::Snapshot& imuSnapshot);
 
 #endif
