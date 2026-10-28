@@ -1,0 +1,8 @@
+# synthetic navlink fixture for tests/scripts; not robot data
+# robot restart between rows 3 and 4 (t_us 3.0e9 to 5000)
+t_us,x
+2998000000,1
+2999000000,2
+3000000000,3
+5000,4
+1000000,5

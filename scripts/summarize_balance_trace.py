@@ -21,6 +21,7 @@ TRACE_PREFIXES = {"TRACE", "CTRL", "BAL", "DRIVE"}
 NAVLINK = "navlink"
 NAVLINK_COLUMN_HEADER = "t_us,"
 UINT32_RANGE = 2 ** 32
+MAX_STEP_US = 10_000_000  # a bigger jump in t_us is not a wrap
 LOST_FRAMES = re.compile(r"lost (\d+) frames before seq \d+")
 MAX_LISTED_EVENTS = 5
 
@@ -126,14 +127,37 @@ def read_k_profile(lines):
     return Trace(record_type, header, rows, malformed, {})
 
 
+def classify_t_us(raws, index, previous_raw):
+    """Say what raw `t_us` value `raws[index]` is after `previous_raw`, the last accepted value.
+
+    "step": continuous (a lower value than before means the clock wrapped at 2^32).
+    "corrupt": an isolated bad value, because the next row continues from `previous_raw`.
+    "restart": the robot rebooted, so a small value follows a jump.
+    "jump": a large forward gap.
+    """
+    raw = raws[index]
+    if (raw - previous_raw) % UINT32_RANGE < MAX_STEP_US:
+        return "step"
+    following = raws[index + 1] if index + 1 < len(raws) else None
+    if following is not None and (following - previous_raw) % UINT32_RANGE < MAX_STEP_US:
+        return "corrupt"
+    if raw < previous_raw:
+        return "restart" if raw < MAX_STEP_US else "corrupt"
+    return "jump"
+
+
 def read_navlink(lines):
-    """Rows get `t_us` (unwrapped) and `time_ms` = `t_us` / 1000, the column K logs call `time_ms`."""
+    """Rows get `t_us` (unwrapped) and `time_ms` = `t_us` / 1000, the column K logs call `time_ms`.
+
+    `t_us` is the robot's `micros()`. A backward step that continues within MAX_STEP_US across 2^32
+    is a wrap. A small value after a jump back is a robot restart: the timeline continues from the
+    last time before it, so the span leaves out the unknown downtime. A single out-of-range value
+    is a malformed row.
+    """
     columns = None
-    rows = []
+    raw_rows = []
     malformed = 0
-    notes = {"build": None, "rate": None, "params": [], "events": [], "lost_frames": 0}
-    previous_raw = None
-    wraps = 0
+    notes = {"build": None, "rate": None, "params": [], "events": [], "lost_frames": 0, "warnings": []}
 
     for line in lines:
         if line.startswith("#"):
@@ -162,14 +186,32 @@ def read_navlink(lines):
         if parsed is None:
             malformed += 1
             continue
-        # t_us is the robot's micros() and wraps at 2^32 (about 71.6 min).
+        raw_rows.append(parsed)
+
+    rows = []
+    raws = [parsed["t_us"] for parsed in raw_rows]
+    previous_raw = None
+    offset = 0
+    restarts = 0
+    for index, parsed in enumerate(raw_rows):
         raw = parsed["t_us"]
-        if previous_raw is not None and raw < previous_raw - UINT32_RANGE / 2:
-            wraps += 1
+        if previous_raw is not None:
+            verdict = classify_t_us(raws, index, previous_raw)
+            if verdict == "corrupt":
+                malformed += 1
+                continue
+            if verdict == "step" and raw < previous_raw:
+                offset += UINT32_RANGE
+            elif verdict == "restart":
+                restarts += 1
+                offset = rows[-1][1]["t_us"]
         previous_raw = raw
-        parsed["t_us"] = raw + wraps * UINT32_RANGE
+        parsed["t_us"] = raw + offset
         parsed["time_ms"] = parsed["t_us"] / 1000
         rows.append((NAVLINK, parsed))
+    if restarts:
+        notes["warnings"].append(f"`t_us` fiel {restarts}-mal auf einen kleinen Wert zurück (Roboter-Neustart); "
+                                 "die Zeitachse läuft danach weiter, die Ausfallzeit fehlt in der Zeitspanne")
     header = ["t_us", "time_ms", *columns[1:]] if columns else None
     return Trace(NAVLINK if columns else None, header, rows, malformed, notes)
 
@@ -198,6 +240,7 @@ def navlink_lines(notes):
     if notes["params"]:
         lines.append("- Parameter bei Start: " + ", ".join(f"`{param}`" for param in notes["params"]))
     lines.append(f"- Verlorene Frames (`# lost`): **{notes['lost_frames']}**")
+    lines.extend(f"- Warnung: {warning}" for warning in notes["warnings"])
     events = notes["events"]
     if events:
         lines.append(f"- Log-Ereignisse: **{len(events)}**")
