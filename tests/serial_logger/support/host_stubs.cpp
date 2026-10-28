@@ -1,4 +1,5 @@
 #include "Arduino.h"
+#include "link_log.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
@@ -19,6 +20,7 @@ bool writeStarted = false;
 bool shortWrite = false;
 bool taskCreationFails = false;
 std::string serialBytes;
+std::string publishedLogText;
 size_t serialLineCount = 0;
 uint32_t serialBaud = 0;
 std::chrono::steady_clock::time_point nextWriteAvailable{};
@@ -145,3 +147,13 @@ void failNextTaskCreation() { taskCreationFails = true; }
 #include "usb_out.h"
 
 size_t UsbWriteBlocking(const uint8_t *data, size_t len) { return Serial.write(data, len); }
+
+void LinkPublishLog(Logging::Level level, const char *tag, const char *text) {
+  std::lock_guard<std::mutex> lock(serialMutex);
+  publishedLogText += std::to_string(static_cast<int>(level)) + " " + tag + " " + text + "\n";
+}
+
+std::string publishedLogs() {
+  std::lock_guard<std::mutex> lock(serialMutex);
+  return publishedLogText;
+}

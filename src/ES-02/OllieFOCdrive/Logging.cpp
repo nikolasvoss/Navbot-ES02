@@ -12,6 +12,7 @@
 
 #include "Arduino.h"
 #include "LoggingInternal.h"
+#include "link_log.h"
 #include "usb_out.h"
 
 namespace {
@@ -164,7 +165,6 @@ Result message(Level level, const char *tag, const char *format, ...) {
   if (format == nullptr || tag == nullptr) return Result::Invalid;
 
   const ProfileSnapshot profile = snapshotProfile();
-  if (profile.profile != Profile::Idle) return Result::Suppressed;
 
   const size_t tagLength = strlen(tag);
   if (tagLength > kMessageTagSize) return Result::Truncated;
@@ -184,6 +184,10 @@ Result message(Level level, const char *tag, const char *format, ...) {
   }
   if (static_cast<size_t>(length) >= sizeof(messageRecord.text)) return Result::Truncated;
   messageRecord.textLength = static_cast<uint8_t>(length);
+
+  // A log profile keeps text off the USB port so its CSV rows stay clean; the Log frames of the link go out regardless.
+  LinkPublishLog(level, tag, messageRecord.text);
+  if (profile.profile != Profile::Idle) return Result::Suppressed;
 
   LoggingInternal::Record record{};
   record.epoch = profile.epoch;

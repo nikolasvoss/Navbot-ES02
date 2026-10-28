@@ -253,6 +253,15 @@ void verifyMessagesAndBoundary() {
           "queued pre-boundary message contaminated structured capture");
   require(output.find("suppressed:") == std::string::npos,
           "capture-time message contaminated structured output");
+  const std::string published = publishedLogs();
+  require(published.find("3 suppressed capture\n") != std::string::npos,
+          "a message during a log profile did not reach the link as a Log frame");
+  require(published.find("2 inflight before\n") != std::string::npos &&
+              published.find("1 inflight claimed\n") != std::string::npos,
+          "idle messages did not reach the link");
+  require(published.find("1 stale queued\n") != std::string::npos,
+          "a message the capture boundary later dropped from the text path did not reach the link");
+  require(published.find("long") == std::string::npos, "an oversize message reached the link");
   require(output.find("TRACE,7,") != std::string::npos,
           "typed record was not emitted after profile transition");
 }

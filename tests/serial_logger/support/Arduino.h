@@ -19,3 +19,6 @@ void releaseSerialWrites();
 bool waitForSerialLines(size_t count);
 void shortNextSerialWrite();
 std::string serialOutput();
+
+// Log frames the code under test handed to LinkPublishLog, as "level tag text".
+std::string publishedLogs();
