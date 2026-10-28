@@ -942,11 +942,10 @@ void updateMotorsAndCommands() {
   motor1.loopFOC();
   motor2.loopFOC();
 
-  // user communication
+  // user communication: the Commander dispatch now handles only K, which does not touch the motors
   serialCommandRouter.run(commandStream, command, commandEntries);
-  // Apply STOP, mode conflicts, and lease checks immediately after dispatch.
-  // This also prevents a newly selected blocking calibration from running while leased.
-  // Skipped on the normal path: no diagnostic is active or still applied to the motors.
+  // This pass uses the S.BUS frame read above, so a CH5 switch or an expired lease ends a motor test here rather than
+  // in the next loop pass. Skipped on the normal path: no diagnostic is active or still applied to the motors.
   if (motorDiagnosticState.active || motorDiagnosticApplied) {
     readSbus();
     serviceMotorDiagnostic();
