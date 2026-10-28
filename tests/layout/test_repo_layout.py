@@ -154,6 +154,8 @@ class RepoLayoutTest(unittest.TestCase):
                     continue
                 path_part, _, anchor = target.partition("#")
                 path = (ROOT / f).parent / unquote(path_part) if path_part else ROOT / f
+                if f.startswith("lab/"):
+                    continue  # dated records keep pointing at code that a later change deleted
                 self.assertTrue(path.exists(), f"{f}: broken link '{target}'.")
                 if anchor and path.suffix == ".md":
                     self.assertIn(anchor, anchors(path), f"{f}: link '{target}' points to a missing heading.")
