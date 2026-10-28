@@ -49,7 +49,10 @@
   {% include "_nav.html" %}
   <header class="top">
     <h1>Navbot SLAM</h1>
-    <span id="stateBadge" class="badge pill" data-level="unknown">Connecting</span>
+    <span>
+      <span id="modeBadge" class="badge pill" data-level="unknown">Mode</span>
+      <span id="stateBadge" class="badge pill" data-level="unknown">Connecting</span>
+    </span>
   </header>
   <main class="grid">
     <section class="mapView" aria-label="SLAM map">
@@ -74,6 +77,17 @@
         <dt>SLAM process</dt><dd id="slamProcess">–</dd>
         <dt>Saved map</dt><dd id="savedMap">–</dd>
       </dl>
+      <h2>Localization</h2>
+      <dl>
+        <dt>Mode</dt><dd id="locMode">–</dd>
+        <dt>State</dt><dd id="locState">–</dd>
+        <dt>AMCL x, y</dt><dd id="locXY">–</dd>
+        <dt>AMCL heading</dt><dd id="locYaw">–</dd>
+        <dt>Std x, y</dt><dd id="locStdXY">–</dd>
+        <dt>Std heading</dt><dd id="locStdYaw">–</dd>
+        <dt>Searching for</dt><dd id="locSearch">–</dd>
+      </dl>
+      <p id="locHint" class="note"></p>
       <h2>Wheel odometry</h2>
       <dl>
         <dt>Odom x, y</dt><dd id="odomXY">–</dd>
@@ -85,12 +99,16 @@
         <dt>SLAM correction</dt><dd id="slamCorrection">–</dd>
       </dl>
       <div class="actions">
+        <button id="locate" type="button" disabled title="Start a global search for the pose on the saved map">Locate again</button>
+        <button id="switchMode" type="button" disabled>Switch to mapping</button>
+      </div>
+      <div class="actions">
         <button id="saveMap" type="button" disabled>Save map</button>
         <button id="resetMap" type="button" disabled title="Discard the current map and load the saved one">Reset map</button>
         <button id="deleteMap" type="button" disabled>Delete map and start over</button>
       </div>
       <p id="actionResult" class="note" role="status"></p>
-      <p class="note">SLAM starts with the LiDAR service. The saved map loads on every start, which assumes the robot starts where that map began. Mapping runs <code>slam_toolbox</code> on LiDAR scans with the wheel odometry from the NavBot link bridge; without that service no scans are processed. Map and pose come from ROS topics <code>/map</code> and TF <code>map</code> → <code>base_link</code> (the robot, not the sensor). Angle zero and rotation direction of the LiDAR are uncalibrated, so the map may be mirrored or rotated.</p>
+      <p class="note">With a saved map, the robot localizes on it (Nav2 AMCL on the saved occupancy map) and the saved map does not change. Without one, or after switching to mapping, it maps with <code>slam_toolbox</code>. Mapping runs <code>slam_toolbox</code> on LiDAR scans with the wheel odometry from the NavBot link bridge; without that service no scans are processed. Map and pose come from ROS topics <code>/map</code> and TF <code>map</code> → <code>base_link</code> (the robot, not the sensor). Angle zero and rotation direction of the LiDAR are uncalibrated, so the map may be mirrored or rotated.</p>
     </section>
   </main>
   <script>
@@ -100,21 +118,36 @@
     // Map progress while slam_toolbox is healthy; any service fault comes from /services.json instead.
     const MAP_STATES = {
       waiting: ['Waiting for map', 'unknown'], no_pose: ['Map, no pose', 'warn'], mapping: ['Mapping', 'ok'],
+      localization: ['Localization', 'ok'],
+    };
+    const LOC_STATES = {
+      idle: ['Starting', 'warn'], searching: ['Searching', 'warn'], localized: ['Localized', 'ok'], lost: ['Lost', 'warn'],
     };
     let serverHasControl = false;
     let actionRunning = false;
     let hasSavedMap = false;
+    let currentMode = null;
 
     function syncButtons() {
-      for (const id of ['saveMap', 'deleteMap']) $(id).disabled = actionRunning || !serverHasControl;
+      const localizing = currentMode === 'localization';
+      $('saveMap').disabled = actionRunning || !serverHasControl || localizing;
+      $('deleteMap').disabled = actionRunning || !serverHasControl;
       $('resetMap').disabled = actionRunning || !serverHasControl || !hasSavedMap;
+      $('locate').disabled = actionRunning || !serverHasControl || !localizing;
+      $('switchMode').disabled = actionRunning || !serverHasControl || currentMode === null;
+      $('switchMode').textContent = localizing ? 'Switch to mapping' : 'Switch to localization';
     }
 
-    async function runAction(path, doneText) {
+    async function runAction(path, doneText, body) {
       actionRunning = true;
       syncButtons();
       try {
-        const response = await fetch(path, { method: 'POST' });
+        const init = { method: 'POST' };
+        if (body !== undefined) {
+          init.headers = { 'Content-Type': 'application/json' };
+          init.body = JSON.stringify(body);
+        }
+        const response = await fetch(path, init);
         const body = await response.json();
         $('actionResult').textContent = body.ok ? doneText : (body.error || 'HTTP ' + response.status);
       } catch (error) {
@@ -130,6 +163,11 @@
       if (confirm('Discard the current map, including anything not saved, and load the saved map?')) {
         runAction('/slam/reset', 'Saved map is loading.');
       }
+    });
+    $('locate').addEventListener('click', () => runAction('/slam/locate', 'Searching for the pose on the saved map.'));
+    $('switchMode').addEventListener('click', () => {
+      const target = currentMode === 'localization' ? 'mapping' : 'localization';
+      runAction('/slam/mode', `Switching to ${target}.`, { mode: target });
     });
     $('deleteMap').addEventListener('click', () => {
       if (confirm('Delete the saved map and restart mapping from scratch?')) {
@@ -355,6 +393,12 @@
       return off;
     }
 
+    function locText(loc) {
+      if (!loc) return ['–', 'unknown'];
+      if (loc.state === 'lost' && loc.error) return ['Lost', 'error'];
+      return LOC_STATES[loc.state] || [loc.state, 'unknown'];
+    }
+
     function setState(id, text, level) {
       $(id).textContent = text;
       $(id).dataset.level = level;
@@ -365,9 +409,18 @@
         const [slam, services] = await Promise.all([getJson('/map.json'), getJson('/services.json')]);
         const svc = Object.fromEntries(services.map((row) => [row.key, row]));
         const slamRow = svc.slam;
+        currentMode = slam.mode;
+        const localizing = currentMode === 'localization';
+        const loc = slam.localization;
         const [mapText, mapLevel] = MAP_STATES[slam.state] || [slam.state, 'unknown'];
-        if (slamRow.level === 'ok') setState('stateBadge', mapText, mapLevel);
-        else setState('stateBadge', slamRow.short, slamRow.level);
+        if (slamRow.level === 'ok') {
+          const [locStateText, locStateLevel] = localizing ? locText(loc) : [mapText, mapLevel];
+          setState('stateBadge', locStateText, locStateLevel);
+        } else {
+          setState('stateBadge', slamRow.short, slamRow.level);
+        }
+        if (currentMode === null) setState('modeBadge', 'Mode –', 'unknown');
+        else setState('modeBadge', localizing ? 'Localization' : 'Mapping', 'ok');
         setState('lidarState', svc.lidar.short, svc.lidar.level);
         const m = slam.map;
         $('mapSize').textContent = m ? `${(m.width * m.resolution).toFixed(1)} × ${(m.height * m.resolution).toFixed(1)} m` : '–';
@@ -385,6 +438,17 @@
         else setState('odomRate', live && o.rate_hz != null ? `${o.rate_hz.toFixed(0)} Hz` : (o ? 'Stale' : 'No data'), live ? 'ok' : 'error');
         const c = slam.correction;
         $('slamCorrection').textContent = c ? `${Math.hypot(c.x, c.y).toFixed(2)} m, ${deg(c.yaw)}` : '–';
+        const std = loc && loc.std;
+        $('locMode').textContent = localizing ? 'Localization' : (currentMode === null ? '–' : 'Mapping');
+        const [locWord, locWordLevel] = localizing ? locText(loc) : ['–', 'unknown'];
+        setState('locState', locWord, locWordLevel);
+        const ap = loc && loc.pose;
+        $('locXY').textContent = ap ? `${ap.x.toFixed(2)}, ${ap.y.toFixed(2)} m` : '–';
+        $('locYaw').textContent = ap ? deg(ap.yaw) : '–';
+        $('locStdXY').textContent = std ? `${std.x.toFixed(2)}, ${std.y.toFixed(2)} m` : '–';
+        $('locStdYaw').textContent = std ? deg(std.yaw) : '–';
+        $('locSearch').textContent = loc && loc.search_age_sec != null ? `${loc.search_age_sec.toFixed(0)} s` : '–';
+        $('locHint').textContent = loc && (loc.error || loc.hint) ? (loc.error ? 'Localization failed: ' + loc.error : loc.hint) : '';
         const p = slam.pose;
         $('poseXY').textContent = p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)} m` : '–';
         $('poseYaw').textContent = p ? `${(p.yaw * 180 / Math.PI).toFixed(0)}°` : '–';
@@ -399,6 +463,8 @@
         setMap(m, p);
       } catch (error) {
         setState('stateBadge', 'Unreachable', 'error');
+        setState('modeBadge', 'Mode –', 'unknown');
+        currentMode = null;
         serverHasControl = false;
         syncButtons();
         setMap(null, null);

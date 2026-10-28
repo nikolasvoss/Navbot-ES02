@@ -51,6 +51,7 @@ class SlamState:
         self._odom_times: deque[float] = deque()
         self._odom_path_m = 0.0
         self._correction: dict | None = None
+        self._latched = False
 
     def set_grid(self, grid: dict) -> None:
         with self._lock:
@@ -71,6 +72,11 @@ class SlamState:
             while self._odom_times[0] < now - ODOM_RATE_WINDOW_SEC:
                 self._odom_times.popleft()
 
+    def set_map_latched(self, latched: bool) -> None:
+        """True in localization: the map is fixed, so its age never makes the state "stale"."""
+        with self._lock:
+            self._latched = latched
+
     def set_correction(self, x: float, y: float, yaw: float) -> None:
         """map -> odom transform: how far SLAM has moved the robot away from pure wheel odometry."""
         with self._lock:
@@ -86,12 +92,14 @@ class SlamState:
         with self._lock:
             grid, grid_at, pose, pose_at = self._grid, self._grid_at, self._pose, self._pose_at
             odom, odom_at, correction = self._odom, self._odom_at, self._correction
-            odom_path_m, odom_times = self._odom_path_m, list(self._odom_times)
+            odom_path_m, odom_times, latched = self._odom_path_m, list(self._odom_times), self._latched
         map_age = None if grid_at is None else now - grid_at
         pose_age = None if pose_at is None else now - pose_at
         pose_fresh = pose is not None and pose_age <= POSE_STALE_AFTER_SEC
         if grid is None:
             state = "waiting"
+        elif latched:
+            state = "localization" if pose_fresh else "no_pose"
         elif map_age > MAP_STALE_AFTER_SEC:
             state = "stale"
         elif not pose_fresh:

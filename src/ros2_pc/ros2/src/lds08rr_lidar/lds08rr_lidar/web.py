@@ -62,9 +62,12 @@ def make_lidar_app(
 
     @app.get("/map.json")
     def map_json():
+        status = control.status() if control is not None else None
         return jsonify({
             **slam.snapshot(),
-            "control": control.status() if control is not None else None,
+            "control": status,
+            "mode": None if status is None else status["mode"],
+            "localization": None if status is None else status["localization"],
             "tilt_gate": tilt_gate.snapshot() if tilt_gate is not None else None,
         })
 
@@ -95,6 +98,25 @@ def make_lidar_app(
         if error is not None:
             return jsonify(ok=False, error=error), 409
         slam.clear()
+        return jsonify(ok=True)
+
+    @app.post("/slam/mode")
+    def slam_mode():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        body = request.get_json(silent=True)
+        error = control.set_mode(body.get("mode") if isinstance(body, dict) else None)
+        if error is not None:
+            return jsonify(ok=False, error=error), 409
+        return jsonify(ok=True)
+
+    @app.post("/slam/locate")
+    def slam_locate():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        error = control.locate()
+        if error is not None:
+            return jsonify(ok=False, error=error), 409
         return jsonify(ok=True)
 
     @app.get("/radar/")

@@ -344,9 +344,28 @@ class FakeControl:
         self.deleted = 0
         self.reloaded = 0
         self.reload_error = None
+        self.mode = "mapping"
+        self.localization = {"state": "idle", "pose": None, "std": None, "search_age_sec": None, "error": None, "hint": None}
+        self.mode_error = None
+        self.locate_error = None
+        self.requested_modes = []
+        self.locates = 0
 
     def status(self):
-        return {"process": {"state": "running"}, "saved_map": {"exists": False, "saved_at": None}}
+        return {
+            "process": {"state": "running"}, "saved_map": {"exists": False, "saved_at": None},
+            "mode": self.mode, "localization": self.localization,
+        }
+
+    def set_mode(self, mode):
+        self.requested_modes.append(mode)
+        if self.mode_error is None:
+            self.mode = mode
+        return self.mode_error
+
+    def locate(self):
+        self.locates += 1
+        return self.locate_error
 
     def save(self):
         return self.error
@@ -367,7 +386,7 @@ def make_client(tmp_path, slam, control):
 def test_slam_actions_are_refused_without_a_running_control(tmp_path):
     client = make_client(tmp_path, SlamState(), None)
     refused = {"ok": False, "error": "SLAM is not running on this service"}
-    for path in ("/slam/save", "/slam/delete", "/slam/reset"):
+    for path in ("/slam/save", "/slam/delete", "/slam/reset", "/slam/mode", "/slam/locate"):
         response = client.post(path)
         assert response.status_code == 409
         assert response.get_json() == refused
@@ -443,3 +462,67 @@ def test_odom_accumulates_path_and_goes_stale():
     clock.now = 10.0
     shown = slam.snapshot()["odom"]
     assert not shown["fresh"] and shown["rate_hz"] is None
+
+
+def test_latched_map_never_goes_stale_and_reports_localization():
+    clock = FakeClock()
+    slam = SlamState(clock=clock)
+    assert slam.snapshot()["state"] == "waiting"
+    slam.set_grid(grid_to_dict(1, 1, 0.05, 0.0, 0.0, [0]))
+    slam.set_map_latched(True)
+    clock.now = 60.0
+    assert slam.snapshot()["state"] == "no_pose"
+    slam.set_pose(1.0, 2.0, 0.5)
+    shown = slam.snapshot()
+    assert shown["state"] == "localization"
+    assert shown["map_age_sec"] == 60.0
+
+    slam.set_map_latched(False)
+    assert slam.snapshot()["state"] == "stale"
+
+
+def test_web_map_json_passes_mode_and_localization_through(tmp_path):
+    control = FakeControl()
+    client = make_client(tmp_path, SlamState(), control)
+    payload = client.get("/map.json").get_json()
+    assert payload["mode"] == "mapping" and payload["localization"]["state"] == "idle"
+
+    control.mode = "localization"
+    control.localization = {"state": "searching", "pose": None, "std": None, "search_age_sec": 3.0, "error": None, "hint": None}
+    payload = client.get("/map.json").get_json()
+    assert payload["mode"] == "localization"
+    assert payload["localization"]["state"] == "searching" and payload["localization"]["search_age_sec"] == 3.0
+    assert payload["control"]["mode"] == "localization"
+
+
+def test_web_mode_and_locate_drive_the_control(tmp_path):
+    control = FakeControl()
+    client = make_client(tmp_path, SlamState(), control)
+
+    assert client.post("/slam/mode", json={"mode": "localization"}).get_json() == {"ok": True}
+    assert control.requested_modes == ["localization"]
+
+    control.mode_error = "No saved map to localize on"
+    response = client.post("/slam/mode", json={"mode": "mapping"})
+    assert response.status_code == 409
+    assert response.get_json() == {"ok": False, "error": "No saved map to localize on"}
+
+    client.post("/slam/mode")  # no JSON body: the control gets no mode and refuses it, the web layer does not crash
+    assert control.requested_modes == ["localization", "mapping", None]
+
+    control.locate_error = "Locate again needs localization mode"
+    response = client.post("/slam/locate")
+    assert response.status_code == 409
+    assert response.get_json() == {"ok": False, "error": "Locate again needs localization mode"}
+    control.locate_error = None
+    assert client.post("/slam/locate").get_json() == {"ok": True}
+    assert control.locates == 2
+
+
+def test_web_refuses_cross_site_mode_and_locate(tmp_path):
+    control = FakeControl()
+    client = make_client(tmp_path, SlamState(), control)
+    evil = {"Origin": "http://evil.example"}
+    assert client.post("/slam/mode", json={"mode": "localization"}, headers=evil).status_code == 403
+    assert client.post("/slam/locate", headers=evil).status_code == 403
+    assert control.requested_modes == [] and control.locates == 0
