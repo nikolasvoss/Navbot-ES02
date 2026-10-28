@@ -2,95 +2,62 @@
 """Read one remote-control snapshot from the NavBot's USB serial port.
 
 Agent use: python3 scripts/remote_status.py [--port /dev/ttyACM0]
-Requires pyserial. Prints one JSON object to stdout and errors to stderr.
-The firmware's K8 output has no receiver age/failsafe field; readings can be
-stale after radio loss. Keep the robot safely supported while inspecting it.
+Reads the receiver-derived signals through the navbot_link library and prints one JSON object to stdout;
+errors go to stderr. The raw S.BUS channels are not in the signal table, so only the commands the controller
+takes from them are reported. Keep the robot safely supported while inspecting it.
 """
 
 import argparse
 import datetime as dt
 import json
-import re
+import queue
 import sys
 import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
 try:
-    import serial
     from serial.tools import list_ports
 except ImportError:
     sys.exit("pyserial is required: python3 -m pip install pyserial")
 
+from navbot_link.link import Disconnected, Link, Row  # noqa: E402
+from navbot_link.protocol import LinkError  # noqa: E402
 
 BAUD_RATE = 576_000
-CHANNEL_PATTERN = re.compile(r"\bch:(\d+)")
-INTERVAL_PATTERN = re.compile(r"\bsbus_dt_ms:(\d+)")
-SWITCH_NAMES = {
-    5: ("pid_control", ("off", "on", "on")),
-}
-
-
-def parse_line(line):
-    """Return (ten raw channels, frame interval) for a complete K8 line."""
-    channels = [int(value) for value in CHANNEL_PATTERN.findall(line)]
-    interval = INTERVAL_PATTERN.search(line)
-    if len(channels) != 10 or interval is None:
-        return None
-    return channels, int(interval.group(1))
-
-
-def switch_position(value, labels):
-    # Switch positions are estimates; transmitter calibration can differ.
-    centers = (192, 992, 1792) if len(labels) == 3 else (192, 1792)
-    return labels[min(range(len(centers)), key=lambda i: abs(value - centers[i]))]
+SIGNALS = ["ch5_mode", "ch3_target", "body_turn_command"]
 
 
 def find_port():
-    ports = [p.device for p in list_ports.comports() if p.device.startswith(("/dev/ttyACM", "/dev/ttyUSB"))]
+    ports = [
+        port.device
+        for port in list_ports.comports()
+        if (port.vid, port.pid) == (0x1A86, 0x7523)
+    ]
     if len(ports) != 1:
-        raise RuntimeError(f"Expected one USB serial port, found {ports!r}; pass --port explicitly")
+        raise RuntimeError(f"Expected one CH340 USB adapter, found {ports!r}; pass --port")
     return ports[0]
 
 
-def read_snapshot(port, timeout, baud_rate):
-    deadline = time.monotonic() + timeout
-    latest = None
-    first_reading_at = None
-    # Configure modem-control lines before opening. On this board RTS can hold
-    # EN low, and changing DTR/RTS after opening may reset the ESP32.
-    connection = serial.Serial(baudrate=baud_rate, timeout=0.1, write_timeout=1)
-    connection.port = port
-    connection.dtr = False
-    connection.rts = False
-    with connection:
-        # Firmware setup can take several seconds before its command loop runs.
-        next_request_at = 0.0
+def read_snapshot(port, timeout_s, baud):
+    deadline = time.monotonic() + timeout_s
+    with Link(port, baud) as link:
+        sub = link.subscribe(SIGNALS, 10)
         try:
             while time.monotonic() < deadline:
-                if first_reading_at is None and time.monotonic() >= next_request_at:
-                    connection.write(b"K8\n")
-                    connection.flush()
-                    next_request_at = time.monotonic() + 0.5
-                line = connection.readline().decode("ascii", errors="replace")
-                reading = parse_line(line)
-                if reading is None:
+                try:
+                    event = link.events.get(timeout=0.2)
+                except queue.Empty:
                     continue
-                latest = reading
-                if first_reading_at is None:
-                    first_reading_at = time.monotonic()
-                if time.monotonic() - first_reading_at >= 0.2:
-                    break
+                if isinstance(event, Row) and event.slot == sub.slot:
+                    return {entry.name: value for entry, value in zip(sub.entries, event.values)}
+                if isinstance(event, Disconnected):
+                    raise LinkError(f"port closed: {event.reason}")
         finally:
-            # Stop the high-rate debug stream even if parsing or reading fails.
-            try:
-                connection.write(b"K0\n")
-                connection.flush()
-            except (OSError, serial.SerialException):
-                # Do not hide the original read/connection error during cleanup.
-                pass
-
-    if latest is None:
-        raise RuntimeError("No complete K8 channel line received before timeout")
-    return latest
+            link.unsubscribe(sub.slot)
+    raise RuntimeError("No signal row received before timeout")
 
 
 def main():
@@ -105,21 +72,15 @@ def main():
 
     try:
         port = args.port or find_port()
-        channels, interval = read_snapshot(port, args.timeout, args.baud_rate)
-    except (OSError, serial.SerialException, RuntimeError) as error:
+        signals = read_snapshot(port, args.timeout, args.baud_rate)
+    except (OSError, LinkError, RuntimeError) as error:
         print(f"remote_status: {error}", file=sys.stderr)
         return 1
 
-    switches = {
-        name: switch_position(channels[number - 1], labels)
-        for number, (name, labels) in SWITCH_NAMES.items()
-    }
     result = {
         "timestamp_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
         "port": port,
-        "raw_channels": {f"ch{number}": value for number, value in enumerate(channels, 1)},
-        "switches_estimated": switches,
-        "sbus_frame_interval_ms": interval,
+        "signals": signals,
         "receiver_status": "unknown",
     }
     print(json.dumps(result, separators=(",", ":")))
