@@ -1,7 +1,5 @@
 #include "link_uart.h"
 
-#include <string.h>
-
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <soc/usb_serial_jtag_struct.h>
@@ -132,31 +130,12 @@ const LinkPortBudget portBudgets[kLinkPortCount] = {
 
 LinkEndpoint* endpoint = nullptr;
 
-navbot_link_v1_Log_Level linkLevel(Logging::Level level) {
-  switch (level) {
-    case Logging::Level::Debug:
-      return navbot_link_v1_Log_Level_DEBUG;
-    case Logging::Level::Info:
-      return navbot_link_v1_Log_Level_INFO;
-    case Logging::Level::Warning:
-      return navbot_link_v1_Log_Level_WARN;
-    case Logging::Level::Error:
-      return navbot_link_v1_Log_Level_ERROR;
-  }
-  return navbot_link_v1_Log_Level_INFO;
-}
-
 }  // namespace
 
 void LinkUsbInit() { startWriter(usb, "usbTx"); }
 
 void LinkPublishLog(Logging::Level level, const char* tag, const char* text) {
-  navbot_link_v1_Message message = navbot_link_v1_Message_init_zero;
-  message.which_body = navbot_link_v1_Message_log_tag;
-  message.body.log.level = linkLevel(level);
-  strncpy(message.body.log.tag, tag, sizeof(message.body.log.tag) - 1);
-  strncpy(message.body.log.text, text, sizeof(message.body.log.text) - 1);
-  for (uint8_t port = 0; port < kLinkPortCount; ++port) sendOn(runtimeOf(port), message);
+  LinkSendLog(LinkLogLevel(level), tag, text, portSink);
 }
 
 void LinkServiceRequests(uint32_t tickStartUs, bool balanceRequested) {

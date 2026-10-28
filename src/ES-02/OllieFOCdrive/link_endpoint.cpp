@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "link_log.h"
+
 namespace {
 
 // The wire numbers of kinds and types are the table's own.
@@ -65,15 +67,6 @@ void LinkEndpoint::SendAck(uint8_t port, uint32_t requestSeq, const char* error,
   sink_.Send(port, reply);
 }
 
-void LinkEndpoint::SendLog(navbot_link_v1_Log_Level level, const char* tag, const char* text) {
-  navbot_link_v1_Message message = navbot_link_v1_Message_init_zero;
-  message.which_body = navbot_link_v1_Message_log_tag;
-  message.body.log.level = level;
-  CopyText(message.body.log.tag, tag);
-  CopyText(message.body.log.text, text);
-  for (uint8_t port = 0; port < kLinkPortCount; ++port) sink_.Send(port, message);
-}
-
 // A started action is logged with its arguments, so a capture on UART1 shows what was started and with what.
 void LinkEndpoint::SendActionLog(const SignalEntry& entry, SignalArgs args, const float* values) {
   char text[sizeof(navbot_link_v1_Log::text)];
@@ -81,7 +74,7 @@ void LinkEndpoint::SendActionLog(const SignalEntry& entry, SignalArgs args, cons
   for (size_t i = 0; i < args.count && static_cast<size_t>(length) < sizeof(text); ++i)
     length += snprintf(text + length, sizeof(text) - static_cast<size_t>(length), " %s=%g", args.items[i].name,
                        static_cast<double>(values[i]));
-  SendLog(navbot_link_v1_Log_Level_INFO, "action", text);
+  LinkSendLog(navbot_link_v1_Log_Level_INFO, "action", text, sink_);
 }
 
 void LinkEndpoint::SendCatalogEntry(uint8_t port, uint32_t index) {
@@ -191,7 +184,7 @@ void LinkEndpoint::Handle(uint8_t port, const uint8_t* payload, size_t len, uint
       FormatValue(entry.type, before, oldText);
       FormatValue(entry.type, after, newText);
       snprintf(text, sizeof(text), "%s: %s -> %s", entry.name, oldText, newText);
-      SendLog(navbot_link_v1_Log_Level_INFO, "param", text);
+      LinkSendLog(navbot_link_v1_Log_Level_INFO, "param", text, sink_);
       break;
     }
     case navbot_link_v1_Message_call_tag: {
@@ -248,5 +241,5 @@ void LinkEndpoint::OnRow(uint8_t port, uint8_t slot, const uint8_t* row, size_t 
 void LinkEndpoint::OnLeaseExpired(uint8_t, uint8_t slot) {
   char text[sizeof(navbot_link_v1_Log::text)];
   snprintf(text, sizeof(text), "slot %u lease expired", static_cast<unsigned>(slot));
-  SendLog(navbot_link_v1_Log_Level_WARN, "link", text);
+  LinkSendLog(navbot_link_v1_Log_Level_WARN, "link", text, sink_);
 }

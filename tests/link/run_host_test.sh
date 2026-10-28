@@ -67,6 +67,7 @@ c++ -std=c++17 -Wall -Wextra -Werror \
   "$sketch_dir/link_tx.cpp" \
   "$sketch_dir/link_subscriptions.cpp" \
   "$sketch_dir/link_endpoint.cpp" \
+  "$sketch_dir/link_log.cpp" \
   "$repo_root/tests/link/test_link_endpoint.cpp" \
   "$build_dir/pb_common.o" "$build_dir/pb_encode.o" "$build_dir/pb_decode.o" "$build_dir/navbot_link.pb.o" \
   -o "$build_dir/test_link_endpoint"
@@ -76,7 +77,11 @@ c++ -std=c++17 -Wall -Wextra -Werror \
 c++ -std=c++17 -Wall -Wextra -Werror \
   -I"$sketch_dir" \
   "$sketch_dir/Logging.cpp" \
+  "$sketch_dir/link_log.cpp" \
+  "$sketch_dir/link_frame.cpp" \
+  "$sketch_dir/link_tx.cpp" \
   "$repo_root/tests/link/test_link_log.cpp" \
+  "$build_dir/pb_common.o" "$build_dir/pb_encode.o" "$build_dir/pb_decode.o" "$build_dir/navbot_link.pb.o" \
   -o "$build_dir/test_link_log"
 
 "$build_dir/test_link_log"
