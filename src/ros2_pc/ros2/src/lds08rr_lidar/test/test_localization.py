@@ -299,15 +299,39 @@ def test_global_localizer_service_timeout_fails_the_tracker(fast_retry):
         localizer.stop()
 
 
-def test_global_localizer_nomotion_error_fails_the_tracker(fast_retry):
+def test_global_localizer_nomotion_error_retries_then_fails_the_tracker(fast_retry):
     service = FakeService(nomotion_error="amcl gone")
     tracker = LocalizationTracker()
-    localizer = GlobalLocalizer(service, tracker, service_timeout=5.0, nomotion_period=0.01)
+    localizer = GlobalLocalizer(service, tracker, service_timeout=0.1, nomotion_period=0.01)
 
     localizer.start()
     try:
         wait_until(lambda: tracker.snapshot()["state"] == "lost")
         assert tracker.snapshot()["error"] == "/request_nomotion_update: amcl gone"
+        assert len(service.names("/request_nomotion_update")) > 1
+    finally:
+        localizer.stop()
+
+
+def test_global_localizer_survives_a_transient_nomotion_error(fast_retry):
+    class FlakyNomotion(FakeService):
+        """The first two nomotion calls fail, later ones succeed."""
+
+        def __call__(self, name, timeout):
+            error = super().__call__(name, timeout)
+            if name == "/request_nomotion_update" and len(self.names(name)) <= 2:
+                return "service busy"
+            return error
+
+    service = FlakyNomotion()
+    tracker = LocalizationTracker()
+    localizer = GlobalLocalizer(service, tracker, service_timeout=5.0, nomotion_period=0.01)
+
+    localizer.start()
+    try:
+        wait_until(lambda: len(service.names("/request_nomotion_update")) >= 5)
+        assert tracker.snapshot()["state"] == "searching"
+        assert tracker.snapshot()["error"] is None
     finally:
         localizer.stop()
 

@@ -90,6 +90,20 @@ def test_map_store_commits_all_four_files_and_loads_them_on_every_start(tmp_path
     assert not any((store.directory / f"map{suffix}").exists() for suffix in (".data", ".posegraph", ".pgm", ".yaml"))
 
 
+def test_map_store_delete_drops_the_map_definition_before_the_data_files(tmp_path):
+    store = MapStore(tmp_path)
+    write_map_set(tmp_path, "old")
+    Path(tmp_path, "map.data").unlink()
+    Path(tmp_path, "map.data").mkdir()  # unlink() fails on a directory: a partial delete
+    Path(tmp_path, "map.data", "keep").write_text("x", encoding="utf-8")
+
+    with pytest.raises(OSError):
+        store.delete()
+    assert not store.exists()
+    assert not store.has_occupancy()
+    assert store.saved_at() is None
+
+
 def test_map_store_has_no_occupancy_map_without_the_yaml(tmp_path):
     store = MapStore(tmp_path)
     tmp_dir = tmp_path / "map.saving"
@@ -257,6 +271,29 @@ def test_slam_control_reload_restarts_slam_only_with_a_saved_map(tmp_path):
     assert control.reload() is None
     assert process.calls == ["stop", "start"]
     assert control.status()["saved_map"]["exists"] is True
+
+
+def test_reload_clears_the_view_and_the_pose_like_a_mode_switch(tmp_path):
+    events = []
+    slam_state = RecordingSlamState()
+    tracker = LocalizationTracker()
+    control, store = mode_control(tmp_path, events, tracker=tracker, slam_state=slam_state)
+    control.save()
+    control.start()
+    tracker.start_search()
+    events.clear()
+    slam_state.calls.clear()
+
+    assert control.reload() is None
+    assert control.mode == "localization"
+    assert slam_state.calls == [("clear",), ("latched", True)]
+    assert tracker.snapshot()["state"] == "idle"
+    assert events == [
+        ("process stop",),
+        ("localizer stop",),
+        ("localizer start",),
+        ("process start", localization_command(store.occupancy_yaml())),
+    ]
 
 
 def test_slam_control_restarts_slam_when_the_delete_fails(tmp_path):
@@ -435,6 +472,17 @@ def test_set_mode_refuses_localization_without_an_occupancy_map_and_unknown_mode
     assert events == []
 
 
+def test_save_refusal_reports_the_mode_without_saving(tmp_path):
+    events = []
+    control, _ = mode_control(tmp_path, events, tracker=LocalizationTracker())
+    control.save()
+    control.start()
+    assert control.save_refusal() == "Save needs mapping mode; switch to mapping first"
+    assert control.save() == "Save needs mapping mode; switch to mapping first"
+    assert control.set_mode("mapping") is None
+    assert control.save_refusal() is None
+
+
 def test_save_and_locate_are_refused_in_the_wrong_mode(tmp_path):
     events = []
     control, store = mode_control(tmp_path, events, tracker=LocalizationTracker())
@@ -553,6 +601,8 @@ def test_export_occupancy_kills_a_saver_that_hangs(tmp_path, monkeypatch):
 class FakeControl:
     def __init__(self, error=None):
         self.error = error
+        self.refusal = None
+        self.saves = 0
         self.deleted = 0
         self.reloaded = 0
         self.reload_error = None
@@ -579,7 +629,11 @@ class FakeControl:
         self.locates += 1
         return self.locate_error
 
+    def save_refusal(self):
+        return self.refusal
+
     def save(self):
+        self.saves += 1
         return self.error
 
     def delete(self):
@@ -603,6 +657,23 @@ def test_slam_actions_are_refused_without_a_running_control(tmp_path):
         assert response.status_code == 409
         assert response.get_json() == refused
     assert client.get("/map.json").get_json()["control"] is None
+
+
+def test_web_save_in_the_wrong_mode_is_a_409_with_the_mode_text(tmp_path):
+    slam = SlamState()
+    control = FakeControl()
+    client = make_client(tmp_path, slam, control)
+    control.refusal = "Save needs mapping mode; switch to mapping first"
+
+    response = client.post("/slam/save")
+    assert response.status_code == 409
+    assert response.get_json() == {"ok": False, "error": "Save needs mapping mode; switch to mapping first"}
+
+    slam.set_grid(grid_to_dict(1, 1, 0.05, 0.0, 0.0, [0]))
+    response = client.post("/slam/save")
+    assert response.status_code == 409
+    assert response.get_json() == {"ok": False, "error": "Save needs mapping mode; switch to mapping first"}
+    assert control.saves == 0
 
 
 def test_web_save_and_delete_drive_the_control(tmp_path):
@@ -654,9 +725,10 @@ def test_web_reset_reloads_the_saved_map_and_clears_the_view(tmp_path):
     assert response.get_json() == {"ok": False, "error": "No saved map to load"}
     assert client.get("/map.json").get_json()["map"] is not None
 
+    # The control clears the view inside reload(); the web layer must not clear again after it.
     control.reload_error = None
     assert client.post("/slam/reset").get_json() == {"ok": True}
-    assert client.get("/map.json").get_json()["map"] is None
+    assert client.get("/map.json").get_json()["map"] is not None
 
 
 def test_odom_accumulates_path_and_goes_stale():
