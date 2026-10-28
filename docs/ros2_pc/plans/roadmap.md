@@ -69,7 +69,7 @@ High-rate telemetry and recordings from the ESP32 will in future run over the UA
 
 ## 4. SLAM in the web hub
 
-Status: Live mapping with `slam_toolbox` confirmed on the ros2_pc with the sensor as the only motion source (2026-10-15 and 2026-10-19); SLAM with the ESP32 wheel odometry has not run on the robot yet. The angle sign in the ROS adapter is corrected and tested, and the user confirmed the physical rotation direction. Supervised start and one persistent map (save, load at start, delete) are implemented and verified on the ros2_pc ([lab note](../../../lab/ros2_pc/2026-10-19-slam-supervised-verification.md)); calibration is open.
+Status: Live mapping with `slam_toolbox` confirmed on the ros2_pc with the sensor as the only motion source (2026-10-15 and 2026-10-19); The ESP32 wheel odometry works on the moving robot (user report, 2026-10-28); SLAM with it has not been recorded in a lab note yet. The angle sign in the ROS adapter is corrected and tested, and the user confirmed the physical rotation direction. Supervised start and one persistent map (save, load at start, delete) are implemented and verified on the ros2_pc ([lab note](../../../lab/ros2_pc/2026-10-19-slam-supervised-verification.md)); calibration is open.
 
 The existing web hub shows the occupancy map, sensor pose, and mapping status under `/slam`. In the live test on 2026-10-15, scans arrived at about 5 Hz, and map and pose reacted to sensor movement. The [hardware observations](../../../lab/ros2_pc/2026-10-13-lds08rr-observations.md) contain measurements and the limits of the acceptance.
 
