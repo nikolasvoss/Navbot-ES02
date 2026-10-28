@@ -117,12 +117,20 @@ def test_rows_carry_typed_values_and_the_running_maximum(link):
     link.unsubscribe(subscription.slot)
 
 
-def test_set_and_call_are_refused_with_a_reason(link):
+def test_set_applies_a_value_and_refuses_one_out_of_range(link):
     link.catalog()
-    with pytest.raises(LinkError, match="gain cannot be set yet"):
-        link.set("gain", 1.0)
-    with pytest.raises(LinkError, match="go cannot be called yet"):
-        link.call("go", left_a=0.5, lease_ms=100)
+    assert link.set("gain", 0.5) == 0.5  # the robot's applied value
+    assert link.get("gain") == 0.5
+    with pytest.raises(LinkError, match=r"gain: must be within \[0, 1\]"):
+        link.set("gain", 2.0)
+    assert link.get("gain") == 0.5  # the running value stayed
+
+
+def test_call_starts_an_action_and_refuses_a_bound_or_a_count(link):
+    link.catalog()
+    link.call("go", left_a=0.5, lease_ms=100)  # accepted: no value, no error
+    with pytest.raises(LinkError, match=r"left_a=3 is outside \[-2, 2\]"):
+        link.call("go", left_a=3.0, lease_ms=100)
 
 
 def test_over_budget_subscription_is_refused_with_the_numbers(link):

@@ -31,16 +31,32 @@ uint32_t ReadFalling() { return Bits(100.0f - static_cast<float>(gTick)); }
 uint32_t ReadSpike() { return gTick % 7 == 3 ? 1000u : 1u; }
 uint32_t ReadGain() { return Bits(gGain); }
 
-const SignalArg kGoArgs[] = {{"left_a", -2.0f, 2.0f}, {"lease_ms", 1.0f, 1000.0f}};
+// Accepts 0 to 1, as a settings group's apply would refuse a value outside its range.
+bool WriteGain(uint32_t bits, const char** error) {
+  float value = 0.0f;
+  std::memcpy(&value, &bits, sizeof(value));
+  if (value < 0.0f || value > 1.0f) {
+    *error = "must be within [0, 1]";
+    return false;
+  }
+  gGain = value;
+  return true;
+}
+
+bool StartGo(const float*, const char**) { return true; }
+SignalArgs GoArgs() {
+  static const SignalArg items[] = {{"left_a", -2.0f, 2.0f}, {"lease_ms", 1.0f, 1000.0f}};
+  return {items, 2};
+}
 const SignalEntry kTable[] = {
-    {"tick", "", SignalKind::Signal, SignalType::U32, ReadTick, nullptr, 0},
-    {"ramp", "m", SignalKind::Signal, SignalType::F32, ReadRamp, nullptr, 0},
-    {"negative", "", SignalKind::Signal, SignalType::I32, ReadNegative, nullptr, 0},
-    {"odd", "", SignalKind::Signal, SignalType::Bool, ReadOdd, nullptr, 0},
-    {"falling_min", "V", SignalKind::Min, SignalType::F32, ReadFalling, nullptr, 0},
-    {"spike_max", "", SignalKind::Max, SignalType::U32, ReadSpike, nullptr, 0},
-    {"gain", "A/rad", SignalKind::Param, SignalType::F32, ReadGain, nullptr, 0},
-    {"go", "", SignalKind::Action, SignalType::None, nullptr, kGoArgs, 2},
+    {"tick", "", SignalKind::Signal, SignalType::U32, ReadTick, nullptr, nullptr, nullptr},
+    {"ramp", "m", SignalKind::Signal, SignalType::F32, ReadRamp, nullptr, nullptr, nullptr},
+    {"negative", "", SignalKind::Signal, SignalType::I32, ReadNegative, nullptr, nullptr, nullptr},
+    {"odd", "", SignalKind::Signal, SignalType::Bool, ReadOdd, nullptr, nullptr, nullptr},
+    {"falling_min", "V", SignalKind::Min, SignalType::F32, ReadFalling, nullptr, nullptr, nullptr},
+    {"spike_max", "", SignalKind::Max, SignalType::U32, ReadSpike, nullptr, nullptr, nullptr},
+    {"gain", "A/rad", SignalKind::Param, SignalType::F32, ReadGain, WriteGain, nullptr, nullptr},
+    {"go", "", SignalKind::Action, SignalType::None, nullptr, nullptr, StartGo, GoArgs},
 };
 const LinkPortBudget kBudgets[kLinkPortCount] = {{200000, 5000}, {57600, 0}};
 

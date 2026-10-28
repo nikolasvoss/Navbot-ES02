@@ -208,12 +208,13 @@ class FakeFirmware:
                 return ack(error=f"{entry.name} must be within [{entry.limits[0]:g}, {entry.limits[1]:g}]")
             entry.value = new
             ack(value=self._read(req.id))
-            self._log(f"{entry.name}: {_show(entry, old)} -> {_show(entry, req.value)}", "param")
+            self._log_uart1(f"{entry.name}: {_show(entry, old)} -> {_show(entry, req.value)}", "param")
         elif body == "call":
             entry = self.entries[req.id]
             self.calls.append((entry.name, [round(a, 6) for a in req.args]))
             ack()
-            self._log(f"{entry.name} started", "action")
+            shown = "".join(f" {arg[0]}={value:g}" for arg, value in zip(entry.args, req.args))
+            self._log_uart1(f"{entry.name} started{shown}", "action")
 
     def _catalog_entry(self, index: int):
         e = self.entries[index]
@@ -244,6 +245,10 @@ class FakeFirmware:
         for port in range(len(self._ports)):
             self._send(pb.Message(log=pb.Log(level=level, text=text, tag=tag)), port)
 
+    def _log_uart1(self, text: str, tag: str, level: int = pb.Log.INFO) -> None:
+        """Log frames go to UART1 only until migration step 5 (the firmware's LinkLogReachesPort)."""
+        self._send(pb.Message(log=pb.Log(level=level, text=text, tag=tag)), 0)
+
     def _send(self, msg, port: int) -> None:
         p = self._ports[port]
         p.seq += 1
@@ -254,7 +259,7 @@ class FakeFirmware:
 
 def _show(entry: FakeEntry, data: bytes) -> str:
     (value,) = struct.unpack(_FMT[entry.type], data)
-    return f"{value:.7g}" if entry.type == E.F32 else str(value)
+    return f"{value:.6g}" if entry.type == E.F32 else str(value)
 
 
 class MemoryTransport:

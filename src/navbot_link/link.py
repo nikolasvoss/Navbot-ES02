@@ -24,6 +24,9 @@ from navbot_link.protocol import (
 )
 
 MAX_SUBSCRIBED = 48
+# Frame cost of each row: header, CRC, COBS and delimiter. Mirrors kLinkFrameOverheadBytes in the firmware's
+# link_subscriptions.h, which charges it in the port budget.
+ROW_FRAME_OVERHEAD = 26
 # Mirrors kLinkMaxPeriodUs in the firmware's link_subscriptions.h, which refuses longer periods.
 MAX_PERIOD_US = 60_000_000
 LEASE_S = 5.0

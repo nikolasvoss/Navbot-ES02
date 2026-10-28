@@ -137,10 +137,10 @@ speed_kp = 0.08
 speed_i_on = 1
 speed_kp: 0.08 -> 0.12
 error: speed_target is not a parameter (kind signal)
-motor_current(left_a=0.5, right_a=0, lease_ms=200)? [y/N] motor_current: started
+motor_current(left_a=0.5 [-2, 2], right_a=0 [-2, 2], lease_ms=200 [1, 1000])? [y/N] motor_current: started
 motor_reset()? [y/N] not sent
 error: left_a=5 is outside [-2, 2]
-slot 1: 2 entries @ 50 Hz, 0.6 kB/s -> {csv}
+slot 1: 2 entries @ 50 Hz, 1.9 kB/s -> {csv}
 slot 1 closed
 error: unknown signal nope
 """.format(csv=csv)
@@ -165,7 +165,7 @@ def test_shell_quit_stops_its_subscriptions(tmp_path):
     csv = tmp_path / "quit.csv"
     rc, out = run(["shell", "--port", "/dev/ttyAMA3"], fw,
                   stdin=Script("log off", f"sub loop_count @10 -o {csv}", "quit"))
-    assert (rc, out) == (0, f"slot 1: 1 entries @ 10 Hz, 0.1 kB/s -> {csv}\n")
+    assert (rc, out) == (0, f"slot 1: 1 entries @ 10 Hz, 0.3 kB/s -> {csv}\n")
     assert fw.subscribed_slots() == []
 
 

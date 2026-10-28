@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from navbot_link.capture import CsvWriter, describe, load_presets, rate_text  # noqa: E402
 from navbot_link.framing import Text  # noqa: E402
 from navbot_link.link import (  # noqa: E402
+    ROW_FRAME_OVERHEAD,
     Disconnected,
     FramesLost,
     Link,
@@ -172,7 +173,7 @@ class Shell(cmd.Cmd):
         entry = self.link.catalog().action(words[0])
         kwargs = dict(w.split("=", 1) for w in words[1:])
         values = check_args(entry, kwargs)
-        shown = ", ".join(f"{a.name}={v:g}" for a, v in zip(entry.args, values))
+        shown = ", ".join(f"{a.name}={v:g} [{a.min:g}, {a.max:g}]" for a, v in zip(entry.args, values))
         with self._out_lock:
             self.stdout.write(f"{entry.name}({shown})? [y/N] ")
             self.stdout.flush()
@@ -215,7 +216,8 @@ class Shell(cmd.Cmd):
                 raise
             if writer is not None:
                 self._writers[sub.slot] = writer
-        load = f", {(4 + 4 * len(names)) * rate / 1000:.1f} kB/s" if rate else ""
+        # The firmware budgets a row at its values plus the frame cost, so the figure is the port's real load.
+        load = f", {(ROW_FRAME_OVERHEAD + 4 + 4 * len(names)) * rate / 1000:.1f} kB/s" if rate else ""
         self.say(f"slot {sub.slot}: {len(names)} entries @ {rate_text(rate)}{load}"
                  f"{' -> ' + output if output else ''}")
 
