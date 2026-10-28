@@ -90,6 +90,10 @@ LinkSubscribeResult LinkSubscriptions::Subscribe(uint8_t port, uint32_t slotNumb
     Refuse(result, "need 1 to %u entries, got %u", static_cast<unsigned>(kLinkMaxIds), static_cast<unsigned>(idCount));
     return result;
   }
+  if (periodUs > kLinkMaxPeriodUs) {
+    Refuse(result, "period_us must be at most %u", static_cast<unsigned>(kLinkMaxPeriodUs));
+    return result;
+  }
 
   size_t index = 0;
   if (slotNumber == 0) {

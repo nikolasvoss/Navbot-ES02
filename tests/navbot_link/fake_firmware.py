@@ -53,6 +53,7 @@ def speed_loop_table() -> list[FakeEntry]:
 
 
 MAX_SLOTS = 4
+MAX_PERIOD_US = 60_000_000  # the protocol page's limit; the firmware and the PC library refuse longer periods too
 
 
 @dataclass
@@ -170,6 +171,8 @@ class FakeFirmware:
             bad = [i for i in req.ids if i >= len(self.entries) or self.entries[i].kind == E.ACTION]
             if bad:
                 return ack(error=f"not a signal: {bad[0]}")
+            if req.period_us > MAX_PERIOD_US:
+                return ack(error=f"period_us must be at most {MAX_PERIOD_US}")
             slot = req.slot
             if slot == 0:
                 free = [s for s in range(1, MAX_SLOTS + 1) if s not in self._subs]

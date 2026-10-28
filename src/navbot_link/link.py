@@ -24,6 +24,8 @@ from navbot_link.protocol import (
 )
 
 MAX_SUBSCRIBED = 48
+# Mirrors kLinkMaxPeriodUs in the firmware's link_subscriptions.h, which refuses longer periods.
+MAX_PERIOD_US = 60_000_000
 LEASE_S = 5.0
 LEASE_RENEW_S = 2.0
 # Pending bytes count as text once the line has been idle this long. The robot
@@ -235,6 +237,8 @@ class Link:
         if not entries or len(entries) > MAX_SUBSCRIBED:
             raise LinkError(f"a subscription takes 1 to {MAX_SUBSCRIBED} signals, got {len(entries)}")
         period_us = round(1e6 / rate_hz) if rate_hz else 0
+        if period_us > MAX_PERIOD_US:
+            raise LinkError(f"period_us must be at most {MAX_PERIOD_US}")
 
         def register(reply) -> Subscription:
             # On the I/O thread: the slot's first row can follow the Ack directly.

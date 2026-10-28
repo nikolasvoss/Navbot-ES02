@@ -15,6 +15,9 @@ constexpr size_t kLinkMaxSlots = 4;
 constexpr size_t kLinkMaxIds = 48;  // one row of 48 values (196 bytes) fits one frame
 constexpr size_t kLinkMaxRowLen = 4 + 4 * kLinkMaxIds;
 constexpr uint32_t kLinkLeaseUs = 5000000;
+// Longest period a subscription may ask for. LinkScheduleDue compares times across the micros() wrap only for gaps under
+// 2^31 us (about 35 minutes), so a longer period is refused; a period of a minute already means one row a minute.
+constexpr uint32_t kLinkMaxPeriodUs = 60000000;
 
 constexpr size_t kLinkPortCount = 2;
 constexpr uint8_t kLinkPortUart = 0;  // UART1, the ros2_pc

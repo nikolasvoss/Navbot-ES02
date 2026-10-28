@@ -268,6 +268,16 @@ void TestRenewalKeepsState() {
         "a changed period starts the schedule over, so a row is due at once (7.0 = 0x40E00000)");
 }
 
+void TestPeriodLimit() {
+  LinkSubscriptions s(kTable, kTableCount, kBudgets);
+  Check(Sub(s, kLinkPortUart, 0, 1, 60000000).accepted, "a period of 60 s is accepted");
+  Check(Refused(Sub(s, kLinkPortUart, 0, 1, 60000001), "period_us must be at most 60000000"),
+        "a period just above 60 s is refused");
+  Check(Refused(Sub(s, kLinkPortUart, 0, 1, 0xFFFFFFFF), "period_us must be at most 60000000"),
+        "the largest period is refused with the same text");
+  Check(s.activeCount() == 1, "refused periods hold no slot");
+}
+
 }  // namespace
 
 int main() {
@@ -277,5 +287,6 @@ int main() {
   TestSchedule();
   TestRowLayoutAndRunningValues();
   TestRenewalKeepsState();
+  TestPeriodLimit();
   return failed ? 1 : 0;
 }

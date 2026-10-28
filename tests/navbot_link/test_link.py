@@ -5,7 +5,7 @@ import pytest
 
 from fake_firmware import FakeFirmware, MemoryTransport
 from navbot_link import navbot_link_pb2 as pb
-from navbot_link.framing import FrameDecoder, Text
+from navbot_link.framing import FrameDecoder, Text, encode_frame
 from navbot_link.link import Disconnected, FramesLost, Link, LogEvent, Restarted, Row, SubscriptionEnded
 from navbot_link.protocol import Arg, Entry, Kind, LinkError, Type
 
@@ -129,6 +129,26 @@ def test_unknown_signal_is_refused_before_subscribing():
         with pytest.raises(LinkError, match="^unknown signal k58_drive_mode$"):
             link.subscribe(["speed_target", "k58_drive_mode"], 10)
     assert fw.subscribed_slots() == []
+
+
+def test_a_period_above_sixty_seconds_is_refused_before_sending():
+    fw = FakeFirmware()
+    transport = RecordingTransport(fw)
+    with Link(transport, clock=lambda: 0.0) as link:
+        link.catalog()
+        sent = len(transport.written)
+        with pytest.raises(LinkError, match="^period_us must be at most 60000000$"):
+            link.subscribe(["speed_target"], rate_hz=1 / 61)  # a period of 61 s
+        assert len(transport.written) == sent
+
+
+def test_the_robot_refuses_a_period_above_sixty_seconds_with_the_same_text():
+    fw = FakeFirmware()
+    request = pb.Message(seq=1, subscribe=pb.Subscribe(slot=0, ids=[0], period_us=60_000_001))
+    fw.receive(encode_frame(request.SerializeToString()))
+    reply = pb.Message()
+    reply.ParseFromString(FrameDecoder().feed(fw.produce())[0])
+    assert (reply.ack.accepted, reply.ack.error) == (False, "period_us must be at most 60000000")
 
 
 def test_subscription_streams_typed_rows_at_the_requested_period():
