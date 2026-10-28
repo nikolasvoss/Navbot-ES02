@@ -105,6 +105,22 @@ def test_robot_log_frames_reach_rosout_with_their_severity_and_tag(harness):
     assert h.robot_lines() == [(20, "imu", "gyro bias loaded"), (40, "motor", "overspeed")]
 
 
+def test_a_robot_log_line_carries_the_time_the_bridge_forwarded_it(harness):
+    fw = FakeFirmware()
+    h = harness(fw)
+    before = h.node.get_clock().now().nanoseconds
+    fw.log("gyro bias loaded", "imu", pb.Log.INFO)
+    h.spin(until=lambda: h.robot_lines())
+    after = h.node.get_clock().now().nanoseconds
+    (line,) = [m for m in h.rosout if m.name == "imu"]
+    assert before <= line.stamp.sec * 10**9 + line.stamp.nanosec <= after
+
+
+def test_rosout_lines_are_kept_for_ten_seconds(harness):
+    h = harness(FakeFirmware())
+    assert h.node._rosout_pub.qos_profile.lifespan.nanoseconds == 10_000_000_000
+
+
 def limited_table():
     table = speed_loop_table()
     next(e for e in table if e.name == "speed_kp").limits = (0.0, 0.5)
@@ -381,11 +397,27 @@ class TelemetryFeeder:
         self._thread.join()
 
 
+class UnpluggablePort(MemoryTransport):
+    """The in-memory robot, whose port fails with OSError while `unplugged` is set."""
+
+    unplugged = False
+
+    def read(self) -> bytes:
+        if self.unplugged:
+            time.sleep(0.001)
+            raise OSError("cable pulled")
+        return super().read()
+
+
+def wheel_angles(t_us: int, left: float, right: float) -> pb.Message:
+    return pb.Message(odom=pb.WheelOdometry(t_us=t_us, left_angle_rad=left, right_angle_rad=right))
+
+
 class OdomLog:
     """Receives /odom on an executor of its own, so that a busy test executor cannot add delay."""
 
     def __init__(self, h):
-        self.arrivals, self.stamps = [], []
+        self.arrivals, self.stamps, self.xs = [], [], []
         self._node = rclpy.create_node("odom_log")
         self._node.create_subscription(Odometry, "odom", self._on_odom, 100)
         self._executor = SingleThreadedExecutor()
@@ -402,9 +434,10 @@ class OdomLog:
     def _on_odom(self, msg):
         self.arrivals.append(time.monotonic())
         self.stamps.append(msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec)
+        self.xs.append(msg.pose.pose.position.x)
 
-    def worst_gap_s(self, after=0.0):
-        times = [t for t in self.arrivals if t >= after]
+    def worst_gap_s(self, after=0.0, before=float("inf")):
+        times = [t for t in self.arrivals if after <= t < before]
         return max(b - a for a, b in zip(times, times[1:]))
 
     def stamps_strictly_increase(self):
@@ -416,12 +449,16 @@ def test_odometry_keeps_its_cadence_while_the_robot_ignores_get_catalog(harness)
     fw.ignored = frozenset({"get_catalog"})
     feeder = TelemetryFeeder(fw)
     try:
+        started = time.monotonic()
         h = harness(fw, wait_for_attach=False)  # three tries of 0.5 s: the catalog wait is 1.5 s
         odom = OdomLog(h)
-        h.spin(2.3)
+        h.spin(0.5)
+        assert not h.node.attached.is_set()  # the odometry below is published during the catalog wait
+        h.spin(1.8)
     finally:
         feeder.stop()
     assert len(odom.arrivals) >= 90
+    assert odom.worst_gap_s(after=started, before=started + 1.5) < 0.04
     assert odom.worst_gap_s() < 0.04
     assert odom.stamps_strictly_increase()
 
@@ -465,3 +502,20 @@ def test_a_firmware_parameter_set_that_the_robot_never_answers_does_not_stall_od
     assert answered_s > 1.4  # the set did wait for the robot
     assert odom.worst_gap_s(after=started) < 0.04
     assert odom.stamps_strictly_increase()
+
+
+def test_a_reconnect_keeps_the_pose_and_takes_the_wheel_angles_as_a_new_baseline(harness):
+    fw = FakeFirmware()
+    port = UnpluggablePort(fw)
+    h = harness(fw, transport=port)
+    odom = OdomLog(h)
+    fw.emit(wheel_angles(0, 0.0, 0.0))
+    fw.emit(wheel_angles(1_000_000, 20.0, 20.0))
+    h.spin(2.0, until=lambda: len(odom.xs) >= 1)
+    port.unplugged = True
+    h.spin(2.0, until=lambda: h.node_errors())
+    fw.emit(wheel_angles(2_000_000, 500.0, 500.0))  # the wheels turned while the port was closed
+    fw.emit(wheel_angles(3_000_000, 501.0, 501.0))
+    port.unplugged = False
+    h.spin(3.0, until=lambda: len(odom.xs) >= 2)
+    assert odom.xs == pytest.approx([1.0, 1.05])
