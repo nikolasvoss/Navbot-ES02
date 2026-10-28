@@ -9,15 +9,18 @@ import serial
 from rclpy.executors import ExternalShutdownException
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
-from rcl_interfaces.msg import Log
+from rcl_interfaces.msg import Log, ParameterDescriptor, SetParametersResult
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.duration import Duration
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from sensor_msgs.msg import Imu
+from std_msgs.msg import Float64MultiArray, MultiArrayDimension
 from tf2_ros import TransformBroadcaster
 
-from navbot_link.link import Disconnected, Link, Restarted
-from navbot_link_bridge.bridge import ImuSample, LinkBridge, RobotLog
+from navbot_link.link import Disconnected, Link, Restarted, SubscriptionEnded
+from navbot_link.protocol import LinkError
+from navbot_link_bridge.bridge import ImuSample, LinkBridge, RobotLog, SignalRow
 from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState, gyro_yaw_sign_for
 
 POLL_HZ = 200
@@ -67,6 +70,9 @@ class LinkBridgeNode(Node):
         self.declare_parameter("publish_tf", True)
         self.declare_parameter("heading_source", "wheels")
         self.declare_parameter("gyro_yaw_sign", 0)
+        # Dynamic typing: rclpy reads an empty list as a byte array, and `signals: []` must clear the stream.
+        self.declare_parameter("signals", [], ParameterDescriptor(dynamic_typing=True))
+        self.declare_parameter("signals_rate_hz", 10.0)
 
         self._port = self.get_parameter("port").value
         if not self._port:
@@ -96,6 +102,7 @@ class LinkBridgeNode(Node):
         # rcl publishes a logger's lines to /rosout only for node loggers, so the
         # robot's lines (logger name = Log tag) go out as Log messages directly.
         self._rosout_pub = self.create_publisher(Log, "/rosout", ROSOUT_QOS)
+        self._signals_pub = self.create_publisher(Float64MultiArray, "/navbot/signals", 1000)
 
         self._bridge = None
         self._opened_before = False
@@ -104,7 +111,11 @@ class LinkBridgeNode(Node):
         self._warned_counts = (0, 0)
         self._last_fallback_warn_s = -WARN_INTERVAL_S
         self._warned_fallbacks = 0
+        self._firmware_params: set[str] = set()
+        self._mirroring = False  # True while the node copies a robot value into a ROS parameter
+        self._warned_no_catalog = False
         self._connect()
+        self.add_on_set_parameters_callback(self._on_set_parameters)
         self.create_timer(1.0 / POLL_HZ, self._on_timer)
 
     def _connect(self) -> None:
@@ -120,6 +131,83 @@ class LinkBridgeNode(Node):
         self._opened_before = True
         self._bridge = LinkBridge(link, self._odometry)
         self._warned_counts = (0, 0)
+        self._attach()
+
+    def _attach(self) -> None:
+        """Read the catalog, expose its parameters and start the configured signal stream."""
+        controls = self._bridge.controls
+        if not controls.attach():
+            if not self._warned_no_catalog:
+                self._warned_no_catalog = True
+                self.get_logger().warning(
+                    "the robot did not answer GetCatalog (firmware without the signal table?); "
+                    "continuing with odometry and IMU only, no firmware parameters or signals"
+                )
+            return
+        self._warned_no_catalog = False
+        try:
+            self._expose_firmware_parameters()
+        except LinkError as exc:
+            self.get_logger().warning(f"reading firmware parameters failed: {exc}")
+        self._subscribe_configured_signals()
+
+    def _expose_firmware_parameters(self) -> None:
+        for name in self._firmware_params:
+            self.undeclare_parameter(name)
+        self._firmware_params.clear()
+        for info in self._bridge.controls.params():
+            if self.has_parameter(info.name):
+                self.get_logger().warning(f"firmware parameter {info.name} clashes with a bridge parameter; not exposed")
+                continue
+            self._mirror(info.name, info.value)
+            self._firmware_params.add(info.name)
+            wanted = self.get_parameter(info.name).value
+            if wanted != info.value:  # a launch-file or command-line value for a firmware parameter
+                reason = self._bridge.controls.set_param(info.name, wanted)
+                if reason:
+                    self.get_logger().warning(f"startup value of {info.name} not applied: {reason}")
+                    self._mirror(info.name, info.value)
+
+    def _mirror(self, name: str, value) -> None:
+        self._mirroring = True
+        try:
+            if self.has_parameter(name):
+                self.set_parameters([Parameter(name, value=value)])
+            else:
+                self.declare_parameter(name, value)
+        finally:
+            self._mirroring = False
+
+    def _subscribe_configured_signals(self) -> None:
+        reason = self._bridge.controls.set_subscription(
+            list(self.get_parameter("signals").value), self.get_parameter("signals_rate_hz").value
+        )
+        if reason:
+            self.get_logger().warning(f"signal stream not started: {reason}")
+
+    def _on_set_parameters(self, params) -> SetParametersResult:
+        if self._mirroring:
+            return SetParametersResult(successful=True)
+        changed = {p.name: p.value for p in params}
+        wanted = [name for name in changed if name in self._firmware_params]
+        streaming = "signals" in changed or "signals_rate_hz" in changed
+        if not (wanted or streaming):
+            return SetParametersResult(successful=True)
+        if self._bridge is None:
+            return SetParametersResult(successful=False, reason="the link to the robot is down")
+        controls = self._bridge.controls
+        for name in wanted:
+            reason = controls.set_param(name, changed[name])
+            if reason:
+                return SetParametersResult(successful=False, reason=reason)
+        if streaming:
+            reason = controls.set_subscription(
+                list(changed.get("signals", self.get_parameter("signals").value)),
+                changed.get("signals_rate_hz", self.get_parameter("signals_rate_hz").value),
+            )
+            if reason:
+                return SetParametersResult(successful=False, reason=reason)
+        return SetParametersResult(successful=True)
 
     def _on_timer(self) -> None:
         if self._bridge is None:
@@ -134,8 +222,14 @@ class LinkBridgeNode(Node):
                 self._publish_imu(result, stamp)
             elif isinstance(result, RobotLog):
                 self._publish_robot_log(result, stamp)
+            elif isinstance(result, SignalRow):
+                self._publish_signals(result)
             elif isinstance(result, Restarted):
                 self.get_logger().info("robot restart detected (seq reset); pose kept, odometry rebased")
+                self._attach()  # table indices and slots may differ in the new build
+            elif isinstance(result, SubscriptionEnded):
+                self.get_logger().warning(f"signal stream ended: {result.reason}; resubscribing")
+                self._subscribe_configured_signals()
             elif isinstance(result, Disconnected):
                 self.get_logger().error(f"link failed: {result.reason}; reopening")
                 self.close()
@@ -150,6 +244,13 @@ class LinkBridgeNode(Node):
         msg.name = line.logger
         msg.msg = line.text
         self._rosout_pub.publish(msg)
+
+    def _publish_signals(self, row: SignalRow) -> None:
+        # One dimension whose label is the column header (as in the navlink CSV): data[i] belongs to label i.
+        msg = Float64MultiArray()
+        msg.layout.dim = [MultiArrayDimension(label=row.column_header, size=len(row.data), stride=len(row.data))]
+        msg.data = row.data
+        self._signals_pub.publish(msg)
 
     def _publish_odometry(self, state: OdometryState, stamp) -> None:
         quat = _quaternion(0.0, 0.0, state.yaw_rad)

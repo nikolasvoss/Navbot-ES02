@@ -8,6 +8,7 @@ from navbot_link.framing import encode_frame
 from navbot_link.link import Link, Restarted
 from navbot_link_bridge.bridge import ImuSample, LinkBridge, RobotLog
 from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState
+from helpers import WireTransport, poll_until
 
 # Frames produced by the firmware encoder (tests/link/test_link_frame.cpp).
 FIRMWARE_ODOMETRY_FRAME = bytes([
@@ -20,35 +21,9 @@ FIRMWARE_IMU_FRAME = bytes([
 ])
 
 
-class WireTransport:
-    """Delivers fixed bytes one at a time; the robot ignores everything the PC writes."""
-
-    def __init__(self, data: bytes = b""):
-        self._data = bytearray(data)
-
-    def read(self) -> bytes:
-        time.sleep(0.001)
-        chunk, self._data = bytes(self._data[:1]), self._data[1:]
-        return chunk
-
-    def write(self, data: bytes) -> None:
-        pass
-
-    def close(self) -> None:
-        pass
-
-
 def new_bridge(transport, **link_args) -> LinkBridge:
     link = Link(transport, telemetry=True, clock=lambda: 0.0, **link_args)
     return LinkBridge(link, DiffDriveOdometry(0.05, 0.2))
-
-
-def poll_until(bridge: LinkBridge, count: int, timeout_s: float = 2.0) -> list:
-    out, deadline = [], time.monotonic() + timeout_s
-    while len(out) < count and time.monotonic() < deadline:
-        out += bridge.poll()
-        time.sleep(0.002)
-    return out
 
 
 def odom(seq: int, t_us: int, left: float, right: float) -> pb.Message:

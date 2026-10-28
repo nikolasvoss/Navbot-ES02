@@ -1,12 +1,13 @@
-"""Turns Link events into odometry states, IMU samples, robot log lines.
+"""Turns Link events into odometry states, IMU samples, robot log lines and signal rows.
 No ROS imports."""
 
 from dataclasses import dataclass
 
 from navbot_link import navbot_link_pb2
 from navbot_link.link import (
-    Disconnected, Link, LogEvent, Restarted, Telemetry,
+    Disconnected, Link, LogEvent, Restarted, Row, SubscriptionEnded, Telemetry,
 )
+from navbot_link_bridge.controls import FirmwareControls
 from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState
 
 # rcl_interfaces/msg/Log levels
@@ -31,16 +32,32 @@ class RobotLog:
     text: str
 
 
+@dataclass(frozen=True)
+class SignalRow:
+    t_us: int
+    names: tuple[str, ...]
+    values: tuple
+
+    @property
+    def column_header(self) -> str:
+        return ",".join(("t_us",) + self.names)
+
+    @property
+    def data(self) -> list[float]:
+        return [float(self.t_us)] + [float(v) for v in self.values]
+
+
 class LinkBridge:
-    """One connection: the Link, the pose integration."""
+    """One connection: the Link, the pose integration and the firmware controls."""
 
     def __init__(self, link: Link, odometry: DiffDriveOdometry):
         self.link = link
+        self.controls = FirmwareControls(link)
         self._odometry = odometry
 
     def poll(self) -> list:
         """Everything that arrived since the last call, in order: OdometryState, ImuSample,
-        RobotLog, plus Restarted and Disconnected for the caller."""
+        RobotLog, SignalRow, plus Restarted, SubscriptionEnded and Disconnected for the caller."""
         out = []
         while not self.link.events.empty():
             event = self.link.events.get_nowait()
@@ -48,9 +65,19 @@ class LinkBridge:
                 self._on_telemetry(event.message, out)
             elif isinstance(event, LogEvent):
                 out.append(_robot_log(event))
+            elif isinstance(event, Row):
+                sub = self.controls.subscription
+                if sub is not None and sub.slot == event.slot:
+                    out.append(SignalRow(event.t_us, sub.names, event.values))
             elif isinstance(event, Restarted):
                 self._odometry.rebase()  # keep the pose
+                self.controls.subscription = None  # the robot's slots are gone
                 out.append(event)
+            elif isinstance(event, SubscriptionEnded):
+                sub = self.controls.subscription
+                if sub is not None and sub.slot == event.slot:
+                    self.controls.subscription = None
+                    out.append(event)
             elif isinstance(event, Disconnected):
                 out.append(event)
         return out
