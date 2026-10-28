@@ -73,7 +73,11 @@ speed_loop:
   signals: [speed_target, speed_measured, speed_p, speed_i, tilt_ref, tilt_clipped]
 ```
 
-`speed_loop` is the only preset. Presets that replace the `K55` to `K58` profiles follow once the firmware table carries their signals.
+`speed_loop` is the only preset. Presets that replace the `K55` to `K58` profiles follow once the firmware table carries their signals. They must use the K header names that the analysis scripts read (below).
+
+## Analysis scripts
+
+`scripts/summarize_balance_trace.py` and `scripts/analyze_drive_trace.py` read these CSV files and the old `K55` to `K58` logs. They take time from `t_us`, not from the row count. A navlink file for `analyze_drive_trace.py` needs the DRIVE columns named in [trace capture](../../robot/software/trace-capture.md#capture-with-navlink); `speed_loop` has none of them, so it can be summarized but not analyzed as a drive trial. `tests/scripts/test_navlink_traces.py` checks both tools against the fixtures in `tests/scripts/fixtures/`.
 
 ## Library
 

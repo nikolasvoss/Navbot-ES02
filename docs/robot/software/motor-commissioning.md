@@ -76,6 +76,8 @@ K0                         MOTOR_ID_RESULT prints requested_q, actual_q, shaft_v
 
 ## Logged capture workflow
 
+This workflow uses the legacy `K58` path. `navlink capture` is the replacement ([trace capture](trace-capture.md#capture-with-navlink)); it cannot send the `T` and `M` commands yet, because the actions that replace them are migration step 4. `summarize_balance_trace.py` and `analyze_drive_trace.py` read both formats.
+
 Use the capture script so that the log keeps the DRIVE rows and every sent command (`# CMD ...`):
 
 ```bash

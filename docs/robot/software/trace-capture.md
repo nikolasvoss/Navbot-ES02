@@ -2,6 +2,37 @@
 
 This page describes how to capture serial traces from the running robot, which trace modes exist, and which gains live tuning can change.
 
+## Capture with navlink
+
+`navlink capture` records any list of firmware signals, with a rate you choose, over the [NavBot link](../../integration/software/ros2-uart-protocol.md). It replaces the `K55` to `K58` profiles and needs no firmware rebuild per variable. Full usage is in the [navlink page](../../integration/software/navlink.md).
+
+```bash
+python3 scripts/navlink.py capture --port /dev/ttyAMA3 --preset speed_loop --seconds 30 -o speed-01.csv
+python3 scripts/summarize_balance_trace.py speed-01.csv
+python3 scripts/analyze_drive_trace.py drive-01.csv --require-stop
+```
+
+- The file starts with `#` comments (firmware build, rate, every parameter value) and a column header `t_us,<signal names>`. `# log` lines mark parameter changes and other robot events, and `# lost <n> frames before seq <s>` marks a gap in the link.
+- Rows are not evenly spaced. `t_us` is the robot's `micros()` at the sampled tick and wraps at 2^32 (about 71.6 min). The analysis scripts convert it to `time_ms` and measure spans, rates and the stop window from it, never by counting rows. A signal that changes every control step can alias against a sampling period that is not a multiple of that step.
+- `scripts/summarize_balance_trace.py` reports every signal column of a navlink file with min, max, mean, first and last value, plus build, rate, start parameters, lost frames and log events.
+- `scripts/analyze_drive_trace.py` reads a navlink file when its columns are the DRIVE names below. A missing column fails with `fehlende DRIVE-Spalten: ...`.
+
+The firmware does not serve the signal table yet ([migration step 3](../../integration/plans/logging-and-control-link.md#migration)), and `scripts/navlink_presets.yaml` has only `speed_loop`. There is no preset for the `TRACE`, `CTRL`, `BAL` or `DRIVE` columns yet. Until step 3 and the presets land, capture with the K profiles below.
+
+The analysis scripts keep the K58 header names as column names, so a preset that reproduces `DRIVE` has to use them. `analyze_drive_trace.py` needs these columns:
+
+`ch5_mode`, `ch3_target`, `motor1_velocity_f`, `motor2_velocity_f`, `roll_ok`, `motor1_target`, `motor2_target`, `voltage_min_raw_v`, `imu_sequence`, `imu_read_time_us`, `imu_dt_s`, `imu_accepted_samples`, `imu_long_gap_count`, `imu_max_interval_us`, `control_execution_us`, `max_loop_entry_interval_us`, `motor1_current_sp`, `motor2_current_sp`, `motor1_voltage_q`, `motor2_voltage_q`, `battery_raw_instant_v`.
+
+| K58 field | In a navlink file |
+| --- | --- |
+| `time_ms` | `t_us` (microseconds), converted to `time_ms` by the tools |
+| `sequence`, `logger_dropped`, `uart_write_failures` | Gone. `# lost` comment lines report link gaps; the TX queue counters are not signals yet. |
+| `control_start_us`, `tick_dt_s`, `voltage_filtered_v`, `battery_filtered_instant_v`, `max_servo_range_deg`, `motor1_shaft_velocity`, `motor2_shaft_velocity` | Optional. `analyze_drive_trace.py` does not need them, and `summarize_balance_trace.py` reports them if present. |
+
+## Legacy: K profiles until firmware migration step 5
+
+The rest of this page describes the `K` command path. It stays until the firmware drops the `K` commands, the CSV profiles and `LogFormat.cpp` (step 5 of the [logging plan](../../integration/plans/logging-and-control-link.md#migration)). `scripts/capture_balance_trace.py` and `scripts/run_drive_trial.py` drive it, and `capture_balance_trace.py --help` points to `navlink capture`. The analysis scripts read both formats, so logs from this path stay readable after the removal.
+
 ## Safe sensor diagnostics
 
 The full, current procedure is in the [sensor diagnostic guide](sensor-diagnostic-mode.md), including safe motor outputs, build and flash steps, SerialPlot settings, the 17-column channel map, and reset troubleshooting. The source currently sets `SENSOR_DIAGNOSTIC_MODE=0`, which builds normal motor-control firmware. Set it to `1` and rebuild for sensor diagnostics. Diagnostic mode skips motor and servo initialization and holds the wheel-driver enable pins low. Support the robot mechanically because the legs are not driven. The diagnostic stream currently uses 576000 baud through the CH340 UART at the user's direction. The hardware UART rate at 576000 has not yet been measured, and this setting is not hardware-accepted.
