@@ -1,5 +1,9 @@
 # Agent notes
 
+Do not reinvent the wheel. If there are well tested and supported options online, use them or propose them to me. This is a dev project. Never implement legacy support unless explicitly told.
+
+Unless told otherwise, prefer clean and simple solutions over solutions that cover every edge case.
+
 ## Where files go
 
 The folder list below is closed. Never create a top-level folder, and never create a folder inside `docs/`, `lab/`, or `cad/` that this table does not name. If a file fits nowhere, stop and ask the user. After adding, moving, or deleting a file, run `python3 tests/layout/test_repo_layout.py`.
@@ -58,5 +62,3 @@ On a machine with the toolchain, build the default firmware from the project roo
 5. When a new hardware finding changes the overview or reference, update the affected docs page and record the observation, evidence, and practical consequence as a dated note in `lab/robot/`.
 
 The ros2_pc starts at the [ros2_pc index](docs/ros2_pc/README.md). Treat its hardware and attached peripherals as pending until their page marks them verified; do not infer pinouts, power paths, or software behavior.
-
-Run Haiku calls with network access enabled (`sandbox_permissions: "require_escalated"`), because sandboxed calls can stall.
