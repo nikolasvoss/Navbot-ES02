@@ -160,6 +160,7 @@ void LinkEndpoint::OnRow(uint8_t port, uint8_t slot, const uint8_t* row, size_t 
 }
 
 void LinkEndpoint::OnLeaseExpired(uint8_t port, uint8_t slot) {
+  if (!LinkLogReachesPort(port)) return;  // a Log between K rows on USB would corrupt the capture
   char text[sizeof(navbot_link_v1_Log::text)];
   snprintf(text, sizeof(text), "slot %u lease expired", static_cast<unsigned>(slot));
   SendLog(port, navbot_link_v1_Log_Level_WARN, "link", text);
