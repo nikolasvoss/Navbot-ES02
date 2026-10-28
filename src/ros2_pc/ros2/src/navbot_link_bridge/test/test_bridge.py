@@ -6,7 +6,7 @@ from fake_firmware import FakeFirmware, MemoryTransport
 from navbot_link import navbot_link_pb2 as pb
 from navbot_link.framing import encode_frame
 from navbot_link.link import Link, Restarted
-from navbot_link_bridge.bridge import ImuSample, LinkBridge, RobotLog
+from navbot_link_bridge.bridge import ImuSample, LinkBridge, RobotClock, RobotLog
 from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState
 from helpers import WireTransport, poll_until
 
@@ -122,3 +122,30 @@ def test_log_code_is_appended_to_the_text():
                                 ).SerializeToString())))
     assert poll_until(bridge, 1) == [RobotLog(40, "motor", "stall (code 12)")]
     bridge.link.close()
+
+
+def test_robot_clock_stamps_each_sample_with_its_own_robot_time():
+    clock = RobotClock()
+    assert clock.stamp_ns(1_000, 5_000_000_000) == 5_000_000_000
+    # Read 80 ms late: the stamp keeps the 20 ms spacing (plus 0.1 % of the lateness, drift tracking).
+    assert clock.stamp_ns(21_000, 5_100_000_000) == 5_020_080_000
+    assert clock.stamp_ns(41_000, 5_100_000_100) == 5_040_139_920
+
+
+def test_robot_clock_never_stamps_in_the_future_and_never_goes_back():
+    clock = RobotClock()
+    assert clock.stamp_ns(0, 10_000_000_000) == 10_000_000_000
+    # The next sample arrives 5 ms after the first although the robot made it 20 ms later:
+    # the offset drops, and the stamp may not lie before the previous one.
+    assert clock.stamp_ns(20_000, 10_005_000_000) == 10_005_000_000
+    assert clock.stamp_ns(20_000, 10_005_000_000) == 10_005_000_001  # same robot time twice
+
+
+def test_robot_clock_follows_the_32_bit_micros_wrap():
+    clock = RobotClock()
+    first = clock.stamp_ns(0xFFFFFFF0, 8_000_000_000)
+    assert first == 8_000_000_000
+    assert clock.stamp_ns(0x10, 8_000_032_000) == 8_000_032_000  # 32 us later
+
+    clock.rebase()
+    assert clock.stamp_ns(5, 9_000_000_000) == 9_000_000_000

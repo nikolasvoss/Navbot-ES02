@@ -4,7 +4,7 @@ import struct
 from dataclasses import dataclass
 
 from navbot_link.link import Link, Subscription
-from navbot_link.protocol import Catalog, LinkError, Type
+from navbot_link.protocol import Catalog, LinkError, NoReply, Type
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,7 @@ class FirmwareControls:
     def __init__(self, link: Link):
         self._link = link
         self._catalog: Catalog | None = None
+        self._unanswered = False  # the robot ignored GetCatalog on this connection
         self.subscription: Subscription | None = None
 
     @property
@@ -28,12 +29,24 @@ class FirmwareControls:
         return self._catalog is not None
 
     def attach(self) -> bool:
-        """Read the catalog; False when the robot does not answer or refuses."""
+        """Read the catalog; False when the robot does not answer or refuses. A robot that
+        ignored GetCatalog is not asked again until restarted() (each ask costs the whole
+        retry time)."""
+        if self._unanswered:
+            return False
         try:
             self._catalog = self._link.catalog()
+        except NoReply:
+            self._catalog = None
+            self._unanswered = True
         except LinkError:
             self._catalog = None
         return self._catalog is not None
+
+    def restarted(self) -> None:
+        """The robot restarted: its catalog may differ, so ask again."""
+        self._catalog = None
+        self._unanswered = False
 
     def params(self) -> list[ParamInfo]:
         return [ParamInfo(e.name, e.type, self._link.get(e.name)) for e in self._catalog.params]
@@ -60,11 +73,15 @@ class FirmwareControls:
             return self._release(old)
         if self._catalog is None:
             return "the robot sent no catalog"
+        old = self.subscription
+
+        def adopt(sub: Subscription) -> None:  # before the first row reaches poll(), which drops unknown slots
+            self.subscription = sub
+
         try:
-            new = self._link.subscribe(names, rate_hz)
+            self._link.subscribe(names, rate_hz, on_subscribed=adopt)
         except LinkError as exc:
             return str(exc)
-        old, self.subscription = self.subscription, new
         return self._release(old)
 
     def _release(self, sub: Subscription | None) -> str:

@@ -47,6 +47,41 @@ class SignalRow:
         return [float(self.t_us)] + [float(v) for v in self.values]
 
 
+class RobotClock:
+    """Maps the robot's micros() (32 bit, wraps) to ROS time, so that every sample is stamped
+    with its own time and not with the time the bridge got round to reading it.
+
+    The offset follows the lowest `now - t` seen: no stamp lies in the future, and it
+    moves up slowly to follow clock drift. Stamps never go back."""
+
+    _RELAX = 0.001  # share of the excess a later sample pulls the offset up by
+
+    def __init__(self):
+        self.rebase()
+
+    def rebase(self) -> None:
+        """The robot's clock started over (restart, new connection)."""
+        self._last_us = None
+        self._unwrapped_us = 0
+        self._offset_ns = None
+        self._last_ns = 0
+
+    def stamp_ns(self, t_us: int, now_ns: int) -> int:
+        if self._last_us is None:
+            self._unwrapped_us = t_us
+        else:
+            step = (t_us - self._last_us) & 0xFFFFFFFF
+            self._unwrapped_us += step if step < 2**31 else step - 2**32
+        self._last_us = t_us
+        sample_ns = now_ns - self._unwrapped_us * 1000
+        if self._offset_ns is None or sample_ns < self._offset_ns:
+            self._offset_ns = sample_ns
+        else:
+            self._offset_ns += round((sample_ns - self._offset_ns) * self._RELAX)
+        self._last_ns = max(self._unwrapped_us * 1000 + self._offset_ns, self._last_ns + 1)
+        return self._last_ns
+
+
 class LinkBridge:
     """One connection: the Link, the pose integration and the firmware controls."""
 

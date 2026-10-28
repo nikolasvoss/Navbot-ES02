@@ -2,17 +2,21 @@
 and the robot's log lines."""
 
 import math
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import rclpy
 import serial
-from rclpy.executors import ExternalShutdownException
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from rcl_interfaces.msg import Log, ParameterDescriptor, SetParametersResult
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.duration import Duration
+from rclpy.time import Time
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
 from sensor_msgs.msg import Imu
 from std_msgs.msg import Float64MultiArray, MultiArrayDimension
@@ -20,7 +24,7 @@ from tf2_ros import TransformBroadcaster
 
 from navbot_link.link import Disconnected, Link, Restarted, SubscriptionEnded
 from navbot_link.protocol import LinkError
-from navbot_link_bridge.bridge import ImuSample, LinkBridge, RobotLog, SignalRow
+from navbot_link_bridge.bridge import ImuSample, LinkBridge, RobotClock, RobotLog, SignalRow
 from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState, gyro_yaw_sign_for
 
 POLL_HZ = 200
@@ -112,11 +116,25 @@ class LinkBridgeNode(Node):
         self._last_fallback_warn_s = -WARN_INTERVAL_S
         self._warned_fallbacks = 0
         self._firmware_params: set[str] = set()
-        self._mirroring = False  # True while the node copies a robot value into a ROS parameter
+        self._local = threading.local()  # .mirroring: this thread copies a robot value into a ROS parameter
         self._warned_no_catalog = False
-        self._connect()
+        self._robot_clock = RobotClock()
+        # Anything that waits for the robot (catalog, parameters, subscriptions) runs here, never in the
+        # poll timer. One thread keeps those exchanges in order.
+        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="navbot-link-control")
+        self.attached = threading.Event()  # set when the latest attach job has finished, with or without a catalog
+        self._robot_lock = threading.RLock()  # serializes parameter sets and attach jobs against each other
         self.add_on_set_parameters_callback(self._on_set_parameters)
-        self.create_timer(1.0 / POLL_HZ, self._on_timer)
+        self._connect()
+        self.create_timer(1.0 / POLL_HZ, self._poll_once, callback_group=MutuallyExclusiveCallbackGroup())
+
+    @property
+    def _mirroring(self) -> bool:
+        return getattr(self._local, "mirroring", False)
+
+    @_mirroring.setter
+    def _mirroring(self, value: bool) -> None:
+        self._local.mirroring = value
 
     def _connect(self) -> None:
         try:
@@ -130,12 +148,35 @@ class LinkBridgeNode(Node):
             self._odometry.rebase()  # wheel angles may have jumped while the port was closed
         self._opened_before = True
         self._bridge = LinkBridge(link, self._odometry)
+        self._robot_clock.rebase()
         self._warned_counts = (0, 0)
-        self._attach()
+        self.attached.clear()
+        self._submit(self._attach, self._bridge, False)
 
-    def _attach(self) -> None:
+    def _submit(self, job, bridge, *args) -> None:
+        def run():
+            try:
+                with self._robot_lock:
+                    if self._bridge is bridge:  # not closed or replaced since
+                        job(bridge, *args)
+            except Exception as exc:  # noqa: BLE001 - a failed job must not vanish with its future
+                self.get_logger().error(f"{job.__name__} failed: {type(exc).__name__}: {exc}")
+
+        self._worker.submit(run)
+
+    def _attach(self, bridge: LinkBridge, restarted: bool) -> None:
         """Read the catalog, expose its parameters and start the configured signal stream."""
-        controls = self._bridge.controls
+        controls = bridge.controls
+        if restarted:
+            self.attached.clear()
+            controls.restarted()
+        try:
+            self._attach_catalog(bridge)
+        finally:
+            self.attached.set()
+
+    def _attach_catalog(self, bridge: LinkBridge) -> None:
+        controls = bridge.controls
         if not controls.attach():
             if not self._warned_no_catalog:
                 self._warned_no_catalog = True
@@ -146,16 +187,16 @@ class LinkBridgeNode(Node):
             return
         self._warned_no_catalog = False
         try:
-            self._expose_firmware_parameters()
+            self._expose_firmware_parameters(bridge)
         except LinkError as exc:
             self.get_logger().warning(f"reading firmware parameters failed: {exc}")
-        self._subscribe_configured_signals()
+        self._subscribe_configured_signals(bridge)
 
-    def _expose_firmware_parameters(self) -> None:
+    def _expose_firmware_parameters(self, bridge: LinkBridge) -> None:
         for name in self._firmware_params:
             self.undeclare_parameter(name)
         self._firmware_params.clear()
-        for info in self._bridge.controls.params():
+        for info in bridge.controls.params():
             if self.has_parameter(info.name):
                 self.get_logger().warning(f"firmware parameter {info.name} clashes with a bridge parameter; not exposed")
                 continue
@@ -163,7 +204,7 @@ class LinkBridgeNode(Node):
             self._firmware_params.add(info.name)
             wanted = self.get_parameter(info.name).value
             if wanted != info.value:  # a launch-file or command-line value for a firmware parameter
-                reason = self._bridge.controls.set_param(info.name, wanted)
+                reason = bridge.controls.set_param(info.name, wanted)
                 if reason:
                     self.get_logger().warning(f"startup value of {info.name} not applied: {reason}")
                     self._mirror(info.name, info.value)
@@ -178,8 +219,8 @@ class LinkBridgeNode(Node):
         finally:
             self._mirroring = False
 
-    def _subscribe_configured_signals(self) -> None:
-        reason = self._bridge.controls.set_subscription(
+    def _subscribe_configured_signals(self, bridge: LinkBridge) -> None:
+        reason = bridge.controls.set_subscription(
             list(self.get_parameter("signals").value), self.get_parameter("signals_rate_hz").value
         )
         if reason:
@@ -193,49 +234,55 @@ class LinkBridgeNode(Node):
         streaming = "signals" in changed or "signals_rate_hz" in changed
         if not (wanted or streaming):
             return SetParametersResult(successful=True)
-        if self._bridge is None:
-            return SetParametersResult(successful=False, reason="the link to the robot is down")
-        controls = self._bridge.controls
-        for name in wanted:
-            reason = controls.set_param(name, changed[name])
-            if reason:
-                return SetParametersResult(successful=False, reason=reason)
-        if streaming:
-            reason = controls.set_subscription(
-                list(changed.get("signals", self.get_parameter("signals").value)),
-                changed.get("signals_rate_hz", self.get_parameter("signals_rate_hz").value),
-            )
-            if reason:
-                return SetParametersResult(successful=False, reason=reason)
+        with self._robot_lock:
+            bridge = self._bridge
+            if bridge is None:
+                return SetParametersResult(successful=False, reason="the link to the robot is down")
+            controls = bridge.controls
+            for name in wanted:
+                reason = controls.set_param(name, changed[name])
+                if reason:
+                    return SetParametersResult(successful=False, reason=reason)
+            if streaming:
+                reason = controls.set_subscription(
+                    list(changed.get("signals", self.get_parameter("signals").value)),
+                    changed.get("signals_rate_hz", self.get_parameter("signals_rate_hz").value),
+                )
+                if reason:
+                    return SetParametersResult(successful=False, reason=reason)
         return SetParametersResult(successful=True)
 
-    def _on_timer(self) -> None:
+    def _poll_once(self) -> None:
         if self._bridge is None:
             if time.monotonic() >= self._next_open_s:
                 self._connect()
             return
-        stamp = self.get_clock().now().to_msg()
-        for result in self._bridge.poll():
+        bridge = self._bridge
+        for result in bridge.poll():
             if isinstance(result, OdometryState):
-                self._publish_odometry(result, stamp)
+                self._publish_odometry(result, self._robot_stamp(result.t_us))
             elif isinstance(result, ImuSample):
-                self._publish_imu(result, stamp)
+                self._publish_imu(result, self._robot_stamp(result.t_us))
             elif isinstance(result, RobotLog):
-                self._publish_robot_log(result, stamp)
+                self._publish_robot_log(result, self.get_clock().now().to_msg())
             elif isinstance(result, SignalRow):
                 self._publish_signals(result)
             elif isinstance(result, Restarted):
                 self.get_logger().info("robot restart detected (seq reset); pose kept, odometry rebased")
-                self._attach()  # table indices and slots may differ in the new build
+                self._robot_clock.rebase()
+                self._submit(self._attach, bridge, True)  # table indices and slots may differ in the new build
             elif isinstance(result, SubscriptionEnded):
                 self.get_logger().warning(f"signal stream ended: {result.reason}; resubscribing")
-                self._subscribe_configured_signals()
+                self._submit(self._subscribe_configured_signals, bridge)
             elif isinstance(result, Disconnected):
                 self.get_logger().error(f"link failed: {result.reason}; reopening")
                 self.close()
                 self._next_open_s = time.monotonic() + REOPEN_INTERVAL_S
                 return
         self._report_link_health()
+
+    def _robot_stamp(self, t_us: int):
+        return Time(nanoseconds=self._robot_clock.stamp_ns(t_us, self.get_clock().now().nanoseconds)).to_msg()
 
     def _publish_robot_log(self, line: RobotLog, stamp) -> None:
         msg = Log()
@@ -310,16 +357,23 @@ class LinkBridgeNode(Node):
             self._bridge.link.close()
             self._bridge = None
 
+    def destroy_node(self) -> None:
+        self._worker.shutdown(wait=False, cancel_futures=True)
+        super().destroy_node()
+
 
 def main(args=None):
     rclpy.init(args=args)
     node = LinkBridgeNode()
+    executor = MultiThreadedExecutor(num_threads=3)  # the poll timer must not wait for a parameter set
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.close()
+        executor.shutdown()
         node.destroy_node()
         rclpy.try_shutdown()
 

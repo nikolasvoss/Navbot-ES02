@@ -12,6 +12,15 @@ from navbot_link_bridge.odometry import DiffDriveOdometry
 from helpers import WireTransport, poll_until
 
 
+class CountingTransport(WireTransport):
+    def __init__(self):
+        super().__init__()
+        self.written = 0
+
+    def write(self, data: bytes) -> None:
+        self.written += 1
+
+
 def limited_table():
     table = speed_loop_table()
     next(e for e in table if e.name == "speed_kp").limits = (0.0, 0.5)
@@ -125,4 +134,18 @@ def test_firmware_without_a_catalog_leaves_the_controls_off_and_telemetry_runnin
     assert controls.set_param("speed_kp", 0.1) == "the robot sent no catalog"
     assert controls.set_subscription(["speed_target"], 10.0) == "the robot sent no catalog"
     assert controls.set_subscription([], 10.0) == ""
+    link.close()
+
+
+def test_a_robot_that_ignored_get_catalog_is_not_asked_again_until_it_restarts():
+    transport = CountingTransport()
+    link = Link(transport, telemetry=True, timeout_s=0.02, retries=2)
+    controls = LinkBridge(link, DiffDriveOdometry(0.05, 0.2)).controls
+    assert controls.attach() is False
+    assert transport.written == 2  # the retries of one GetCatalog
+    assert controls.attach() is False
+    assert transport.written == 2
+    controls.restarted()
+    assert controls.attach() is False
+    assert transport.written == 4
     link.close()

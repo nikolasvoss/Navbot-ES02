@@ -1,6 +1,7 @@
 """The node against the in-memory firmware. Needs a sourced ROS 2; skipped otherwise."""
 
 import os
+import threading
 import time
 
 import pytest
@@ -11,7 +12,9 @@ from rcl_interfaces.msg import Log  # noqa: E402
 from rclpy.parameter import Parameter  # noqa: E402
 from sensor_msgs.msg import Imu  # noqa: E402
 from std_msgs.msg import Float64MultiArray  # noqa: E402
-from rclpy.executors import SingleThreadedExecutor  # noqa: E402
+from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor  # noqa: E402
+from nav_msgs.msg import Odometry  # noqa: E402
+from rcl_interfaces.srv import SetParameters  # noqa: E402
 
 from fake_firmware import FakeFirmware, MemoryTransport, speed_loop_table  # noqa: E402
 from helpers import WireTransport  # noqa: E402
@@ -29,7 +32,7 @@ def ros():
 
 
 class Harness:
-    def __init__(self, firmware, transport=None, link_args=None, ros_args=()):
+    def __init__(self, firmware, transport=None, link_args=None, ros_args=(), wait_for_attach=True):
         self.firmware = firmware
         link_args = link_args or {}
         self.node = LinkBridgeNode(
@@ -42,22 +45,30 @@ class Harness:
             ],
         )
         self.listener = rclpy.create_node("listener")
-        self.executor = SingleThreadedExecutor()
+        self.executor = MultiThreadedExecutor(num_threads=8)
         self.executor.add_node(self.node)
         self.executor.add_node(self.listener)
+        self._spinner = threading.Thread(target=self.executor.spin, daemon=True)
+        self._spinner.start()
+        self.on_close = []
         self.rosout = []
         self.signals = []
         self.listener.create_subscription(Float64MultiArray, "/navbot/signals", self.signals.append, 1000)
         self.listener.create_subscription(Log, "/rosout", self.rosout.append, ROSOUT_QOS)
+        if wait_for_attach:
+            assert self.node.attached.wait(5.0)
 
     def spin(self, seconds: float = 0.5, until=lambda: False) -> None:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline and not until():
-            self.executor.spin_once(timeout_sec=0.01)
+            time.sleep(0.005)
 
     def close(self) -> None:
+        for close in self.on_close:
+            close()
         self.node.close()
         self.executor.shutdown()
+        self._spinner.join(2.0)
         self.node.destroy_node()
         self.listener.destroy_node()
 
@@ -164,7 +175,7 @@ def test_startup_value_of_a_firmware_parameter_is_applied_or_reported(harness):
 
 def test_firmware_without_a_catalog_gives_one_warning_and_keeps_publishing_telemetry(harness):
     imu = pb.Message(seq=1, imu=pb.Imu(t_us=5, gz=0.5))
-    h = harness(FakeFirmware(), transport=WireTransport(encode_frame(imu.SerializeToString())),
+    h = harness(FakeFirmware(), transport=WireTransport(encode_frame(imu.SerializeToString()), start_after_s=0.3),
                 link_args={"timeout_s": 0.02, "retries": 2})
     got = []
     h.listener.create_subscription(Imu, "imu/data", got.append, 10)
@@ -203,3 +214,121 @@ def test_tests_run_in_their_own_ros_graph(harness):
     assert (os.environ["ROS_DOMAIN_ID"], os.environ["ROS_LOCALHOST_ONLY"]) == ("77", "1")
     # Only the node under test publishes here; a bridge running on this machine must not show up.
     assert (h.listener.count_publishers("imu/data"), h.listener.count_publishers("odom")) == (1, 1)
+
+
+class DeafFirmware(FakeFirmware):
+    """Ignores the named request kinds, as old firmware or a stuck robot does."""
+
+    ignored = frozenset()
+
+    def _handle(self, msg, port):
+        if msg.WhichOneof("body") not in self.ignored:
+            super()._handle(msg, port)
+
+
+class TelemetryFeeder:
+    """The robot's 50 Hz wheel odometry (robot clock 20 ms per frame), emitted in real time."""
+
+    def __init__(self, firmware):
+        self._firmware = firmware
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        n, start = 0, time.monotonic()
+        while not self._stop.is_set():
+            n += 1
+            self._firmware.emit(pb.Message(odom=pb.WheelOdometry(
+                t_us=n * 20_000, left_angle_rad=n * 0.01, right_angle_rad=n * 0.01)))
+            self._stop.wait(max(0.0, start + n * 0.02 - time.monotonic()))
+
+    def stop(self):
+        self._stop.set()
+        self._thread.join()
+
+
+class OdomLog:
+    """Receives /odom on an executor of its own, so that a busy test executor cannot add delay."""
+
+    def __init__(self, h):
+        self.arrivals, self.stamps = [], []
+        self._node = rclpy.create_node("odom_log")
+        self._node.create_subscription(Odometry, "odom", self._on_odom, 100)
+        self._executor = SingleThreadedExecutor()
+        self._executor.add_node(self._node)
+        self._thread = threading.Thread(target=self._executor.spin, daemon=True)
+        self._thread.start()
+        h.on_close.append(self.close)
+
+    def close(self):
+        self._executor.shutdown()
+        self._thread.join(2.0)
+        self._node.destroy_node()
+
+    def _on_odom(self, msg):
+        self.arrivals.append(time.monotonic())
+        self.stamps.append(msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec)
+
+    def worst_gap_s(self, after=0.0):
+        times = [t for t in self.arrivals if t >= after]
+        return max(b - a for a, b in zip(times, times[1:]))
+
+    def stamps_strictly_increase(self):
+        return all(b > a for a, b in zip(self.stamps, self.stamps[1:]))
+
+
+def test_odometry_keeps_its_cadence_while_the_robot_ignores_get_catalog(harness):
+    fw = DeafFirmware()
+    fw.ignored = frozenset({"get_catalog"})
+    feeder = TelemetryFeeder(fw)
+    try:
+        h = harness(fw, wait_for_attach=False)  # three tries of 0.5 s: the catalog wait is 1.5 s
+        odom = OdomLog(h)
+        h.spin(2.3)
+    finally:
+        feeder.stop()
+    assert len(odom.arrivals) >= 90
+    assert odom.worst_gap_s() < 0.04
+    assert odom.stamps_strictly_increase()
+
+
+def test_odometry_keeps_its_cadence_while_a_restarted_robot_ignores_get_catalog(harness):
+    fw = DeafFirmware()
+    h = harness(fw)
+    odom = OdomLog(h)
+    feeder = TelemetryFeeder(fw)
+    try:
+        h.spin(0.5)
+        fw.ignored = frozenset({"get_catalog"})
+        fw.restart()
+        restarted_at = time.monotonic()
+        h.spin(2.3)
+    finally:
+        feeder.stop()
+    assert odom.worst_gap_s(after=restarted_at) < 0.045  # 40 ms are the baseline frame after a restart
+    assert odom.stamps_strictly_increase()
+
+
+def test_a_firmware_parameter_set_that_the_robot_never_answers_does_not_stall_odometry(harness):
+    fw = DeafFirmware(entries=limited_table())
+    h = harness(fw)
+    odom = OdomLog(h)
+    h.spin(0.3, until=lambda: h.node.has_parameter("speed_kp"))
+    fw.ignored = frozenset({"set_param"})
+    feeder = TelemetryFeeder(fw)
+    try:
+        client = h.listener.create_client(SetParameters, "/navbot_link_bridge/set_parameters")
+        assert client.wait_for_service(2.0)
+        request = SetParameters.Request(parameters=[Parameter("speed_ki", value=0.75).to_parameter_msg()])
+        started = time.monotonic()
+        future = client.call_async(request)
+        h.spin(4.0, until=future.done)
+        result = future.result().results[0]
+        answered_s = time.monotonic() - started
+    finally:
+        feeder.stop()
+    assert (result.successful, result.reason) == (False, "no reply to set_param")
+    assert answered_s > 1.4  # the set did wait for the robot
+    assert odom.worst_gap_s(after=started) < 0.04
+    assert odom.stamps_strictly_increase()

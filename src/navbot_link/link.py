@@ -240,8 +240,9 @@ class Link:
         # Not retried: a lost Ack must not start a motor test twice.
         self._request(pb.Message(call=pb.Call(id=entry.index, args=values)), retries=1)
 
-    def subscribe(self, names, rate_hz: float | None = None) -> Subscription:
-        """rate_hz None or 0 streams every control tick. The robot picks the slot."""
+    def subscribe(self, names, rate_hz: float | None = None, *, on_subscribed=None) -> Subscription:
+        """rate_hz None or 0 streams every control tick. The robot picks the slot.
+        `on_subscribed(sub)` runs on the I/O thread before the slot's first Row is queued."""
         catalog = self.catalog()
         entries = tuple(catalog.signal(n) for n in names)
         if not entries or len(entries) > MAX_SUBSCRIBED:
@@ -254,6 +255,8 @@ class Link:
             with self._lock:
                 self._subs[sub.slot] = sub
                 self._releasing.pop(sub.slot, None)
+            if on_subscribed is not None:
+                on_subscribed(sub)
             return sub
 
         return self._request(_subscribe_message(Subscription(0, entries, period_us)), on_accept=register)

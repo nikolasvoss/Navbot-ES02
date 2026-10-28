@@ -57,10 +57,14 @@ A change of `signals` or `signals_rate_hz` subscribes the new list first and rel
 - The ROS value is a copy: it is what ROS last set or read at connect. A change made through `navlink` or the other port does not update it, and a restart of the robot rebuilds all firmware parameters from the robot.
 - A value given at startup (`-p speed_kp:=0.1` or a parameters file) for a firmware parameter is sent to the robot once the catalog is read. If the robot refuses it, the bridge logs a warning and keeps the robot's value.
 - A set request that mixes parameters is applied parameter by parameter and is not rolled back. `set_parameters_atomically` is the same.
-- The call blocks the node for the round trip (about 1.5 s when the robot does not answer), during which odometry publishing waits.
+- A `ros2 param set` waits for the robot's answer (about 1.5 s when the robot does not answer), and so does the caller of the service. The wait happens in a service thread: odometry, TF and IMU publishing continue at their normal rate. The node runs on a `MultiThreadedExecutor`, and the poll timer has a callback group of its own. A second set waits for the first.
 - A firmware parameter named like a bridge parameter (`port`, `baud`, `signals`, ...) is not exposed, with a warning.
 
-**Firmware without the catalog** (the current robot firmware). The bridge asks for the catalog at connect and again after a robot restart. When the robot does not answer within about 1.5 s, the bridge logs one warning (`the robot did not answer GetCatalog ...`) and continues with odometry, TF, IMU and `/rosout`. Setting `signals` is refused with `the robot sent no catalog`, and no firmware parameters exist.
+**Firmware without the catalog** (the current robot firmware). The bridge asks for the catalog at connect and again after a robot restart. It asks in a worker thread, so odometry, TF, IMU and `/rosout` start at once. When the robot does not answer within about 1.5 s, the bridge logs one warning (`the robot did not answer GetCatalog ...`) and continues without firmware parameters and signals. It does not ask again on the same connection; the next ask comes with a reconnect or a robot restart. Setting `signals` is refused with `the robot sent no catalog`, and no firmware parameters exist.
+
+## Time stamps
+
+`/odom`, the TF and `/imu/data` carry the robot's sample time mapped to ROS time, not the time the bridge read the frame. `RobotClock` (`bridge.py`) unwraps the 32-bit `t_us` and adds an offset that follows the lowest `ROS time - t_us` seen, moved up by 0.1 % of the excess on later samples to follow clock drift. A stamp is never later than the time the bridge received the sample, and stamps of one run strictly increase, also for a backlog that the bridge reads in one go. The offset starts again at a reconnect and at a robot restart. `/rosout` lines carry the ROS time at which the bridge forwarded them.
 
 ## Heading source
 
@@ -97,7 +101,7 @@ Unverified, before relying on the output:
 - The wheel diameter is 38.3 mm and the hand-measured track width 113 mm ([robot hardware overview](../../robot/hardware/system-overview.md#key-findings-and-consequences)). The bridge has no defaults and does not guess them: pass `-p wheel_radius_m:=0.01915 -p wheel_separation_m:=0.113`. The turn test shows that their ratio is 13.5 % off for yaw (see above). The radius alone, which sets the `/odom` distance, is not checked; push the robot straight along a tape measure and compare `/odom` x.
 - The signs of the `/odom` twist are not checked on the robot.
 - The IMU frame `imu_link` has no `base_link` to `imu_link` TF yet.
-- Stamps are the ROS receive time, not the robot's sample time. The robot's IMU read time (`Imu.t_us`) is decoded but not published, because nothing converts robot time into ROS time. Covariances are zero.
+- Covariances are zero.
 
 Test the decoding, odometry, log, signal and parameter logic without ROS. The tests need `pytest` and `protobuf`. The framing and `Link` live in the shared [navbot_link](../../../src/navbot_link/) package, which `setup.py` installs next to the bridge; its tests are in `tests/navbot_link`, and the bridge tests reuse its fake firmware.
 
