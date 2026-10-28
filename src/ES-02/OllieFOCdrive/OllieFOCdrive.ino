@@ -504,7 +504,7 @@ struct ServoTrimGroup {
 // Actions. The endpoint checks each argument against its ARG bounds before a handler runs. A handler starts the action,
 // or sets *error and returns false. Motor safety lives in MotorDiagnostic; these handlers only add the overspeed latch.
 bool startMotorRequest(const MotorDiagnostic::Request &request, const char **error) {
-  // The diagnostic build never runs the motor loop, and starting a test would enable the drivers.
+  // The diagnostic build initializes no motors or drivers and runs no motor loop, so a motor test must not start.
   if (SENSOR_DIAGNOSTIC_MODE) {
     *error = "refused: sensor diagnostic build has no motor control";
     return false;
