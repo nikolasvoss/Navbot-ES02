@@ -6,6 +6,8 @@ This page describes how to capture serial traces from the running robot, which t
 
 `navlink capture` records any list of firmware signals, with a rate you choose, over the [NavBot link](../../integration/software/ros2-uart-protocol.md). It replaces the `K55` to `K58` profiles and needs no firmware rebuild per variable. Full usage is in the [navlink page](../../integration/software/navlink.md).
 
+**Not usable on the robot yet.** The firmware does not serve the signal table ([migration step 3](../../integration/plans/logging-and-control-link.md#migration) is not done), so `navlink capture` does not work on the real robot. `scripts/navlink_presets.yaml` has only `speed_loop` and no preset for the `TRACE`, `CTRL`, `BAL` or `DRIVE` columns. Until step 3 and the presets land, capture with the K profiles below. The commands here work against the fake firmware in `tests/navbot_link/` and on saved files.
+
 ```bash
 python3 scripts/navlink.py capture --port /dev/ttyAMA3 --preset speed_loop --seconds 30 -o speed-01.csv
 python3 scripts/summarize_balance_trace.py speed-01.csv
@@ -13,11 +15,9 @@ python3 scripts/analyze_drive_trace.py drive-01.csv --require-stop
 ```
 
 - The file starts with `#` comments (firmware build, rate, every parameter value) and a column header `t_us,<signal names>`. `# log` lines mark parameter changes and other robot events, and `# lost <n> frames before seq <s>` marks a gap in the link.
-- Rows are not evenly spaced. `t_us` is the robot's `micros()` at the sampled tick and wraps at 2^32 (about 71.6 min). The analysis scripts convert it to `time_ms` and measure spans, rates and the stop window from it, never by counting rows. A signal that changes every control step can alias against a sampling period that is not a multiple of that step.
+- Rows are not evenly spaced. `t_us` is the robot's `micros()` at the sampled tick and wraps at 2^32 (about 71.6 min). The analysis scripts convert it to `time_ms` and measure spans, rates, the median interval and the stop window from it, not from the row count. Row counts remain counts: valid and malformed rows, the 20-row minimum for a usable capture, active and CH3 rows, and the neutral samples of a stop. The scripts handle a wrap by continuing the timeline. A small `t_us` after a jump back is a robot restart, which the summary reports as a warning, and its downtime is missing from the span. An isolated out-of-range value, or one outside 0 to 2^32-1, is a malformed row. A second `t_us,` header line stops parsing with a warning, and a column named `time_ms` is an error. A signal that changes every control step can alias against a sampling period that is not a multiple of that step.
 - `scripts/summarize_balance_trace.py` reports every signal column of a navlink file with min, max, mean, first and last value, plus build, rate, start parameters, lost frames and log events.
 - `scripts/analyze_drive_trace.py` reads a navlink file when its columns are the DRIVE names below. A missing column fails with `fehlende DRIVE-Spalten: ...`.
-
-The firmware does not serve the signal table yet ([migration step 3](../../integration/plans/logging-and-control-link.md#migration)), and `scripts/navlink_presets.yaml` has only `speed_loop`. There is no preset for the `TRACE`, `CTRL`, `BAL` or `DRIVE` columns yet. Until step 3 and the presets land, capture with the K profiles below.
 
 The analysis scripts keep the K58 header names as column names, so a preset that reproduces `DRIVE` has to use them. `analyze_drive_trace.py` needs these columns:
 
