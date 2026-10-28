@@ -4,7 +4,7 @@ import struct
 from dataclasses import dataclass
 
 from navbot_link.link import Link, Subscription
-from navbot_link.protocol import Catalog, LinkError, NoReply, Type
+from navbot_link.protocol import Catalog, LinkError, Type
 
 
 @dataclass(frozen=True)
@@ -30,38 +30,21 @@ def _as_type(type_: Type, value):
 
 
 class FirmwareControls:
-    """What the catalog makes possible. Without a catalog (firmware that does not
-    answer GetCatalog) every operation refuses and the bridge carries telemetry only."""
+    """What the catalog makes possible. Without one (its read failed on this connection) every
+    operation refuses and the bridge carries telemetry only."""
 
     def __init__(self, link: Link):
         self._link = link
         self._catalog: Catalog | None = None
-        self._unanswered = False  # the robot ignored GetCatalog on this connection
         self.subscription: Subscription | None = None
 
-    @property
-    def has_catalog(self) -> bool:
-        return self._catalog is not None
-
-    def attach(self) -> bool:
-        """Read the catalog; False when the robot does not answer or refuses. A robot that
-        ignored GetCatalog is not asked again until restarted() (each ask costs the whole
-        retry time)."""
-        if self._unanswered:
-            return False
-        try:
-            self._catalog = self._link.catalog()
-        except NoReply:
-            self._catalog = None
-            self._unanswered = True
-        except LinkError:
-            self._catalog = None
-        return self._catalog is not None
+    def attach(self) -> None:
+        """Read the catalog. Raises LinkError when the robot does not answer or refuses."""
+        self._catalog = self._link.catalog()
 
     def restarted(self) -> None:
-        """The robot restarted: its catalog may differ, so ask again."""
+        """The robot restarted: its catalog may differ, so the old one goes until attach() reads the new one."""
         self._catalog = None
-        self._unanswered = False
 
     def params(self) -> list[ParamInfo]:
         return [ParamInfo(e.name, e.type, self._link.get(e.name)) for e in self._catalog.params]

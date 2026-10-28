@@ -29,7 +29,7 @@ Optional parameters: `baud` (2000000), `odom_frame` (`odom`), `base_frame` (`bas
 
 ## Robot log, signals and firmware parameters
 
-Status: **written and tested only against the in-memory fake firmware** (`tests/navbot_link/fake_firmware.py`), plus a pseudo-terminal run of the node. The robot firmware does not answer the catalog messages yet ([navlink](navlink.md)), so none of this has run on the robot.
+Status: **written and tested only against the in-memory fake firmware** (`tests/navbot_link/fake_firmware.py`), plus a pseudo-terminal run of the node. The catalog messages ([navlink](navlink.md)) have not run on the robot yet, so none of this has.
 
 **Robot log.** Every `Log` frame goes to `/rosout` as `rcl_interfaces/msg/Log`. The `name` is the `Log` tag (`robot` when the tag is empty) and `msg` is the text, with ` (code N)` appended when the code is not 0. The level maps `DEBUG` 10, `INFO` 20, `WARN` 30, `ERROR` 40, `FATAL` 50; a level the bridge does not know is shown as `INFO`. The bridge publishes these messages itself, because rcl sends a logger's lines to `/rosout` only for node loggers. The text does not reach the console or journal of the bridge process. The `/rosout` publisher uses the rcl profile (reliable, transient local, depth 1000) with a 10 s lifespan, so a subscriber that starts later gets the lines of the last 10 s only. `msg.stamp` is the ROS time at which the bridge forwarded the line, not the robot's time.
 
@@ -70,7 +70,7 @@ A value of another type is refused before the robot is asked, with a reason such
 
 **Waiting for the robot.** A `ros2 param set` waits for the robot's answer (about 1.5 s when the robot does not answer), and so does its caller. That wait is in a service thread. Odometry, TF, IMU and `/rosout` keep their rate: the node runs on a `MultiThreadedExecutor`, and the poll timer has a callback group of its own. The catalog reads, parameter exchanges and subscription changes run in one worker thread, in order, so a second set waits for the first.
 
-**Firmware without the catalog** (a build that answers no `GetCatalog`). The bridge asks for the catalog at connect and again after a robot restart, in the worker thread, so odometry, TF, IMU and `/rosout` start at once. When the robot does not answer within about 1.5 s, the bridge logs one warning (`the robot did not answer GetCatalog ...`) and continues without firmware parameters and signals. It does not ask again on the same connection; the next ask comes with a reconnect or a robot restart. A restart whose new build answers no catalog removes the firmware parameters of the old build. Setting `signals` is refused with `the robot sent no catalog`. If the link fails before the robot answers, the bridge does not report a missing answer; it reports the link failure (`link failed: <reason>; reopening`).
+**A failed catalog read.** The bridge reads the catalog at connect and again after a robot restart, in the worker thread, so odometry, TF, IMU and `/rosout` start at once. A read that gets no reply within about 1.5 s, or a refusal, is a link fault: the bridge logs one warning per connection (`catalog read failed (no reply to get_catalog); ...`) and continues without firmware parameters and signals. It does not retry on its own; the next read comes with a reconnect or a robot restart. A restart whose catalog read fails removes the firmware parameters of the previous read. Setting `signals` is refused with `the robot sent no catalog`. If the link fails before the robot answers, the bridge does not report a missing answer; it reports the link failure (`link failed: <reason>; reopening`).
 
 ## Time stamps
 
@@ -119,7 +119,7 @@ Test the decoding, odometry, log, signal and parameter logic without ROS. The te
 PYTHONPATH=src:src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test
 ```
 
-`test_node.py` runs the node against the fake firmware. It checks `/rosout` (lines and their stamp), `/navbot/signals`, the type rules, atomic sets, parameter results, reconnect and restart behavior, the warnings, and that odometry keeps its cadence while the robot ignores GetCatalog or a parameter set. It is skipped unless ROS 2 is importable. With the system install, and the ROS pytest plugins switched off because they fail to load under the system pytest:
+`test_node.py` runs the node against the fake firmware. It checks `/rosout` (lines and their stamp), `/navbot/signals`, the type rules, atomic sets, parameter results, reconnect and restart behavior, the warnings, and that odometry keeps its cadence while the catalog read is silent or a parameter set goes unanswered. It is skipped unless ROS 2 is importable. With the system install, and the ROS pytest plugins switched off because they fail to load under the system pytest:
 
 ```bash
 source /opt/ros/jazzy/setup.bash

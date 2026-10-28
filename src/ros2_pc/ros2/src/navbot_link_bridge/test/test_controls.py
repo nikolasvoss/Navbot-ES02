@@ -5,7 +5,7 @@ import pytest
 from fake_firmware import FakeEntry, FakeFirmware, MemoryTransport, speed_loop_table
 from navbot_link import navbot_link_pb2 as pb
 from navbot_link.link import Link
-from navbot_link.protocol import Type
+from navbot_link.protocol import NoReply, Type
 from navbot_link_bridge.bridge import LinkBridge, SignalRow
 from navbot_link_bridge.controls import ParamInfo
 from navbot_link_bridge.odometry import DiffDriveOdometry
@@ -30,7 +30,7 @@ def limited_table():
 def new_bridge(firmware, **link_args) -> LinkBridge:
     link = Link(MemoryTransport(firmware), telemetry=True, clock=lambda: 0.0, **link_args)
     bridge = LinkBridge(link, DiffDriveOdometry(0.05, 0.2))
-    assert bridge.controls.attach()
+    bridge.controls.attach()
     return bridge
 
 
@@ -125,27 +125,27 @@ def test_a_robot_restart_ends_the_stream_and_the_old_slot_is_not_reported_again(
     bridge.link.close()
 
 
-def test_firmware_without_a_catalog_leaves_the_controls_off_and_telemetry_running():
+def test_a_silent_catalog_read_leaves_the_controls_off():
     link = Link(WireTransport(), telemetry=True, timeout_s=0.02, retries=2)
     bridge = LinkBridge(link, DiffDriveOdometry(0.05, 0.2))
     controls = bridge.controls
-    assert controls.attach() is False
-    assert controls.has_catalog is False
+    with pytest.raises(NoReply, match="^no reply to get_catalog$"):
+        controls.attach()
     assert controls.set_param("speed_kp", 0.1) == "the robot sent no catalog"
     assert controls.set_subscription(["speed_target"], 10.0) == "the robot sent no catalog"
     assert controls.set_subscription([], 10.0) == ""
     link.close()
 
 
-def test_a_robot_that_ignored_get_catalog_is_not_asked_again_until_it_restarts():
+def test_a_failed_catalog_read_costs_one_request_and_a_restart_reads_again():
     transport = CountingTransport()
     link = Link(transport, telemetry=True, timeout_s=0.02, retries=2)
     controls = LinkBridge(link, DiffDriveOdometry(0.05, 0.2)).controls
-    assert controls.attach() is False
+    with pytest.raises(NoReply):
+        controls.attach()
     assert transport.written == 2  # the retries of one GetCatalog
-    assert controls.attach() is False
-    assert transport.written == 2
     controls.restarted()
-    assert controls.attach() is False
+    with pytest.raises(NoReply):
+        controls.attach()
     assert transport.written == 4
     link.close()

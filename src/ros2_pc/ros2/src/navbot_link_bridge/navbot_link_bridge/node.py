@@ -118,7 +118,7 @@ class LinkBridgeNode(Node):
         self._warned_fallbacks = 0
         self._firmware_params: set[str] = set()
         self._local = threading.local()  # .mirroring: this thread copies a robot value into a ROS parameter
-        self._warned_no_catalog = False
+        self._warned_catalog_failure = False
         self._robot_clock = RobotClock()
         # Anything that waits for the robot (catalog, parameters, subscriptions) runs here, never in the
         # poll timer. One thread keeps those exchanges in order.
@@ -152,6 +152,7 @@ class LinkBridgeNode(Node):
         self._bridge = LinkBridge(link, self._odometry)
         self._robot_clock.rebase()
         self._warned_counts = (0, 0)
+        self._warned_catalog_failure = False
         self.attached.clear()
         self._submit(self._attach, self._bridge, False)
 
@@ -179,18 +180,19 @@ class LinkBridgeNode(Node):
 
     def _attach_catalog(self, bridge: LinkBridge) -> None:
         controls = bridge.controls
-        if not controls.attach():
+        try:
+            controls.attach()
+        except LinkError as exc:
             self._forget_firmware_parameters()  # no catalog, no firmware parameters
             if bridge.link.dead_reason is not None:
                 return  # the link is gone, not the robot's answer: the poll loop reports why
-            if not self._warned_no_catalog:
-                self._warned_no_catalog = True
+            if not self._warned_catalog_failure:
+                self._warned_catalog_failure = True
                 self.get_logger().warning(
-                    "the robot did not answer GetCatalog (firmware without the signal table?); "
+                    f"catalog read failed ({exc}); "
                     "continuing with odometry and IMU only, no firmware parameters or signals"
                 )
             return
-        self._warned_no_catalog = False
         try:
             self._expose_firmware_parameters(bridge)
         except LinkError as exc:

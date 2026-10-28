@@ -280,7 +280,7 @@ def test_a_restart_with_an_unusable_firmware_parameter_name_keeps_the_others(har
     assert h.node_errors() == []
 
 
-def test_a_restarted_robot_without_a_catalog_takes_its_firmware_parameters_away(harness):
+def test_a_restart_whose_catalog_read_fails_takes_the_firmware_parameters_away(harness):
     fw = DeafFirmware()
     h = harness(fw)
     assert h.node.has_parameter("speed_ki")
@@ -289,7 +289,7 @@ def test_a_restarted_robot_without_a_catalog_takes_its_firmware_parameters_away(
     fw.log("boot", "system")
     h.spin(3.0, until=lambda: h.node_warnings())
     assert h.node_warnings() == [
-        "the robot did not answer GetCatalog (firmware without the signal table?); "
+        "catalog read failed (no reply to get_catalog); "
         "continuing with odometry and IMU only, no firmware parameters or signals"]
     assert not h.node.has_parameter("speed_ki")
     assert not h.node.has_parameter("speed_kp")
@@ -322,7 +322,7 @@ def test_a_link_that_dies_before_the_catalog_is_read_reports_the_dead_link_not_t
     assert h.node_warnings() == []
 
 
-def test_firmware_without_a_catalog_gives_one_warning_and_keeps_publishing_telemetry(harness):
+def test_a_silent_catalog_read_gives_one_warning_and_keeps_publishing_telemetry(harness):
     imu = pb.Message(seq=1, imu=pb.Imu(t_us=5, gz=0.5))
     h = harness(FakeFirmware(), transport=WireTransport(encode_frame(imu.SerializeToString()), start_after_s=0.3),
                 link_args={"timeout_s": 0.02, "retries": 2})
@@ -332,7 +332,7 @@ def test_firmware_without_a_catalog_gives_one_warning_and_keeps_publishing_telem
     h.spin(0.3)
     assert len(got) == 1 and got[0].angular_velocity.z == 0.5
     assert h.node_warnings() == [
-        "the robot did not answer GetCatalog (firmware without the signal table?); "
+        "catalog read failed (no reply to get_catalog); "
         "continuing with odometry and IMU only, no firmware parameters or signals"]
     assert not h.node.has_parameter("speed_kp")
     result = h.node.set_parameters([Parameter("signals", value=["speed_target"])])[0]
@@ -366,7 +366,7 @@ def test_tests_run_in_their_own_ros_graph(harness):
 
 
 class DeafFirmware(FakeFirmware):
-    """Ignores the named request kinds, as old firmware or a stuck robot does."""
+    """Ignores the named request kinds, as a stuck robot does."""
 
     ignored = frozenset()
 
@@ -444,7 +444,7 @@ class OdomLog:
         return all(b > a for a, b in zip(self.stamps, self.stamps[1:]))
 
 
-def test_odometry_keeps_its_cadence_while_the_robot_ignores_get_catalog(harness):
+def test_a_silent_catalog_read_does_not_stall_odometry(harness):
     fw = DeafFirmware()
     fw.ignored = frozenset({"get_catalog"})
     feeder = TelemetryFeeder(fw)
@@ -463,7 +463,7 @@ def test_odometry_keeps_its_cadence_while_the_robot_ignores_get_catalog(harness)
     assert odom.stamps_strictly_increase()
 
 
-def test_odometry_keeps_its_cadence_while_a_restarted_robot_ignores_get_catalog(harness):
+def test_a_catalog_read_that_fails_after_a_restart_does_not_stall_odometry(harness):
     fw = DeafFirmware()
     h = harness(fw)
     odom = OdomLog(h)
