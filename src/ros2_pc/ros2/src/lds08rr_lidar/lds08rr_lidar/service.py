@@ -41,9 +41,10 @@ def page_host(bind_host: str) -> str:
         return "127.0.0.1"
 
 
-def build_slam_control(node):
+def build_slam_control(node, localization):
     from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 
+    from .localization import GlobalLocalizer
     from .slam import BASE_PARAMS, DEFAULT_SLAM_DIR, MapStore, SlamControl, SlamProcess, slam_command
 
     try:
@@ -53,14 +54,25 @@ def build_slam_control(node):
         return None
     store = MapStore(DEFAULT_SLAM_DIR)
     base = BASE_PARAMS.read_text(encoding="utf-8")
-    process = SlamProcess(lambda: slam_command(store.params_file(base)), DEFAULT_SLAM_DIR / "slam.log")
-    return SlamControl(store, process, node.serialize_map)
+    # The process builds its command on every start and restart, so it asks the control which launch to run.
+    process = SlamProcess(lambda: control.command(), DEFAULT_SLAM_DIR / "slam.log")
+    control = SlamControl(
+        store,
+        process,
+        node.serialize_map,
+        localizer=GlobalLocalizer(node.call_service, localization),
+        tracker=localization,
+        slam_state=node.slam,
+        mapping_command=lambda: slam_command(store.params_file(base)),
+    )
+    return control
 
 
 def run(argv=None) -> int:
     args = parse_args(argv)
     from werkzeug.serving import make_server
 
+    from .localization import LocalizationTracker
     from .slam import DEFAULT_SLAM_DIR
     from .source import SourceConfig
     from .web import make_lidar_app
@@ -91,9 +103,10 @@ def run(argv=None) -> int:
 
             shutdown_exceptions = (KeyboardInterrupt, ExternalShutdownException)
             rclpy.init()
-            node = LidarNode(config)
+            localization = LocalizationTracker()
+            node = LidarNode(config, localization)
             runtime = node.runtime
-            control = None if args.demo else build_slam_control(node)
+            control = None if args.demo else build_slam_control(node, localization)
     if runtime is None:
         from .runtime import LidarRuntime
 
@@ -111,7 +124,7 @@ def run(argv=None) -> int:
     runtime.start()
     if control is not None:
         control.start()
-        print(f"SLAM: slam_toolbox started, map dir {DEFAULT_SLAM_DIR}", flush=True)
+        print(f"SLAM: {control.mode} started, map dir {DEFAULT_SLAM_DIR}", flush=True)
     thread = threading.Thread(target=server.serve_forever, name="lds08rr-http", daemon=True)
     thread.start()
     url_host = page_host(args.host)

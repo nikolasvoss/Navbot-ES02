@@ -8,6 +8,7 @@ import pytest
 
 pytest.importorskip("flask")
 
+from lds08rr_lidar.localization import LocalizationTracker, localization_command
 from lds08rr_lidar.runtime import LidarRuntime
 from lds08rr_lidar.slam import MapStore, SlamControl, SlamProcess, SlamState, export_occupancy, grid_to_dict
 from lds08rr_lidar.source import SourceConfig
@@ -287,6 +288,217 @@ def test_slam_control_keeps_the_old_map_when_the_export_fails(tmp_path):
     assert (tmp_path / "map.pgm").read_text(encoding="utf-8") == "pgm"
     assert (tmp_path / "map.yaml").read_text(encoding="utf-8") == "image: map.pgm\n"
     assert not list(tmp_path.glob("map.saving.*"))
+
+
+class RecordingProcess:
+    """Records each start with the command the control builds for it, as the supervisor does."""
+
+    def __init__(self, events):
+        self.events = events
+        self.command = None
+
+    def start(self):
+        command = self.command()
+        self.events.append(("process start", command))
+
+    def stop(self, timeout=10.0):
+        self.events.append(("process stop",))
+
+    def status(self):
+        return {"state": "running", "pid": 1, "exit_code": None, "restarts": 0, "error": None}
+
+
+class RecordingLocalizer:
+    def __init__(self, events):
+        self.events = events
+
+    def start(self):
+        self.events.append(("localizer start",))
+
+    def stop(self):
+        self.events.append(("localizer stop",))
+
+
+class RecordingSlamState:
+    def __init__(self):
+        self.calls = []
+
+    def clear(self):
+        self.calls.append(("clear",))
+
+    def set_map_latched(self, latched):
+        self.calls.append(("latched", latched))
+
+
+def mode_control(tmp_path, events, tracker=None, slam_state=None):
+    store = MapStore(tmp_path)
+    process = RecordingProcess(events)
+    control = SlamControl(
+        store, process, write_serialized_map, write_occupancy,
+        localizer=RecordingLocalizer(events), tracker=tracker, slam_state=slam_state,
+        mapping_command=lambda: ["mapping-launch"],
+    )
+    process.command = control.command
+    return control, store
+
+
+def test_boot_mode_is_localization_only_when_the_occupancy_image_exists(tmp_path):
+    control, _ = mode_control(tmp_path, [])
+    assert control.initial_mode() == "mapping"
+    Path(tmp_path, "map.posegraph").write_text("graph", encoding="utf-8")
+    assert control.initial_mode() == "mapping"
+    Path(tmp_path, "map.yaml").write_text("image: map.pgm\n", encoding="utf-8")
+    assert control.initial_mode() == "localization"
+
+
+def test_start_without_a_map_runs_mapping_and_no_localizer(tmp_path):
+    events = []
+    slam_state = RecordingSlamState()
+    control, _ = mode_control(tmp_path, events, tracker=LocalizationTracker(), slam_state=slam_state)
+    control.start()
+    assert control.mode == "mapping"
+    assert events == [("process start", ["mapping-launch"])]
+    assert slam_state.calls == [("clear",), ("latched", False)]
+
+
+def test_start_boots_into_localization_on_the_saved_occupancy_map(tmp_path):
+    events = []
+    slam_state = RecordingSlamState()
+    tracker = LocalizationTracker()
+    control, store = mode_control(tmp_path, events, tracker=tracker, slam_state=slam_state)
+    assert control.save() is None
+    control.start()
+    assert control.mode == "localization"
+    assert events == [
+        ("localizer start",),
+        ("process start", localization_command(store.occupancy_yaml())),
+    ]
+    assert slam_state.calls == [("clear",), ("latched", True)]
+    assert tracker.snapshot()["state"] == "idle"
+
+
+def test_set_mode_stops_the_running_launch_and_starts_the_other(tmp_path):
+    events = []
+    control, store = mode_control(tmp_path, events)
+    control.save()
+    control.start()
+    events.clear()
+
+    assert control.set_mode("mapping") is None
+    assert control.mode == "mapping"
+    assert events == [
+        ("process stop",),
+        ("localizer stop",),
+        ("process start", ["mapping-launch"]),
+    ]
+
+    events.clear()
+    assert control.set_mode("localization") is None
+    assert control.mode == "localization"
+    assert events == [
+        ("process stop",),
+        ("localizer stop",),
+        ("localizer start",),
+        ("process start", localization_command(store.occupancy_yaml())),
+    ]
+
+    events.clear()
+    assert control.set_mode("localization") is None
+    assert events == []
+
+
+def test_switching_mode_clears_the_view_and_the_pose(tmp_path):
+    slam_state = RecordingSlamState()
+    tracker = LocalizationTracker()
+    control, _ = mode_control(tmp_path, [], tracker=tracker, slam_state=slam_state)
+    control.save()
+    control.start()
+    assert slam_state.calls == [("clear",), ("latched", True)]
+    tracker.start_search()
+    assert tracker.snapshot()["state"] == "searching"
+
+    slam_state.calls.clear()
+    assert control.set_mode("mapping") is None
+    assert slam_state.calls == [("clear",), ("latched", False)]
+    assert tracker.snapshot()["state"] == "idle"
+
+
+def test_set_mode_refuses_localization_without_an_occupancy_map_and_unknown_modes(tmp_path):
+    events = []
+    control, _ = mode_control(tmp_path, events)
+    control.start()
+    events.clear()
+
+    assert control.set_mode("localization") == "No occupancy map to localize on; save the map once in mapping mode first"
+    assert control.set_mode("nonsense") == "unknown mode 'nonsense'; use mapping or localization"
+    assert control.mode == "mapping"
+    assert events == []
+
+
+def test_save_and_locate_are_refused_in_the_wrong_mode(tmp_path):
+    events = []
+    control, store = mode_control(tmp_path, events, tracker=LocalizationTracker())
+    assert control.save() is None
+    control.start()
+    before = store.occupancy_yaml().read_text(encoding="utf-8")
+    events.clear()
+
+    assert control.save() == "Save needs mapping mode; switch to mapping first"
+    assert store.occupancy_yaml().read_text(encoding="utf-8") == before
+    assert events == []
+
+    assert control.locate() is None
+    assert events == [("localizer start",)]
+
+    control.set_mode("mapping")
+    events.clear()
+    assert control.locate() == "Locate needs localization mode; switch to localization first"
+    assert events == []
+    assert control.save() is None
+
+
+def test_every_localization_launch_starts_the_global_search(tmp_path):
+    events = []
+    control, store = mode_control(tmp_path, events)
+    control.save()
+    control.start()
+    events.clear()
+
+    assert control.command() == localization_command(store.occupancy_yaml())
+    assert events == [("localizer start",)]
+
+
+def test_delete_in_localization_ends_in_mapping(tmp_path):
+    events = []
+    control, store = mode_control(tmp_path, events)
+    control.save()
+    control.start()
+    events.clear()
+
+    control.delete()
+    assert not store.exists() and not store.has_occupancy()
+    assert control.mode == "mapping"
+    assert events == [
+        ("process stop",),
+        ("localizer stop",),
+        ("process start", ["mapping-launch"]),
+    ]
+
+
+def test_stop_stops_the_launch_and_the_localizer(tmp_path):
+    events = []
+    control, _ = mode_control(tmp_path, events)
+    control.stop()
+    assert events == [("process stop",), ("localizer stop",)]
+
+
+def test_status_reports_the_mode_and_the_localization_snapshot(tmp_path):
+    tracker = LocalizationTracker()
+    control, _ = mode_control(tmp_path, [], tracker=tracker)
+    control.start()
+    shown = control.status()
+    assert shown["mode"] == "mapping"
+    assert shown["localization"] == tracker.snapshot()
 
 
 FAKE_ROS2_HEAD = (
