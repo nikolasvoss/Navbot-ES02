@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import rclpy
 import serial
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.exceptions import ParameterException
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
@@ -179,6 +180,7 @@ class LinkBridgeNode(Node):
     def _attach_catalog(self, bridge: LinkBridge) -> None:
         controls = bridge.controls
         if not controls.attach():
+            self._forget_firmware_parameters()  # no catalog, no firmware parameters
             if not self._warned_no_catalog:
                 self._warned_no_catalog = True
                 self.get_logger().warning(
@@ -193,32 +195,50 @@ class LinkBridgeNode(Node):
             self.get_logger().warning(f"reading firmware parameters failed: {exc}")
         self._subscribe_configured_signals(bridge)
 
-    def _expose_firmware_parameters(self, bridge: LinkBridge) -> None:
+    def _forget_firmware_parameters(self) -> None:
         for name in self._firmware_params:
             self.undeclare_parameter(name)
         self._firmware_params.clear()
+
+    def _expose_firmware_parameters(self, bridge: LinkBridge) -> None:
+        self._forget_firmware_parameters()
         for info in bridge.controls.params():
             if self.has_parameter(info.name):
                 self.get_logger().warning(f"firmware parameter {info.name} clashes with a bridge parameter; not exposed")
                 continue
-            self._mirror(info.name, info.value)
+            if not self._declare_firmware_parameter(info.name, info.value):
+                continue
             self._firmware_params.add(info.name)
             wanted = self.get_parameter(info.name).value
-            if wanted != info.value:  # a launch-file or command-line value for a firmware parameter
-                reason, applied = bridge.controls.apply_param(info.name, wanted)
-                if reason:
-                    self.get_logger().warning(f"startup value of {info.name} not applied: {reason}")
-                    self._mirror(info.name, info.value)
-                elif applied != wanted:
-                    self._mirror(info.name, applied)
+            if type(wanted) is type(info.value) and wanted == info.value:
+                continue
+            # A launch-file or command-line value for a firmware parameter, sent once the catalog is read.
+            reason, applied = bridge.controls.apply_param(info.name, wanted)
+            if reason:
+                self.get_logger().warning(f"startup value of {info.name} not applied: {reason}")
+                applied = info.value
+            self._mirror(info.name, applied)
+
+    def _declare_firmware_parameter(self, name: str, value) -> bool:
+        """Dynamically typed, so that an integer startup value for an f32 parameter is accepted and
+        stored as the float the robot takes (rclpy would refuse it against a double). False and a warning
+        when rclpy refuses the name."""
+        self._mirroring = True
+        try:
+            self.declare_parameter(name, value, ParameterDescriptor(dynamic_typing=True))
+            return True
+        except ParameterException as exc:
+            self.get_logger().warning(f"firmware parameter {name!r} not exposed: {str(exc).strip()}")
+            return False
+        finally:
+            self._mirroring = False
 
     def _mirror(self, name: str, value) -> None:
         self._mirroring = True
         try:
-            if self.has_parameter(name):
-                self.set_parameters([Parameter(name, value=value)])
-            else:
-                self.declare_parameter(name, value)
+            self.set_parameters([Parameter(name, value=value)])
+        except ParameterException as exc:
+            self.get_logger().warning(f"{name} not stored as {value!r}: {str(exc).strip()}")
         finally:
             self._mirroring = False
 

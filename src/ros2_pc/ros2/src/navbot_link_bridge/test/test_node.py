@@ -17,7 +17,7 @@ from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor  # noq
 from nav_msgs.msg import Odometry  # noqa: E402
 from rcl_interfaces.srv import SetParameters  # noqa: E402
 
-from fake_firmware import FakeFirmware, MemoryTransport, speed_loop_table  # noqa: E402
+from fake_firmware import FakeEntry, FakeFirmware, MemoryTransport, speed_loop_table  # noqa: E402
 from helpers import WireTransport  # noqa: E402
 from navbot_link import navbot_link_pb2 as pb  # noqa: E402
 from navbot_link.framing import encode_frame  # noqa: E402
@@ -75,6 +75,9 @@ class Harness:
 
     def node_warnings(self):
         return [m.msg for m in self.rosout if m.name == "navbot_link_bridge" and m.level == 30]
+
+    def node_errors(self):
+        return [m.msg for m in self.rosout if m.name == "navbot_link_bridge" and m.level == 40]
 
     def robot_lines(self):
         return [(m.level, m.name, m.msg) for m in self.rosout if m.name != "navbot_link_bridge"]
@@ -207,6 +210,73 @@ def test_startup_value_of_a_firmware_parameter_is_applied_or_reported(harness):
     assert h.node.get_parameter("speed_kp").value == 0.07999999821186066
     assert h.node_warnings() == [
         "startup value of speed_kp not applied: set_param refused: speed_kp must be within [0, 0.5]"]
+
+
+def test_an_integer_startup_value_of_an_f32_parameter_is_taken_as_a_float(harness):
+    fw = FakeFirmware(entries=limited_table())
+    h = harness(fw, ros_args=[Parameter("speed_kp", value=0)])
+    h.spin(0.3)
+    assert [e.value for e in fw.entries if e.name == "speed_kp"] == [0.0]
+    assert (h.node.get_parameter("speed_kp").value, type(h.node.get_parameter("speed_kp").value)) == (0.0, float)
+    assert h.node_errors() == []
+    assert h.node_warnings() == []
+
+
+def test_an_integer_set_of_an_f32_parameter_is_stored_as_a_float(harness):
+    fw = FakeFirmware(entries=limited_table())
+    h = harness(fw)
+    result = h.node.set_parameters([Parameter("speed_kp", value=0)])[0]
+    assert (result.successful, result.reason) == (True, "")
+    assert [e.value for e in fw.entries if e.name == "speed_kp"] == [0.0]
+    assert (h.node.get_parameter("speed_kp").value, type(h.node.get_parameter("speed_kp").value)) == (0.0, float)
+
+
+def test_a_text_set_of_a_firmware_parameter_is_refused_with_the_type_rule(harness):
+    fw = FakeFirmware(entries=limited_table())
+    h = harness(fw)
+    result = h.node.set_parameters([Parameter("speed_kp", value="fast")])[0]
+    assert (result.successful, result.reason) == (False, "speed_kp takes a number, got 'fast'")
+    assert h.node.get_parameter("speed_kp").value == 0.07999999821186066
+
+
+def test_a_firmware_parameter_with_an_empty_name_is_skipped_with_a_warning(harness):
+    entries = speed_loop_table()
+    entries.insert(9, FakeEntry("", pb.CatalogEntry.PARAM, pb.CatalogEntry.F32, "", 1.0))
+    h = harness(FakeFirmware(entries=entries), ros_args=[Parameter("signals", value=["loop_count"]),
+                                                         Parameter("signals_rate_hz", value=100.0)])
+    h.spin(until=lambda: len(h.signals) >= 1 and h.node_warnings())
+    assert h.node_warnings() == ["firmware parameter '' not exposed: Invalid parameter name:"]
+    assert (h.node.get_parameter("speed_kp").value, h.node.get_parameter("speed_ki").value) == (
+        0.07999999821186066, 0.5)
+    assert h.node_errors() == []
+    assert list(h.signals[0].data) == [1_010_000.0, 101.0]
+
+
+def test_a_restart_with_an_unusable_firmware_parameter_name_keeps_the_others(harness):
+    fw = FakeFirmware()
+    h = harness(fw)
+    fw.entries.insert(9, FakeEntry("", pb.CatalogEntry.PARAM, pb.CatalogEntry.F32, "", 1.0))  # the new build
+    fw.restart()
+    fw.log("boot", "system")
+    h.spin(2.0, until=lambda: h.node_warnings())
+    assert h.node_warnings() == ["firmware parameter '' not exposed: Invalid parameter name:"]
+    assert h.node.has_parameter("speed_kp") and h.node.has_parameter("speed_ki")
+    assert h.node_errors() == []
+
+
+def test_a_restarted_robot_without_a_catalog_takes_its_firmware_parameters_away(harness):
+    fw = DeafFirmware()
+    h = harness(fw)
+    assert h.node.has_parameter("speed_ki")
+    fw.ignored = frozenset({"get_catalog"})
+    fw.restart()
+    fw.log("boot", "system")
+    h.spin(3.0, until=lambda: h.node_warnings())
+    assert h.node_warnings() == [
+        "the robot did not answer GetCatalog (firmware without the signal table?); "
+        "continuing with odometry and IMU only, no firmware parameters or signals"]
+    assert not h.node.has_parameter("speed_ki")
+    assert not h.node.has_parameter("speed_kp")
 
 
 def test_firmware_without_a_catalog_gives_one_warning_and_keeps_publishing_telemetry(harness):

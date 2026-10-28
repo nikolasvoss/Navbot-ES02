@@ -14,6 +14,21 @@ class ParamInfo:
     value: object  # bool, int or float, as read from the robot
 
 
+_TYPE_RULE = {Type.F32: "a number", Type.I32: "an integer", Type.U32: "an unsigned integer", Type.BOOL: "a bool"}
+
+
+def _as_type(type_: Type, value):
+    """The value the robot takes for `type_`, or None when the type does not fit. An int is taken
+    as a float by an f32 parameter; a bool is never a number."""
+    if type_ == Type.BOOL:
+        return value if isinstance(value, bool) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if type_ == Type.F32:
+        return float(value)
+    return value if isinstance(value, int) else None
+
+
 class FirmwareControls:
     """What the catalog makes possible. Without a catalog (firmware that does not
     answer GetCatalog) every operation refuses and the bridge carries telemetry only."""
@@ -60,15 +75,23 @@ class FirmwareControls:
         return self.apply_param(name, value)[0]
 
     def apply_param(self, name: str, value) -> tuple[str, object]:
-        """(reason, applied): "" and the value the robot kept (it may clamp), or why it did not apply it."""
+        """(reason, applied): "" and the value the robot kept (it may clamp), or why it did not apply it.
+        A value of the wrong type is refused here and never sent."""
         if self._catalog is None:
             return "the robot sent no catalog", None
         try:
-            return "", self._link.set(name, value)
+            type_ = self._catalog.param(name).type
+        except LinkError as exc:
+            return str(exc), None
+        taken = _as_type(type_, value)
+        if taken is None:
+            return f"{name} takes {_TYPE_RULE[type_]}, got {value!r}", None
+        try:
+            return "", self._link.set(name, taken)
         except LinkError as exc:
             return str(exc), None
         except struct.error:
-            return f"{name}: {value!r} does not fit {self._catalog.param(name).type.name.lower()}", None
+            return f"{name}: {value!r} does not fit {type_.name.lower()}", None
 
     def set_subscription(self, names: list[str], rate_hz: float) -> str:
         """Streams `names` (none stops the stream) at `rate_hz`, 0 for every control tick.
