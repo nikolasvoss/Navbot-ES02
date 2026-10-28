@@ -577,7 +577,7 @@ def test_export_occupancy_runs_map_saver_on_the_transient_local_map(tmp_path, mo
     assert (tmp_path / "map.yaml").read_text(encoding="utf-8") == "image: map.pgm\n"
     assert (bin_dir / "args.txt").read_text(encoding="utf-8").split("\n") == [
         "run", "nav2_map_server", "map_saver_cli", "-f", str(tmp_path / "map"),
-        "--ros-args", "-p", "map_subscribe_transient_local:=true", "",
+        "--ros-args", "-p", "map_subscribe_transient_local:=true", "-p", "save_map_timeout:=10.0", "",
     ]
 
 

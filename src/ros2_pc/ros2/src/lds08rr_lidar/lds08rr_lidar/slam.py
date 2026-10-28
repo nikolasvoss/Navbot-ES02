@@ -299,7 +299,8 @@ def export_occupancy(base: Path, timeout: float = 20.0) -> str | None:
     """Writes <base>.pgm and <base>.yaml from the live /map; the YAML names the image by its bare file name."""
     command = [
         "ros2", "run", "nav2_map_server", "map_saver_cli", "-f", str(base),
-        "--ros-args", "-p", "map_subscribe_transient_local:=true",
+        # slam_toolbox publishes /map every 2 s and delivery of a big map takes up to 3 s; the saver waits only 2 s by default.
+        "--ros-args", "-p", "map_subscribe_transient_local:=true", "-p", "save_map_timeout:=10.0",
     ]
     try:
         child = subprocess.Popen(
