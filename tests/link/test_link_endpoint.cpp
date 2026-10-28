@@ -316,5 +316,8 @@ int main() {
   Check(Is(sink.Take(1), kRepLeaseUsb) && sink.Take(0).empty(),
         "a lapsed lease is logged to the port that owned the slot");
 
+  Check(LinkLogReachesPort(kLinkPortUart) && !LinkLogReachesPort(kLinkPortUsb),
+        "Log frames reach UART1 and not USB, where they would land between K rows");
+
   return failed ? 1 : 0;
 }

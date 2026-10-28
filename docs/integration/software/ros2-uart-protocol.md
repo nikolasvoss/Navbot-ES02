@@ -42,7 +42,7 @@ The messages for the entry table of the [logging and control plan](../plans/logg
 - `SIGNAL_MIN` and `SIGNAL_MAX` entries report the lowest or highest value of every control tick since the previous row of the same subscription. Both restart after each row.
 - A request with more than 48 ids does not decode (nanopb rejects it) and gets no reply. The library never builds one.
 - `SignalBatch.rows` holds one row of `[t_us u32][4-byte value per id]`, little-endian, per frame. `t_us` is `micros()` at the start of the control tick.
-- `Log.tag` names the source of a log line. Every `Logging::message` of the firmware goes out as a `Log` frame on UART1 and on the USB port, also while a `K` log profile is active. A profile still keeps the text line off the USB port, so a USB capture of a profile holds a few binary frames between its CSV rows.
+- `Log.tag` names the source of a log line. Every `Logging::message` of the firmware goes out as a `Log` frame on UART1 only. The USB port carries no `Log` frames: between the CSV rows of a `K` profile they would corrupt the capture, until the profiles are removed (migration step 5).
 - nanopb bounds: 48 ids per subscription (196-byte row), 4 action arguments, 24-character names. The largest `Message` encodes to 229 bytes, below the 252-byte payload limit.
 
 ## Rules

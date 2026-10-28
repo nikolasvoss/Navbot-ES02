@@ -210,8 +210,9 @@ void LinkPublishLog(Logging::Level level, const char* tag, const char* text) {
   message.body.log.level = linkLevel(level);
   strncpy(message.body.log.tag, tag, sizeof(message.body.log.tag) - 1);
   strncpy(message.body.log.text, text, sizeof(message.body.log.text) - 1);
-  sendOn(uart, message);
-  sendOn(usb, message);
+  // USB stays free of Log frames: between K CSV rows they corrupt the capture until step 5 deletes K.
+  for (uint8_t port = 0; port < kLinkPortCount; ++port)
+    if (LinkLogReachesPort(port)) sendOn(runtimeOf(port), message);
 }
 
 int LinkUsbCommandAvailable() { return commandBytesLeft() ? static_cast<int>(commandLineLen - commandLinePos) : 0; }
