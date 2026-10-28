@@ -1,6 +1,6 @@
 # navlink: signals, parameters and actions over the link
 
-Status: **PC side only.** The `navbot_link` library and the `navlink` tool speak the catalog and subscription messages of the [protocol](ros2-uart-protocol.md#catalog-subscriptions-parameters-and-actions). **The robot firmware does not answer these messages yet**, so against the real robot `navlink` stops with `no reply to get_catalog`. The tool and the library were tested only against the fake firmware in `tests/navbot_link/`. The firmware side is migration step 3 of the [logging and control plan](../plans/logging-and-control-link.md#migration).
+Status: **works against the firmware's signal table; not yet run on the robot.** The `navbot_link` library and the `navlink` tool speak the catalog and subscription messages of the [protocol](ros2-uart-protocol.md#catalog-subscriptions-parameters-and-actions). The firmware answers them (migration step 3 of the [logging and control plan](../plans/logging-and-control-link.md#migration)) with 35 read-only signals, enough for the presets `trace`, `ctrl`, `bal` and `drive`. It has no parameters and no actions yet, so `set` and `call` are refused by the robot. The tool and the library were tested against the fake firmware in `tests/navbot_link/` and against the firmware's own endpoint code built for the host.
 
 ## Run
 
@@ -73,7 +73,27 @@ speed_loop:
   signals: [speed_target, speed_measured, speed_p, speed_i, tilt_ref, tilt_clipped]
 ```
 
-`speed_loop` is the only preset. Presets that replace the `K55` to `K58` profiles follow once the firmware table carries their signals.
+The presets in [scripts/navlink_presets.yaml](../../../scripts/navlink_presets.yaml):
+
+| Preset | Replaces | Signals | Rate |
+| --- | --- | --- | --- |
+| `trace` | `K55` TRACE | 13 | 100 Hz |
+| `ctrl` | `K56` CTRL | 10 | 100 Hz |
+| `bal` | `K57` BAL | 7 | 100 Hz |
+| `drive` | `K58` DRIVE | 28 | 100 Hz |
+| `speed_loop` | none | 6 | 100 Hz |
+
+`speed_loop` names signals that only the test firmware has; the robot's table has no speed-loop signals yet. The four K presets use the column names of the K profiles ([trace capture](../../robot/software/trace-capture.md)), with these differences:
+
+- `time_ms`, `sequence`, `logger_dropped` and `uart_write_failures` are gone. `t_us` replaces the time stamp, and the link's frame numbers (`# lost` comment lines) replace the counters.
+- `servo1_range_deg` to `servo4_range_deg` and `max_servo_range_deg` become `leg_pose_min_deg` and `leg_pose_max_deg`, the lowest and highest leg pose over the ticks since the previous row. The four servos take the same angle, so the range is the maximum minus the minimum. The values are the unrounded pose, and the K range is taken from the rounded servo commands.
+- `roll_ok` is `roll_deg`, and `max_loop_entry_interval_us` is `loop_interval_max_us` (the catalog allows 24 characters). `battery_filtered_instant_v` is left out because it has the value of `voltage_filtered_v`.
+- A K row is printed on every 7th control tick. A preset row is due every 10 ms, so both give about 100 rows per second at 710 ticks per second.
+- `voltage_min_raw_v`, `loop_interval_max_us` and the leg pose limits are running minimum and maximum values: they cover every tick since the previous row, as the K columns do.
+
+`tests/scripts/test_navlink_presets.py` compares each K preset with the column list of its profile in `scripts/capture_balance_trace.py`, and resolves every preset against `src/ES-02/OllieFOCdrive/signals.def.h`. A renamed or removed signal fails that test.
+
+To compare a preset with a K profile on the robot, capture both during the same run (UART1 for the preset, USB for the K profile) and compare the columns by name; the rows differ in time stamps.
 
 ## Library
 
@@ -89,7 +109,9 @@ speed_loop:
 ## Tests
 
 ```bash
-python3 -m pytest -q tests/navbot_link tests/scripts/test_navlink.py
+python3 -m pytest -q tests/navbot_link tests/scripts
 ```
+
+`tests/navbot_link/test_firmware_endpoint.py` runs the library against the firmware's endpoint code (`link_endpoint.cpp` and its parts) built for the host with `c++`; it is skipped where no compiler is installed. `scripts/signals_catalog.py` prints the entries of `signals.def.h`; the tests use it as the expected catalog.
 
 `tests/navbot_link/fake_firmware.py` implements the robot side of the catalog, subscription, parameter and action messages, with leases, seq gaps, restarts and USB text. Its clock advances one control tick per read while a subscription is active, so rows and `t_us` are reproducible. The tests run the library and `navlink` against it in memory and, for one capture, as a separate process on a pseudo-terminal. They check request bytes, CSV files and shell output against literal values. The example file above is the start of the preset capture test output.

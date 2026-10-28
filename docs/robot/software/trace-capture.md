@@ -50,3 +50,7 @@ python3 scripts/analyze_drive_trace.py drive-test-01.log drive-test-02.log --req
 ```
 
 `--format json` provides the same measurements for other scripts. A trial with neutral CH3 or a strongly tilted start is flagged as unsuitable for a stop comparison; it is not interpreted as a controller improvement or regression.
+
+## The same columns over the NavBot link
+
+The firmware also serves the `K55` to `K58` values as signals of the [NavBot link](../../integration/software/ros2-uart-protocol.md). The presets `trace`, `ctrl`, `bal` and `drive` of [navlink](../../integration/software/navlink.md#presets) stream them as binary rows from the ros2_pc UART or the USB port and write a CSV with the column names above. The `K` commands and profiles work as before, also while a preset streams. A few columns differ (no `time_ms` or logger counters, the servo range as a minimum and maximum); navlink lists them. While a `K` profile is active, the USB port now also carries binary `Log` frames between the CSV rows, one for each firmware message; the capture scripts treat them as malformed lines.
