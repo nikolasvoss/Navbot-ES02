@@ -1,5 +1,6 @@
 """The node against the in-memory firmware. Needs a sourced ROS 2; skipped otherwise."""
 
+import os
 import time
 
 import pytest
@@ -194,3 +195,11 @@ def test_a_robot_restart_reads_the_catalog_again_and_resumes_the_stream(harness)
     assert h.node.has_parameter("speed_kp")
     assert fw.subscribed_slots() == [1]
     assert len(h.signals) > seen
+
+
+def test_tests_run_in_their_own_ros_graph(harness):
+    h = harness(FakeFirmware())
+    h.spin(1.0)
+    assert (os.environ["ROS_DOMAIN_ID"], os.environ["ROS_LOCALHOST_ONLY"]) == ("77", "1")
+    # Only the node under test publishes here; a bridge running on this machine must not show up.
+    assert (h.listener.count_publishers("imu/data"), h.listener.count_publishers("odom")) == (1, 1)

@@ -111,3 +111,5 @@ PYTHONPATH=src:src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/
 source /opt/ros/jazzy/setup.bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=$PYTHONPATH:src:src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test
 ```
+
+The node tests must not share the ROS graph with a bridge that runs on the same machine: that bridge publishes `/odom` and `/imu/data`, and a test node would receive and publish into the same topics. `test/conftest.py` therefore sets `ROS_DOMAIN_ID=77` and `ROS_LOCALHOST_ONLY=1` before `rclpy.init()`. Keep this when you add a test, and when you run a node test by hand, do not unset these variables.
