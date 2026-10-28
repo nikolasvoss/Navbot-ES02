@@ -17,7 +17,8 @@
     [hidden] { display: none !important; }
     .grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: .65rem; min-height: 0; }
     section { min-width: 0; min-height: 0; background: #18232d; border: 1px solid #354552; border-radius: .6rem; padding: .7rem; }
-    .scan { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: .35rem; }
+    .scan { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: .35rem; }
+    .readout { position: absolute; z-index: 1; margin: 0; padding: .2rem .45rem; border: 1px solid #637887; border-radius: .3rem; background: rgba(16, 24, 32, .9); color: #edf3f7; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
     .sidebar { overflow-y: auto; }
     .plotTools { justify-content: flex-end; flex-wrap: wrap; }
     .autoZoom { display: flex; align-items: center; gap: .35rem; white-space: nowrap; }
@@ -68,6 +69,7 @@
       </div>
       <div id="plotState">Waiting for a complete scan.</div>
       <canvas id="plot" aria-label="Live LiDAR scan" hidden></canvas>
+      <p id="readout" class="readout" hidden></p>
     </section>
     <section class="sidebar" aria-label="Connection and hardware status">
       <h2>Connection</h2>
@@ -107,6 +109,7 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
     const zoomIn = document.querySelector('#zoomIn');
     const zoomOut = document.querySelector('#zoomOut');
     const autoZoom = document.querySelector('#autoZoom');
+    const readout = document.querySelector('#readout');
     const minZoom = 0.5;
     const maxZoom = 8;
     let latestScan = null;
@@ -114,6 +117,35 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
     let targetRangeMm = 1000;
     let zoom = 1;
     let visible = false;
+    let lastView = null;
+    let lastPointer = null;
+    // pure:start
+    const ringTargetMax = 10;
+    function ringStepMm(visibleRangeMm) {
+      if (!Number.isFinite(visibleRangeMm) || visibleRangeMm <= 0) return 1000;
+      for (let decade = 1; ; decade *= 10) {
+        for (const multiple of [1, 2, 5]) {
+          const step = multiple * decade;
+          if (visibleRangeMm / step <= ringTargetMax) return step;
+        }
+      }
+    }
+    function formatRingMm(mm) {
+      if (mm < 10) return `${mm} mm`;
+      if (mm < 1000) return `${Number((mm / 10).toFixed(1))} cm`;
+      return `${Number((mm / 1000).toFixed(2))} m`;
+    }
+    function formatReadoutMm(mm) {
+      const cm = Math.round(mm / 10);
+      return cm < 100 ? `${cm} cm` : `${(cm / 100).toFixed(2)} m`;
+    }
+    function pointerReadout(dx, dy, radiusPx, rangeMm) {
+      return {
+        distanceMm: Math.hypot(dx, dy) / radiusPx * rangeMm,
+        bearingDeg: (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360,
+      };
+    }
+    // pure:end
     function summaryText(data) {
       if (data.mode === 'demo') {
         return data.state === 'demo' ? 'This animated scan is generated in software. It does not come from the LiDAR.' : 'The synthetic scan is not currently fresh.';
@@ -134,9 +166,34 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
       plotState.textContent = message;
       if (!show) {
         latestScan = null;
+        lastView = null;
         context.clearRect(0, 0, canvas.width, canvas.height);
         rangeLabel.textContent = 'View radius: waiting';
+        hideReadout();
       }
+    }
+    function hideReadout() {
+      readout.hidden = true;
+    }
+    function showReadout() {
+      if (!lastView || !lastPointer) return hideReadout();
+      const rect = canvas.getBoundingClientRect();
+      const reading = pointerReadout(
+        lastPointer.x - rect.left - lastView.centerX,
+        lastPointer.y - rect.top - lastView.centerY,
+        lastView.radius,
+        lastView.range,
+      );
+      const distance = formatReadoutMm(reading.distanceMm);
+      const bearing = Math.round(reading.bearingDeg) % 360;
+      readout.textContent = Math.round(reading.distanceMm / 10) === 0 ? distance : `${distance} · ${bearing}°`;
+      const frame = canvas.parentElement.getBoundingClientRect();
+      const x = lastPointer.x - frame.left;
+      const y = lastPointer.y - frame.top;
+      readout.style.left = `${x + 12}px`;
+      readout.style.top = `${y + 12}px`;
+      readout.style.transform = x > frame.width / 2 ? 'translateX(calc(-100% - 24px))' : '';
+      readout.hidden = false;
     }
     function resizeCanvas() {
       const rect = canvas.getBoundingClientRect();
@@ -159,18 +216,23 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
       const centerY = height / 2;
       const radius = Math.max(1, Math.min(width, height) * .46);
       const range = autoRangeMm / zoom;
+      const pxPerMm = radius / range;
+      lastView = { centerX, centerY, radius, range };
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, width, height);
       context.strokeStyle = '#354653';
       context.lineWidth = 1;
       context.fillStyle = '#9fb0bd';
       context.font = '12px system-ui, sans-serif';
-      for (let ring = 1; ring <= 4; ring++) {
-        const r = radius * ring / 4;
+      const step = ringStepMm(range);
+      const ringCount = Math.floor(range / step + 1e-9);
+      for (let ring = 1; ring <= ringCount; ring++) {
+        const distance = ring * step;
+        const r = distance * pxPerMm;
         context.beginPath();
         context.arc(centerX, centerY, r, 0, Math.PI * 2);
         context.stroke();
-        context.fillText(`${(range * ring / 4 / 1000).toFixed(1)} m`, centerX + 5, centerY - r - 4);
+        context.fillText(formatRingMm(distance), centerX + 5, centerY - r - 4);
       }
       context.beginPath();
       for (let degrees = 30; degrees < 360; degrees += 30) {
@@ -187,6 +249,24 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
       context.moveTo(centerX, centerY - radius);
       context.lineTo(centerX, centerY + radius);
       context.stroke();
+      // Minor ticks at a tenth of the ring step, on all four axes; skipped when they would be closer than 2 px.
+      const minorStep = step / 10;
+      const minorPx = minorStep * pxPerMm;
+      if (minorPx >= 2) {
+        const tickCount = Math.floor(range / minorStep + 1e-9);
+        const axes = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+        context.beginPath();
+        for (const [ux, uy] of axes) {
+          for (let tick = 1; tick <= tickCount; tick++) {
+            const x = centerX + ux * tick * minorPx;
+            const y = centerY + uy * tick * minorPx;
+            const half = tick % 10 === 0 ? 5 : 3;
+            context.moveTo(x - uy * half, y - ux * half);
+            context.lineTo(x + uy * half, y + ux * half);
+          }
+        }
+        context.stroke();
+      }
       context.fillStyle = '#70ffd0';
       for (const point of latestScan.points) {
         const angle = Number(point.angle) * Math.PI / 180;
@@ -221,6 +301,7 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
       rangeLabel.textContent = `View radius: ${(range / 1000).toFixed(2)} m · ${latestScan.n} points · ${Number(latestScan.freq_hz).toFixed(1)} Hz`;
       zoomIn.disabled = zoom >= maxZoom;
       zoomOut.disabled = zoom <= minZoom;
+      showReadout();
     }
     async function fetchJson(path, timeoutMs) {
       const controller = new AbortController();
@@ -297,6 +378,18 @@ python -m pip install 'lds2d[viz]==0.7.0'</pre>
     }
     zoomIn.addEventListener('click', () => { zoom = Math.min(maxZoom, zoom * 1.25); draw(); });
     zoomOut.addEventListener('click', () => { zoom = Math.max(minZoom, zoom / 1.25); draw(); });
+    for (const type of ['pointermove', 'pointerdown']) {
+      canvas.addEventListener(type, event => {
+        lastPointer = { x: event.clientX, y: event.clientY };
+        showReadout();
+      });
+    }
+    for (const type of ['pointerleave', 'pointercancel']) {
+      canvas.addEventListener(type, () => {
+        lastPointer = null;
+        hideReadout();
+      });
+    }
     window.addEventListener('resize', resizeCanvas);
     new ResizeObserver(resizeCanvas).observe(canvas);
     refresh();
