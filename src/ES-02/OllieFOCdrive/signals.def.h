@@ -25,7 +25,7 @@ SIGNAL    (roll_deg,              "deg",   imu::latest().correctedRollDegrees)
 SIGNAL    (pitch_deg,             "deg",   imu::latest().correctedPitchDegrees)
 SIGNAL    (gyro_z_rad_s,          "rad/s", imu::latest().angularVelocityRadPerSec.z)
 
-// Legs: the four servos get the same angle; the window of leg_pose is what the K profiles report as servo range
+// Legs: the four servos get the same angle, so the leg_pose window is the servo range of each row
 SIGNAL    (servo1_cmd_deg,        "deg",   servoTraceAngle[0])
 SIGNAL    (servo2_cmd_deg,        "deg",   servoTraceAngle[1])
 SIGNAL    (servo3_cmd_deg,        "deg",   servoTraceAngle[2])

@@ -70,7 +70,7 @@ constexpr float kControlTimestepMinSec = 0.001f;
 constexpr unsigned long kSerialBaudRate = LINK_USB_BAUD;
 constexpr size_t kSerialTxBufferBytes = 1024;
 constexpr size_t kSerialRxBufferBytes = 512;
-#define DIAGNOSTIC_LOG_INTERVAL_US 5000  // Diagnostic CSV rows are emitted at 200 Hz.
+#define DIAGNOSTIC_LOG_INTERVAL_US 5000  // Sample period the diagnostic battery filter is designed for (200 Hz).
 constexpr unsigned int kDiagnosticLogSampleRateHz = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // -------------------------------------
 
