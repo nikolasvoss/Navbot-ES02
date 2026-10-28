@@ -181,6 +181,8 @@ class LinkBridgeNode(Node):
         controls = bridge.controls
         if not controls.attach():
             self._forget_firmware_parameters()  # no catalog, no firmware parameters
+            if bridge.link.dead_reason is not None:
+                return  # the link is gone, not the robot's answer: the poll loop reports why
             if not self._warned_no_catalog:
                 self._warned_no_catalog = True
                 self.get_logger().warning(

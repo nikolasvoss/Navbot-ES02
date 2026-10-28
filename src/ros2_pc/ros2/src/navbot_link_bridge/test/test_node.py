@@ -279,6 +279,33 @@ def test_a_restarted_robot_without_a_catalog_takes_its_firmware_parameters_away(
     assert not h.node.has_parameter("speed_kp")
 
 
+class PulledCable:
+    """Reads nothing, then fails the way a pulled USB cable does."""
+
+    def __init__(self, after_s: float = 0.1):
+        self._fail_at = time.monotonic() + after_s
+
+    def read(self) -> bytes:
+        time.sleep(0.001)
+        if time.monotonic() >= self._fail_at:
+            raise OSError("cable pulled")
+        return b""
+
+    def write(self, data: bytes) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+def test_a_link_that_dies_before_the_catalog_is_read_reports_the_dead_link_not_the_robot(harness):
+    h = harness(FakeFirmware(), transport=PulledCable(), wait_for_attach=False)
+    assert h.node.attached.wait(3.0)  # the catalog wait ends at once with the dead link
+    h.spin(1.0, until=lambda: h.node_errors())
+    assert h.node_errors()[0] == "link failed: cable pulled; reopening"
+    assert h.node_warnings() == []
+
+
 def test_firmware_without_a_catalog_gives_one_warning_and_keeps_publishing_telemetry(harness):
     imu = pb.Message(seq=1, imu=pb.Imu(t_us=5, gz=0.5))
     h = harness(FakeFirmware(), transport=WireTransport(encode_frame(imu.SerializeToString()), start_after_s=0.3),

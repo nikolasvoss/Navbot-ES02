@@ -203,6 +203,12 @@ class Link:
         return self._seq_in.restarts
 
     @property
+    def dead_reason(self) -> str | None:
+        """Why the I/O thread stopped (a Disconnected event follows); None while the link is up."""
+        with self._lock:
+            return self._dead
+
+    @property
     def slots(self) -> tuple[int, ...]:
         """Slots this link holds, including ones whose unsubscribe is unconfirmed."""
         with self._lock:
