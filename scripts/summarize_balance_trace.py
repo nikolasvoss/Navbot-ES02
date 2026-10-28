@@ -75,7 +75,7 @@ def read_trace(path):
     with path.open("r", encoding="utf-8", errors="replace", newline="") as source:
         lines = [line for line in (physical.replace("\x00", "").strip() for physical in source) if line]
     if any(line.startswith(NAVLINK_COLUMN_HEADER) for line in lines):
-        return read_navlink(lines)
+        return read_navlink(lines, path)
     return read_k_profile(lines)
 
 
@@ -146,7 +146,7 @@ def classify_t_us(raws, index, previous_raw):
     return "jump"
 
 
-def read_navlink(lines):
+def read_navlink(lines, path):
     """Rows get `t_us` (unwrapped) and `time_ms` = `t_us` / 1000, the column K logs call `time_ms`.
 
     `t_us` is the robot's `micros()`. A backward step that continues within MAX_STEP_US across 2^32
@@ -176,14 +176,20 @@ def read_navlink(lines):
         if columns is None:
             if line.startswith(NAVLINK_COLUMN_HEADER):
                 columns = line.split(",")
+                if "time_ms" in columns:
+                    raise ValueError(f"{path}: Spalte `time_ms` ist in navlink-Captures nicht erlaubt "
+                                     "(sie wird aus `t_us` berechnet)")
             continue
+        if line.startswith(NAVLINK_COLUMN_HEADER):
+            notes["warnings"].append("Zweiter Spaltenkopf `t_us,` in der Datei; spätere Zeilen wurden nicht ausgewertet")
+            break
         try:
             fields = next(csv.reader([line]))
         except csv.Error:
             malformed += 1
             continue
         parsed = parse_numbers(columns, fields) if len(fields) == len(columns) else None
-        if parsed is None:
+        if parsed is None or not 0 <= parsed["t_us"] < UINT32_RANGE:
             malformed += 1
             continue
         raw_rows.append(parsed)
@@ -328,7 +334,11 @@ def main():
     for path in args.logs:
         if not path.is_file():
             parser.error(f"Logdatei nicht gefunden: {path}")
-        sections.extend(summarize(path))
+        try:
+            sections.extend(summarize(path))
+        except ValueError as error:
+            print(f"summarize_balance_trace: {error}", file=sys.stderr)
+            return 1
     report = "\n".join(sections)
     if args.output:
         try:

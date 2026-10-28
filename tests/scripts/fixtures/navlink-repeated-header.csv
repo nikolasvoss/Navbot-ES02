@@ -1,0 +1,8 @@
+# synthetic navlink fixture for tests/scripts; not robot data
+# a second capture with other columns was appended to the first
+t_us,x
+1000000,1
+2000000,2
+t_us,y,z
+3000000,5,6
+4000000,7,8

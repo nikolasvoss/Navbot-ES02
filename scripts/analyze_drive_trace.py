@@ -41,7 +41,7 @@ def direction(row):
 
 
 def analyze(path):
-    kind, header, records, malformed, _ = read_trace(path)
+    kind, header, records, malformed, notes = read_trace(path)
     if kind not in ("DRIVE", NAVLINK) or not header:
         raise ValueError(f"{path}: kein DRIVE-Header")
     missing = sorted(REQUIRED - set(header))
@@ -131,6 +131,8 @@ def analyze(path):
                                                 for name in ("motor1_voltage_q", "motor2_voltage_q"))),
         "battery_raw_instant_min_v": rounded(min(row["battery_raw_instant_v"] for row in rows)),
     }
+    if notes.get("warnings"):
+        result["warnings"] = notes["warnings"]
     result["stop_available"] = bool(result["capture_ok"] and releases
                                     and first_active is not None
                                     and abs(first_active["roll_ok"]) <= 10)
@@ -171,6 +173,7 @@ def markdown(results):
             issues.append("Startneigung über 10°; Vergleich durch Anlauf gestört")
         if not issues:
             issues.append("Stoppereignis vorhanden; für einen Vergleich Impulsstärke und -dauer beachten")
+        issues.extend(f"Warnung: {warning}" for warning in run.get("warnings", []))
         lines.append(f"- `{run['file']}`: " + "; ".join(issues) + ".")
     lines.extend(["", "## Zeit- und Motorgrößen", "",
                   "| Log | IMU-Rate | IMU-Intervall Mittel | IMU-Lücken (Anteil) | IMU-Intervall max. (seit Start) "
