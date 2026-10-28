@@ -67,7 +67,7 @@ void LinkEndpoint::SendAck(uint8_t port, uint32_t requestSeq, const char* error,
   sink_.Send(port, reply);
 }
 
-// A started action is logged with its arguments, so a capture on UART1 shows what was started and with what.
+// A started action is logged with its arguments, so a capture on either port shows what was started and with what.
 void LinkEndpoint::SendActionLog(const SignalEntry& entry, SignalArgs args, const float* values) {
   char text[sizeof(navbot_link_v1_Log::text)];
   int length = snprintf(text, sizeof(text), "%s started", entry.name);
