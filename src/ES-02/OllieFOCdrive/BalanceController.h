@@ -199,6 +199,10 @@ struct Allocation {
   float reserve = 0.0f;
 };
 
+// Whether the configuration is usable, including the cross-field rules (trim envelope within the tilt reference limit).
+// update() latches InvalidConfig on an invalid Config, so a settings change is checked here before it is applied.
+bool configValid(const Config &config);
+
 class BalanceController {
  public:
   // Requires finite envelopes with min <= max on each wheel, as checked on each tick by update().

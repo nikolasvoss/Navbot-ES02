@@ -74,6 +74,8 @@ bool armingConditionsMet(const Measurements &measurements, const Request &reques
          std::fabs(measurements.rightWheelRadPerSec) <= config.armingWheelSpeedRadPerSec;
 }
 
+}  // namespace
+
 // Demand caps must be usable: a zero brake cap would hold the last speed when the request times out,
 // and a negative or NaN rate would move speed the wrong way. A zero slew rate would freeze the tilt
 // reference, and a zero wheel radius or loop period would divide by zero or never run the loop.
@@ -105,6 +107,8 @@ bool configValid(const Config &config) {
          std::isfinite(config.yawPAPerRadPerSec) && std::isfinite(config.reserveLowA) &&
          config.reserveLowA > 0.0f;
 }
+
+namespace {
 
 float nanToZero(float value) { return std::isnan(value) ? 0.0f : value; }
 

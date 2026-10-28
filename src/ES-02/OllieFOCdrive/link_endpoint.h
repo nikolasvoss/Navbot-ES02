@@ -43,7 +43,7 @@ class LinkEndpoint : private LinkRowSink {
   void OnLeaseExpired(uint8_t port, uint8_t slot) override;
 
   void SendAck(uint8_t port, uint32_t requestSeq, const char* error, const uint8_t* value, size_t valueLen);
-  void SendLog(uint8_t port, navbot_link_v1_Log_Level level, const char* tag, const char* text);
+  void SendLog(navbot_link_v1_Log_Level level, const char* tag, const char* text);
   void SendCatalogEntry(uint8_t port, uint32_t index);
   bool CheckIndex(uint8_t port, uint32_t requestSeq, uint32_t index);
 

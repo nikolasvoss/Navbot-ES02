@@ -21,6 +21,24 @@ void PutLe32(uint8_t* out, uint32_t value) {
   for (int shift = 0; shift < 4; ++shift) out[shift] = static_cast<uint8_t>(value >> (8 * shift));
 }
 
+uint32_t GetLe32(const uint8_t* in) {
+  return static_cast<uint32_t>(in[0]) | static_cast<uint32_t>(in[1]) << 8 | static_cast<uint32_t>(in[2]) << 16 |
+         static_cast<uint32_t>(in[3]) << 24;
+}
+
+// A value as the log shows it: a float with 6 significant digits, an integer or a bool as a plain number.
+void FormatValue(SignalType type, uint32_t bits, char (&out)[24]) {
+  if (type == SignalType::F32) {
+    float value;
+    memcpy(&value, &bits, sizeof(value));
+    snprintf(out, sizeof(out), "%.6g", static_cast<double>(value));
+  } else if (type == SignalType::I32) {
+    snprintf(out, sizeof(out), "%ld", static_cast<long>(static_cast<int32_t>(bits)));
+  } else {
+    snprintf(out, sizeof(out), "%lu", static_cast<unsigned long>(bits));
+  }
+}
+
 template <size_t N>
 void CopyText(char (&destination)[N], const char* source) {
   strncpy(destination, source, N - 1);
@@ -47,13 +65,13 @@ void LinkEndpoint::SendAck(uint8_t port, uint32_t requestSeq, const char* error,
   sink_.Send(port, reply);
 }
 
-void LinkEndpoint::SendLog(uint8_t port, navbot_link_v1_Log_Level level, const char* tag, const char* text) {
+void LinkEndpoint::SendLog(navbot_link_v1_Log_Level level, const char* tag, const char* text) {
   navbot_link_v1_Message message = navbot_link_v1_Message_init_zero;
   message.which_body = navbot_link_v1_Message_log_tag;
   message.body.log.level = level;
   CopyText(message.body.log.tag, tag);
   CopyText(message.body.log.text, text);
-  sink_.Send(port, message);
+  sink_.Send(kLinkPortUart, message);  // Log frames go to UART1 only (see LinkLogReachesPort)
 }
 
 void LinkEndpoint::SendCatalogEntry(uint8_t port, uint32_t index) {
@@ -129,11 +147,35 @@ void LinkEndpoint::Handle(uint8_t port, const uint8_t* payload, size_t len, uint
       break;
     }
     case navbot_link_v1_Message_set_param_tag: {
-      const uint32_t id = request.body.set_param.id;
-      if (!CheckIndex(port, seq, id)) break;
-      snprintf(error, sizeof(error), table_[id].kind == SignalKind::Param ? "%s cannot be set yet" : "%s is not a parameter",
-               table_[id].name);
-      SendAck(port, seq, error, nullptr, 0);
+      const navbot_link_v1_SetParam& set = request.body.set_param;
+      if (!CheckIndex(port, seq, set.id)) break;
+      const SignalEntry& entry = table_[set.id];
+      if (entry.kind != SignalKind::Param) {
+        snprintf(error, sizeof(error), "%s is not a parameter", entry.name);
+        SendAck(port, seq, error, nullptr, 0);
+        break;
+      }
+      if (set.value.size != 4) {
+        snprintf(error, sizeof(error), "%s takes a 4-byte value", entry.name);
+        SendAck(port, seq, error, nullptr, 0);
+        break;
+      }
+      const uint32_t before = entry.read();
+      const char* reason = nullptr;
+      if (!entry.write(GetLe32(set.value.bytes), &reason)) {
+        snprintf(error, sizeof(error), "%s: %s", entry.name, reason);
+        SendAck(port, seq, error, nullptr, 0);
+        break;
+      }
+      const uint32_t after = entry.read();
+      uint8_t value[4];
+      PutLe32(value, after);
+      SendAck(port, seq, nullptr, value, sizeof(value));
+      char oldText[24], newText[24], text[sizeof(navbot_link_v1_Log::text)];
+      FormatValue(entry.type, before, oldText);
+      FormatValue(entry.type, after, newText);
+      snprintf(text, sizeof(text), "%s: %s -> %s", entry.name, oldText, newText);
+      SendLog(navbot_link_v1_Log_Level_INFO, "param", text);
       break;
     }
     case navbot_link_v1_Message_call_tag: {
@@ -164,5 +206,5 @@ void LinkEndpoint::OnLeaseExpired(uint8_t port, uint8_t slot) {
   if (!LinkLogReachesPort(port)) return;  // a Log between K rows on USB would corrupt the capture
   char text[sizeof(navbot_link_v1_Log::text)];
   snprintf(text, sizeof(text), "slot %u lease expired", static_cast<unsigned>(slot));
-  SendLog(port, navbot_link_v1_Log_Level_WARN, "link", text);
+  SendLog(navbot_link_v1_Log_Level_WARN, "link", text);
 }
