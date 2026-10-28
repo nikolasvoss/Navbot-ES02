@@ -2,12 +2,12 @@
 
 The firmware names every value that the NavBot link can read, set or call in one file, [signals.def.h](../../../src/ES-02/OllieFOCdrive/signals.def.h). The link serves the table on both ports: the ros2_pc UART1 and the robot's USB port. The wire messages are in the [protocol](ros2-uart-protocol.md#catalog-subscriptions-parameters-and-actions); the PC side is [navlink](navlink.md).
 
-Implemented in migration steps 1 to 5 of the [logging and control plan](../plans/logging-and-control-link.md). The `K` selectors, the CSV log profiles and the letter commands are gone.
+The `K` selectors, the CSV log profiles and the letter commands are gone. The sensor diagnostic image serves the same table; its live entries are on the [sensor diagnostic mode](../../robot/software/sensor-diagnostic-mode.md#which-signals-are-live) page.
 
 ## Threads and ownership
 
 - **Receive:** one link task per port decodes frames and pushes requests into one request queue. It never touches robot state.
-- **Apply:** the control loop takes the queued requests at the start of each tick and applies them. It is the only writer of controller state, config and motor outputs, so a tick never sees a half-applied change. Sampling happens in the same task, so sampled rows are never torn.
+- **Apply:** the control loop takes the queued requests at the start of each tick and applies them (the sensor diagnostic loop does the same at the start of each pass). It is the only writer of controller state, config and motor outputs, so a tick never sees a half-applied change. Sampling happens in the same task, so sampled rows are never torn.
 - **Transmit:** each port has one TX queue and one writer task. The loop, odometry and IMU only push into the queue (non-blocking; a full queue drops and counts). The writer sends a frame only when `availableForWrite()` allows all of it. The loop never writes to a UART. This avoids the stall measured on 2026-10-22, where a blocking 314-byte write gave 4.5 to 7.3 ms loop passes ([lab note](../../../lab/robot/2026-10-22-package1-motor-diagnostic-first-run.md)).
 
 ## The entry table

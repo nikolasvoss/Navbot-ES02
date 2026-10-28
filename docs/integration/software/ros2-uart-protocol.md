@@ -25,7 +25,7 @@ Both directions use the same format. The PC writes a `0x00` before each frame it
 
 ## Catalog, subscriptions, parameters and actions
 
-The messages for the entry table of the [logging and control plan](../plans/logging-and-control-link.md). The firmware answers `GetCatalog`, `Subscribe`, `Unsubscribe`, `GetParam`, `SetParam` and `Call` on both ports and streams `SignalBatch` rows. Its table (`signals.def.h`) holds 35 signals, 17 parameters (balance, IMU and servo-trim settings) and 5 actions (motor tests, motor stop and reset, calibration). A refused request has its reason in `Ack.error`. [navlink](navlink.md) is the host side.
+The messages for the entry table in the [signal table](signal-table.md). The firmware answers `GetCatalog`, `Subscribe`, `Unsubscribe`, `GetParam`, `SetParam` and `Call` on both ports and streams `SignalBatch` rows. Its table (`signals.def.h`) holds 35 signals, 17 parameters (balance, IMU and servo-trim settings) and 5 actions (motor tests, motor stop and reset, calibration). A refused request has its reason in `Ack.error`. [navlink](navlink.md) is the host side.
 
 | PC → robot | Reply | Meaning |
 | --- | --- | --- |

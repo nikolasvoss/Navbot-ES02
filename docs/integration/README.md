@@ -12,5 +12,4 @@ The integration system is the connection between the robot (ESP32-S3) and the ro
 
 ## Plans
 
-- [Roadmap](plans/roadmap.md)
-- [Logging, telemetry and control over the NavBot link](plans/logging-and-control-link.md): the remaining migration steps (the sensor diagnostic mode and the ROS 2 bridge).
+- [Roadmap](plans/roadmap.md): the robot checks for the link, its logs and signals, and the open dashboard decision.

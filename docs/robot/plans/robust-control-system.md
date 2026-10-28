@@ -325,7 +325,7 @@ Status: implemented and accepted on 2026-10-22 on an unloaded robot (supported o
 
 Purpose: collect stage 1-3 data without changing the balance behavior.
 
-1. Telemetry additions as entries of the signal table in [signals.def.h](../../../src/ES-02/OllieFOCdrive/signals.def.h); no new protocol (the `K` selectors this item once extended are gone, see the [logging and control plan](../../integration/plans/logging-and-control-link.md)):
+1. Telemetry additions as entries of the signal table in [signals.def.h](../../../src/ES-02/OllieFOCdrive/signals.def.h); no new protocol (the `K` selectors this item once extended are gone, see the [signal table](../../integration/software/signal-table.md)):
    - IMU `sequence`, `readTimeUs`, `dtSec` from `imu::Snapshot`, and the `TimingStatistics` counters (`acceptedSamples`, `longGapCount`, `maxIntervalUs`);
    - control tick start time and execution time in µs, and the maximum `loop()` period since the last row;
    - per motor: `target`, `current_sp`, `voltage.q`, `shaft_velocity`; today only `motor2.current_sp` is exported (`motor2CurrentSetpoint`);

@@ -29,4 +29,4 @@
 - The ICM42688 is read over SPI in `src/ES-02/OllieFOCdrive/ICM42688.cpp`. `ImuUpdate()` in `OllieFOCdrive.ino` updates acceleration, gyro, temperature, and orientation values in `attitude`.
 - The robot has no CSV stream. Signals are read through [navlink](../../integration/software/navlink.md) (see [trace capture](trace-capture.md)).
 - Firmware text (setup messages, IMU timing, SimpleFOC debug output, the diagnostic boot line) goes out as `Log` frames on both ports. Boot ROM output and panic dumps are not framed.
-- The sensor diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) skips motor and servo initialization. It no longer streams a CSV; step 6 of the [logging plan](../../integration/plans/logging-and-control-link.md) decides its output.
+- The sensor diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) skips motor and servo initialization. It no longer streams a CSV. It is a link build: its live signals are listed on the [sensor diagnostic mode](sensor-diagnostic-mode.md#which-signals-are-live) page.

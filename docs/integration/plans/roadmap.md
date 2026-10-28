@@ -22,9 +22,21 @@ Status: the protocol (COBS, CRC-16, Protobuf), the firmware sender for `WheelOdo
 - [ ] Check the LiDAR yaw offset on the robot: `SENSOR_MOUNT_YAW_RAD` is −120° (ahead reads 240° clockwise on the LiDAR page). Push the robot straight forward and confirm the SLAM pose arrow points along the direction of travel. `SENSOR_MOUNT_X_M` and `SENSOR_MOUNT_Y_M` stay zero because the LiDAR sits at the robot's rotation centre.
 - [x] Start `navbot_link_bridge` at boot with `scripts/install_link_bridge_service.py` (unit and installer written, test passes). Not yet installed or run on the robot.
 
+## Link logs, signals and parameters on the robot
+
+Context: the log frames, the signal table, the parameters and the actions are implemented and host-tested: [signal table](../software/signal-table.md), [navlink](../software/navlink.md), [bridge](../software/navbot-link-bridge.md) and [sensor diagnostic mode](../../robot/software/sensor-diagnostic-mode.md). None of the checks below has run on the robot. Run them with the robot supported, balance off and the motor outputs safe.
+
+- [ ] Normal image, on the ros2_pc: `navlink capture --preset drive` runs over `/dev/ttyAMA3`, and `navlink shell` lists the catalog and reads the parameters.
+- [ ] Normal image: `navlink shell` sets one parameter, then calls `motor_stop` and `motor_reset`.
+- [ ] A `Log` from a `set` made on one port appears on the other port, and the USB port shows the same `Log` frames as UART1.
+- [ ] Boot, both images: the setup lines (`system run.`, the calibration lines, the `Link` GPIO19 check) arrive on UART1 from the first boot, not only on USB.
+- [ ] Diagnostic image: `sensor_monitor.py` prints the `IMU_TIMING` line in full; `navlink shell` reads the catalog and the live signals on the [diagnostic page](../../robot/software/sensor-diagnostic-mode.md#which-signals-are-live); `motor_current`, `motor_voltage` and `calibrate` are refused with their reasons.
+- [ ] Bridge on the ros2_pc against the robot (so far run only against the fake firmware): `/rosout` shows the robot's `Log` lines, `/navbot/signals` streams a chosen set of signals, and the firmware parameters appear as ROS parameters.
+- [ ] The firmware does not act on ROS `Command` yet. RC/ROS arbitration and a command timeout belong with the ROS control work.
+
 ## Decide the dashboard for logs and debug signals
 
-Context: the [logging and control proposal](logging-and-control-link.md) sends text logs and selectable signals over the NavBot link, both on UART1 to the ros2_pc and on the USB port as a backup. The ROS 2 bridge publishes them as topics. The protocol does not depend on this decision.
+Context: the [signal table](../software/signal-table.md) and the link logs go over the NavBot link on UART1 to the ros2_pc, and on the USB port as a backup. The ROS 2 bridge publishes them as `/rosout` and `/navbot/signals`. The protocol does not depend on this decision.
 
 Decision: which tool shows the live debug signals (plots for control tuning), the log messages, and the parameter get/set. Choose one:
 

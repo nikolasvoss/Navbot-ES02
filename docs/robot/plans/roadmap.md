@@ -55,9 +55,9 @@ Replace it with one conversion per channel from raw SBUS to a physical unit (m/s
 
 ## Fix the sensor diagnostic mode
 
-The diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) no longer streams a CSV: the logger and the `K` selectors went with migration step 5 of the [logging plan](../../integration/plans/logging-and-control-link.md). Its output is open until step 6 of that plan. The receiver's ten raw SBUS channel values are not in the signal table, so the mode cannot report them yet.
+The diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) no longer streams a CSV. It is a link build: its live signals are listed on the [sensor diagnostic mode](../software/sensor-diagnostic-mode.md#which-signals-are-live) page, and its robot check is in the [integration roadmap](../../integration/plans/roadmap.md#link-logs-signals-and-parameters-on-the-robot). The receiver's ten raw SBUS channel values are not in the signal table, so the mode cannot report them yet.
 
-- Decide the diagnostic output in step 6: run the link endpoint and the sampler from `diagnosticLoop()`, or delete the mode. If the raw channels are needed, add them as `SIGNAL` entries and capture them with navlink.
+- If the raw SBUS channels are needed for diagnosis, add them as `SIGNAL` entries and capture them with navlink.
 
 ## Switch the LiDAR off after a fall
 
