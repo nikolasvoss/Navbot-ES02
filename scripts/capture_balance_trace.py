@@ -17,15 +17,6 @@ from pathlib import Path
 
 TRACE_SELECT_COMMAND = re.compile(r"K(?:0|55|56|57|58)\Z")
 
-# Mirror the firmware caps in MotorDiagnostic.h; the firmware refuses anything larger too.
-# Wheel-clear runs only (default caps, lowered 2026-10-22): 2.0 V and 60 rad/s, 5000 ms lease, 0.35 A.
-MAX_CURRENT_A = 0.35
-MAX_VOLTAGE_V = 2.0
-MAX_LEASE_MS = 5000
-NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
-CURRENT_COMMAND = re.compile(rf"T ({NUMBER}) ({NUMBER}) (\d+)")
-VOLTAGE_COMMAND = re.compile(rf"M ([12]) ({NUMBER}) (\d+)")
-MOTOR_STOP_OR_RESET = re.compile(r"[TM] (?:STOP|RESET)")
 
 # Field order of the firmware DRIVE row (LogFormat.cpp) after the tag. The
 # analysis scripts read this header; they reject rows whose field count differs.
@@ -51,25 +42,13 @@ TRACE_HEADERS = {
 }
 
 
-def motion_command_allowed(command):
-    """Accept only the bounded T/M grammar of the firmware diagnostic commands."""
-    if MOTOR_STOP_OR_RESET.fullmatch(command):
-        return True
-    match = CURRENT_COMMAND.fullmatch(command)
-    if match:
-        left, right, lease = float(match[1]), float(match[2]), int(match[3])
-        return abs(left) <= MAX_CURRENT_A and abs(right) <= MAX_CURRENT_A and 1 <= lease <= MAX_LEASE_MS
-    match = VOLTAGE_COMMAND.fullmatch(command)
-    if match:
-        voltage, lease = float(match[2]), int(match[3])
-        return abs(voltage) <= MAX_VOLTAGE_V and 1 <= lease <= MAX_LEASE_MS
-    return False
-
-
 def interactive_command(text):
-    """Return the command to send for one line of stdin, or None if it is not whitelisted."""
+    """Return the command to send for one line of stdin, or None if it is not a trace selection.
+
+    The motor tests are not sent from here any more: they are actions of navlink (`navlink.py shell`, `call`).
+    """
     command = text.strip().upper()
-    if TRACE_SELECT_COMMAND.fullmatch(command) or motion_command_allowed(command):
+    if TRACE_SELECT_COMMAND.fullmatch(command):
         return command
     return None
 
@@ -103,8 +82,8 @@ def main():
     parser.add_argument("--trace-mode", type=int, choices=(55, 56, 57, 58), default=55,
                         help="55: actuator trace (default); 56: control; 57: balance P/I/D; 58: drive-stop trace")
     parser.add_argument("--interactive", action="store_true",
-                        help="send K trace-selection commands and bounded T/M motor commands from stdin "
-                             "while recording; prints every tenth trace row")
+                        help="send K trace-selection commands from stdin while recording; prints every tenth "
+                             "trace row")
     args = parser.parse_args()
     if args.seconds <= 0:
         parser.error("--seconds must be positive")
