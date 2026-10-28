@@ -102,7 +102,7 @@ struct Requests : LinkRxSink {
 int main() {
   StdoutSink sink;
   LinkEndpoint endpoint(kTable, sizeof(kTable) / sizeof(kTable[0]), "server-1", kBudgets, sink);
-  LinkRxDecoder decoder(false);
+  LinkRxDecoder decoder;
   Requests requests;
   requests.endpoint = &endpoint;
   for (;;) {
