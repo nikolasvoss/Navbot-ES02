@@ -209,6 +209,20 @@ void TestFrameAfterTypedLineCodeByteIsLineEnd() {
                       sizeof(kFrameCode0A), kPayloadCode0A, sizeof(kPayloadCode0A), {"K58\n", "K0\n"});
 }
 
+// The PC's 0x00 ends a chunk of typed text. That text was handed out line by line already, so it is not a bad frame.
+void TestTypedLineEndedByDelimiterIsNotBad() {
+  LinkRxDecoder usb(true);
+  Collector c;
+  const uint8_t line[] = {'K', '5', '8', '\n', 0x00};
+  usb.Feed(line, sizeof(line), c);
+  Check(c.lines.size() == 1 && c.lines[0] == "K58\n" && c.payloads.empty() && usb.badFrames() == 0,
+        "a typed line ended by the 0x00 is text, not a bad frame");
+  LinkRxDecoder unfinished(true);
+  const uint8_t partial[] = {'K', '5', '8', 0x00};
+  unfinished.Feed(partial, sizeof(partial), c);
+  Check(unfinished.badFrames() == 1, "typed text with no line end before the 0x00 is still counted");
+}
+
 // Reference encoder for the property test, written from the framing rules rather than from link_frame.cpp:
 // COBS of payload || CRC-16/CCITT-FALSE (little-endian), then 0x00.
 size_t ReferenceFrame(const uint8_t* payload, size_t len, uint8_t* out) {
@@ -289,6 +303,7 @@ int main() {
   TestTextLineThenFrame();
   TestFrameWithTextLikeStart();
   TestFrameAfterTypedLineCodeByteIsLineEnd();
+  TestTypedLineEndedByDelimiterIsNotBad();
   TestRandomFramesAfterTypedText();
   return failed ? 1 : 0;
 }

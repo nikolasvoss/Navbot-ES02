@@ -71,11 +71,17 @@ bool IsLineEnd(uint8_t byte) { return byte == '\n' || byte == '\r'; }
 
 bool IsTypedText(uint8_t byte) { return (byte >= 0x20 && byte < 0x7F) || byte == '\t' || IsLineEnd(byte); }
 
+// Length of the leading typed text: printable bytes, tab, CR and LF.
+size_t TypedTextLen(const uint8_t* chunk, size_t len) {
+  size_t n = 0;
+  while (n < len && IsTypedText(chunk[n])) ++n;
+  return n;
+}
+
 // Tries the frame after each line end of the leading typed text, the latest first, and takes the first that checks. The
 // frame's own first code byte can be a line end (0x0A or 0x0D), so the latest one is not always the frame's start.
 bool DecodeAfterTypedLines(const uint8_t* chunk, size_t len, uint8_t* body, size_t& payloadLen) {
-  size_t textLen = 0;
-  while (textLen < len && IsTypedText(chunk[textLen])) ++textLen;
+  const size_t textLen = TypedTextLen(chunk, len);
   for (size_t end = textLen; end > 0; --end) {
     if (IsLineEnd(chunk[end - 1]) && DecodeBody(chunk + end, len - end, body, payloadLen)) return true;
   }
@@ -139,7 +145,10 @@ void LinkRxDecoder::EndChunk(LinkRxSink& sink) {
   // only contains a line end still decodes.
   if (!ok && !overflow && passTextLines_) ok = DecodeAfterTypedLines(chunk_, chunkLen, body, payloadLen);
   if (!ok) {
-    ++badFrames_;
+    // Typed lines that end in a line end were handed out as they arrived, so the chunk is not a bad frame.
+    const bool onlyTypedLines = passTextLines_ && !overflow && chunkLen > 0 && IsLineEnd(chunk_[chunkLen - 1]) &&
+                                TypedTextLen(chunk_, chunkLen) == chunkLen;
+    if (!onlyTypedLines) ++badFrames_;
     return;
   }
   sink.OnPayload(body, payloadLen);
