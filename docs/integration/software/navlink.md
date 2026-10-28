@@ -118,7 +118,7 @@ Migration step 4 removed the letter commands. Each one is a parameter (`set`) or
 | --- | --- | --- |
 | `T <left_A> <right_A> <lease_ms>` | `call motor_current left_a=… right_a=… lease_ms=…` | Bounds in [motor commissioning](../../robot/software/motor-commissioning.md#actions) |
 | `T STOP`, `M STOP` | `call motor_stop` | New: one action for both tests |
-| `T RESET`, `M RESET` | `call motor_reset` | Also re-arms the wheel overspeed guard |
+| `T RESET`, `M RESET` | `call motor_reset` | Also re-arms the wheel overspeed guard; refused while a wheel is above 30 rad/s |
 | `M <1\|2> <V> <lease_ms>` | `call motor_voltage motor=… voltage_v=… lease_ms=…` | |
 | `E 0` | `call calibrate step=0` | Ends the running step |
 | `E 1`, `E 2`, `E 3` | `call calibrate step=1` (gyroscope), `2` (attitude), `3` (servo) | Refused while balance or a motor test runs |

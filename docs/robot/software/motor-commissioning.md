@@ -63,7 +63,7 @@ Each request runs until its lease expires, `motor_stop` is called, or a fault oc
 Overspeed is debounced by time. A wheel counts as over the limit when its shaft velocity magnitude is above 60 rad/s, on either wheel. The fault latches once that condition has lasted 50 ms, measured with the millisecond clock. A sample at or below the limit clears the timer, so a spike shorter than 50 ms is ignored. The −40 and −65 rad/s single-row spikes from the first hardware run were seen one trace row (about 17 ms) apart. Under the 60 rad/s cap the −65 rad/s spike is over the limit and the −40 rad/s spike is not. Their true duration is not measured. A non-finite velocity still latches `InvalidVelocity` at once. The timer restarts on each new request and clears on `motor_stop`, `motor_reset`, and any latched fault.
 
 - A lease that runs out **latches** a `LeaseExpired` fault. Call `motor_reset` before the next request. `motor_stop` ends a request without a fault.
-- `motor_reset` clears a latched fault only when balance is off, calibration is inactive, and both wheels are within the overspeed limit. A reset never enables output; a new request is needed.
+- `motor_reset` clears a latched fault only when balance is off, calibration is inactive, and both wheels are within the overspeed limit. Here the limit is the wheel overspeed guard's 30 rad/s, not the 60 rad/s of the diagnostic cap. A reset while a wheel is above 30 rad/s is refused, `refused: wheel overspeed latched, a wheel is above 30 rad/s`, and clears nothing. A reset never enables output; a new request is needed.
 - A refused action says why in its Ack, for example `refused: fault latched, send motor_reset`.
 
 ## Session workflow

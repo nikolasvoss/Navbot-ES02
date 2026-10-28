@@ -376,9 +376,7 @@ void serviceWheelOverspeed() {
 // Rearming does not enable the drivers. balanceRequest() reports enable off while the guard is tripped, so CH5 must
 // go off and on again before the controller drives the wheels.
 void resetWheelOverspeed() {
-  if (fabsf(m1VelocityRadPerSec) <= OverspeedGuard::kLimitRadPerSec &&
-      fabsf(m2VelocityRadPerSec) <= OverspeedGuard::kLimitRadPerSec)
-    OverspeedGuard::reset(wheelOverspeed);
+  if (OverspeedGuard::WithinLimit(m1VelocityRadPerSec, m2VelocityRadPerSec)) OverspeedGuard::reset(wheelOverspeed);
 }
 
 void serviceMotorDiagnostic() {
@@ -553,6 +551,11 @@ bool stopMotorTest(const float *, const char **) {
 }
 
 bool resetMotorFault(const float *, const char **error) {
+  // Checked before the motor fault is cleared, so a refused reset leaves that fault latched too.
+  if (!OverspeedGuard::MayRearm(wheelOverspeed, m1VelocityRadPerSec, m2VelocityRadPerSec)) {
+    *error = "refused: wheel overspeed latched, a wheel is above 30 rad/s";
+    return false;
+  }
   if (!MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs())) {
     *error = "refused: balance off and safe speed required";
     return false;

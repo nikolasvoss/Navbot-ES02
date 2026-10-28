@@ -21,5 +21,9 @@ struct State {
 // Returns true when the guard is tripped. A tripped guard stays tripped until reset().
 bool update(State &state, uint32_t nowMs, float leftRadPerSec, float rightRadPerSec);
 void reset(State &state);
+// Both wheels at or below kLimitRadPerSec. NaN is not within it.
+bool WithinLimit(float leftRadPerSec, float rightRadPerSec);
+// True when reset() may re-arm the guard now: it is not tripped, or both wheels are within the limit.
+bool MayRearm(const State &state, float leftRadPerSec, float rightRadPerSec);
 
 }  // namespace OverspeedGuard
