@@ -4,7 +4,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include "../../src/ES-02/OllieFOCdrive/MotorDiagnostic.h"
 
 enum class VerboseMode : unsigned char { nothing, on_request, user_friendly, machine_readable };
 constexpr int MAX_COMMAND_LENGTH = 20;
@@ -45,32 +44,12 @@ class Commander {
   }
 };
 
-static std::vector<std::string> calls;
-static std::vector<bool> parsedMotorCommands;
-#define COMMAND_CALLBACK(name) \
-  void name(char *input) { calls.emplace_back(#name ":" + std::string(input)); }
-void handleM1MotionCommand(char *input) {
-  calls.emplace_back("handleM1MotionCommand:" + std::string(input));
-  MotorDiagnostic::Request request{};
-  parsedMotorCommands.push_back(MotorDiagnostic::parseCurrentRequest(input, request));
-}
-void handleM1Command(char *input) {
-  calls.emplace_back("handleM1Command:" + std::string(input));
-  MotorDiagnostic::Request request{};
-  parsedMotorCommands.push_back(MotorDiagnostic::parseVoltageRequest(input, request));
-}
-COMMAND_CALLBACK(zeroBiasServo1)
-COMMAND_CALLBACK(zeroBiasServo2)
-COMMAND_CALLBACK(zeroBiasServo3)
-COMMAND_CALLBACK(zeroBiasServo4)
-COMMAND_CALLBACK(setImuLowPassCutoff)
-COMMAND_CALLBACK(setMahonyKp)
-COMMAND_CALLBACK(setMahonyKi)
-COMMAND_CALLBACK(selectDebugLog)
-COMMAND_CALLBACK(selectCalibration)
-#undef COMMAND_CALLBACK
-
 #include "../../src/ES-02/OllieFOCdrive/SerialCommandRouter.h"
+
+static std::vector<std::string> calls;
+void selectDebugLog(char *input) { calls.emplace_back("selectDebugLog:" + std::string(input)); }
+
+// The sketch's command table, extracted by run_host_test.sh: the K selector is the only letter command left.
 #include "command_table.inc"
 
 int main() {
@@ -79,17 +58,18 @@ int main() {
   commander.com_port = &output;
   SerialCommandRouter router;
 
-  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 11);
-  const char *expectedCallbacks[] = {"handleM1MotionCommand", "handleM1Command", "zeroBiasServo1", "zeroBiasServo2",
-                                    "zeroBiasServo3", "zeroBiasServo4", "setImuLowPassCutoff", "setMahonyKp",
-                                    "setMahonyKi", "selectDebugLog", "selectCalibration"};
-  const char ids[] = "TMABCDZQIKE";
-  for (size_t i = 0; ids[i]; ++i) {
-    Stream input(std::string(1, ids[i]) + "\n");
-    router.run(input, commander, commandEntries);
-    assert(calls[i] == std::string(expectedCallbacks[i]) + ":\n");
+  assert(sizeof(commandEntries) / sizeof(commandEntries[0]) == 1);
+  Stream input("K\n");
+  router.run(input, commander, commandEntries);
+  assert((calls == std::vector<std::string>{"selectDebugLog:\n"}));
+
+  // The removed letters are unknown: they produce no call and no help text.
+  for (const char *removed : {"T 0.02 0 1000", "M 1 0.2 500", "Q0.4", "I0.001", "Z25", "A1.5", "D0", "E1", "T STOP"}) {
+    calls.clear();
+    Stream removedInput(std::string(removed) + "\n");
+    router.run(removedInput, commander, commandEntries);
+    assert(calls.empty());
   }
-  assert(calls.size() == 11);
 
   calls.clear();
   Stream multiLineInput("KP?\nKI2\nKD\nKL\n");
@@ -99,6 +79,7 @@ int main() {
   Stream helpInput("?\n");
   router.run(helpInput, commander, commandEntries);
   assert(output.output().find("K:my Select\n") != std::string::npos);
+  assert(output.output().find("T:") == std::string::npos && output.output().find("E:") == std::string::npos);
 
   const int builtinCalls = commander.builtins;
   Stream builtinInput("@3\n#5\n");
@@ -144,23 +125,6 @@ int main() {
   assert((calls == std::vector<std::string>{"selectDebugLog:I2\r"}));
 
   calls.clear();
-  parsedMotorCommands.clear();
-  Stream currentDiagnostic("T 0.02 -0.02 1000\n");
-  router.run(currentDiagnostic, commander, commandEntries);
-  assert((calls == std::vector<std::string>{"handleM1MotionCommand: 0.02 -0.02 1000\n"}));
-  assert(parsedMotorCommands.size() == 1 && parsedMotorCommands[0]);
-  calls.clear();
-  parsedMotorCommands.clear();
-  Stream voltageDiagnostic("M 2 2.0 5000\r\n");
-  router.run(voltageDiagnostic, commander, commandEntries);
-  assert(parsedMotorCommands.size() == 1 && parsedMotorCommands[0]);
-  calls.clear();
-  parsedMotorCommands.clear();
-  Stream invalidDiagnostic("M 1 nan 1000\n");
-  router.run(invalidDiagnostic, commander, commandEntries);
-  assert(parsedMotorCommands.size() == 1 && !parsedMotorCommands[0]);
-
-  calls.clear();
   std::string continuousCommands;
   for (int i = 0; i < 30; ++i) continuousCommands += "KI\n";
   Stream continuousInput(continuousCommands);
@@ -178,20 +142,16 @@ int main() {
   router.run(overlongInput, commander, commandEntries);
   assert((calls == std::vector<std::string>{"selectDebugLog:I\n"}));
 
-  // Commander's 20-character limit: a 19-character T line plus its newline is dispatched, while a
-  // 20-character T line plus its newline is discarded whole, so the next line still runs.
+  // Commander's 20-character limit: a 19-character K line plus its newline is dispatched, while a 20-character K line
+  // plus its newline is discarded whole, so the next line still runs.
   calls.clear();
-  parsedMotorCommands.clear();
-  Stream maxWidthCurrent("T -0.020 -0.020 200\n");
-  router.run(maxWidthCurrent, commander, commandEntries);
-  assert((calls == std::vector<std::string>{"handleM1MotionCommand: -0.020 -0.020 200\n"}));
-  assert(parsedMotorCommands.size() == 1 && parsedMotorCommands[0]);
+  Stream maxWidth("K" + std::string(18, '1') + "\nKI\n");
+  router.run(maxWidth, commander, commandEntries);
+  assert((calls == std::vector<std::string>{"selectDebugLog:" + std::string(18, '1') + "\n", "selectDebugLog:I\n"}));
   calls.clear();
-  parsedMotorCommands.clear();
-  Stream overWidthCurrent("T -0.020 -0.020 2000\nKI\n");
-  router.run(overWidthCurrent, commander, commandEntries);
+  Stream overWidth("K" + std::string(19, '1') + "\nKI\n");
+  router.run(overWidth, commander, commandEntries);
   assert((calls == std::vector<std::string>{"selectDebugLog:I\n"}));
-  assert(parsedMotorCommands.empty());
 
   commander.echo = true;
   commander.verbose = VerboseMode::user_friendly;

@@ -76,6 +76,7 @@ c++ -std=c++17 -Wall -Wextra -Werror \
 # The real entry file, expanded against stand-in state, must list what scripts/signals_catalog.py says it lists.
 c++ -std=c++17 -Wall -Wextra -Werror \
   -I"$sketch_dir" \
+  "$sketch_dir/BalanceController.cpp" \
   "$repo_root/tests/link/test_signals_def.cpp" \
   -o "$build_dir/test_signals_def"
 

@@ -19,6 +19,7 @@
 #include "link_uart.h"
 #include "MathConstants.h"
 #include "MotorDiagnostic.h"
+#include "settings_groups.h"
 #include "OverspeedGuard.h"
 #include "WheelBoundary.h"
 #include "OllieFOCdrive.h"
@@ -90,17 +91,18 @@ constexpr WheelMotorParams kRightWheelMotor{5.75f, 76.7f};
 // SimpleFOC adds the estimated back-EMF as voltage even at 0 A. If that estimate is larger than the real back-EMF
 // the wheel accelerates by itself, so the rating handed to SimpleFOC is the measured KV times this factor (a larger
 // KV gives a smaller estimate). Measured KV depends on the speed range (79.5 rpm/V over 0.5-2 V, about 108 rpm/V for
-// 0.5-1 V). Bench test of the left wheel with T 0 0 on 2026-10-24: 1.0 ran away from rest, 1.4 let the wheel speed
+// 0.5-1 V). Bench test of the left wheel with motor_current 0 0 on 2026-10-24: 1.0 ran away from rest, 1.4 let the wheel speed
 // up again between 17 and 30 rad/s, 1.8 slowed it down continuously. The right wheel takes the same factor on the
 // operator's decision; it is not tested separately.
 constexpr float kWheelKvSafetyFactor = 1.8f;
 
-// Balance configuration, built once. The balance and yaw gains below are the working values (tilt 8 A/rad, gyro
-// damping 0.4), so the controller commands real wheel current as soon as it arms and runs. The envelope can also
-// command a small braking current above roughly 50 rad/s, because the plan requires outputs inside the envelope.
-// Each value is one of: existing constant (named), plan (decision or stated number), or an uncommissioned placeholder.
-const Config &balanceConfig() {
-  static const Config config = [] {
+// Balance settings group (the PARAM entries of signals.def.h name its fields). Built once at boot; SetParam replaces
+// it through BalanceGroup, and the controller reads it at each tick. The balance and yaw gains below are the working
+// values (tilt 8 A/rad, gyro damping 0.4), so the controller commands real wheel current as soon as it arms and runs.
+// The envelope can also command a small braking current above roughly 50 rad/s, because the plan requires outputs
+// inside the envelope. Each value is one of: existing constant (named), plan (decision or stated number), or an
+// uncommissioned placeholder.
+Config balanceSettings = [] {
     Config c;
     // Arming
     c.armingTimeoutUs = 3000000;                 // uncommissioned: proposed starting value, 3 s
@@ -181,12 +183,9 @@ const Config &balanceConfig() {
     c.storedTrimDeg = 0.0f;                      // deg
     c.fixedPoseReachable = true;                 // plan: fixed pose, all joint angles 0
     return c;
-  }();
-  return config;
-}
+}();
 
 void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params);
-
 
 // Body
 float movementSpeed = 0;                                         // Movement speed
@@ -213,44 +212,6 @@ constexpr int kLegSagDegrees = 10;  // assumed leg angle after the robot has sag
 constexpr float kLegRampDegPerSec = 30.0f;  // leg pose ramp, 0 to 20 degrees in about 0.7 s
 constexpr float kLegRampMaxDtSec = 0.02f;   // the first tick after boot reports the whole boot time as dt
 float legPoseDegrees = 0.0f;                // commanded leg angle, ramped toward kLegPoseDegrees
-
-bool parseCommandFloat(const char *text, float &value) {
-  char *end = nullptr;
-  value = strtof(text, &end);
-  if (end == text) return false;
-  while (end && isspace(static_cast<unsigned char>(*end))) ++end;
-  return end && *end == '\0' && isfinite(value);
-}
-
-bool parseCommandCutoff(const char *text, uint16_t &value) {
-  char *end = nullptr;
-  const long parsed = strtol(text, &end, 10);
-  while (end && isspace(static_cast<unsigned char>(*end))) ++end;
-  if (end == text || !end || *end != '\0' || parsed < 1 || parsed > UINT16_MAX) return false;
-  value = static_cast<uint16_t>(parsed);
-  return true;
-}
-
-void setImuLowPassCutoff(char *cmd) {
-  uint16_t cutoff = 0;
-  imu::Settings candidate = imu::settings();
-  if (!parseCommandCutoff(cmd, cutoff)) {
-    Logging::message(Logging::Level::Warning, "IMU", "invalid cutoff");
-    return;
-  }
-  candidate.gyroCutoffHz = cutoff;
-  if (!imu::setSettings(candidate)) {
-    Logging::message(Logging::Level::Warning, "IMU", "cutoff outside valid range");
-    return;
-  }
-  Logging::message(Logging::Level::Info, "LPF_CUTOFF_FREQ", "%u", cutoff);
-}
-
-// Servo zero position offsets
-void zeroBiasServo1(char *cmd) { command.scalar(&servoTrims.servo1Degrees, cmd); }
-void zeroBiasServo2(char *cmd) { command.scalar(&servoTrims.servo2Degrees, cmd); }
-void zeroBiasServo3(char *cmd) { command.scalar(&servoTrims.servo3Degrees, cmd); }
-void zeroBiasServo4(char *cmd) { command.scalar(&servoTrims.servo4Degrees, cmd); }
 
 //  Create ServoControl object
 ServoControl servoControl(board::kLegServoPin[0], board::kLegServoPin[1], board::kLegServoPin[2],
@@ -281,31 +242,11 @@ bool wheelsValid = false;
 uint32_t busReadTimeUs = 0;
 
 bool balanceActive() { return balanceOutput.state != State::Disabled; }
+// Balance is requested by the CH5 switch or is running. Motor tests and calibration steps wait for it.
+bool balanceRequested() { return pidGainsMode != REMOTE_CONTROL_PID_GAINS_MODE_OFF || balanceActive(); }
 
 float debugLogSelector = 0;   // Selects debug data and the log profile.
-float calibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Calibrate gyroscope  2: Calibrate Euler
-                              // angle  3: Calibrate servo
-
-void setMahonyKp(char *cmd) {
-  float value = 0.0f;
-  imu::Settings candidate = imu::settings();
-  if (!parseCommandFloat(cmd, value)) return;
-  candidate.mahonyTwoKp = value;
-  if (imu::setSettings(candidate))
-    Logging::message(Logging::Level::Info, "MAHONY_KP", "%.6f", value);
-  else
-    Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Kp");
-}
-void setMahonyKi(char *cmd) {
-  float value = 0.0f;
-  imu::Settings candidate = imu::settings();
-  if (!parseCommandFloat(cmd, value)) return;
-  candidate.mahonyTwoKi = value;
-  if (imu::setSettings(candidate))
-    Logging::message(Logging::Level::Info, "MAHONY_KI", "%.6f", value);
-  else
-    Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Ki");
-}
+float calibrationSelect = 0;  // The calibrate action: 0 ends a step, 1 gyroscope, 2 Euler angle, 3 servo
 
 void selectDebugLog(char *cmd) {
   command.scalar(&debugLogSelector, cmd);
@@ -348,31 +289,6 @@ TwoWire i2cTwo = TwoWire(1);
 MotorDiagnostic::State motorDiagnosticState{};
 bool motorDiagnosticApplied = false;
 
-// The values the link can log, from signals.def.h. This sits after the state those lines read.
-#define SIGNAL_DEF_FILE "signals.def.h"
-#include "signal_table_expand.h"
-// No git hash is available to the Arduino build, so the build ID is the compile time.
-constexpr char kBuildId[] = __DATE__ " " __TIME__;
-static_assert(sizeof(kBuildId) <= 33, "the build ID has to fit CatalogEntry.build");
-
-void selectCalibration(char *cmd) {
-  float requested = calibrationSelect;
-  command.scalar(&requested, cmd);
-  if (static_cast<int>(requested) != 0 && (motorDiagnosticState.active || motorDiagnosticApplied)) {
-    Logging::message(Logging::Level::Warning, "Calibration", "refused: motor diagnostic active");
-    return;
-  }
-  calibrationSelect = requested;
-}
-char *trimDiagnosticCommand(char *cmd) {
-  while (*cmd == ' ' || *cmd == '\t') ++cmd;
-  size_t length = strlen(cmd);
-  while (length > 0 && (cmd[length - 1] == ' ' || cmd[length - 1] == '\t' || cmd[length - 1] == '\r' ||
-                        cmd[length - 1] == '\n'))
-    cmd[--length] = '\0';
-  return cmd;
-}
-
 void zeroMotorOutput(BLDCMotor &motor) {
   motor.target = 0.0f;
   motor.current_sp = 0.0f;
@@ -397,8 +313,7 @@ void restoreMotorConfiguration(BLDCMotor &motor, const WheelMotorParams &params)
 }
 
 MotorDiagnostic::Inputs diagnosticInputs() {
-  return {millis(), pidGainsMode != REMOTE_CONTROL_PID_GAINS_MODE_OFF,
-          calibrationSelect != 0.0f, motor1.shaft_velocity, motor2.shaft_velocity};
+  return {millis(), balanceRequested(), calibrationSelect != 0.0f, motor1.shaft_velocity, motor2.shaft_velocity};
 }
 
 void applyMotorDiagnosticRequest() {
@@ -457,94 +372,13 @@ void serviceWheelOverspeed() {
                      wheelOverspeed.peakRadPerSec, OverspeedGuard::kLimitRadPerSec);
 }
 
-// Called after a successful diagnostic RESET and by balanceRequest() while CH5 is off. Rearms the guard only while both wheels are below the limit.
+// Called after a successful motor_reset and by balanceRequest() while CH5 is off. Rearms the guard only while both wheels are below the limit.
 // Rearming does not enable the drivers. balanceRequest() reports enable off while the guard is tripped, so CH5 must
 // go off and on again before the controller drives the wheels.
 void resetWheelOverspeed() {
   if (fabsf(m1VelocityRadPerSec) <= OverspeedGuard::kLimitRadPerSec &&
       fabsf(m2VelocityRadPerSec) <= OverspeedGuard::kLimitRadPerSec)
     OverspeedGuard::reset(wheelOverspeed);
-}
-
-// Shared by T and M so a flood of bad lines cannot fill the logger queue.
-bool diagnosticWarningDue() {
-  static bool warned = false;
-  static uint32_t lastWarningMs = 0;
-  const uint32_t nowMs = millis();
-  if (warned && static_cast<uint32_t>(nowMs - lastWarningMs) < 500) return false;
-  warned = true;
-  lastWarningMs = nowMs;
-  return true;
-}
-
-void handleM1MotionCommand(char *cmd) {
-  cmd = trimDiagnosticCommand(cmd);
-  if (strcmp(cmd, "RESET") == 0) {
-    if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs())) {
-      resetWheelOverspeed();
-      Logging::message(Logging::Level::Info, "MOTOR_TEST", "fault reset; outputs remain disabled");
-    } else
-      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "reset refused; balance off and safe speed required");
-    return;
-  }
-  if (strcmp(cmd, "STOP") == 0) {
-    MotorDiagnostic::stop(motorDiagnosticState);
-    return;
-  }
-  MotorDiagnostic::Request request{};
-  if (!MotorDiagnostic::parseCurrentRequest(cmd, request)) {
-    if (diagnosticWarningDue())
-      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "use T <left_A> <right_A> <lease_ms>, T STOP, or T RESET");
-    return;
-  }
-  if (wheelOverspeed.tripped) {
-    if (diagnosticWarningDue())
-      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "request refused; wheel overspeed latched, send RESET");
-    return;
-  }
-  const auto result = MotorDiagnostic::start(motorDiagnosticState, request, diagnosticInputs());
-  if (result == MotorDiagnostic::RequestResult::Accepted) {
-    applyMotorDiagnosticRequest();
-    Logging::message(Logging::Level::Info, "MOTOR_TEST", "current request left=%.3fA right=%.3fA lease=%lums",
-                     request.leftCurrentA, request.rightCurrentA, static_cast<unsigned long>(request.leaseMs));
-  } else if (diagnosticWarningDue()) {
-    Logging::message(Logging::Level::Warning, "MOTOR_TEST", "request refused result=%d", static_cast<int>(result));
-  }
-}
-
-void handleM1Command(char *cmd) {
-  cmd = trimDiagnosticCommand(cmd);
-  if (strcmp(cmd, "RESET") == 0) {
-    if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs())) {
-      resetWheelOverspeed();
-      Logging::message(Logging::Level::Info, "MOTOR_TEST", "fault reset; outputs remain disabled");
-    } else
-      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "reset refused; balance off and safe speed required");
-    return;
-  }
-  if (strcmp(cmd, "STOP") == 0) {
-    MotorDiagnostic::stop(motorDiagnosticState);
-    return;
-  }
-  MotorDiagnostic::Request request{};
-  if (!MotorDiagnostic::parseVoltageRequest(cmd, request)) {
-    if (diagnosticWarningDue())
-      Logging::message(Logging::Level::Warning, "MOTOR_ID", "use M <motor_1|2> <voltage_V> <lease_ms>, M STOP, or M RESET");
-    return;
-  }
-  if (wheelOverspeed.tripped) {
-    if (diagnosticWarningDue())
-      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "request refused; wheel overspeed latched, send RESET");
-    return;
-  }
-  const auto result = MotorDiagnostic::start(motorDiagnosticState, request, diagnosticInputs());
-  if (result == MotorDiagnostic::RequestResult::Accepted) {
-    applyMotorDiagnosticRequest();
-    Logging::message(Logging::Level::Info, "MOTOR_ID", "motor=%u requested_q=%.3fV lease=%lums",
-                     request.selectedMotor, request.voltageV, static_cast<unsigned long>(request.leaseMs));
-  } else if (diagnosticWarningDue()) {
-    Logging::message(Logging::Level::Warning, "MOTOR_ID", "request refused result=%d", static_cast<int>(result));
-  }
 }
 
 void serviceMotorDiagnostic() {
@@ -651,22 +485,101 @@ void initDrivers() {
   motor2.linkDriver(&driver2);
 }
 
+// Settings groups: the running struct of each PARAM group and the one apply function that replaces it. A refused value
+// leaves the struct unchanged (settings_groups.h has the rules; imu::setSettings checks the IMU ones).
+struct BalanceGroup {
+  using Struct = Config;
+  static Config current() { return balanceSettings; }
+  static bool apply(const Config &candidate, const char **error) {
+    return ApplyBalanceSettings(balanceSettings, candidate, error);
+  }
+};
+
+struct ImuGroup {
+  using Struct = imu::Settings;
+  static imu::Settings current() { return imu::settings(); }
+  static bool apply(const imu::Settings &candidate, const char **error) {
+    if (imu::setSettings(candidate)) return true;
+    *error = "out of range";
+    return false;
+  }
+};
+
+struct ServoTrimGroup {
+  using Struct = ServoTrimsDegrees;
+  static ServoTrimsDegrees current() { return servoTrims; }
+  static bool apply(const ServoTrimsDegrees &candidate, const char **error) {
+    return ApplyServoTrims(servoTrims, candidate, error);
+  }
+};
+
+// Actions. The endpoint checks each argument against its ARG bounds before a handler runs. A handler starts the action,
+// or sets *error and returns false. Motor safety lives in MotorDiagnostic; these handlers only add the overspeed latch.
+bool startMotorRequest(const MotorDiagnostic::Request &request, const char **error) {
+  if (wheelOverspeed.tripped) {
+    *error = "refused: wheel overspeed latched, send motor_reset";
+    return false;
+  }
+  const MotorDiagnostic::RequestResult result = MotorDiagnostic::start(motorDiagnosticState, request, diagnosticInputs());
+  if (result != MotorDiagnostic::RequestResult::Accepted) {
+    *error = MotorDiagnostic::RequestResultText(result);
+    return false;
+  }
+  applyMotorDiagnosticRequest();
+  return true;
+}
+
+bool startMotorCurrent(const float *args, const char **error) {
+  MotorDiagnostic::Request request{};
+  if (!MotorDiagnostic::MakeCurrentRequest(args[0], args[1], args[2], request)) {
+    *error = "invalid request";
+    return false;
+  }
+  return startMotorRequest(request, error);
+}
+
+bool startMotorVoltage(const float *args, const char **error) {
+  MotorDiagnostic::Request request{};
+  if (!MotorDiagnostic::MakeVoltageRequest(args[0], args[1], args[2], request)) {
+    *error = "invalid request";
+    return false;
+  }
+  return startMotorRequest(request, error);
+}
+
+bool stopMotorTest(const float *, const char **) {
+  MotorDiagnostic::stop(motorDiagnosticState);
+  return true;
+}
+
+bool resetMotorFault(const float *, const char **error) {
+  if (!MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs())) {
+    *error = "refused: balance off and safe speed required";
+    return false;
+  }
+  resetWheelOverspeed();
+  return true;
+}
+
+bool startCalibration(const float *args, const char **error) {
+  *error = CalibrationStartRefusal(args[0], balanceRequested(), motorDiagnosticState.active || motorDiagnosticApplied);
+  if (*error != nullptr) return false;
+  calibrationSelect = args[0];
+  return true;
+}
+
+// The entry table (signals.def.h), expanded after the groups and handlers it names.
+#define SIGNAL_DEF_FILE "signals.def.h"
+#include "signal_table_expand.h"
+// No git hash is available to the Arduino build, so the build ID is the compile time.
+constexpr char kBuildId[] = __DATE__ " " __TIME__;
+static_assert(sizeof(kBuildId) <= 33, "the build ID has to fit CatalogEntry.build");
+
 const SerialCommandEntry commandEntries[] = {
-    {'T', handleM1MotionCommand, "bounded per-wheel current test or STOP/RESET"},
-    {'M', handleM1Command, "bounded selected-wheel voltage identification or STOP/RESET"},
-    {'A', zeroBiasServo1, "my zeroBias_servo1"},
-    {'B', zeroBiasServo2, "my zeroBias_servo2"},
-    {'C', zeroBiasServo3, "my zeroBias_servo3"},
-    {'D', zeroBiasServo4, "my zeroBias_servo4"},
-    {'Z', setImuLowPassCutoff, "my ImuLPF_CUTOFF_FREQ"},
-    {'Q', setMahonyKp, "my TwoKp"},
-    {'I', setMahonyKi, "my TwoKi"},
     {'K', selectDebugLog, "my Select"},
-    {'E', selectCalibration, "my CalibrationSelect"},
 };
 
 SerialCommandRouter serialCommandRouter;
-
 
 /**
  * @brief Initializes the robot's hardware and software components.
@@ -738,7 +651,6 @@ void setup() {
 
   motor1.target = 0;
   motor2.target = 0;
-
 
   LinkUsbPrint().println("Motor ready.");
 
@@ -815,7 +727,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.servoTrims = servoTrims;
   for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = servoTraceAngle[i];
 
-
   in.bodyTurn = bodyTurn;
 
   in.movementSpeed = movementSpeed;
@@ -833,7 +744,6 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.robotTumble = robotTumble;
   return in;
 }
-
 
 /**
  * @brief Reads and filters the battery voltage.
@@ -895,7 +805,7 @@ float rcStickFraction(int16_t raw) {
  *        kRcFrameTimeoutMs and the receiver reports no failsafe.
  */
 Request balanceRequest(uint32_t nowUs) {
-  const Config &config = balanceConfig();
+  const Config &config = balanceSettings;
   const bool fresh = rcFrameSeen && static_cast<uint32_t>(nowUs - rcFrameUs) <= kRcFrameTimeoutMs * 1000U;
   // CH5 off rearms a tripped overspeed guard (once both wheels are below the limit), so no serial command is needed.
   if (fresh && rcChannels[4] < kRcEnableOnRaw) resetWheelOverspeed();
@@ -1157,7 +1067,7 @@ void runControlTick(bool imuUpdated) {
   const Measurements measurements = balanceMeasurements();
   const uint32_t balanceNowUs = micros();
   const Request request = balanceRequest(balanceNowUs);
-  const Output out = balanceController.update(measurements, request, balanceConfig(), balanceNowUs);
+  const Output out = balanceController.update(measurements, request, balanceSettings, balanceNowUs);
   logBalanceChange(out);
   balanceOutput = out;
   robotTumble = out.fault == FaultReason::Fall ? ROBOT_TUMBLING : ROBOT_NOT_TUMBLING;

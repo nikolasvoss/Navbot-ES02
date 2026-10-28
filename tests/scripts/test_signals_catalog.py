@@ -97,3 +97,14 @@ def test_the_firmware_file_parses():
     assert entries[0].name == "ch5_mode"
     assert len(entries) == len({e.name for e in entries})
 
+
+def test_the_firmware_file_lists_the_settings_and_actions():
+    entries = signals_catalog.parse(signals_catalog.DEFAULT_FILE.read_text(encoding="utf-8"))
+    kinds = {e.name: e.kind for e in entries if e.kind in ("PARAM", "ACTION")}
+    assert kinds["speed_kp"] == "PARAM"
+    assert kinds["gyro_cutoff_hz"] == "PARAM"
+    assert kinds["servo1_trim"] == "PARAM"
+    assert kinds["motor_current"] == "ACTION"
+    assert kinds["motor_reset"] == "ACTION"
+    assert kinds["calibrate"] == "ACTION"
+
