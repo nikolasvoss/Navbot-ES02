@@ -74,6 +74,16 @@ void LinkEndpoint::SendLog(navbot_link_v1_Log_Level level, const char* tag, cons
   sink_.Send(kLinkPortUart, message);  // Log frames go to UART1 only (see LinkLogReachesPort)
 }
 
+// A started action is logged with its arguments, so a capture on UART1 shows what was started and with what.
+void LinkEndpoint::SendActionLog(const SignalEntry& entry, SignalArgs args, const float* values) {
+  char text[sizeof(navbot_link_v1_Log::text)];
+  int length = snprintf(text, sizeof(text), "%s started", entry.name);
+  for (size_t i = 0; i < args.count && static_cast<size_t>(length) < sizeof(text); ++i)
+    length += snprintf(text + length, sizeof(text) - static_cast<size_t>(length), " %s=%g", args.items[i].name,
+                       static_cast<double>(values[i]));
+  SendLog(navbot_link_v1_Log_Level_INFO, "action", text);
+}
+
 void LinkEndpoint::SendCatalogEntry(uint8_t port, uint32_t index) {
   const SignalEntry& entry = table_[index];
   navbot_link_v1_Message reply = navbot_link_v1_Message_init_zero;
@@ -179,11 +189,38 @@ void LinkEndpoint::Handle(uint8_t port, const uint8_t* payload, size_t len, uint
       break;
     }
     case navbot_link_v1_Message_call_tag: {
-      const uint32_t id = request.body.call.id;
-      if (!CheckIndex(port, seq, id)) break;
-      snprintf(error, sizeof(error), table_[id].kind == SignalKind::Action ? "%s cannot be called yet" : "%s is not an action",
-               table_[id].name);
-      SendAck(port, seq, error, nullptr, 0);
+      const navbot_link_v1_Call& call = request.body.call;
+      if (!CheckIndex(port, seq, call.id)) break;
+      const SignalEntry& entry = table_[call.id];
+      if (entry.kind != SignalKind::Action) {
+        snprintf(error, sizeof(error), "%s is not an action", entry.name);
+        SendAck(port, seq, error, nullptr, 0);
+        break;
+      }
+      const SignalArgs args = entry.args();
+      if (call.args_count != args.count) {
+        snprintf(error, sizeof(error), "%s takes %u arguments", entry.name, static_cast<unsigned>(args.count));
+        SendAck(port, seq, error, nullptr, 0);
+        break;
+      }
+      // The bounds are the table's; the handler checks what the bounds cannot say and the hardware state.
+      bool inBounds = true;
+      for (size_t i = 0; i < args.count && inBounds; ++i) {
+        const float value = call.args[i];
+        if (value >= args.items[i].min && value <= args.items[i].max) continue;
+        snprintf(error, sizeof(error), "%s=%g is outside [%g, %g]", args.items[i].name, static_cast<double>(value),
+                 static_cast<double>(args.items[i].min), static_cast<double>(args.items[i].max));
+        SendAck(port, seq, error, nullptr, 0);
+        inBounds = false;
+      }
+      if (!inBounds) break;
+      const char* reason = nullptr;
+      if (!entry.call(call.args, &reason)) {
+        SendAck(port, seq, reason ? reason : "refused", nullptr, 0);
+        break;
+      }
+      SendAck(port, seq, nullptr, nullptr, 0);
+      SendActionLog(entry, args, call.args);
       break;
     }
     default:

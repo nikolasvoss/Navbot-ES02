@@ -1,7 +1,6 @@
 #include "MotorDiagnostic.h"
 
 #include <cmath>
-#include <cstdlib>
 
 namespace MotorDiagnostic {
 namespace {
@@ -24,20 +23,9 @@ bool valid(const Request &request) {
          std::fabs(request.voltageV) <= kMaximumVoltageV;
 }
 
-bool parseNumbers(const char *text, float *values, size_t count) {
-  if (text == nullptr || values == nullptr) return false;
-  const char *cursor = text;
-  for (size_t i = 0; i < count; ++i) {
-    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') ++cursor;
-    if (*cursor == '\0') return false;
-    char *end = nullptr;
-    values[i] = std::strtof(cursor, &end);
-    if (end == cursor || !std::isfinite(values[i])) return false;
-    cursor = end;
-    if (i + 1 < count && *cursor != ' ' && *cursor != '\t' && *cursor != '\r' && *cursor != '\n') return false;
-  }
-  while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') ++cursor;
-  return *cursor == '\0';
+// The lease of an action arrives as a float; a fraction of a millisecond is not a lease.
+bool wholeLease(float leaseMs) {
+  return std::isfinite(leaseMs) && std::floor(leaseMs) == leaseMs && leaseMs >= 1.0f && leaseMs <= kMaximumLeaseMs;
 }
 }  // namespace
 
@@ -45,32 +33,42 @@ bool elapsed(uint32_t nowMs, uint32_t startMs, uint32_t durationMs) {
   return static_cast<uint32_t>(nowMs - startMs) >= durationMs;
 }
 
-bool parseCurrentRequest(const char *text, Request &request) {
-  float values[3]{};
-  if (!parseNumbers(text, values, 3) || values[2] < 1.0f || values[2] > kMaximumLeaseMs ||
-      std::floor(values[2]) != values[2]) return false;
+bool MakeCurrentRequest(float leftA, float rightA, float leaseMs, Request &request) {
+  if (!wholeLease(leaseMs)) return false;
   Request parsed{};
   parsed.mode = Mode::CurrentTest;
-  parsed.leftCurrentA = values[0];
-  parsed.rightCurrentA = values[1];
-  parsed.leaseMs = static_cast<uint32_t>(values[2]);
+  parsed.leftCurrentA = leftA;
+  parsed.rightCurrentA = rightA;
+  parsed.leaseMs = static_cast<uint32_t>(leaseMs);
   if (!valid(parsed)) return false;
   request = parsed;
   return true;
 }
 
-bool parseVoltageRequest(const char *text, Request &request) {
-  float values[3]{};
-  if (!parseNumbers(text, values, 3) || (values[0] != 1.0f && values[0] != 2.0f) ||
-      values[2] < 1.0f || values[2] > kMaximumLeaseMs || std::floor(values[2]) != values[2]) return false;
+bool MakeVoltageRequest(float motor, float voltageV, float leaseMs, Request &request) {
+  if (!wholeLease(leaseMs) || (motor != 1.0f && motor != 2.0f)) return false;
   Request parsed{};
   parsed.mode = Mode::VoltageIdentification;
-  parsed.selectedMotor = static_cast<uint8_t>(values[0]);
-  parsed.voltageV = values[1];
-  parsed.leaseMs = static_cast<uint32_t>(values[2]);
+  parsed.selectedMotor = static_cast<uint8_t>(motor);
+  parsed.voltageV = voltageV;
+  parsed.leaseMs = static_cast<uint32_t>(leaseMs);
   if (!valid(parsed)) return false;
   request = parsed;
   return true;
+}
+
+const char *RequestResultText(RequestResult result) {
+  switch (result) {
+    case RequestResult::Accepted:
+      return "accepted";
+    case RequestResult::Invalid:
+      return "invalid request";
+    case RequestResult::Unsafe:
+      return "refused: balance or calibration active, or a wheel is too fast";
+    case RequestResult::FaultLatched:
+      return "refused: fault latched, send motor_reset";
+  }
+  return "refused";
 }
 
 RequestResult start(State &state, const Request &request, const Inputs &inputs) {

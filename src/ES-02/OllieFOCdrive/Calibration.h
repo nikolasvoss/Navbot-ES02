@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 struct AttitudeBiasDegrees {
   float rollDegrees;
   float pitchDegrees;
@@ -65,6 +67,16 @@ struct CalibrationResult {
   bool clearRequest;
   ServoTrimChangeMask changedServos;
 };
+
+// The calibrate action's refusal, or nullptr when the step may start. Step 0 ends the running step and is always allowed.
+// Steps 1 to 3 wait until balance and motor tests are off: the gyroscope step blocks the loop.
+inline const char *CalibrationStartRefusal(float step, bool balanceActive, bool motorTestActive) {
+  if (!std::isfinite(step) || std::floor(step) != step) return "step must be a whole number";
+  if (step == 0.0f) return nullptr;
+  if (balanceActive) return "refused: balance active";
+  if (motorTestActive) return "refused: motor test active";
+  return nullptr;
+}
 
 class CalibrationStore;
 
