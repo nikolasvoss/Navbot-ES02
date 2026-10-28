@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Capture K55/K56/K57/K58 traces with CH340 DTR/RTS inactive."""
+"""Capture K55/K56/K57/K58 traces with CH340 DTR/RTS inactive.
+
+Legacy path until the firmware drops the K commands. New captures use
+`python3 scripts/navlink.py capture --preset <name> --seconds <s> -o <file.csv>`, which
+summarize_balance_trace.py and analyze_drive_trace.py read as well.
+"""
 
 import argparse
 import re
@@ -82,7 +87,10 @@ def drain(connection, log, seconds):
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__,
-        epilog=("After capture, summarize the log for an agent with:\n"
+        epilog=("Legacy: this script drives the K55 to K58 profiles. The replacement is\n"
+                "  python3 scripts/navlink.py capture --port /dev/ttyAMA3 --preset <name> --seconds 30 -o run.csv\n"
+                "(docs/integration/software/navlink.md).\n\n"
+                "After capture, summarize the log for an agent with:\n"
                 "  python3 scripts/summarize_balance_trace.py balance-trace.log\n"
                 "See scripts/summarize_balance_trace.py for the repeatable run summary."),
         formatter_class=argparse.RawDescriptionHelpFormatter,

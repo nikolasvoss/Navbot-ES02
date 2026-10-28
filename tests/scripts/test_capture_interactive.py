@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Whitelist for capture_balance_trace.py --interactive, including bounded T/M motor commands."""
 
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -64,6 +65,15 @@ class InteractiveWhitelistTest(unittest.TestCase):
         self.assertIsNone(interactive_command("E1"))
         self.assertIsNone(interactive_command("K1"))
         self.assertIsNone(interactive_command(""))
+
+
+class HelpTest(unittest.TestCase):
+    def test_help_points_to_navlink_capture(self):
+        script = Path(__file__).resolve().parents[2] / "scripts" / "capture_balance_trace.py"
+        result = subprocess.run([sys.executable, str(script), "--help"], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("python3 scripts/navlink.py capture --port /dev/ttyAMA3 --preset <name> --seconds 30 -o run.csv",
+                      result.stdout)
 
 
 if __name__ == "__main__":
