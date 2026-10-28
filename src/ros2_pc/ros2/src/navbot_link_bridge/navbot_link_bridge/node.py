@@ -125,6 +125,7 @@ class LinkBridgeNode(Node):
         self.attached = threading.Event()  # set when the latest attach job has finished, with or without a catalog
         self._robot_lock = threading.RLock()  # serializes parameter sets and attach jobs against each other
         self.add_on_set_parameters_callback(self._on_set_parameters)
+        self.add_post_set_parameters_callback(self._after_set_parameters)
         self._connect()
         self.create_timer(1.0 / POLL_HZ, self._poll_once, callback_group=MutuallyExclusiveCallbackGroup())
 
@@ -204,10 +205,12 @@ class LinkBridgeNode(Node):
             self._firmware_params.add(info.name)
             wanted = self.get_parameter(info.name).value
             if wanted != info.value:  # a launch-file or command-line value for a firmware parameter
-                reason = bridge.controls.set_param(info.name, wanted)
+                reason, applied = bridge.controls.apply_param(info.name, wanted)
                 if reason:
                     self.get_logger().warning(f"startup value of {info.name} not applied: {reason}")
                     self._mirror(info.name, info.value)
+                elif applied != wanted:
+                    self._mirror(info.name, applied)
 
     def _mirror(self, name: str, value) -> None:
         self._mirroring = True
@@ -234,23 +237,48 @@ class LinkBridgeNode(Node):
         streaming = "signals" in changed or "signals_rate_hz" in changed
         if not (wanted or streaming):
             return SetParametersResult(successful=True)
+        self._local.kept = {}
         with self._robot_lock:
             bridge = self._bridge
             if bridge is None:
                 return SetParametersResult(successful=False, reason="the link to the robot is down")
-            controls = bridge.controls
-            for name in wanted:
-                reason = controls.set_param(name, changed[name])
-                if reason:
-                    return SetParametersResult(successful=False, reason=reason)
-            if streaming:
-                reason = controls.set_subscription(
-                    list(changed.get("signals", self.get_parameter("signals").value)),
-                    changed.get("signals_rate_hz", self.get_parameter("signals_rate_hz").value),
-                )
-                if reason:
-                    return SetParametersResult(successful=False, reason=reason)
-        return SetParametersResult(successful=True)
+            reason = self._apply_to_robot(bridge.controls, changed, wanted, streaming)
+        return SetParametersResult(successful=not reason, reason=reason)
+
+    def _apply_to_robot(self, controls, changed: dict, wanted: list, streaming: bool) -> str:
+        """All or nothing: when the robot refuses one value, those it took before are put back.
+        The values it keeps go to self._local.kept for _after_set_parameters."""
+        try:
+            before = {name: controls.get_param(name) for name in wanted} if len(wanted) + streaming > 1 else {}
+        except LinkError as exc:
+            return str(exc)
+        kept = {}
+        reason = ""
+        for name in wanted:
+            reason, kept[name] = controls.apply_param(name, changed[name])
+            if reason:
+                break
+        if not reason and streaming:
+            reason = controls.set_subscription(
+                list(changed.get("signals", self.get_parameter("signals").value)),
+                changed.get("signals_rate_hz", self.get_parameter("signals_rate_hz").value),
+            )
+        if reason:
+            for name in [n for n in before if n in kept and kept[n] is not None]:
+                failure = controls.set_param(name, before[name])
+                if failure:
+                    reason += f"; could not restore {name}: {failure}"
+            return reason
+        self._local.kept = kept
+        return ""
+
+    def _after_set_parameters(self, params) -> None:
+        """ROS has stored the requested values. Where the robot kept another (a clamp, float32 rounding), ROS takes
+        the robot's."""
+        kept, self._local.kept = getattr(self._local, "kept", {}), {}
+        for param in params:
+            if param.name in kept and (kept[param.name] != param.value or type(kept[param.name]) is not type(param.value)):
+                self._mirror(param.name, kept[param.name])
 
     def _poll_once(self) -> None:
         if self._bridge is None:

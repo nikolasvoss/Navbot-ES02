@@ -56,7 +56,8 @@ A change of `signals` or `signals_rate_hz` subscribes the new list first and rel
 
 - The ROS value is a copy: it is what ROS last set or read at connect. A change made through `navlink` or the other port does not update it, and a restart of the robot rebuilds all firmware parameters from the robot.
 - A value given at startup (`-p speed_kp:=0.1` or a parameters file) for a firmware parameter is sent to the robot once the catalog is read. If the robot refuses it, the bridge logs a warning and keeps the robot's value.
-- A set request that mixes parameters is applied parameter by parameter and is not rolled back. `set_parameters_atomically` is the same.
+- A request that sets several firmware parameters, or a parameter and the signal stream, is all or nothing. Before the first write the bridge reads the current robot values of that request. If the robot refuses a value, the bridge writes the earlier values back and the result carries the refusal text. If a write-back fails too, the reason names the parameter (`; could not restore speed_ki: ...`). `ros2 param set` of one name at a time is unchanged.
+- ROS stores the value the robot reports in its `Ack`, not the requested one. A robot that clamps a value, or `f32` rounding (`0.1` becomes `0.10000000149011612`), shows in `ros2 param get`. The bridge corrects the stored value before the set call returns.
 - A `ros2 param set` waits for the robot's answer (about 1.5 s when the robot does not answer), and so does the caller of the service. The wait happens in a service thread: odometry, TF and IMU publishing continue at their normal rate. The node runs on a `MultiThreadedExecutor`, and the poll timer has a callback group of its own. A second set waits for the first.
 - A firmware parameter named like a bridge parameter (`port`, `baud`, `signals`, ...) is not exposed, with a warning.
 

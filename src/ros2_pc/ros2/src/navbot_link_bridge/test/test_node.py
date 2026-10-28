@@ -1,6 +1,7 @@
 """The node against the in-memory firmware. Needs a sourced ROS 2; skipped otherwise."""
 
 import os
+import struct
 import threading
 import time
 
@@ -123,6 +124,41 @@ def test_firmware_params_become_ros_parameters_and_set_goes_through_the_link(har
     assert flag.successful
     assert h.node.get_parameter("speed_kp").value == 0.25
     assert [e.value for e in fw.entries if e.name in ("speed_kp", "speed_i_on")] == [0.25, False]
+
+
+def test_a_refused_value_in_a_multi_parameter_set_puts_back_what_the_robot_took_before(harness):
+    fw = FakeFirmware(entries=limited_table())
+    h = harness(fw)
+    result = h.node.set_parameters_atomically([
+        Parameter("speed_ki", value=0.75),
+        Parameter("speed_kp", value=0.75),
+    ])
+    assert (result.successful, result.reason) == (False, "set_param refused: speed_kp must be within [0, 0.5]")
+    assert [(e.name, e.value) for e in fw.entries if e.name in ("speed_ki", "speed_kp")] == [
+        ("speed_kp", 0.08), ("speed_ki", 0.5)]
+    assert (h.node.get_parameter("speed_ki").value, h.node.get_parameter("speed_kp").value) == (
+        0.5, 0.07999999821186066)
+
+
+class ClampingFirmware(FakeFirmware):
+    """Keeps a value inside the entry's limits instead of refusing it."""
+
+    def _handle(self, msg, port):
+        if msg.WhichOneof("body") == "set_param" and self.entries[msg.set_param.id].limits:
+            low, high = self.entries[msg.set_param.id].limits
+            (value,) = struct.unpack("<f", msg.set_param.value)
+            msg.set_param.value = struct.pack("<f", min(max(value, low), high))
+        super()._handle(msg, port)
+
+
+def test_ros_stores_the_value_the_robot_kept_not_the_one_requested(harness):
+    fw = ClampingFirmware(entries=limited_table())
+    h = harness(fw)
+    results = h.node.set_parameters([Parameter("speed_kp", value=0.75), Parameter("speed_ki", value=0.1)])
+    assert [r.successful for r in results] == [True, True]
+    assert [e.value for e in fw.entries if e.name == "speed_kp"] == [0.5]
+    assert h.node.get_parameter("speed_kp").value == 0.5
+    assert h.node.get_parameter("speed_ki").value == 0.10000000149011612
 
 
 def test_actions_and_signals_are_not_ros_parameters(harness):

@@ -51,17 +51,24 @@ class FirmwareControls:
     def params(self) -> list[ParamInfo]:
         return [ParamInfo(e.name, e.type, self._link.get(e.name)) for e in self._catalog.params]
 
+    def get_param(self, name: str):
+        """The robot's current value; raises LinkError."""
+        return self._link.get(name)
+
     def set_param(self, name: str, value) -> str:
         """Returns "" when the robot applied the value, else why it did not."""
+        return self.apply_param(name, value)[0]
+
+    def apply_param(self, name: str, value) -> tuple[str, object]:
+        """(reason, applied): "" and the value the robot kept (it may clamp), or why it did not apply it."""
         if self._catalog is None:
-            return "the robot sent no catalog"
+            return "the robot sent no catalog", None
         try:
-            self._link.set(name, value)
+            return "", self._link.set(name, value)
         except LinkError as exc:
-            return str(exc)
+            return str(exc), None
         except struct.error:
-            return f"{name}: {value!r} does not fit {self._catalog.param(name).type.name.lower()}"
-        return ""
+            return f"{name}: {value!r} does not fit {self._catalog.param(name).type.name.lower()}", None
 
     def set_subscription(self, names: list[str], rate_hz: float) -> str:
         """Streams `names` (none stops the stream) at `rate_hz`, 0 for every control tick.
