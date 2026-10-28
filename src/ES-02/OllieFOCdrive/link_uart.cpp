@@ -220,11 +220,11 @@ int LinkUsbCommandRead() { return commandBytesLeft() ? commandLine[commandLinePo
 
 int LinkUsbCommandPeek() { return commandBytesLeft() ? commandLine[commandLinePos] : -1; }
 
-void LinkServiceRequests(uint32_t tickStartUs) {
+void LinkServiceRequests(uint32_t tickStartUs, bool balanceRequested) {
   if (!endpoint) return;
   static uint8_t payload[LINK_MAX_ITEM_LEN];
-  auto handle = [tickStartUs](uint8_t port, const uint8_t* data, size_t len) {
-    endpoint->Handle(port, data, len, tickStartUs);
+  auto handle = [tickStartUs, balanceRequested](uint8_t port, const uint8_t* data, size_t len) {
+    endpoint->Handle(port, data, len, tickStartUs, balanceRequested);
   };
   LinkServeQueued(requests, LINK_REQUESTS_PER_TICK, payload, handle);
 }

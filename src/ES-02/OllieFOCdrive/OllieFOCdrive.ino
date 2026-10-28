@@ -1049,7 +1049,7 @@ void runControlTick(bool imuUpdated) {
   controlStartUs = micros();
   controlGateSequence++;
 
-  LinkServiceRequests(controlStartUs);  // requests that arrived since the last tick take effect before anything is read
+  LinkServiceRequests(controlStartUs, balanceRequested());  // requests that arrived since the last tick take effect before anything is read
   readBatteryVoltage();  // Battery
 
   updateStatusLed();

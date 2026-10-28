@@ -306,14 +306,18 @@ struct Wire : LinkRxSink {
   LinkEndpoint& endpoint;
   uint8_t port;
   uint32_t nowUs;
-  Wire(LinkEndpoint& e, uint8_t p, uint32_t t) : endpoint(e), port(p), nowUs(t) {}
-  void OnPayload(const uint8_t* payload, size_t len) override { endpoint.Handle(port, payload, len, nowUs); }
+  bool balanceRequested;
+  Wire(LinkEndpoint& e, uint8_t p, uint32_t t, bool b) : endpoint(e), port(p), nowUs(t), balanceRequested(b) {}
+  void OnPayload(const uint8_t* payload, size_t len) override {
+    endpoint.Handle(port, payload, len, nowUs, balanceRequested);
+  }
 };
 
 template <size_t N>
-void Send(LinkEndpoint& endpoint, uint8_t port, const uint8_t (&request)[N], uint32_t nowUs = 1000) {
+void Send(LinkEndpoint& endpoint, uint8_t port, const uint8_t (&request)[N], uint32_t nowUs = 1000,
+          bool balanceRequested = false) {
   LinkRxDecoder decoder(false);
-  Wire wire(endpoint, port, nowUs);
+  Wire wire(endpoint, port, nowUs, balanceRequested);
   decoder.Feed(request, N, wire);
 }
 
@@ -350,6 +354,36 @@ const uint8_t kRepCallGain[] = {
     0x23, 0x08, 0x1B, 0x10, 0x2A, 0xAA, 0x01, 0x19, 0x08, 0x2B, 0x1A, 0x15, 0x67, 0x61, 0x69, 0x6E,
     0x20, 0x69, 0x73, 0x20, 0x6E, 0x6F, 0x74, 0x20, 0x61, 0x6E, 0x20, 0x61, 0x63, 0x74, 0x69, 0x6F,
     0x6E, 0x5B, 0xE1, 0x00,
+};
+// The balance cases run on a fresh endpoint, so its replies count seq from 1.
+const uint8_t kReqSetGainIdle[] = {
+    0x0A, 0x08, 0x31, 0xD2, 0x01, 0x08, 0x08, 0x05, 0x12, 0x04, 0x01, 0x01, 0x04, 0x3F, 0x9B, 0xBF,
+    0x00,
+};
+const uint8_t kRepSetGainIdle[] = {
+    0x0E, 0x08, 0x01, 0x10, 0x2A, 0xAA, 0x01, 0x0A, 0x08, 0x31, 0x10, 0x01, 0x22, 0x04, 0x01, 0x01,
+    0x04, 0x3F, 0x65, 0x1E, 0x00,
+};
+const uint8_t kRepSetGainIdleLog[] = {
+    0x25, 0x08, 0x02, 0x10, 0x2A, 0x6A, 0x1C, 0x08, 0x02, 0x1A, 0x11, 0x67, 0x61, 0x69, 0x6E, 0x3A,
+    0x20, 0x30, 0x2E, 0x32, 0x35, 0x20, 0x2D, 0x3E, 0x20, 0x30, 0x2E, 0x35, 0x22, 0x05, 0x70, 0x61,
+    0x72, 0x61, 0x6D, 0xEC, 0xF8, 0x00,
+};
+const uint8_t kReqSetGainBalancing[] = {
+    0x0A, 0x08, 0x32, 0xD2, 0x01, 0x08, 0x08, 0x05, 0x12, 0x04, 0x01, 0x05, 0x40, 0x3F, 0xC8, 0xB7,
+    0x00,
+};
+const uint8_t kRepSetGainBalancing[] = {
+    0x2B, 0x08, 0x03, 0x10, 0x2A, 0xAA, 0x01, 0x21, 0x08, 0x32, 0x1A, 0x1D, 0x67, 0x61, 0x69, 0x6E,
+    0x3A, 0x20, 0x72, 0x65, 0x66, 0x75, 0x73, 0x65, 0x64, 0x20, 0x77, 0x68, 0x69, 0x6C, 0x65, 0x20,
+    0x62, 0x61, 0x6C, 0x61, 0x6E, 0x63, 0x69, 0x6E, 0x67, 0xE0, 0x11, 0x00,
+};
+const uint8_t kReqGetGainBalancing[] = {
+    0x0A, 0x08, 0x33, 0xCA, 0x01, 0x02, 0x08, 0x05, 0xC1, 0x37, 0x00,
+};
+const uint8_t kRepGetGainBalancing[] = {
+    0x0E, 0x08, 0x04, 0x10, 0x2A, 0xAA, 0x01, 0x0A, 0x08, 0x33, 0x10, 0x01, 0x22, 0x04, 0x01, 0x01,
+    0x04, 0x3F, 0xF4, 0xF0, 0x00,
 };
 
 }  // namespace
@@ -408,7 +442,7 @@ int main() {
   Check(sink.Take(0).empty(), "UART1 saw none of USB's traffic");
 
   const uint8_t notAMessage[] = {0xFF, 0xFF};
-  endpoint.Handle(kLinkPortUart, notAMessage, sizeof(notAMessage), 1000);
+  endpoint.Handle(kLinkPortUart, notAMessage, sizeof(notAMessage), 1000, false);
   Check(endpoint.undecodable() == 1 && sink.Take(0).empty(), "a payload nanopb rejects is counted and unanswered");
 
   gLow = 3.0f;
@@ -445,6 +479,21 @@ int main() {
   Send(endpoint, kLinkPortUart, kReqCallGain);
   Check(Is(sink.Take(0), kRepCallGain), "Call of a parameter is refused");
   Check(gGoStarts == 1 && sink.Take(0).empty(), "the handler ran once, and nothing else was sent");
+
+  // SetParam is refused while balance is requested (CH5 on or the controller running); GetParam still reads.
+  gGain = 0.25f;
+  QueueSink balanceSink;
+  LinkEndpoint balanceEndpoint(kTable, kTableCount, "fw-test-1", kBudgets, balanceSink);
+  Send(balanceEndpoint, kLinkPortUart, kReqSetGainIdle, 1000, false);
+  Check(Is(balanceSink.Take(0), kRepSetGainIdle), "idle: SetParam is applied and Acked");
+  Check(Is(balanceSink.Take(0), kRepSetGainIdleLog), "idle: the applied value is logged");
+  Check(gGain == 0.5f, "idle: the running value is 0.5");
+  Send(balanceEndpoint, kLinkPortUart, kReqSetGainBalancing, 1000, true);
+  Check(Is(balanceSink.Take(0), kRepSetGainBalancing), "balancing: SetParam is refused with the name and the reason");
+  Check(gGain == 0.5f, "balancing: the refused value did not reach the running value");
+  Check(balanceSink.Take(0).empty(), "balancing: a refused SetParam logs nothing");
+  Send(balanceEndpoint, kLinkPortUart, kReqGetGainBalancing, 1000, true);
+  Check(Is(balanceSink.Take(0), kRepGetGainBalancing), "balancing: GetParam still reads 0.5");
 
   return failed ? 1 : 0;
 }

@@ -114,7 +114,7 @@ bool LinkEndpoint::CheckIndex(uint8_t port, uint32_t requestSeq, uint32_t index)
   return false;
 }
 
-void LinkEndpoint::Handle(uint8_t port, const uint8_t* payload, size_t len, uint32_t nowUs) {
+void LinkEndpoint::Handle(uint8_t port, const uint8_t* payload, size_t len, uint32_t nowUs, bool balanceRequested) {
   navbot_link_v1_Message request;
   if (!LinkDecodeMessage(payload, len, request)) {
     ++undecodable_;
@@ -162,6 +162,12 @@ void LinkEndpoint::Handle(uint8_t port, const uint8_t* payload, size_t len, uint
       const SignalEntry& entry = table_[set.id];
       if (entry.kind != SignalKind::Param) {
         snprintf(error, sizeof(error), "%s is not a parameter", entry.name);
+        SendAck(port, seq, error, nullptr, 0);
+        break;
+      }
+      // Every parameter feeds the balance controller or a sensor filter, so none changes while it runs.
+      if (balanceRequested) {
+        snprintf(error, sizeof(error), "%s: refused while balancing", entry.name);
         SendAck(port, seq, error, nullptr, 0);
         break;
       }

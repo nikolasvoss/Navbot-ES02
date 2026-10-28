@@ -131,7 +131,7 @@ Migration step 4 removed the letter commands. Each one is a parameter (`set`) or
 
 Not exposed as parameters, by design: the balance settings that copy motor constants (`kvRating`, `phaseResistanceOhm`, `voltageLimitV`, `currentLimitA`, `leftWheelSign`, `rightWheelSign`). The balance parameters that are exposed are `speed_kp`, `speed_ki`, `speed_i_on`, `tilt_ref_limit`, `trim_envelope`, `tilt_p`, `gyro_damping`, `yaw_p`, `speed_cap` and `yaw_rate_cap`. `list` shows them with their units.
 
-A `set` applies at the start of the next control tick. The robot refuses a value that breaks a cross-field rule (for example `trim_envelope` above `tilt_ref_limit`) and keeps the running value; the Ack names the rule.
+A `set` applies at the start of the next control tick. The robot refuses a value that breaks a cross-field rule (for example `trim_envelope` above `tilt_ref_limit`) and keeps the running value; the Ack names the rule. While balance is requested (CH5 on, or the controller running) the robot refuses every `set` with `<name>: refused while balancing`. `get` and the streams still work, so switch balance off before changing a value.
 
 ## Tests
 

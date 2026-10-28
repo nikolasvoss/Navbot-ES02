@@ -91,7 +91,10 @@ class StdoutSink : public LinkMessageSink {
 struct Requests : LinkRxSink {
   LinkEndpoint* endpoint = nullptr;
   uint32_t nowUs = 0;
-  void OnPayload(const uint8_t* payload, size_t len) override { endpoint->Handle(kLinkPortUart, payload, len, nowUs); }
+  // The fake robot never balances, so SetParam is always allowed.
+  void OnPayload(const uint8_t* payload, size_t len) override {
+    endpoint->Handle(kLinkPortUart, payload, len, nowUs, false);
+  }
 };
 
 }  // namespace
