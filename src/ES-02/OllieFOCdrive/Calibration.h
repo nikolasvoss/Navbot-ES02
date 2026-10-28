@@ -73,8 +73,8 @@ struct CalibrationResult {
 inline const char *CalibrationStartRefusal(float step, bool balanceActive, bool motorTestActive) {
   if (!std::isfinite(step) || std::floor(step) != step) return "step must be a whole number";
   if (step == 0.0f) return nullptr;
-  if (balanceActive) return "refused: balance active";
-  if (motorTestActive) return "refused: motor test active";
+  if (balanceActive) return "balance active";
+  if (motorTestActive) return "motor test active";
   return nullptr;
 }
 

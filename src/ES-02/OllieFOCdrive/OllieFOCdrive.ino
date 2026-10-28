@@ -506,11 +506,11 @@ struct ServoTrimGroup {
 bool startMotorRequest(const MotorDiagnostic::Request &request, const char **error) {
   // The diagnostic build initializes no motors or drivers and runs no motor loop, so a motor test must not start.
   if (SENSOR_DIAGNOSTIC_MODE) {
-    *error = "refused: sensor diagnostic build has no motor control";
+    *error = "sensor diagnostic build has no motor control";
     return false;
   }
   if (wheelOverspeed.tripped) {
-    *error = "refused: wheel overspeed latched, send motor_reset";
+    *error = "wheel overspeed latched, send motor_reset";
     return false;
   }
   const MotorDiagnostic::RequestResult result = MotorDiagnostic::start(motorDiagnosticState, request, diagnosticInputs());
@@ -548,11 +548,11 @@ bool stopMotorTest(const float *, const char **) {
 bool resetMotorFault(const float *, const char **error) {
   // Checked before the motor fault is cleared, so a refused reset leaves that fault latched too.
   if (!OverspeedGuard::MayRearm(wheelOverspeed, m1VelocityRadPerSec, m2VelocityRadPerSec)) {
-    *error = "refused: wheel overspeed latched, a wheel is above 30 rad/s";
+    *error = "wheel overspeed latched, a wheel is above 30 rad/s";
     return false;
   }
   if (!MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs())) {
-    *error = "refused: balance off and safe speed required";
+    *error = "balance off and safe speed required";
     return false;
   }
   resetWheelOverspeed();
@@ -561,7 +561,7 @@ bool resetMotorFault(const float *, const char **error) {
 
 bool startCalibration(const float *args, const char **error) {
   if (SENSOR_DIAGNOSTIC_MODE) {  // no calibration step runs in this build, so the request would be accepted and never run
-    *error = "refused: sensor diagnostic build runs no calibration";
+    *error = "sensor diagnostic build runs no calibration";
     return false;
   }
   *error = CalibrationStartRefusal(args[0], balanceRequested(), motorDiagnosticState.active || motorDiagnosticApplied);

@@ -189,9 +189,9 @@ ServoTrimsDegrees CalibrationStore::saveChangedServos(
 void startRefusedWhileBalancingOrMotorTesting() {
   require(CalibrationStartRefusal(1.0f, false, false) == nullptr, "a gyroscope step starts when nothing else runs");
   require(CalibrationStartRefusal(3.0f, false, false) == nullptr, "a servo step starts when nothing else runs");
-  require(std::strcmp(CalibrationStartRefusal(2.0f, true, false), "refused: balance active") == 0,
+  require(std::strcmp(CalibrationStartRefusal(2.0f, true, false), "balance active") == 0,
           "a step is refused while balance runs");
-  require(std::strcmp(CalibrationStartRefusal(2.0f, false, true), "refused: motor test active") == 0,
+  require(std::strcmp(CalibrationStartRefusal(2.0f, false, true), "motor test active") == 0,
           "a step is refused while a motor test runs");
   require(CalibrationStartRefusal(0.0f, true, true) == nullptr, "step 0 ends a step even while balance runs");
   require(std::strcmp(CalibrationStartRefusal(1.5f, false, false), "step must be a whole number") == 0,

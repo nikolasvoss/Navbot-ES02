@@ -50,7 +50,7 @@ int main() {
   assert(!MakeVoltageRequest(1.0f, 0.1f, 1000.9f, parsed));
   assert(std::strcmp(RequestResultText(RequestResult::Accepted), "accepted") == 0);
   assert(std::strcmp(RequestResultText(RequestResult::Invalid), "invalid request") == 0);
-  assert(std::strcmp(RequestResultText(RequestResult::FaultLatched), "refused: fault latched, send motor_reset") == 0);
+  assert(std::strcmp(RequestResultText(RequestResult::FaultLatched), "fault latched, send motor_reset") == 0);
 
   State state{};
   Request request = currentRequest();
@@ -74,7 +74,7 @@ int main() {
   balancing.balanceEnabled = true;
   assert(start(state, request, balancing) == RequestResult::Unsafe);
   assert(std::strcmp(RequestResultText(RequestResult::Unsafe),
-                     "refused: balance or calibration active, or a wheel is too fast") == 0);
+                     "balance or calibration active, or a wheel is too fast") == 0);
   assert(!state.active && state.fault == Fault::None);
   assert(start(state, request, safeInputs()) == RequestResult::Accepted);
   assert(update(state, calibration) == Fault::CalibrationActive);

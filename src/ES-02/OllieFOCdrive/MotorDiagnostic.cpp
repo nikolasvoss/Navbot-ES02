@@ -64,11 +64,11 @@ const char *RequestResultText(RequestResult result) {
     case RequestResult::Invalid:
       return "invalid request";
     case RequestResult::Unsafe:
-      return "refused: balance or calibration active, or a wheel is too fast";
+      return "balance or calibration active, or a wheel is too fast";
     case RequestResult::FaultLatched:
-      return "refused: fault latched, send motor_reset";
+      return "fault latched, send motor_reset";
   }
-  return "refused";
+  return "not accepted";
 }
 
 RequestResult start(State &state, const Request &request, const Inputs &inputs) {

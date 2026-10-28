@@ -109,6 +109,19 @@ def test_robot_refusal_raises_with_its_reason():
             link.set("speed_kp", 0.2)
 
 
+def test_a_refused_call_says_refused_once_before_the_robots_reason():
+    class RefusingMotorReset(FakeFirmware):
+        def _handle(self, msg, port):
+            if msg.WhichOneof("body") == "call":
+                return self._ack(msg.seq, port, error="wheel overspeed latched, send motor_reset")
+            super()._handle(msg, port)
+
+    with open_link(RefusingMotorReset()) as link:
+        link.catalog()
+        with pytest.raises(LinkError, match="^call refused: wheel overspeed latched, send motor_reset$"):
+            link.call("motor_reset")
+
+
 def test_call_checks_names_and_bounds_before_sending():
     fw = FakeFirmware()
     with open_link(fw) as link:

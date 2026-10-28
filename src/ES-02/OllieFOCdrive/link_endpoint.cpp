@@ -213,9 +213,10 @@ void LinkEndpoint::Handle(uint8_t port, const uint8_t* payload, size_t len, uint
         inBounds = false;
       }
       if (!inBounds) break;
-      const char* reason = nullptr;
+      // The PC library prefixes a refusal with "call refused: ", so the reason is sent bare.
+      const char* reason = "no reason given";
       if (!entry.call(call.args, &reason)) {
-        SendAck(port, seq, reason ? reason : "refused", nullptr, 0);
+        SendAck(port, seq, reason, nullptr, 0);
         break;
       }
       SendAck(port, seq, nullptr, nullptr, 0);
