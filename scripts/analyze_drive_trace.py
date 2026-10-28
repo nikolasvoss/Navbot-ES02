@@ -51,8 +51,10 @@ def analyze(path):
     if not rows:
         raise ValueError(f"{path}: keine vollständigen DRIVE-Zeilen")
     active = [row for row in rows if row["ch5_mode"] >= 1]
+    # K logs: a 1 s or larger step is a gap, not an interval. Navlink rows are uneven by design.
+    longest_interval_ms = float("inf") if kind == NAVLINK else 1000
     intervals = [b["time_ms"] - a["time_ms"] for a, b in zip(rows, rows[1:])
-                 if 0 < b["time_ms"] - a["time_ms"] < 1000]
+                 if 0 < b["time_ms"] - a["time_ms"] < longest_interval_ms]
     first_active = active[0] if active else None
 
     # A release counts only after at least two consecutive command samples.

@@ -40,3 +40,10 @@ def test_real_wrap_is_still_unwrapped(tmp_path):
 def test_drive_analysis_shares_the_restart_handling():
     result = analyze(FIXTURES / "drive-navlink-restart.csv")
     assert result["duration_s"] == 4.0
+    assert result["median_interval_ms"] == 1000.0
+
+
+def test_median_interval_of_a_sub_1hz_navlink_capture_is_not_dropped():
+    result = analyze(FIXTURES / "drive-navlink-sub-1hz.csv")
+    assert result["duration_s"] == 10.0
+    assert result["median_interval_ms"] == 2000.0
