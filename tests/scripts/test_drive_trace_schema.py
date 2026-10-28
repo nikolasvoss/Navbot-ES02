@@ -50,7 +50,7 @@ class DriveSchemaTest(unittest.TestCase):
                             + drive_line(0) + "\n"
                             + drive_line(7).rsplit(",", 1)[0] + "\n",
                             encoding="utf-8")
-            kind, header, rows, malformed = read_trace(path)
+            kind, header, rows, malformed, _ = read_trace(path)
         self.assertEqual(kind, "DRIVE")
         self.assertEqual(len(rows), 1)
         self.assertEqual(malformed, 1)
@@ -63,7 +63,7 @@ class DriveSchemaTest(unittest.TestCase):
                             + drive_line(7, motor1_current_sp="inf") + "\n"
                             + drive_line(14, battery_raw_instant_v="nan") + "\n",
                             encoding="utf-8")
-            _, _, rows, malformed = read_trace(path)
+            _, _, rows, malformed, _ = read_trace(path)
         self.assertEqual(len(rows), 1)
         self.assertEqual(malformed, 2)
 

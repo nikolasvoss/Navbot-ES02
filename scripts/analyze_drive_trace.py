@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Check DRIVE captures and compare repeatable drive/stop measurements.
 
-This reads saved logs only. It never opens a serial port or changes the robot.
+Reads K58 DRIVE logs and navlink CSVs whose columns carry the K58 header names (see REQUIRED;
+`time_ms` comes from `t_us`). This reads saved logs only. It never opens a serial port or changes the robot.
 """
 
 import argparse
@@ -10,7 +11,7 @@ import statistics
 import sys
 from pathlib import Path
 
-from summarize_balance_trace import imu_sample_rate, read_trace
+from summarize_balance_trace import NAVLINK, imu_sample_rate, read_trace
 
 
 REQUIRED = {
@@ -20,6 +21,7 @@ REQUIRED = {
     "imu_long_gap_count", "imu_max_interval_us", "control_execution_us",
     "max_loop_entry_interval_us", "motor1_current_sp", "motor2_current_sp",
     "motor1_voltage_q", "motor2_voltage_q", "battery_raw_instant_v",
+    "imu_read_time_us",
 }
 MIN_ROWS = 20
 MAX_BAD_FRACTION = 0.02
@@ -39,13 +41,13 @@ def direction(row):
 
 
 def analyze(path):
-    kind, header, records, malformed = read_trace(path)
-    if kind != "DRIVE" or not header:
+    kind, header, records, malformed, _ = read_trace(path)
+    if kind not in ("DRIVE", NAVLINK) or not header:
         raise ValueError(f"{path}: kein DRIVE-Header")
     missing = sorted(REQUIRED - set(header))
     if missing:
         raise ValueError(f"{path}: fehlende DRIVE-Spalten: {', '.join(missing)}")
-    rows = [row for record_kind, row in records if record_kind == "DRIVE"]
+    rows = [row for record_kind, row in records if record_kind == kind]
     if not rows:
         raise ValueError(f"{path}: keine vollständigen DRIVE-Zeilen")
     active = [row for row in rows if row["ch5_mode"] >= 1]
@@ -204,7 +206,7 @@ def markdown(results):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("logs", nargs="+", type=Path, help="ein oder mehrere K58-DRIVE-Logs")
+    parser.add_argument("logs", nargs="+", type=Path, help="ein oder mehrere K58-DRIVE-Logs oder navlink-CSVs")
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     parser.add_argument("--output", type=Path, help="Bericht speichern statt auf stdout ausgeben")
     parser.add_argument("--require-stop", action="store_true",

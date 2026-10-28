@@ -1,0 +1,14 @@
+# synthetic navlink fixture for tests/scripts; not robot data
+# build: synthetic-1
+# rate: 100 Hz
+# param speed_kp=0.08
+# param speed_ki=0.5
+# param speed_i_on=1
+t_us,speed_target,speed_measured,speed_p,speed_i,tilt_ref,tilt_clipped
+1010000,0.5,0.125,-0.03125,0.001,0,1
+1022000,0.5,0.25,-0.03125,0.002,0,0
+# log t_ms=1030 INFO [param] speed_kp: 0.08 -> 0.12
+1029000,0.5,0.375,-0.046875,0.003,0.01,1
+# lost 3 frames before seq 41
+1052000,0.5,0.5,-0.046875,0.004,0.02,0
+1060000,0.5,0.5,-0.0625,0.005,0.02,1

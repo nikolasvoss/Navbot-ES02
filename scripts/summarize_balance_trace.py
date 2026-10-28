@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Create a compact, repeatable Markdown summary of balance trace log files."""
+"""Create a compact, repeatable Markdown summary of balance trace log files.
+
+Reads both capture formats: the K55 to K58 profile logs (TRACE, CTRL, BAL and DRIVE rows) and
+the navlink CSV (`navlink capture`: `#` header comments, a `t_us,<signal names>` column header).
+"""
 
 import argparse
 import csv
@@ -9,10 +13,16 @@ import statistics
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import NamedTuple
 
 
 RECORD_START = re.compile(r"(?=(?:TRACE|CTRL|BAL|DRIVE),)")
 TRACE_PREFIXES = {"TRACE", "CTRL", "BAL", "DRIVE"}
+NAVLINK = "navlink"
+NAVLINK_COLUMN_HEADER = "t_us,"
+UINT32_RANGE = 2 ** 32
+LOST_FRAMES = re.compile(r"lost (\d+) frames before seq \d+")
+MAX_LISTED_EVENTS = 5
 
 # Keep the report useful to an agent without reproducing the whole time series.
 REPORT_FIELDS = {
@@ -37,68 +47,131 @@ REPORT_FIELDS = {
 }
 
 
+class Trace(NamedTuple):
+    kind: str | None      # TRACE, CTRL, BAL, DRIVE or NAVLINK
+    header: list | None
+    rows: list            # (kind, {column: float})
+    malformed: int
+    notes: dict           # navlink header and event comments; empty for K logs
+
+
+def parse_numbers(names, values):
+    """Map names to finite floats, or None when a value is not one."""
+    parsed = {}
+    for name, value in zip(names, values):
+        try:
+            number = float(value)
+        except ValueError:
+            return None
+        if not math.isfinite(number):
+            return None
+        parsed[name] = number
+    return parsed
+
+
 def read_trace(path):
+    # newline="" preserves physical line boundaries while csv handles fields.
+    with path.open("r", encoding="utf-8", errors="replace", newline="") as source:
+        lines = [line for line in (physical.replace("\x00", "").strip() for physical in source) if line]
+    if any(line.startswith(NAVLINK_COLUMN_HEADER) for line in lines):
+        return read_navlink(lines)
+    return read_k_profile(lines)
+
+
+def read_k_profile(lines):
     header = None
     record_type = None
     rows = []
     malformed = 0
 
-    # newline="" preserves physical line boundaries while csv handles fields.
-    with path.open("r", encoding="utf-8", errors="replace", newline="") as source:
-        for physical_line in source:
-            line = physical_line.replace("\x00", "").strip()
-            if not line:
-                continue
-            if line.startswith("# "):
-                candidate = line[2:].strip()
-                first = candidate.split(",", 1)[0]
-                if first in TRACE_PREFIXES:
-                    try:
-                        header = next(csv.reader([candidate]))
-                        record_type = first
-                    except csv.Error:
-                        malformed += 1
-                continue
-
-            starts = [match.start() for match in RECORD_START.finditer(line)]
-            if not starts:
-                continue
-            if starts[0] > 0:
-                # Firmware startup text or a damaged prefix before a trace row.
-                line = line[starts[0]:]
-                starts = [match.start() for match in RECORD_START.finditer(line)]
-            chunks = [line[start:end] for start, end in zip(starts, starts[1:] + [len(line)])]
-            for chunk in chunks:
+    for line in lines:
+        if line.startswith("# "):
+            candidate = line[2:].strip()
+            first = candidate.split(",", 1)[0]
+            if first in TRACE_PREFIXES:
                 try:
-                    fields = next(csv.reader([chunk]))
+                    header = next(csv.reader([candidate]))
+                    record_type = first
                 except csv.Error:
                     malformed += 1
-                    continue
-                kind = fields[0] if fields else ""
-                if kind not in TRACE_PREFIXES:
-                    continue
-                # Logs normally carry a single header. If absent, retain records
-                # for the count but report them as malformed rather than guessing units.
-                if not header or header[0] != kind or len(fields) != len(header):
-                    malformed += 1
-                    continue
-                parsed = {}
-                valid = True
-                for name, value in zip(header[1:], fields[1:]):
-                    try:
-                        number = float(value)
-                    except ValueError:
-                        valid = False
-                        break
-                    if not math.isfinite(number):
-                        valid = False
-                        break
-                    parsed[name] = number
-                if valid:
-                    rows.append((kind, parsed))
-                else:
-                    malformed += 1
-    return record_type, header, rows, malformed
+            continue
+
+        starts = [match.start() for match in RECORD_START.finditer(line)]
+        if not starts:
+            continue
+        if starts[0] > 0:
+            # Firmware startup text or a damaged prefix before a trace row.
+            line = line[starts[0]:]
+            starts = [match.start() for match in RECORD_START.finditer(line)]
+        chunks = [line[start:end] for start, end in zip(starts, starts[1:] + [len(line)])]
+        for chunk in chunks:
+            try:
+                fields = next(csv.reader([chunk]))
+            except csv.Error:
+                malformed += 1
+                continue
+            kind = fields[0] if fields else ""
+            if kind not in TRACE_PREFIXES:
+                continue
+            # Logs normally carry a single header. If absent, retain records
+            # for the count but report them as malformed rather than guessing units.
+            if not header or header[0] != kind or len(fields) != len(header):
+                malformed += 1
+                continue
+            parsed = parse_numbers(header[1:], fields[1:])
+            if parsed is None:
+                malformed += 1
+            else:
+                rows.append((kind, parsed))
+    return Trace(record_type, header, rows, malformed, {})
+
+
+def read_navlink(lines):
+    """Rows get `t_us` (unwrapped) and `time_ms` = `t_us` / 1000, the column K logs call `time_ms`."""
+    columns = None
+    rows = []
+    malformed = 0
+    notes = {"build": None, "rate": None, "params": [], "events": [], "lost_frames": 0}
+    previous_raw = None
+    wraps = 0
+
+    for line in lines:
+        if line.startswith("#"):
+            comment = line[1:].strip()
+            if comment.startswith("build:"):
+                notes["build"] = comment[len("build:"):].strip()
+            elif comment.startswith("rate:"):
+                notes["rate"] = comment[len("rate:"):].strip()
+            elif comment.startswith("param "):
+                notes["params"].append(comment[len("param "):].strip())
+            elif comment.startswith(("log ", "slot ")):
+                notes["events"].append(comment)
+            elif lost := LOST_FRAMES.fullmatch(comment):
+                notes["lost_frames"] += int(lost[1])
+            continue
+        if columns is None:
+            if line.startswith(NAVLINK_COLUMN_HEADER):
+                columns = line.split(",")
+            continue
+        try:
+            fields = next(csv.reader([line]))
+        except csv.Error:
+            malformed += 1
+            continue
+        parsed = parse_numbers(columns, fields) if len(fields) == len(columns) else None
+        if parsed is None:
+            malformed += 1
+            continue
+        # t_us is the robot's micros() and wraps at 2^32 (about 71.6 min).
+        raw = parsed["t_us"]
+        if previous_raw is not None and raw < previous_raw - UINT32_RANGE / 2:
+            wraps += 1
+        previous_raw = raw
+        parsed["t_us"] = raw + wraps * UINT32_RANGE
+        parsed["time_ms"] = parsed["t_us"] / 1000
+        rows.append((NAVLINK, parsed))
+    header = ["t_us", "time_ms", *columns[1:]] if columns else None
+    return Trace(NAVLINK if columns else None, header, rows, malformed, notes)
 
 
 def fmt(value):
@@ -119,8 +192,23 @@ def imu_sample_rate(data):
     return advanced / elapsed_s if elapsed_s > 0 and advanced > 0 else None
 
 
+def navlink_lines(notes):
+    lines = ["- Zeitbasis: `t_us` (Roboter-`micros()`); Zeilen sind nicht gleichmäßig verteilt"
+             f"; Firmware: **{notes['build'] or '—'}**; Rate: **{notes['rate'] or '—'}**"]
+    if notes["params"]:
+        lines.append("- Parameter bei Start: " + ", ".join(f"`{param}`" for param in notes["params"]))
+    lines.append(f"- Verlorene Frames (`# lost`): **{notes['lost_frames']}**")
+    events = notes["events"]
+    if events:
+        lines.append(f"- Log-Ereignisse: **{len(events)}**")
+        lines.extend(f"  - `{event}`" for event in events[:MAX_LISTED_EVENTS])
+        if len(events) > MAX_LISTED_EVENTS:
+            lines.append(f"  - … {len(events) - MAX_LISTED_EVENTS} weitere")
+    return lines
+
+
 def summarize(path):
-    kind, header, rows, malformed = read_trace(path)
+    kind, header, rows, malformed, notes = read_trace(path)
     actual_kinds = Counter(row_kind for row_kind, _ in rows)
     if not rows:
         return [f"### `{path}`", "", "Keine vollständigen Trace-Datensätze gefunden.",
@@ -139,6 +227,8 @@ def summarize(path):
         lines.append(f"- Zeitspanne der gültigen Datensätze: **{duration:.2f} s**"
                      + (f"; Medianabstand zwischen gültigen Datensätzen: **{statistics.median(intervals):.1f} ms**"
                         if intervals else ""))
+    if kind == NAVLINK:
+        lines.extend(navlink_lines(notes))
     if header and "sequence" in header:
         missing = missing_sequence_count(data, "sequence")
         lines.append(f"- Sequenzlücken: **{missing}**; Gerätezeitstempel: `time_ms`, nicht PC-Empfangszeit")
@@ -164,7 +254,11 @@ def summarize(path):
             transition_text = ", ".join(f"{before}→{after} bei {t:g} ms" for t, before, after in transitions)
             lines.append(f"- Erkannte Wechsel: {transition_text}")
 
-    available = [field for field in REPORT_FIELDS.get(kind, ()) if field in (header or [])]
+    if kind == NAVLINK:
+        # Preset columns differ per capture, so report every signal.
+        available = header[2:]
+    else:
+        available = [field for field in REPORT_FIELDS.get(kind, ()) if field in (header or [])]
     if available:
         lines.extend(["", "| Messgröße | Min | Max | Mittel | Anfang → Ende |",
                       "|---|---:|---:|---:|---:|"])
@@ -182,7 +276,7 @@ def summarize(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("logs", nargs="+", type=Path, help="eine oder mehrere Capture-Logdateien")
+    parser.add_argument("logs", nargs="+", type=Path, help="eine oder mehrere Capture-Logdateien (K55 bis K58 oder navlink-CSV)")
     parser.add_argument("--output", "-o", type=Path,
                         help="Markdown-Ziel; ohne Option Ausgabe auf stdout")
     args = parser.parse_args()
