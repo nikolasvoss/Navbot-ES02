@@ -22,8 +22,9 @@ constexpr uint8_t kLinkPortUsb = 1;   // UART0, the CH340
 
 // A port may carry 70 % of its line rate. The rest stays free for Log and Ack frames.
 constexpr uint32_t kLinkBudgetPercent = 70;
-// Frame header, CRC, COBS and delimiter on top of the row bytes.
-constexpr uint32_t kLinkFrameOverheadPercent = 5;
+// Bytes a row adds to its frame: header, CRC, COBS and delimiter. A SignalBatch from the PC encoder (seq 100000, t_ms
+// 3000000) carries 20 bytes beyond its row for 1 and 8 entries and 22 for 48, so 24 covers all three.
+constexpr uint32_t kLinkFrameOverheadBytes = 24;
 // A row every tick is budgeted at this rate. Measured control rates were 424, 521 and about 710 passes per second as
 // the code changed; the tick gate allows at most 1000.
 constexpr uint32_t kLinkAssumedTickHz = 710;

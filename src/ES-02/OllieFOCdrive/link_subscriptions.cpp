@@ -50,7 +50,7 @@ bool Less(SignalType type, uint32_t a, uint32_t b) {
 
 uint32_t LinkSubscriptionLoad(size_t idCount, uint32_t periodUs) {
   const uint64_t rowBytes = 4 + 4 * idCount;
-  return static_cast<uint32_t>(rowBytes * RateHz(periodUs) * (100 + kLinkFrameOverheadPercent) / 100);
+  return static_cast<uint32_t>((rowBytes + kLinkFrameOverheadBytes) * RateHz(periodUs));
 }
 
 uint32_t LinkPortAllowance(const LinkPortBudget& budget) {
