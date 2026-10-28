@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <cmath>
 #include <type_traits>
 
 // The entry table behind the catalog and the sampler. The sketch expands signals.def.h into a constexpr array of
@@ -24,14 +25,25 @@ struct SignalArg {
   float max;
 };
 
+// The argument list of an action. Built by a function, so each list has static storage without a named array.
+struct SignalArgs {
+  const SignalArg* items;
+  uint8_t count;
+};
+
+// One row of the table. Which function fields a row sets depends on its kind:
+//   SIGNAL, SIGNAL_MIN, SIGNAL_MAX: read.
+//   PARAM: read, and write, which applies a value in 4 wire bytes or sets *error and returns false.
+//   ACTION: call, which starts the action or sets *error and returns false, and args.
 struct SignalEntry {
   const char* name;
   const char* unit;
   SignalKind kind;
-  SignalType type;     // None for an action
-  uint32_t (*read)();  // the current value as its 4 wire bytes; null for an action
-  const SignalArg* args;
-  uint8_t argCount;
+  SignalType type;  // None for an action
+  uint32_t (*read)();
+  bool (*write)(uint32_t bits, const char** error);
+  bool (*call)(const float* args, const char** error);
+  SignalArgs (*args)();
 };
 
 template <class T>
@@ -69,10 +81,32 @@ inline uint32_t SignalBits(T value) {
   }
 }
 
+// The inverse of SignalBits for a parameter: stores the value the 4 wire bytes carry in out, or returns the reason
+// they are not a value of its type. An integer must be exact in its type, so a SetParam cannot wrap a value.
+template <class T>
+const char* SignalFromBits(uint32_t bits, T& out) {
+  using V = std::remove_cv_t<T>;
+  if constexpr (std::is_same_v<V, bool>) {
+    if (bits > 1) return "a bool takes 0 or 1";
+    out = bits == 1;
+  } else if constexpr (std::is_floating_point_v<V>) {
+    float single;
+    memcpy(&single, &bits, sizeof(single));
+    if (!std::isfinite(single)) return "the value is not a finite number";
+    out = static_cast<V>(single);
+  } else {
+    static_assert(std::is_integral_v<V> && sizeof(V) <= 4, "a parameter is a bool, a float or an integer up to 32 bits");
+    const V value = static_cast<V>(bits);
+    if (static_cast<uint32_t>(value) != bits) return "the value is out of range";
+    out = value;
+  }
+  return nullptr;
+}
+
 // One table row for a SIGNAL, SIGNAL_MIN or SIGNAL_MAX line. The lambda reads the state each time it is called, so an
 // expression such as imu::latest().x needs no pointer that could go stale.
 #define SIGNAL_TABLE_ROW(kind, name, unit, expr) \
-  {#name, unit, kind, SignalTypeOf<decltype(expr)>(), +[]() -> uint32_t { return SignalBits(expr); }, nullptr, 0},
+  {#name, unit, kind, SignalTypeOf<decltype(expr)>(), +[]() -> uint32_t { return SignalBits(expr); }, nullptr, nullptr, nullptr},
 
 constexpr size_t SignalStringLength(const char* text) {
   size_t length = 0;

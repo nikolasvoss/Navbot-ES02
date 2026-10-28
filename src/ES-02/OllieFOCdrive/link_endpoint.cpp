@@ -67,12 +67,13 @@ void LinkEndpoint::SendCatalogEntry(uint8_t port, uint32_t index) {
   CopyText(out.unit, entry.unit);
   out.kind = static_cast<navbot_link_v1_CatalogEntry_Kind>(entry.kind);
   out.type = static_cast<navbot_link_v1_CatalogEntry_Type>(entry.type);
-  for (size_t i = 0; i < entry.argCount; ++i) {
-    CopyText(out.args[i].name, entry.args[i].name);
-    out.args[i].min = entry.args[i].min;
-    out.args[i].max = entry.args[i].max;
+  const SignalArgs args = entry.args ? entry.args() : SignalArgs{nullptr, 0};
+  for (size_t i = 0; i < args.count; ++i) {
+    CopyText(out.args[i].name, args.items[i].name);
+    out.args[i].min = args.items[i].min;
+    out.args[i].max = args.items[i].max;
   }
-  out.args_count = entry.argCount;
+  out.args_count = args.count;
   if (index == 0) CopyText(out.build, build_);
   sink_.Send(port, reply);
 }

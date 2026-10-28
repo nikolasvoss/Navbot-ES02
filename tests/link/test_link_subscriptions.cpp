@@ -21,10 +21,10 @@ uint32_t ReadMax() { return static_cast<uint32_t>(gMax); }
 
 // Ids: 0 plain u32, 1 running minimum f32, 2 running maximum i32, 3 an action.
 const SignalEntry kTable[] = {
-    {"plain", "", SignalKind::Signal, SignalType::U32, ReadPlain, nullptr, 0},
-    {"low", "V", SignalKind::Min, SignalType::F32, ReadMin, nullptr, 0},
-    {"high", "us", SignalKind::Max, SignalType::I32, ReadMax, nullptr, 0},
-    {"go", "", SignalKind::Action, SignalType::None, nullptr, nullptr, 0},
+    {"plain", "", SignalKind::Signal, SignalType::U32, ReadPlain, nullptr, nullptr, nullptr},
+    {"low", "V", SignalKind::Min, SignalType::F32, ReadMin, nullptr, nullptr, nullptr},
+    {"high", "us", SignalKind::Max, SignalType::I32, ReadMax, nullptr, nullptr, nullptr},
+    {"go", "", SignalKind::Action, SignalType::None, nullptr, nullptr, nullptr, nullptr},
 };
 constexpr size_t kTableCount = sizeof(kTable) / sizeof(kTable[0]);
 

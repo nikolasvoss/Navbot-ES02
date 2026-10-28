@@ -49,7 +49,7 @@ int main() {
     const SignalEntry& e = kSignals[i];
     rowsMatch &= std::strcmp(e.name, expected[i].name) == 0 && std::strcmp(e.unit, expected[i].unit) == 0 &&
                  e.kind == expected[i].kind && e.type == expected[i].type && e.read != nullptr &&
-                 e.args == nullptr && e.argCount == 0;
+                 e.args == nullptr;
   }
   Check(rowsMatch, "name, unit, kind and type of every row, in file order");
 
@@ -77,20 +77,34 @@ int main() {
   fixture::flag = false;
   Check(Bits("flag") == 0u, "bool false is 0");
 
-  const SignalEntry same[] = {{"a", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, 0},
-                              {"b", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, 0}};
-  const SignalEntry dup[] = {{"a", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, 0},
-                             {"b", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, 0},
-                             {"a", "", SignalKind::Min, SignalType::F32, nullptr, nullptr, 0}};
+  const SignalEntry same[] = {{"a", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr},
+                              {"b", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
+  const SignalEntry dup[] = {{"a", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr},
+                             {"b", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr},
+                             {"a", "", SignalKind::Min, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
   Check(SignalNamesUnique(same, 2) && !SignalNamesUnique(dup, 3), "a repeated name is detected, whatever the kind");
 
-  const SignalEntry longName[] = {{"abcdefghijklmnopqrstuvwxy", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, 0}};
-  const SignalEntry longNameFits[] = {{"abcdefghijklmnopqrstuvwx", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, 0}};
-  const SignalEntry longUnit[] = {{"a", "12345678901234567", SignalKind::Signal, SignalType::F32, nullptr, nullptr, 0}};
-  const SignalEntry noName[] = {{"", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, 0}};
+  const SignalEntry longName[] = {{"abcdefghijklmnopqrstuvwxy", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
+  const SignalEntry longNameFits[] = {{"abcdefghijklmnopqrstuvwx", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
+  const SignalEntry longUnit[] = {{"a", "12345678901234567", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
+  const SignalEntry noName[] = {{"", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
   Check(SignalStringsFit(longNameFits, 1) && !SignalStringsFit(longName, 1) && !SignalStringsFit(longUnit, 1) &&
             !SignalStringsFit(noName, 1),
         "names up to 24 and units up to 16 characters fit the catalog");
+
+  // A SetParam value is parsed back into its type, and anything the type cannot hold is refused, not wrapped.
+  bool flag = false;
+  uint16_t cutoff = 0;
+  float gain = 0.0f;
+  int32_t offset = 0;
+  Check(SignalFromBits(1u, flag) == nullptr && flag, "a bool 1 is true");
+  Check(SignalFromBits(2u, flag) != nullptr && flag, "a bool 2 is refused and leaves the value");
+  Check(SignalFromBits(0x3FC00000u, gain) == nullptr && gain == 1.5f, "a float is read from its IEEE 754 bits");
+  Check(SignalFromBits(0x7F800000u, gain) != nullptr && gain == 1.5f, "an infinite float is refused");
+  Check(SignalFromBits(0x7FC00000u, gain) != nullptr, "a NaN float is refused");
+  Check(SignalFromBits(25u, cutoff) == nullptr && cutoff == 25, "a uint16 that fits is stored");
+  Check(SignalFromBits(65536u, cutoff) != nullptr && cutoff == 25, "a uint16 of 65536 is refused, not wrapped to 0");
+  Check(SignalFromBits(0xFFFFFFFDu, offset) == nullptr && offset == -3, "an int32 takes two's complement bits");
 
   return failed ? 1 : 0;
 }

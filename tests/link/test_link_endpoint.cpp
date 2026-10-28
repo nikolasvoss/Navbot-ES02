@@ -194,15 +194,18 @@ uint32_t ReadHigh() { return static_cast<uint32_t>(gHigh); }
 uint32_t ReadFlag() { return gFlag ? 1u : 0u; }
 uint32_t ReadGain() { return Bits(gGain); }
 
-const SignalArg kGoArgs[] = {{"left_a", -2.0f, 2.0f}, {"right_a", -2.0f, 2.0f}, {"lease_ms", 1.0f, 1000.0f}};
+SignalArgs GoArgs() {
+  static const SignalArg items[] = {{"left_a", -2.0f, 2.0f}, {"right_a", -2.0f, 2.0f}, {"lease_ms", 1.0f, 1000.0f}};
+  return {items, 3};
+}
 const SignalEntry kTable[] = {
-    {"speed", "m/s", SignalKind::Signal, SignalType::F32, ReadSpeed, nullptr, 0},
-    {"count", "", SignalKind::Signal, SignalType::U32, ReadCount, nullptr, 0},
-    {"low", "V", SignalKind::Min, SignalType::F32, ReadLow, nullptr, 0},
-    {"high", "us", SignalKind::Max, SignalType::I32, ReadHigh, nullptr, 0},
-    {"flag", "", SignalKind::Signal, SignalType::Bool, ReadFlag, nullptr, 0},
-    {"gain", "A/rad", SignalKind::Param, SignalType::F32, ReadGain, nullptr, 0},
-    {"go", "", SignalKind::Action, SignalType::None, nullptr, kGoArgs, 3},
+    {"speed", "m/s", SignalKind::Signal, SignalType::F32, ReadSpeed, nullptr, nullptr, nullptr},
+    {"count", "", SignalKind::Signal, SignalType::U32, ReadCount, nullptr, nullptr, nullptr},
+    {"low", "V", SignalKind::Min, SignalType::F32, ReadLow, nullptr, nullptr, nullptr},
+    {"high", "us", SignalKind::Max, SignalType::I32, ReadHigh, nullptr, nullptr, nullptr},
+    {"flag", "", SignalKind::Signal, SignalType::Bool, ReadFlag, nullptr, nullptr, nullptr},
+    {"gain", "A/rad", SignalKind::Param, SignalType::F32, ReadGain, nullptr, nullptr, nullptr},
+    {"go", "", SignalKind::Action, SignalType::None, nullptr, nullptr, nullptr, GoArgs},
 };
 constexpr size_t kTableCount = sizeof(kTable) / sizeof(kTable[0]);
 const LinkPortBudget kBudgets[kLinkPortCount] = {{200000, 5000}, {57600, 0}};
