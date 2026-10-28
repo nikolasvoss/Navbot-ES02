@@ -27,8 +27,6 @@
 #include "filter.h"
 #include "imu.h"
 
-bool motorDiagnosticOwnsOutput = false;
-
 // SimpleFOC's debug output is a Print that receives lines ending in '\n'. Each line goes to the link as a Log frame.
 class SimpleFocLog : public Print {
  public:
@@ -345,7 +343,6 @@ void applyMotorDiagnosticRequest() {
     }
   }
   motorDiagnosticApplied = true;
-  motorDiagnosticOwnsOutput = true;
 }
 
 OverspeedGuard::State wheelOverspeed{};
@@ -392,7 +389,6 @@ void serviceMotorDiagnostic() {
     restoreMotorConfiguration(motor1, kLeftWheelMotor);
     restoreMotorConfiguration(motor2, kRightWheelMotor);
     motorDiagnosticApplied = false;
-    motorDiagnosticOwnsOutput = false;
     if (request.mode == MotorDiagnostic::Mode::VoltageIdentification)
       Logging::message(Logging::Level::Info, "MOTOR_ID_RESULT",
                        "motor=%u requested_q=%.3fV actual_q=%.3fV shaft_velocity=%.3frad_s result=%s fault=%d",
