@@ -120,14 +120,14 @@ A subscription is a list of entry IDs and a period in µs.
 - Rate: `period_us`, scheduled like odometry (`LinkScheduleDue()` in `link_schedule.h`). A row is taken on the first tick at or after the deadline. `period_us = 0` means every tick. The tick rate is not fixed: 424, then 521, then about 710 passes per second were measured as the code changed, so the period is set in time, not in ticks.
 - Each row carries `t_us`, the `micros()` value at the start of its tick. Rows from different subscriptions taken at the same tick carry the same `t_us`, which aligns them without a tick counter. Rows are not evenly spaced; analysis uses `t_us`.
 - Lease: a subscription expires after 5 s unless the client renews it. A crashed capture stops streaming by itself.
-- Budget check: on `Subscribe` the firmware adds up all subscriptions on that port, `(4 + 4 × entries + 24) × rate`, where 24 bytes is the frame cost of each row (header, CRC, COBS and delimiter; the PC encoder's frames carry 20 to 22 bytes beyond the row), plus 5 kB/s for odometry and IMU on UART1. It rejects a subscription that would take the port over 70 % of its line rate, with the numbers in the error: 140 kB/s of 200 kB/s on UART1 at 2000000 baud, 40 kB/s of 57.6 kB/s on USB at 576000 baud. The rest stays free for `Log` and `Ack`.
+- Budget check: on `Subscribe` the firmware adds up all subscriptions on that port, `(4 + 4 × entries + 26) × rate`, where 26 bytes is the frame cost of each row (header, CRC, COBS and delimiter; the PC encoder's frames carry 20 to 25 bytes beyond the row), plus 5 kB/s for odometry and IMU on UART1. It rejects a subscription that would take the port over 70 % of its line rate, with the numbers in the error: 135.0 kB/s allowed on UART1 at 2000000 baud (140 kB/s less 5 kB/s), 40.3 kB/s allowed on USB at 576000 baud. The rest stays free for `Log` and `Ack`.
 
 | Example | Load | UART1 (135 kB/s free after odometry) | USB (40 kB/s) |
 | --- | --- | --- | --- |
 | 40 entries at 10 Hz (logging) | 1.9 kB/s | fits | fits |
-| 8 entries every tick, about 710 Hz | 42.6 kB/s | fits | rejected |
-| 20 entries every tick, about 710 Hz | 76.7 kB/s | fits | rejected; fits at a 3 ms period |
-| 48 entries every tick, about 710 Hz | 156.2 kB/s | rejected; fits at a 2 ms period | rejected |
+| 8 entries every tick, about 710 Hz | 44.0 kB/s | fits | rejected |
+| 20 entries every tick, about 710 Hz | 78.1 kB/s | fits | rejected; fits at a 3 ms period |
+| 48 entries every tick, about 710 Hz | 157.6 kB/s | rejected; fits at a 2 ms period | rejected |
 
 UART1 runs at 2000000 baud since 2026-10-27 ([protocol page](../software/ros2-uart-protocol.md)), so the USB port at 576000 baud is the tighter one. A 921600-baud CH340 capture on 2026-10-07 lost rows ([USB/serial facts](../../robot/software/usb-serial-flashing.md)), so the USB rate stays where it is.
 

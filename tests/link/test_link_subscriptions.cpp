@@ -66,9 +66,10 @@ void TestBudget() {
   Check(LinkPortAllowance(kBudgets[0]) == 135000, "UART1 allows 70 % of 200 kB/s minus 5 kB/s");
   Check(LinkPortAllowance(kBudgets[1]) == 40320, "USB allows 70 % of 57.6 kB/s");
   // Each subscription is charged (4 + 4 x entries + 24 frame bytes) x rate; see link_subscriptions.h.
-  Check(LinkSubscriptionLoad(1, 0) == 22720, "1 entry every tick: (8 + 24) B x 710 Hz");
-  Check(LinkSubscriptionLoad(8, 0) == 42600, "8 entries every tick: (36 + 24) B x 710 Hz");
-  Check(LinkSubscriptionLoad(40, 100000) == 1880, "40 entries at 10 Hz: (164 + 24) B x 10 Hz");
+  Check(LinkSubscriptionLoad(1, 0) == 24140, "1 entry every tick: (8 + 26) B x 710 Hz");
+  Check(LinkSubscriptionLoad(8, 0) == 44020, "8 entries every tick: (36 + 26) B x 710 Hz");
+  Check(LinkSubscriptionLoad(40, 100000) == 1900, "40 entries at 10 Hz: (164 + 26) B x 10 Hz");
+  Check(LinkSubscriptionLoad(48, 0) == 157620, "48 entries every tick: (196 + 26) B x 710 Hz");
 
   {
     LinkSubscriptions s(kTable, kTableCount, kBudgets);
@@ -78,27 +79,27 @@ void TestBudget() {
   {
     LinkSubscriptions s(kTable, kTableCount, kBudgets);
     Check(Sub(s, kLinkPortUart, 0, 8, 0).accepted, "8 entries every tick fit UART1");
-    Check(Refused(Sub(s, kLinkPortUsb, 0, 8, 0), "over budget: 42.6 kB/s of 40.3 kB/s allowed"),
+    Check(Refused(Sub(s, kLinkPortUsb, 0, 8, 0), "over budget: 44.0 kB/s of 40.3 kB/s allowed"),
           "8 entries every tick are refused on USB, with the numbers");
   }
   {
     LinkSubscriptions s(kTable, kTableCount, kBudgets);
     Check(Sub(s, kLinkPortUart, 0, 20, 0).accepted, "20 entries every tick fit UART1");
     const LinkSubscribeResult usb = Sub(s, kLinkPortUsb, 0, 20, 0);
-    Check(Refused(usb, "over budget: 76.7 kB/s of 40.3 kB/s allowed"), "20 entries every tick are refused on USB, with the numbers");
+    Check(Refused(usb, "over budget: 78.1 kB/s of 40.3 kB/s allowed"), "20 entries every tick are refused on USB, with the numbers");
     Check(Sub(s, kLinkPortUsb, 0, 20, 3000).accepted, "20 entries at a 3 ms period fit USB");
   }
   {
     LinkSubscriptions s(kTable, kTableCount, kBudgets);
     const LinkSubscribeResult uart = Sub(s, kLinkPortUart, 0, 48, 0);
-    Check(Refused(uart, "over budget: 156.2 kB/s of 135.0 kB/s allowed"), "48 entries every tick are refused on UART1, with the numbers");
+    Check(Refused(uart, "over budget: 157.6 kB/s of 135.0 kB/s allowed"), "48 entries every tick are refused on UART1, with the numbers");
     Check(Sub(s, kLinkPortUart, 0, 48, 2000).accepted, "48 entries at a 2 ms period fit UART1");
   }
   {
     LinkSubscriptions s(kTable, kTableCount, kBudgets);
-    Check(Sub(s, kLinkPortUart, 0, 48, 2000).accepted, "slot 1: 110.0 kB/s on UART1");
+    Check(Sub(s, kLinkPortUart, 0, 48, 2000).accepted, "slot 1: 111.0 kB/s on UART1");
     const LinkSubscribeResult second = Sub(s, kLinkPortUart, 0, 20, 0);
-    Check(Refused(second, "over budget: 186.7 kB/s of 135.0 kB/s allowed"), "a second subscription adds to the port's load");
+    Check(Refused(second, "over budget: 189.1 kB/s of 135.0 kB/s allowed"), "a second subscription adds to the port's load");
     Check(Sub(s, kLinkPortUsb, 0, 4, 0).accepted, "the other port's budget is separate");
     Check(Sub(s, kLinkPortUart, 1, 48, 1500).accepted == false, "replacing slot 1 by a faster list is checked on its own");
     Check(Sub(s, kLinkPortUart, 1, 48, 2000).accepted, "renewing slot 1 does not count it twice");
@@ -107,7 +108,7 @@ void TestBudget() {
     // Two 2-entry subscriptions at period 0 already exceed USB, so four slots of them cannot all be granted.
     LinkSubscriptions s(kTable, kTableCount, kBudgets);
     Check(Sub(s, kLinkPortUsb, 0, 2, 0).accepted, "one 2-entry subscription at period 0 fits USB");
-    Check(Refused(Sub(s, kLinkPortUsb, 0, 2, 0), "over budget: 51.1 kB/s of 40.3 kB/s allowed"),
+    Check(Refused(Sub(s, kLinkPortUsb, 0, 2, 0), "over budget: 54.0 kB/s of 40.3 kB/s allowed"),
           "a second 2-entry subscription at period 0 is refused on USB, so four slots of them cannot fit");
     Check(s.activeCount() == 1, "only the first subscription holds a slot");
   }

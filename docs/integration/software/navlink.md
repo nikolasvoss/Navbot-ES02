@@ -39,7 +39,7 @@ navlink> unsub 1
 slot 1 closed
 ```
 
-The load is the row size, `4 + 4 × entries` bytes, plus 24 bytes of frame cost, times the rate.
+The load is the row size, `4 + 4 × entries` bytes, plus 26 bytes of frame cost, times the rate.
 
 ## Capture
 
