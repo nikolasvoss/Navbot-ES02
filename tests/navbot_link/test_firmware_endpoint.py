@@ -35,7 +35,7 @@ def server(tmp_path_factory):
     subprocess.run(
         ["c++", "-std=c++17", "-Wall", "-Wextra", "-Werror", f"-I{SKETCH}",
          str(ROOT / "tests" / "navbot_link" / "endpoint_server.cpp"),
-         *(str(SKETCH / f) for f in ("link_frame.cpp", "link_tx.cpp", "link_subscriptions.cpp", "link_endpoint.cpp")),
+         *(str(SKETCH / f) for f in ("link_frame.cpp", "link_tx.cpp", "link_subscriptions.cpp", "link_endpoint.cpp", "link_log.cpp")),
          *objects, "-o", str(exe)],
         check=True)
     return exe
