@@ -14,6 +14,12 @@ from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import Callable
 
+from .localization import localization_command
+
+MAPPING = "mapping"
+LOCALIZATION = "localization"
+MODES = (MAPPING, LOCALIZATION)
+
 MAP_STALE_AFTER_SEC = 10.0  # slam_toolbox publishes /map every 2 s
 POSE_STALE_AFTER_SEC = 10.0
 ODOM_STALE_AFTER_SEC = 2.0  # the bridge publishes /odom at about 50 Hz
@@ -311,7 +317,11 @@ def export_occupancy(base: Path, timeout: float = 20.0) -> str | None:
 
 
 class SlamControl:
-    """Save, delete and status for the single map; one lock serializes them."""
+    """Mode, save, delete and status for the single map; one lock serializes them.
+
+    Mapping runs slam_toolbox, localization runs map_server + AMCL on the saved occupancy image.
+    Only one of them runs at a time, because both publish map -> odom.
+    """
 
     def __init__(
         self,
@@ -321,21 +331,68 @@ class SlamControl:
         export: Callable[[Path], str | None] = export_occupancy,
         localizer=None,
         tracker=None,
+        slam_state=None,
+        mapping_command: Callable[[], list[str]] | None = None,
     ) -> None:
         self._store = store
         self._process = process
         self._serialize = serialize
         self._export = export
+        self._localizer = localizer
+        self._tracker = tracker
+        self._slam_state = slam_state
+        self._mapping_command = mapping_command
+        self._mode = MAPPING  # start() picks the boot mode
         self._lock = Lock()
 
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    def initial_mode(self) -> str:
+        return LOCALIZATION if self._store.has_occupancy() else MAPPING
+
+    def command(self) -> list[str]:
+        # The supervisor calls this before every spawn, so each AMCL start, also a restart after a crash, searches again.
+        if self._mode == LOCALIZATION:
+            if self._localizer is not None:
+                self._localizer.start()
+            return localization_command(self._store.occupancy_yaml())
+        return self._mapping_command()
+
     def start(self) -> None:
-        self._process.start()
+        with self._lock:
+            self._enter(self.initial_mode())
 
     def stop(self) -> None:
-        self._process.stop()
+        with self._lock:
+            self._halt()
+
+    def set_mode(self, mode: str) -> str | None:
+        with self._lock:
+            if mode not in MODES:
+                return f"unknown mode {mode!r}; use mapping or localization"
+            if mode == self._mode:
+                return None
+            if mode == LOCALIZATION and not self._store.has_occupancy():
+                return "No occupancy map to localize on; save the map once in mapping mode first"
+            self._halt()
+            self._enter(mode)
+            return None
+
+    def locate(self) -> str | None:
+        with self._lock:
+            if self._mode != LOCALIZATION:
+                return "Locate needs localization mode; switch to localization first"
+            if self._localizer is None:
+                return "localization is not configured"
+            self._localizer.start()
+            return None
 
     def save(self) -> str | None:
         with self._lock:
+            if self._mode != MAPPING:
+                return "Save needs mapping mode; switch to mapping first"
             tmp = self._store.directory / f"map.saving.{time.time_ns()}"
             try:
                 tmp.mkdir(parents=True)
@@ -356,14 +413,14 @@ class SlamControl:
 
     def delete(self) -> None:
         with self._lock:
-            self._process.stop()
+            self._halt()
             try:
                 self._store.delete()
             finally:
-                self._process.start()
+                self._enter(MAPPING)
 
     def reload(self) -> str | None:
-        """Drops the current map and restarts slam_toolbox on the saved one."""
+        """Drops the current map and restarts the active launch on the saved one."""
         with self._lock:
             if not self._store.exists():
                 return "No saved map to load"
@@ -373,10 +430,26 @@ class SlamControl:
 
     def status(self) -> dict:
         return {
+            "mode": self._mode,
             "process": self._process.status(),
             "saved_map": {"exists": self._store.exists(), "saved_at": self._store.saved_at()},
             "directory": str(self._store.directory),
+            "localization": None if self._tracker is None else self._tracker.snapshot(),
         }
+
+    def _halt(self) -> None:
+        self._process.stop()
+        if self._localizer is not None:
+            self._localizer.stop()
+
+    def _enter(self, mode: str) -> None:
+        self._mode = mode
+        if self._slam_state is not None:
+            self._slam_state.clear()
+            self._slam_state.set_map_latched(mode == LOCALIZATION)
+        if self._tracker is not None:
+            self._tracker.reset()
+        self._process.start()
 
 
 def slam_command(params_file: Path) -> list[str]:
