@@ -148,8 +148,8 @@
           init.body = JSON.stringify(body);
         }
         const response = await fetch(path, init);
-        const body = await response.json();
-        $('actionResult').textContent = body.ok ? doneText : (body.error || 'HTTP ' + response.status);
+        const result = await response.json();
+        $('actionResult').textContent = result.ok ? doneText : (result.error || 'HTTP ' + response.status);
       } catch (error) {
         $('actionResult').textContent = 'Request failed: ' + error.message;
       } finally {
