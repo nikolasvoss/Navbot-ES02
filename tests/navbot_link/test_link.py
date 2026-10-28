@@ -53,8 +53,8 @@ def test_catalog_is_read_entry_by_entry_starting_with_the_literal_request_frame(
     transport = RecordingTransport(fw)
     with Link(transport, clock=lambda: 0.0) as link:
         catalog = link.catalog()
-    # Message{seq: 1, get_catalog: {index: 0}}, CRC 0xC63B, COBS, 0x00
-    assert transport.written[0] == bytes.fromhex("05 08 01 b2 01 03 3b c6 00")
+    # 0x00, then Message{seq: 1, get_catalog: {index: 0}}, CRC 0xC63B, COBS, 0x00
+    assert transport.written[0] == bytes.fromhex("00 05 08 01 b2 01 03 3b c6 00")
     assert len(transport.written) == 14
     assert catalog.build == "fake-build-1"
     assert catalog.entries[9] == Entry(9, "speed_kp", "rad/(m/s)", Kind.PARAM, Type.F32)

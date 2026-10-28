@@ -299,7 +299,9 @@ class Link:
         self._seq_out += 1
         msg.seq = self._seq_out
         msg.t_ms = int((self._clock() - self._started) * 1000) & 0xFFFFFFFF
-        self._transport.write(encode_frame(msg.SerializeToString()))
+        # The leading 0x00 ends whatever partial bytes the robot still holds from an earlier session or a lost write,
+        # so they cannot be joined to this frame. The robot ignores an empty chunk.
+        self._transport.write(b"\x00" + encode_frame(msg.SerializeToString()))
         return msg.seq
 
     def _run(self) -> None:

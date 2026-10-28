@@ -125,6 +125,35 @@ void TestBadFrames() {
   Check(decoder.badFrames() == 5 && c.payloads.size() == 1, "a frame without a payload is dropped");
 }
 
+// A typed command ends in a line end and is not part of the frame that follows it.
+void CheckTextLineThenFrame(const char* name, const uint8_t* stream, size_t len) {
+  Collector c;
+  LinkRxDecoder usb(true);
+  usb.Feed(stream, len, c);
+  const uint8_t shortPayload[] = {0x07};
+  Check(c.lines.size() == 1 && c.lines[0] == "K58\n" && c.payloads.size() == 1 &&
+            PayloadIs(c, 0, shortPayload, sizeof(shortPayload)) && usb.badFrames() == 0,
+        name);
+}
+
+void TestTextLineThenFrame() {
+  const uint8_t lfThenFrame[] = {'K', '5', '8', '\n', 0x04, 0x07, 0x17, 0x91, 0x00};
+  CheckTextLineThenFrame("K58 LF then frame decodes, no bad frame", lfThenFrame, sizeof(lfThenFrame));
+  const uint8_t crlfThenFrame[] = {'K', '5', '8', '\r', '\n', 0x04, 0x07, 0x17, 0x91, 0x00};
+  CheckTextLineThenFrame("K58 CRLF then frame decodes, no bad frame", crlfThenFrame, sizeof(crlfThenFrame));
+}
+
+// A frame whose first bytes are text up to a 0x0A is not cut there: the whole chunk decodes.
+void TestFrameWithTextLikeStart() {
+  const uint8_t frame[] = {0x09, 0x09, 0x6D, 0x0A, 0x6C, 0x19, 0x80, 0x96, 0xD0, 0x00};
+  const uint8_t payload[] = {0x09, 0x6D, 0x0A, 0x6C, 0x19, 0x80};
+  Collector c;
+  LinkRxDecoder usb(true);
+  usb.Feed(frame, sizeof(frame), c);
+  Check(c.payloads.size() == 1 && PayloadIs(c, 0, payload, sizeof(payload)) && usb.badFrames() == 0,
+        "a frame that starts with text up to a line end decodes");
+}
+
 void TestTextLines() {
   Collector c;
   LinkRxDecoder usb(true);
@@ -156,5 +185,7 @@ int main() {
   TestSplitAndBackToBack();
   TestBadFrames();
   TestTextLines();
+  TestTextLineThenFrame();
+  TestFrameWithTextLikeStart();
   return failed ? 1 : 0;
 }

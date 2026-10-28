@@ -57,6 +57,30 @@ size_t CobsDecode(const uint8_t* in, size_t len, uint8_t* out) {
   return written;
 }
 
+// Decodes a COBS chunk into payload || CRC and checks the CRC. False when the COBS, the length or the CRC is wrong.
+bool DecodeBody(const uint8_t* in, size_t len, uint8_t* body, size_t& payloadLen) {
+  const size_t bodyLen = CobsDecode(in, len, body);
+  // A payload is at least one byte, and the body holds payload and CRC.
+  if (bodyLen == SIZE_MAX || bodyLen < 3 || bodyLen > LINK_MAX_PAYLOAD + 2) return false;
+  payloadLen = bodyLen - 2;
+  const uint16_t crc = static_cast<uint16_t>(body[payloadLen] | (body[payloadLen + 1] << 8));
+  return Crc16CcittFalse(body, payloadLen) == crc;
+}
+
+// Length of the leading text (printable bytes, tab, CR, LF) up to its last line end. 0 when there is no line end.
+size_t TypedLinesEnd(const uint8_t* chunk, size_t len) {
+  size_t end = 0;
+  for (size_t i = 0; i < len; ++i) {
+    const uint8_t byte = chunk[i];
+    const bool printable = (byte >= 0x20 && byte < 0x7F) || byte == '\t';
+    if (byte == '\n' || byte == '\r')
+      end = i + 1;
+    else if (!printable)
+      break;
+  }
+  return end;
+}
+
 }  // namespace
 
 size_t LinkEncodeFrame(const navbot_link_v1_Message& msg, uint8_t* out, size_t capacity) {
@@ -108,15 +132,15 @@ void LinkRxDecoder::EndChunk(LinkRxSink& sink) {
   lineLen_ = 0;
   lineSpoiled_ = false;
   if (chunkLen == 0 && !overflow) return;  // the 0x00 in front of a USB frame, or a repeated delimiter
-  const size_t bodyLen = overflow ? SIZE_MAX : CobsDecode(chunk_, chunkLen, body);
-  // A payload is at least one byte, and the body holds payload and CRC.
-  if (bodyLen == SIZE_MAX || bodyLen < 3 || bodyLen > LINK_MAX_PAYLOAD + 2) {
-    ++badFrames_;
-    return;
+  size_t payloadLen = 0;
+  bool ok = !overflow && DecodeBody(chunk_, chunkLen, body, payloadLen);
+  // Typed lines can sit in front of a frame with no 0x00 between them. The whole chunk is tried first, so a frame that
+  // only contains a line end still decodes.
+  if (!ok && !overflow && passTextLines_) {
+    const size_t start = TypedLinesEnd(chunk_, chunkLen);
+    ok = start > 0 && DecodeBody(chunk_ + start, chunkLen - start, body, payloadLen);
   }
-  const size_t payloadLen = bodyLen - 2;
-  const uint16_t crc = static_cast<uint16_t>(body[payloadLen] | (body[payloadLen + 1] << 8));
-  if (Crc16CcittFalse(body, payloadLen) != crc) {
+  if (!ok) {
     ++badFrames_;
     return;
   }
