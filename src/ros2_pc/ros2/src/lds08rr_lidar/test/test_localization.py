@@ -79,7 +79,7 @@ def test_params_file_sets_amcl_and_map_server_keys():
     assert amcl["transform_tolerance"] == 1.0
     assert amcl["update_min_d"] == 0.1
     assert amcl["update_min_a"] == 0.1
-    assert params["map_server"]["ros__parameters"]["yaml_filename"] == ""
+    assert "map_server" not in params
 
 
 def test_tracker_starts_idle_and_ignores_poses_until_a_search_starts():

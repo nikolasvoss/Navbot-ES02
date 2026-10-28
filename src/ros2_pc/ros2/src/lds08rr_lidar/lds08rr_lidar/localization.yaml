@@ -1,8 +1,5 @@
 # AMCL localization on the saved map, scans from /scan_slam (tilt-gated /scan), motion from wheel odometry (odom -> base_link TF from navbot_link_bridge).
-map_server:
-  ros__parameters:
-    yaml_filename: ""  # filled in by the launch file with the saved map.yaml
-
+# No map_server section: a node-specific yaml_filename here would override the map path the launch passes in.
 amcl:
   ros__parameters:
     base_frame_id: base_link      # default base_footprint
