@@ -7,6 +7,7 @@ from threading import Event, Lock, Thread, current_thread
 from typing import Callable
 
 LOCALIZATION_PARAMS = Path(__file__).with_name("localization.yaml")
+LOCALIZATION_LAUNCH = Path(__file__).with_name("localization_launch.py")
 XY_STD_MAX_M = 0.15
 YAW_STD_MAX_RAD = math.radians(10.0)
 STABLE_UPDATES = 5  # consecutive /amcl_pose messages under both limits
@@ -21,9 +22,7 @@ DRIVE_HINT = "Drive or turn the robot a little; AMCL keeps updating from motion.
 
 def localization_command(map_yaml: Path) -> list[str]:
     return [
-        "ros2", "launch", "nav2_bringup", "localization_launch.py", f"map:={map_yaml}",
-        f"params_file:={LOCALIZATION_PARAMS}", "autostart:=true", "use_sim_time:=false",
-        "use_composition:=False",
+        "ros2", "launch", str(LOCALIZATION_LAUNCH), f"map:={map_yaml}", f"params_file:={LOCALIZATION_PARAMS}",
     ]
 
 

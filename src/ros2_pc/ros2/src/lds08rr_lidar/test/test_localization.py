@@ -45,14 +45,19 @@ def wait_until(predicate, timeout=5.0):
     raise AssertionError("condition was not reached in time")
 
 
-def test_localization_command_is_the_stock_nav2_launch_with_our_params(monkeypatch):
+def test_localization_command_runs_our_launch_wrapper_with_our_params(monkeypatch):
     monkeypatch.setattr(localization, "LOCALIZATION_PARAMS", Path("/cfg/localization.yaml"))
+    monkeypatch.setattr(localization, "LOCALIZATION_LAUNCH", Path("/cfg/localization_launch.py"))
 
     assert localization_command(Path("/data/map/map.yaml")) == [
-        "ros2", "launch", "nav2_bringup", "localization_launch.py", "map:=/data/map/map.yaml",
-        "params_file:=/cfg/localization.yaml", "autostart:=true", "use_sim_time:=false",
-        "use_composition:=False",
+        "ros2", "launch", "/cfg/localization_launch.py", "map:=/data/map/map.yaml",
+        "params_file:=/cfg/localization.yaml",
     ]
+
+
+def test_launch_wrapper_sits_next_to_the_module():
+    assert localization.LOCALIZATION_LAUNCH == Path(localization.__file__).with_name("localization_launch.py")
+    assert localization.LOCALIZATION_LAUNCH.is_file()
 
 
 def test_params_file_sits_next_to_the_module():
