@@ -1,6 +1,6 @@
 # Logging, telemetry and control over the NavBot link
 
-Status: **proposal, partly implemented.** It replaces the `K` log selectors, the CSV log profiles and the letter commands with one table of signals, parameters and actions, served over the [NavBot link protocol](../software/ros2-uart-protocol.md) on both the ros2_pc UART and the USB port. An independent review on 2026-10-27 checked an earlier version against the code; its findings are folded in. Done: the PC side ([navbot_link library and navlink](../software/navlink.md)), the protocol additions ([protocol page](../software/ros2-uart-protocol.md)), migration step 2 (TX queue and writer task per port, per-port `seq`; checked on the robot) and migration step 3 (entry table of signals, catalog, subscriptions and `Log` frames on both ports, presets for `K55` to `K58`; host-tested, not yet run on the robot), all on branch `feat/link-firmware`. Open: settings groups and actions (step 4) and everything after. The sections below describe the design; where step 3 differs from it, a note says so.
+Status: **proposal, partly implemented.** It replaces the `K` log selectors, the CSV log profiles and the letter commands with one table of signals, parameters and actions, served over the [NavBot link protocol](../software/ros2-uart-protocol.md) on both the ros2_pc UART and the USB port. An independent review on 2026-10-27 checked an earlier version against the code; its findings are folded in. Done: the PC side ([navbot_link library and navlink](../software/navlink.md)), the protocol additions ([protocol page](../software/ros2-uart-protocol.md)), migration step 2 (TX queue and writer task per port, per-port `seq`; checked on the robot) and migration step 3 (entry table of signals, catalog, subscriptions and `Log` frames on UART1, presets for `K55` to `K58`; host-tested, not yet run on the robot), all on branch `feat/link-firmware`. Open: settings groups and actions (step 4) and everything after. The sections below describe the design; where step 3 differs from it, a note says so.
 
 ## Goals
 
@@ -139,7 +139,7 @@ Wire IDs are table indices. They shift when a line is added or removed, so the P
 
 ### Logs and events
 
-`Logging::message` sends a `Log` frame on every port, whatever subscriptions are active; today it is suppressed whenever a log profile is active (`Logging.cpp`). Every applied `SetParam` and every started action also goes out as a `Log` event on all ports, so a capture on UART1 records a change made over USB.
+`Logging::message` sends a `Log` frame on UART1 only until migration step 5 deletes the K profiles. After that it sends one on each port, whatever subscriptions are active; today it is suppressed whenever a log profile is active (`Logging.cpp`). Every applied `SetParam` and every started action also goes out as a `Log` event on each port, so a capture on UART1 records a change made over USB.
 
 `Log` gains a `tag` field. Firmware text that today goes to `Serial` directly (setup messages, `IMU_TIMING`, SimpleFOC debug output, IMU prints) moves to `Logging::message`.
 

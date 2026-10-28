@@ -22,6 +22,12 @@ STATUS = re.compile(r"^Status: (open|concluded)$", re.MULTILINE)
 ROS_PACKAGE_TEST = re.compile(r"^src/ros2_pc/ros2/src/[^/]+/test/")
 LINK = re.compile(r"\]\(([^)\s]+)\)|src=\"([^\"]+)\"")
 GERMAN = re.compile(r"\b(und|nicht|wird|werden|ist|sind|der|das|mit|für|oder|eine|auf|bei|wurde)\b", re.IGNORECASE)
+# Log frames go to UART1 only until migration step 5 deletes the K profiles (docs/integration/software/ros2-uart-protocol.md).
+STALE_LOG_ROUTING = re.compile(
+    r"\bLog\b.*(both ports|every (link )?port|all ports|regardless)"
+    r"|(both ports|every (link )?port|all ports|regardless).*\bLog\b"
+    r"|rows and `?Log`? frames"
+)
 
 
 def repo_files():
@@ -144,6 +150,16 @@ class RepoLayoutTest(unittest.TestCase):
             if f.split("/")[0] in ("docs", "lab"):
                 hits = GERMAN.findall((ROOT / f).read_text(encoding="utf-8"))
                 self.assertLess(len(hits), 10, f"{f}: write docs and lab notes in English ({len(hits)} German words). {RULES}")
+
+    def test_log_routing_is_described_as_uart1_only(self):
+        for f in self.files:
+            in_docs = f.startswith("docs/integration/") and f.endswith(".md")
+            in_firmware = f.startswith("src/ES-02/OllieFOCdrive/") and f.endswith((".h", ".cpp"))
+            if not (in_docs or in_firmware):
+                continue
+            for number, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):
+                self.assertIsNone(STALE_LOG_ROUTING.search(line),
+                                  f"{f}:{number}: Log frames go to UART1 only until migration step 5. {RULES}")
 
     def test_relative_links_resolve(self):
         for f in markdown_pages(self.files):

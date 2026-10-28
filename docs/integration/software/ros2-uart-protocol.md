@@ -1,6 +1,6 @@
 # ESP32 ↔ ros2_pc UART protocol (NavBot link v1)
 
-Status: **specification, firmware sender for `WheelOdometry` and `Imu` (50 Hz each), ROS 2 bridge `navbot_link_bridge` for both, and the firmware side of the catalog and subscription messages.** The firmware sender was checked on the robot on 2026-10-26 (50 Hz, no lost frames, also while the robot balanced); the bridge has not run against the robot. The queue-and-writer-task transmit path (see [Transmit path](#transmit-path)) was checked on the robot with 50 Hz odometry and no dropped frames. The receive path, the catalog, the subscriptions and the `Log` frames on both ports are host-tested against the PC library and have not run on the robot.
+Status: **specification, firmware sender for `WheelOdometry` and `Imu` (50 Hz each), ROS 2 bridge `navbot_link_bridge` for both, and the firmware side of the catalog and subscription messages.** The firmware sender was checked on the robot on 2026-10-26 (50 Hz, no lost frames, also while the robot balanced); the bridge has not run against the robot. The queue-and-writer-task transmit path (see [Transmit path](#transmit-path)) was checked on the robot with 50 Hz odometry and no dropped frames. The receive path, the catalog, the subscriptions and the `Log` frames on UART1 are host-tested against the PC library and have not run on the robot.
 
 ## Design
 
@@ -101,11 +101,11 @@ Consequences:
 ```text
 control loop ── encode frame ──► TX queue UART1 ──► writer task ──► Serial1 (2000000 baud)
 logger, Commander, setup text ─► TX queue USB   ──► writer task ──► Serial  (576000 baud, CH340)
-control loop ── encode frame ──►   (replies, rows and Log frames)
+control loop ── encode frame ──►   (replies and rows; Log frames to UART1 only)
 ```
 
 - Each port has a byte-ring queue of whole items (1024 bytes on UART1, 2560 on USB), a spinlock around it and one writer task (core 0, priority 2). `LinkWriter::Pump` is the only code that writes to a UART. The control loop only pushes.
-- Odometry and `Imu` frames go to UART1 only. The USB queue carries replies, rows and `Log` frames, with its own `seq`.
+- Odometry and `Imu` frames go to UART1 only. The USB queue carries replies and rows, with its own `seq`; `Log` frames go to UART1 only until migration step 5 deletes the K profiles.
 - USB carries the old text and CSV logger output and the frames through one queue, so a text line never lands inside a frame. A frame is written whole after the previous item, with a `0x00` in front; a long text line goes out in pieces as the CH340 buffer allows. The logger sender task waits up to 200 ms for queue space, so CSV rows keep their lossless behavior. Commander replies, `IMU_TIMING`, SimpleFOC debug text and setup text come from the control loop or setup: they never wait, and text that does not fit is dropped and counted. Gyro calibration messages go through `Logging::message`.
 - Not yet moved: `Serial.println` in `ICM42688.cpp` on a failed device-ID check (setup only).
 

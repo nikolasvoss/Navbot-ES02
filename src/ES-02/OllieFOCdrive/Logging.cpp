@@ -185,7 +185,8 @@ Result message(Level level, const char *tag, const char *format, ...) {
   if (static_cast<size_t>(length) >= sizeof(messageRecord.text)) return Result::Truncated;
   messageRecord.textLength = static_cast<uint8_t>(length);
 
-  // A log profile keeps text off the USB port so its CSV rows stay clean; the Log frames of the link go out regardless.
+  // A log profile keeps text off the USB port so its CSV rows stay clean. Link Log frames go to UART1 only, for the same
+  // reason (LinkPublishLog).
   LinkPublishLog(level, tag, messageRecord.text);
   if (profile.profile != Profile::Idle) return Result::Suppressed;
 
