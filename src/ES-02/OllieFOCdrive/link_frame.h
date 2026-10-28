@@ -33,7 +33,7 @@ class LinkRxSink {
 // COBS or has a wrong CRC is dropped and counted; the next 0x00 resynchronises. With passTextLines (the USB port, where
 // the letter commands share the line) printable lines are also handed out, as they arrive. A binary frame can end
 // such a line only by chance, and then only if everything between two 0x0A bytes is printable. A frame that follows
-// typed lines with no 0x00 between is decoded after their last line end.
+// typed lines with no 0x00 between is decoded after the latest line end that lets it check.
 class LinkRxDecoder {
  public:
   explicit LinkRxDecoder(bool passTextLines) : passTextLines_(passTextLines) {}

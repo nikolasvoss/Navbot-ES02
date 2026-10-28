@@ -67,18 +67,19 @@ bool DecodeBody(const uint8_t* in, size_t len, uint8_t* body, size_t& payloadLen
   return Crc16CcittFalse(body, payloadLen) == crc;
 }
 
-// Length of the leading text (printable bytes, tab, CR, LF) up to its last line end. 0 when there is no line end.
-size_t TypedLinesEnd(const uint8_t* chunk, size_t len) {
-  size_t end = 0;
-  for (size_t i = 0; i < len; ++i) {
-    const uint8_t byte = chunk[i];
-    const bool printable = (byte >= 0x20 && byte < 0x7F) || byte == '\t';
-    if (byte == '\n' || byte == '\r')
-      end = i + 1;
-    else if (!printable)
-      break;
+bool IsLineEnd(uint8_t byte) { return byte == '\n' || byte == '\r'; }
+
+bool IsTypedText(uint8_t byte) { return (byte >= 0x20 && byte < 0x7F) || byte == '\t' || IsLineEnd(byte); }
+
+// Tries the frame after each line end of the leading typed text, the latest first, and takes the first that checks. The
+// frame's own first code byte can be a line end (0x0A or 0x0D), so the latest one is not always the frame's start.
+bool DecodeAfterTypedLines(const uint8_t* chunk, size_t len, uint8_t* body, size_t& payloadLen) {
+  size_t textLen = 0;
+  while (textLen < len && IsTypedText(chunk[textLen])) ++textLen;
+  for (size_t end = textLen; end > 0; --end) {
+    if (IsLineEnd(chunk[end - 1]) && DecodeBody(chunk + end, len - end, body, payloadLen)) return true;
   }
-  return end;
+  return false;
 }
 
 }  // namespace
@@ -136,10 +137,7 @@ void LinkRxDecoder::EndChunk(LinkRxSink& sink) {
   bool ok = !overflow && DecodeBody(chunk_, chunkLen, body, payloadLen);
   // Typed lines can sit in front of a frame with no 0x00 between them. The whole chunk is tried first, so a frame that
   // only contains a line end still decodes.
-  if (!ok && !overflow && passTextLines_) {
-    const size_t start = TypedLinesEnd(chunk_, chunkLen);
-    ok = start > 0 && DecodeBody(chunk_ + start, chunkLen - start, body, payloadLen);
-  }
+  if (!ok && !overflow && passTextLines_) ok = DecodeAfterTypedLines(chunk_, chunkLen, body, payloadLen);
   if (!ok) {
     ++badFrames_;
     return;
