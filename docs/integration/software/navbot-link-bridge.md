@@ -31,7 +31,7 @@ Optional parameters: `baud` (2000000), `odom_frame` (`odom`), `base_frame` (`bas
 
 Status: **written and tested only against the in-memory fake firmware** (`tests/navbot_link/fake_firmware.py`), plus a pseudo-terminal run of the node. The robot firmware does not answer the catalog messages yet ([navlink](navlink.md)), so none of this has run on the robot.
 
-**Robot log.** Every `Log` frame goes to `/rosout` as `rcl_interfaces/msg/Log`. The `name` is the `Log` tag (`robot` when the tag is empty) and `msg` is the text, with ` (code N)` appended when the code is not 0. The level maps `DEBUG` 10, `INFO` 20, `WARN` 30, `ERROR` 40, `FATAL` 50; a level the bridge does not know is shown as `INFO`. The bridge publishes these messages itself, because rcl sends a logger's lines to `/rosout` only for node loggers. The text does not reach the console or journal of the bridge process.
+**Robot log.** Every `Log` frame goes to `/rosout` as `rcl_interfaces/msg/Log`. The `name` is the `Log` tag (`robot` when the tag is empty) and `msg` is the text, with ` (code N)` appended when the code is not 0. The level maps `DEBUG` 10, `INFO` 20, `WARN` 30, `ERROR` 40, `FATAL` 50; a level the bridge does not know is shown as `INFO`. The bridge publishes these messages itself, because rcl sends a logger's lines to `/rosout` only for node loggers. The text does not reach the console or journal of the bridge process. The `/rosout` publisher uses the rcl profile (reliable, transient local, depth 1000) with a 10 s lifespan, so a subscriber that starts later gets the lines of the last 10 s only. `msg.stamp` is the ROS time at which the bridge forwarded the line, not the robot's time.
 
 **Signals.** Two parameters control the stream:
 
@@ -52,16 +52,25 @@ The message type is a plain `Float64MultiArray`, not a custom message, because t
 
 A change of `signals` or `signals_rate_hz` subscribes the new list first and releases the old slot after; the robot's budget check can refuse it, and the set then fails with the robot's error text while the old stream keeps running. `Link` renews the 5 s lease every 2 s. After a robot restart or a refused renewal the bridge subscribes again from the current parameters.
 
-**Firmware parameters.** Each `PARAM` entry of the catalog becomes a ROS parameter with the catalog name, declared with the value read from the robot (`f32` as double, `i32` and `u32` as integer, `bool` as bool). A `ros2 param set` calls `Link.set` before ROS stores the value. If the robot refuses the value (range, cross-field check), the set fails with `SetParametersResult.reason` holding the robot's error text, for example `set_param refused: speed_kp must be within [0, 0.5]`, and the ROS value stays as it was. `ACTION` entries are not exposed, and signals that are not parameters are only streamed. Notes:
+**Firmware parameters.** Each `PARAM` entry of the catalog becomes a ROS parameter with the catalog name and the value read from the robot. The ROS parameter is dynamically typed, and the bridge applies the type rules below itself. `ACTION` entries are not exposed, and signals that are not parameters are only streamed.
+
+| Robot type | Accepted in ROS | Stored as |
+| --- | --- | --- |
+| `f32` | a float, or an integer, which is taken as a float | double |
+| `i32`, `u32` | an integer | integer |
+| `bool` | a bool | bool |
+
+A value of another type is refused before the robot is asked, with a reason such as `speed_kp takes a number, got 'fast'`. A value the robot refuses (range, cross-field check) fails the set with the robot's error text, for example `set_param refused: speed_kp must be within [0, 0.5]`, and the ROS value stays as it was. Notes:
 
 - The ROS value is a copy: it is what ROS last set or read at connect. A change made through `navlink` or the other port does not update it, and a restart of the robot rebuilds all firmware parameters from the robot.
-- A value given at startup (`-p speed_kp:=0.1` or a parameters file) for a firmware parameter is sent to the robot once the catalog is read. If the robot refuses it, the bridge logs a warning and keeps the robot's value.
-- A request that sets several firmware parameters, or a parameter and the signal stream, is all or nothing. Before the first write the bridge reads the current robot values of that request. If the robot refuses a value, the bridge writes the earlier values back and the result carries the refusal text. If a write-back fails too, the reason names the parameter (`; could not restore speed_ki: ...`). `ros2 param set` of one name at a time is unchanged.
+- A value given at startup (`-p speed_kp:=0.1` or a parameters file) is sent to the robot once the catalog is read. An integer for an `f32` parameter (`-p speed_kp:=1`) is sent and stored as `1.0`. If the robot or the type rule refuses it, the bridge logs `startup value of speed_kp not applied: <reason>` and keeps the robot's value.
+- A `set_parameters_atomically` request (the rclpy call, or the `set_parameters_atomically` service) that sets several firmware parameters, or a parameter and the signal stream, is all or nothing. Before the first write the bridge reads the current robot values of that request. If the robot refuses a value, the bridge writes the earlier values back and the result carries the refusal text. If a write-back fails too, the reason names the parameter (`; could not restore speed_ki: ...`). `ros2 param set` sends one name per request and keeps its one-by-one results.
 - ROS stores the value the robot reports in its `Ack`, not the requested one. A robot that clamps a value, or `f32` rounding (`0.1` becomes `0.10000000149011612`), shows in `ros2 param get`. The bridge corrects the stored value before the set call returns.
-- A `ros2 param set` waits for the robot's answer (about 1.5 s when the robot does not answer), and so does the caller of the service. The wait happens in a service thread: odometry, TF and IMU publishing continue at their normal rate. The node runs on a `MultiThreadedExecutor`, and the poll timer has a callback group of its own. A second set waits for the first.
-- A firmware parameter named like a bridge parameter (`port`, `baud`, `signals`, ...) is not exposed, with a warning.
+- A name rclpy refuses (an empty name) is skipped with a warning such as `firmware parameter '' not exposed: Invalid parameter name:`; the other parameters and the signal stream still start. A firmware parameter named like a bridge parameter (`port`, `baud`, `signals`, ...) is not exposed, with a warning.
 
-**Firmware without the catalog** (the current robot firmware). The bridge asks for the catalog at connect and again after a robot restart. It asks in a worker thread, so odometry, TF, IMU and `/rosout` start at once. When the robot does not answer within about 1.5 s, the bridge logs one warning (`the robot did not answer GetCatalog ...`) and continues without firmware parameters and signals. It does not ask again on the same connection; the next ask comes with a reconnect or a robot restart. Setting `signals` is refused with `the robot sent no catalog`, and no firmware parameters exist.
+**Waiting for the robot.** A `ros2 param set` waits for the robot's answer (about 1.5 s when the robot does not answer), and so does its caller. That wait is in a service thread. Odometry, TF, IMU and `/rosout` keep their rate: the node runs on a `MultiThreadedExecutor`, and the poll timer has a callback group of its own. The catalog reads, parameter exchanges and subscription changes run in one worker thread, in order, so a second set waits for the first.
+
+**Firmware without the catalog** (the current robot firmware). The bridge asks for the catalog at connect and again after a robot restart, in the worker thread, so odometry, TF, IMU and `/rosout` start at once. When the robot does not answer within about 1.5 s, the bridge logs one warning (`the robot did not answer GetCatalog ...`) and continues without firmware parameters and signals. It does not ask again on the same connection; the next ask comes with a reconnect or a robot restart. A restart whose new build answers no catalog removes the firmware parameters of the old build. Setting `signals` is refused with `the robot sent no catalog`. If the link fails before the robot answers, the bridge does not report a missing answer; it reports the link failure (`link failed: <reason>; reopening`).
 
 ## Time stamps
 
@@ -110,11 +119,11 @@ Test the decoding, odometry, log, signal and parameter logic without ROS. The te
 PYTHONPATH=src:src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test
 ```
 
-`test_node.py` runs the node against the fake firmware and checks `/rosout`, `/navbot/signals`, parameter results and the warning for firmware without a catalog. It is skipped unless ROS 2 is importable. With the system install, and the ROS pytest plugins switched off because they fail to load under the system pytest:
+`test_node.py` runs the node against the fake firmware. It checks `/rosout` (lines and their stamp), `/navbot/signals`, the type rules, atomic sets, parameter results, reconnect and restart behavior, the warnings, and that odometry keeps its cadence while the robot ignores GetCatalog or a parameter set. It is skipped unless ROS 2 is importable. With the system install, and the ROS pytest plugins switched off because they fail to load under the system pytest:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=$PYTHONPATH:src:src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test
 ```
 
-The node tests must not share the ROS graph with a bridge that runs on the same machine: that bridge publishes `/odom` and `/imu/data`, and a test node would receive and publish into the same topics. `test/conftest.py` therefore sets `ROS_DOMAIN_ID=77` and `ROS_LOCALHOST_ONLY=1` before `rclpy.init()`. Keep this when you add a test, and when you run a node test by hand, do not unset these variables.
+Node tests need an isolated ROS 2 graph. The real bridge runs on this machine and publishes `/odom` and `/imu/data`; a test node in the same domain would receive them and publish into the same topics. `test/conftest.py` therefore sets `ROS_DOMAIN_ID=77` and `ROS_LOCALHOST_ONLY=1` before `rclpy.init()`, and `test_tests_run_in_their_own_ros_graph` fails if another bridge's publisher is visible. Every node test you add runs under these settings. When you run a node test by hand, do not unset them and do not run it in domain 0.
