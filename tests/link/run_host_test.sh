@@ -45,3 +45,26 @@ c++ -std=c++11 -Wall -Wextra -Werror \
   -o "$build_dir/test_link_rx"
 
 "$build_dir/test_link_rx"
+
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"$sketch_dir" -I"$repo_root/tests/link" \
+  "$repo_root/tests/link/test_signal_table.cpp" \
+  -o "$build_dir/test_signal_table"
+
+"$build_dir/test_signal_table"
+
+# Each bad entry file must stop the build with the named reason.
+expect_rejected() {
+  local file="$1" reason="$2"
+  if c++ -std=c++17 -fsyntax-only -I"$sketch_dir" -I"$repo_root/tests/link" \
+      -DSIGNAL_DEF_FILE="\"$file\"" "$repo_root/tests/link/reject_signals.cpp" 2> "$build_dir/reject.log"; then
+    echo "$file: FAIL (compiled)"
+    exit 1
+  fi
+  grep -q "$reason" "$build_dir/reject.log" || { echo "$file: FAIL (no '$reason' in the error)"; exit 1; }
+  echo "$file: rejected ($reason)"
+}
+
+expect_rejected reject_duplicate.def.h "duplicate signal name"
+expect_rejected reject_long_name.def.h "longer than 24 characters"
+expect_rejected reject_wide_type.def.h "at most 32 bits"
