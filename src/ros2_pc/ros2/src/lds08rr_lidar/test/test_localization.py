@@ -75,7 +75,7 @@ def test_params_file_sets_amcl_and_map_server_keys():
     assert amcl["scan_topic"] == "/scan_slam"
     assert amcl["robot_model_type"] == "nav2_amcl::DifferentialMotionModel"
     assert amcl["laser_model_type"] == "likelihood_field"
-    assert amcl["laser_max_range"] == 8.0
+    assert amcl["laser_max_range"] == 4.0
     assert amcl["max_beams"] == 60
     assert amcl["min_particles"] == 500
     assert amcl["max_particles"] == 8000

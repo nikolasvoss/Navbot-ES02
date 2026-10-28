@@ -8,7 +8,7 @@ amcl:
     scan_topic: /scan_slam        # default scan
     robot_model_type: nav2_amcl::DifferentialMotionModel
     laser_model_type: likelihood_field
-    laser_max_range: 8.0          # provisional; the LDS08RR range is not yet measured (default: from the scan)
+    laser_max_range: 4.0          # same 4 m cap as the saved map was built with (default: from the scan)
     max_beams: 60
     min_particles: 500
     max_particles: 8000           # default 2000; the global search spreads particles over the whole map
