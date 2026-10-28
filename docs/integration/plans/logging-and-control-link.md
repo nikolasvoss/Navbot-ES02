@@ -1,6 +1,6 @@
 # Logging, telemetry and control over the NavBot link
 
-Status: **proposal, not implemented.** It replaces the `K` log selectors, the CSV log profiles and the letter commands with one table of signals, parameters and actions, served over the [NavBot link protocol](../software/ros2-uart-protocol.md) on both the ros2_pc UART and the USB port. An independent review on 2026-10-27 checked an earlier version against the code; its findings are folded in. The PC side ([navbot_link library and navlink](../software/navlink.md)) and the protocol additions ([protocol page](../software/ros2-uart-protocol.md)) have landed on branch `feat/link-pc-library`; the PC half of migration step 5 (`summarize_balance_trace.py` and `analyze_drive_trace.py` read the navlink CSV as well as the K logs) is done; the firmware side is pending except migration step 2 (TX queue and writer task per port, per-port `seq`), which is on branch `feat/link-firmware` and not yet checked on the robot.
+Status: **proposal, partly implemented.** It replaces the `K` log selectors, the CSV log profiles and the letter commands with one table of signals, parameters and actions, served over the [NavBot link protocol](../software/ros2-uart-protocol.md) on both the ros2_pc UART and the USB port. An independent review on 2026-10-27 checked an earlier version against the code; its findings are folded in. Done: the PC side ([navbot_link library and navlink](../software/navlink.md)), the protocol additions ([protocol page](../software/ros2-uart-protocol.md)), migration step 2 (TX queue and writer task per port, per-port `seq`; checked on the robot) and migration step 3 (entry table of signals, catalog, subscriptions and `Log` frames on both ports, presets for `K55` to `K58`; host-tested, not yet run on the robot), all on branch `feat/link-firmware`. Open: settings groups and actions (step 4) and everything after. The sections below describe the design; where step 3 differs from it, a note says so.
 
 ## Goals
 
@@ -69,7 +69,9 @@ ACTION(motor_reset, motorReset)
 ACTION(calibrate,   startCalibration, ARG(step, 1, kLastCalibrationStep))
 ```
 
-Some example names stand for state that does not exist yet: `loopEntryIntervalUs` and `batteryInstantRawV` are computed only inside `collectTelemetryInputs()` today and become state members in migration step 3; `kLastCalibrationStep` stands for the range of `calibrationSelect`.
+Some example names stand for state that does not exist yet: `kLastCalibrationStep` stands for the range of `calibrationSelect`. `loopEntryIntervalUs` and `batteryInstantRawV` became state members in step 3.
+
+Step 3 differs from the sketch in two ways. The file is `signals.def.h`, because arduino-cli copies only recognised source and header extensions into the build and a `.def` file might be left out. And a table row holds a small function that reads the expression, not a pointer: some expressions are accessor results such as `imu::latest().correctedRollDegrees`, which have no stable address. The type comes from the expression, and the table is built in `signal_table_expand.h`.
 
 | Kind | Meaning |
 | --- | --- |
@@ -211,7 +213,7 @@ Each step ends in a state that can be checked on the robot.
 
 1. Delete the dead yaw path (`Y`, `yawPid`, `yawPidSettings`, `K9`, `K33`, CTRL yaw columns).
 2. Firmware: request queue, TX queue and writer per port, per-port `seq`. Odometry and IMU move to the TX queue. Check: 50 Hz odometry unchanged, no loop stalls in the loop-interval maximum.
-3. Entry table, catalog, subscriptions on both ports; `navbot_link` library and `navlink shell`/`capture`; presets that reproduce TRACE, CTRL, BAL and DRIVE. The `K` commands still work in parallel. Check: a preset capture against a `K58` capture of the same run.
+3. Entry table, catalog, subscriptions on both ports; `navbot_link` library and `navlink shell`/`capture`; presets that reproduce TRACE, CTRL, BAL and DRIVE. The `K` commands still work in parallel. Check: a preset capture against a `K58` capture of the same run. Implemented; the check on the robot is open.
 4. Settings groups and actions replace `Q`, `I`, `Z`, `A`–`D`, `T`, `M`, `E`.
 5. Delete `K`, the profiles, `LogSamples.h` payloads, `LogFormat.cpp`, the selector code in `DebugTelemetry.cpp` and `RobotLogCapture.cpp`, and Commander. Switch the analysis scripts and the trace-capture docs to the new CSV.
 6. Sensor diagnostic mode: run the link endpoint and the sampler from `diagnosticLoop()`, or delete the mode. Today that build returns from `setup()` before `LinkUartInit()` and never runs the control tick.
