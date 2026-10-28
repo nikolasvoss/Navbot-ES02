@@ -13,7 +13,6 @@
 #include "BoardConfig.h"
 #include "Calibration.h"
 #include "CalibrationStore.h"
-#include "DebugTelemetry.h"
 #include "FUTABA_SBUS.h"
 #include "Logging.h"
 #include "link_uart.h"
@@ -23,37 +22,13 @@
 #include "OverspeedGuard.h"
 #include "WheelBoundary.h"
 #include "OllieFOCdrive.h"
-#include "RobotLogCapture.h"
 #include "LegPoseRamp.h"
 #include "ServoControl.h"
-#include "SerialCommandRouter.h"
 #include "filter.h"
 #include "imu.h"
 
 bool motorDiagnosticOwnsOutput = false;
 
-// The Commander reads the printable lines that the link's USB receive task passes on, so the letter commands and the
-// NavBot link frames can share the port.
-class LoggingCommandStream : public Stream {
- public:
-  int available() override { return LinkUsbCommandAvailable(); }
-  int read() override { return LinkUsbCommandRead(); }
-  int peek() override { return LinkUsbCommandPeek(); }
-  size_t write(uint8_t value) override {
-    if (motorDiagnosticOwnsOutput || Logging::profile() != Logging::Profile::Idle) return 1;
-    return LinkUsbPrint().write(value);
-  }
-  size_t write(const uint8_t *buffer, size_t size) override {
-    if (motorDiagnosticOwnsOutput || Logging::profile() != Logging::Profile::Idle) return size;
-    return LinkUsbPrint().write(buffer, size);
-  }
-  void flush() override {
-    // Nothing to flush: the writer task owns the UART.
-  }
-};
-
-LoggingCommandStream commandStream;
-Commander command = Commander(commandStream);
 Calibration calibration;
 CalibrationStore calibrationStore;
 
@@ -204,7 +179,6 @@ float batteryInstantRawV = 0;     // Battery voltage from the unfiltered ADC rea
 
 uint32_t controlGateSequence = 0;
 LinkSchedule linkOdometrySchedule;
-DebugTelemetry::TelemetryState debugTelemetryState{};
 uint32_t diagnosticSequence = 0;
 ServoTrimsDegrees servoTrims{};
 constexpr int kLegPoseDegrees = 20;  // fixed leg pose for all four servos, degrees
@@ -220,7 +194,6 @@ int servoTraceAngle[4] = {0, 0, 0, 0};  // Last angle arguments sent to the four
 
 // Remote control
 FUTABA_SBUS sBus;
-int sbusFrameIntervalMs = 0;
 int pidGainsMode = REMOTE_CONTROL_PID_GAINS_MODE_OFF;  // telemetry: 1 while the CH5 balance enable is on
 // Raw S.BUS values (SBUS_CHANNEL_MIN 192 to SBUS_CHANNEL_MAX 1792, centre 992). Decided and measured 2026-10-22 (plan: RC map).
 constexpr int kRcCenterRaw = (SBUS_CHANNEL_MAX + SBUS_CHANNEL_MIN) / 2;     // 992
@@ -245,13 +218,7 @@ bool balanceActive() { return balanceOutput.state != State::Disabled; }
 // Balance is requested by the CH5 switch or is running. Motor tests and calibration steps wait for it.
 bool balanceRequested() { return pidGainsMode != REMOTE_CONTROL_PID_GAINS_MODE_OFF || balanceActive(); }
 
-float debugLogSelector = 0;   // Selects debug data and the log profile.
 float calibrationSelect = 0;  // The calibrate action: 0 ends a step, 1 gyroscope, 2 Euler angle, 3 servo
-
-void selectDebugLog(char *cmd) {
-  command.scalar(&debugLogSelector, cmd);
-  RobotLogCapture::setProfileForSelector(static_cast<int>(debugLogSelector));
-}
 
 // Wheel Motors and Drivers
 // m1 is the left wheel and m2 the right wheel; speeds are forward positive (see WheelBoundary.h).
@@ -578,12 +545,6 @@ bool startCalibration(const float *args, const char **error) {
 constexpr char kBuildId[] = __DATE__ " " __TIME__;
 static_assert(sizeof(kBuildId) <= 33, "the build ID has to fit CatalogEntry.build");
 
-const SerialCommandEntry commandEntries[] = {
-    {'K', selectDebugLog, "my Select"},
-};
-
-SerialCommandRouter serialCommandRouter;
-
 /**
  * @brief Initializes the robot's hardware and software components.
  *
@@ -677,75 +638,14 @@ void applyRcChannels(const int16_t *ch) {
  * Decodes the S.BUS signal into `rcChannels`. Freshness and receiver failsafe are judged in balanceRequest().
  */
 void readSbus() {
-  static uint32_t lastFrameMs = millis();
-
   sBus.FeedLine();
   if (sBus.toChannels == 1) {
-    const uint32_t frameMs = millis();
-    sbusFrameIntervalMs = frameMs - lastFrameMs;
-    lastFrameMs = frameMs;
     sBus.toChannels = 0;
     sBus.UpdateChannels();
     sBus.toChannels = 0;
 
     applyRcChannels(sBus.channels);
   }
-}
-
-/**
- * @brief Collects the sketch state read by the debug selections for DebugTelemetry.
- */
-DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
-  DebugTelemetry::TelemetryInputs in{};
-  in.selection = (int)debugLogSelector;
-  in.nowMs = millis();
-  in.controlGateSequence = controlGateSequence;
-
-  in.imu = imu::latest();
-  in.imuTiming = imu::timingStatistics();
-  in.imuSettings = imu::settings();
-  in.imuCalibration = imu::calibration();
-  in.controlTimestepSec = controlTimestepSec;
-
-  in.m1VelocityRadPerSec = m1VelocityRadPerSec;
-  in.m2VelocityRadPerSec = m2VelocityRadPerSec;
-  in.m1FilteredVelocityRadPerSec = m1FilteredVelocityRadPerSec;
-  in.m2FilteredVelocityRadPerSec = m2FilteredVelocityRadPerSec;
-  in.motor1Target = motor1.target;
-  in.motor2Target = motor2.target;
-  in.motor2CurrentSetpoint = motor2.current_sp;
-  in.motor1CurrentSetpoint = motor1.current_sp;
-  in.motor1VoltageQ = motor1.voltage.q;
-  in.motor2VoltageQ = motor2.voltage.q;
-  in.motor1ShaftVelocity = motor1.shaft_velocity;
-  in.motor2ShaftVelocity = motor2.shaft_velocity;
-  in.sensor1Angle = sensor1.getAngle();
-  in.sensor1MechanicalAngle = sensor1.getMechanicalAngle();
-  in.sensor2Angle = sensor2.getAngle();
-  in.sensor2MechanicalAngle = sensor2.getMechanicalAngle();
-
-  for (int i = 0; i < 18; ++i) in.sbusChannels[i] = sBus.channels[i];
-  in.sbusFrameIntervalMs = sbusFrameIntervalMs;
-
-  in.servoTrims = servoTrims;
-  for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = servoTraceAngle[i];
-
-  in.bodyTurn = bodyTurn;
-
-  in.movementSpeed = movementSpeed;
-
-  in.voltageAdc = voltageAdc;
-  in.voltageAdcFiltered = voltageAdcFiltered;
-  in.voltage = batteryVoltage;
-  in.batteryInstantRawV = batteryInstantRawV;
-  in.batteryInstantFilteredV = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
-  in.controlStartUs = controlStartUs;
-  in.controlExecutionUs = controlExecutionUs;
-  in.maxLoopEntryIntervalUs = debugTelemetryState.maxLoopEntryIntervalUs;
-
-  in.pidGainsMode = pidGainsMode;
-  in.robotTumble = robotTumble;
-  return in;
 }
 
 /**
@@ -758,8 +658,6 @@ void readBatteryVoltage(void) {
   busReadTimeUs = micros();
   voltageAdc = analogRead(board::kBatteryAdcPin);
   batteryInstantRawV = board::kBatteryVoltsPerAdcCount * voltageAdc;
-  if (debugTelemetryState.voltageAdcMin == 0 || voltageAdc < debugTelemetryState.voltageAdcMin)
-    debugTelemetryState.voltageAdcMin = voltageAdc;
   voltageAdcFiltered = biquadFilterApply(&voltageFilterLpf, voltageAdc);
   batteryVoltage = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
 }
@@ -942,8 +840,6 @@ void updateMotorsAndCommands() {
   motor1.loopFOC();
   motor2.loopFOC();
 
-  // user communication: the Commander dispatch now handles only K, which does not touch the motors
-  serialCommandRouter.run(commandStream, command, commandEntries);
   // This pass uses the S.BUS frame read above, so a CH5 switch or an expired lease ends a motor test here rather than
   // in the next loop pass. Skipped on the normal path: no diagnostic is active or still applied to the motors.
   if (motorDiagnosticState.active || motorDiagnosticApplied) {
@@ -1084,10 +980,8 @@ void runControlTick(bool imuUpdated) {
                                      fminf(controlTimestepSec, kLegRampMaxDtSec));
   for (int &angle : servoTraceAngle) angle = static_cast<int>(lroundf(legPoseDegrees));
   writeLegServos();
-  RobotLogCapture::observeServoAngles(servoTraceAngle);
 
   controlExecutionUs = static_cast<uint32_t>(micros() - controlStartUs);
-  DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
   LinkSampleSignals(controlStartUs);
 
   previousControlTimeUs = loopTimeUs;
@@ -1097,7 +991,7 @@ void runControlTick(bool imuUpdated) {
  * @brief The main execution loop of the program.
  *
  * This function runs repeatedly after `setup()` is complete:
- * 1. `updateMotorsAndCommands`: SimpleFOC `move()` and `loopFOC()` for both wheels, then Commander input.
+ * 1. `updateMotorsAndCommands`: SimpleFOC `move()` and `loopFOC()` for both wheels.
  * 2. `readInputs`: IMU sample and S.BUS commands.
  * 3. `runControlTick`, once at least 1 ms has passed since the previous tick: battery reading,
  *    status LED, calibration, wheel velocities, the balance controller and wheel outputs,
@@ -1109,11 +1003,7 @@ void loop() {
   return;
 #endif
   loopTimeUs = micros();
-  if (hasPreviousLoopEntry) {
-    loopEntryIntervalUs = static_cast<uint32_t>(loopTimeUs - previousLoopEntryUs);
-    if (loopEntryIntervalUs > debugTelemetryState.maxLoopEntryIntervalUs)
-      debugTelemetryState.maxLoopEntryIntervalUs = loopEntryIntervalUs;
-  }
+  if (hasPreviousLoopEntry) loopEntryIntervalUs = static_cast<uint32_t>(loopTimeUs - previousLoopEntryUs);
   previousLoopEntryUs = loopTimeUs;
   hasPreviousLoopEntry = true;
 

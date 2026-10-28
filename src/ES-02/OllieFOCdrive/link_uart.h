@@ -30,12 +30,6 @@ void LinkServiceRequests(uint32_t tickStartUs, bool balanceRequested);
 // Control loop, at the end of a tick: sends the rows that are due, and drops lapsed leases.
 void LinkSampleSignals(uint32_t tickStartUs);
 
-// The letter commands (K, T, M, ...) that arrive on the USB port as printable lines, for the Commander. A frame never
-// shows up here.
-int LinkUsbCommandAvailable();
-int LinkUsbCommandRead();
-int LinkUsbCommandPeek();
-
 // Starts the USB TX queue and its writer task. Call right after Serial.begin() and before anything writes to the USB port.
 void LinkUsbInit();
 

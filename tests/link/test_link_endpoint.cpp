@@ -316,7 +316,7 @@ struct Wire : LinkRxSink {
 template <size_t N>
 void Send(LinkEndpoint& endpoint, uint8_t port, const uint8_t (&request)[N], uint32_t nowUs = 1000,
           bool balanceRequested = false) {
-  LinkRxDecoder decoder(false);
+  LinkRxDecoder decoder;
   Wire wire(endpoint, port, nowUs, balanceRequested);
   decoder.Feed(request, N, wire);
 }

@@ -25,7 +25,6 @@ constexpr UBaseType_t kWriterPriority = 2;  // above the logger sender (1) so a 
 constexpr uint32_t kReaderStackBytes = 4096;
 constexpr UBaseType_t kReaderPriority = 2;
 constexpr size_t kRequestQueueBytes = 1536;  // a few requests of up to 252 bytes
-constexpr size_t kCommandQueueBytes = 256;   // typed letter commands are short
 constexpr size_t kUartRxBufferBytes = 1024;  // about 5 ms of line at 2000000 baud; the reader polls every tick (1 ms)
 constexpr TickType_t kBlockingPushTimeoutTicks = 200;
 
@@ -74,24 +73,17 @@ SpinLock requestLock;
 uint8_t requestStorage[kRequestQueueBytes];
 LinkItemQueue requests(requestStorage, sizeof(requestStorage), &requestLock);
 
-// Printable lines from the USB port for the Commander, so the letter commands keep working next to frames.
-SpinLock commandLock;
-uint8_t commandStorage[kCommandQueueBytes];
-LinkItemQueue commandLines(commandStorage, sizeof(commandStorage), &commandLock);
-
 // One per port: decodes what the port receives and queues it. Runs in its own task and touches no robot state.
 struct Reader : LinkRxSink {
-  Reader(uint8_t portNumber, Stream& serialPort, bool passTextLines)
-      : port(portNumber), serial(serialPort), decoder(passTextLines) {}
+  Reader(uint8_t portNumber, Stream& serialPort) : port(portNumber), serial(serialPort) {}
   void OnPayload(const uint8_t* payload, size_t len) override { requests.PushOrDrop(port, payload, len); }
-  void OnTextLine(const uint8_t* line, size_t len) override { commandLines.PushOrDrop(0, line, len); }
   uint8_t port;
   Stream& serial;
   LinkRxDecoder decoder;
 };
 
-Reader uartReader(kLinkPortUart, Serial1, false);
-Reader usbReader(kLinkPortUsb, Serial, true);
+Reader uartReader(kLinkPortUart, Serial1);
+Reader usbReader(kLinkPortUsb, Serial);
 
 void readerTask(void* arg) {
   Reader& reader = *static_cast<Reader*>(arg);
@@ -169,22 +161,6 @@ navbot_link_v1_Log_Level linkLevel(Logging::Level level) {
   return navbot_link_v1_Log_Level_INFO;
 }
 
-// The command queue holds one line per item; the Commander reads it a byte at a time.
-uint8_t commandLine[LINK_MAX_TEXT_LINE];
-size_t commandLineLen = 0;
-size_t commandLinePos = 0;
-
-bool commandBytesLeft() {
-  if (commandLinePos < commandLineLen) return true;
-  uint8_t tag = 0;
-  commandLinePos = 0;
-  commandLineLen = 0;
-  size_t len = 0;
-  if (!commandLines.Pop(tag, commandLine, len)) return false;
-  commandLineLen = len;
-  return true;
-}
-
 }  // namespace
 
 Print& LinkUsbPrint() { return usbPrint; }
@@ -213,12 +189,6 @@ void LinkPublishLog(Logging::Level level, const char* tag, const char* text) {
   for (uint8_t port = 0; port < kLinkPortCount; ++port)
     if (LinkLogReachesPort(port)) sendOn(runtimeOf(port), message);
 }
-
-int LinkUsbCommandAvailable() { return commandBytesLeft() ? static_cast<int>(commandLineLen - commandLinePos) : 0; }
-
-int LinkUsbCommandRead() { return commandBytesLeft() ? commandLine[commandLinePos++] : -1; }
-
-int LinkUsbCommandPeek() { return commandBytesLeft() ? commandLine[commandLinePos] : -1; }
 
 void LinkServiceRequests(uint32_t tickStartUs, bool balanceRequested) {
   if (!endpoint) return;

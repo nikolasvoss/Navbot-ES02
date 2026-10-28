@@ -67,17 +67,6 @@ bool DecodeBody(const uint8_t* in, size_t len, uint8_t* body, size_t& payloadLen
   return Crc16CcittFalse(body, payloadLen) == crc;
 }
 
-bool IsLineEnd(uint8_t byte) { return byte == '\n' || byte == '\r'; }
-
-bool IsTypedText(uint8_t byte) { return (byte >= 0x20 && byte < 0x7F) || byte == '\t' || IsLineEnd(byte); }
-
-// Length of the leading typed text: printable bytes, tab, CR and LF.
-size_t TypedTextLen(const uint8_t* chunk, size_t len) {
-  size_t n = 0;
-  while (n < len && IsTypedText(chunk[n])) ++n;
-  return n;
-}
-
 }  // namespace
 
 size_t LinkEncodeFrame(const navbot_link_v1_Message& msg, uint8_t* out, size_t capacity) {
@@ -116,7 +105,6 @@ void LinkRxDecoder::Feed(const uint8_t* data, size_t len, LinkRxSink& sink) {
       chunk_[chunkLen_++] = byte;
     else
       chunkOverflow_ = true;
-    if (passTextLines_) TrackLine(byte, sink);
   }
 }
 
@@ -126,34 +114,12 @@ void LinkRxDecoder::EndChunk(LinkRxSink& sink) {
   const bool overflow = chunkOverflow_;
   chunkLen_ = 0;
   chunkOverflow_ = false;
-  lineLen_ = 0;
-  lineSpoiled_ = false;
   if (chunkLen == 0 && !overflow) return;  // the 0x00 in front of a USB frame, or a repeated delimiter
   size_t payloadLen = 0;
   const bool ok = !overflow && DecodeBody(chunk_, chunkLen, body, payloadLen);
   if (!ok) {
-    // Typed lines that end in a line end were handed out as they arrived, so the chunk is not a bad frame.
-    const bool onlyTypedLines = passTextLines_ && !overflow && chunkLen > 0 && IsLineEnd(chunk_[chunkLen - 1]) &&
-                                TypedTextLen(chunk_, chunkLen) == chunkLen;
-    if (!onlyTypedLines) ++badFrames_;
+    ++badFrames_;
     return;
   }
   sink.OnPayload(body, payloadLen);
-}
-
-void LinkRxDecoder::TrackLine(uint8_t byte, LinkRxSink& sink) {
-  if (byte == '\n' || byte == '\r') {
-    if (lineLen_ > 0 && !lineSpoiled_) {
-      line_[lineLen_++] = '\n';
-      sink.OnTextLine(line_, lineLen_);
-    }
-    lineLen_ = 0;
-    lineSpoiled_ = false;
-    return;
-  }
-  const bool printable = (byte >= 0x20 && byte < 0x7F) || byte == '\t';
-  if (!printable || lineLen_ + 1 >= sizeof(line_))
-    lineSpoiled_ = true;
-  else
-    line_[lineLen_++] = byte;
 }
