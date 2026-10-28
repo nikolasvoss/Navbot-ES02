@@ -1,5 +1,9 @@
 # Agent notes
 
+Do not reinvent the wheel. If there are well tested and supported options online, use them or propose them to me. This is a dev project. Never implement legacy support unless explicitly told.
+
+Unless told otherwise, prefer clean and simple solutions over solutions that cover every edge case.
+
 ## Where files go
 
 The folder list below is closed. Never create a top-level folder, and never create a folder inside `docs/`, `lab/`, or `cad/` that this table does not name. If a file fits nowhere, stop and ask the user. After adding, moving, or deleting a file, run `python3 tests/layout/test_repo_layout.py`.
