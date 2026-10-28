@@ -2,7 +2,8 @@
 """Show the robot's log messages from the USB port without holding the ESP32-S3 in reset.
 
 Usage: python3 scripts/sensor_monitor.py [--port /dev/ttyUSB0] [--seconds 10]
-Reads through the navbot_link library. Press Ctrl-C to stop an unlimited capture.
+Reads through the navbot_link library. Works with the normal and the sensor diagnostic image; it only prints the
+Log frames and sends no requests. Press Ctrl-C to stop an unlimited capture. Only one program may hold the port.
 """
 
 import argparse

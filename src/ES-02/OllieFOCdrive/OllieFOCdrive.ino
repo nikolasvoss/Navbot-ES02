@@ -240,6 +240,11 @@ bool balanceActive() { return balanceOutput.state != State::Disabled; }
 // Balance is requested by the CH5 switch or is running. Motor tests and calibration steps wait for it.
 bool balanceRequested() { return pidGainsMode != REMOTE_CONTROL_PID_GAINS_MODE_OFF || balanceActive(); }
 
+// The link's share of a pass, shared by the control tick and the sensor diagnostic loop. Requests that arrived since the
+// last pass take effect at its start; the due signal rows leave at its end.
+void linkPassStart(uint32_t passStartUs) { LinkServiceRequests(passStartUs, balanceRequested()); }
+void linkPassEnd(uint32_t passStartUs) { LinkSampleSignals(passStartUs); }
+
 float calibrationSelect = 0;  // The calibrate action: 0 ends a step, 1 gyroscope, 2 Euler angle, 3 servo
 
 // Wheel Motors and Drivers
@@ -499,6 +504,11 @@ struct ServoTrimGroup {
 // Actions. The endpoint checks each argument against its ARG bounds before a handler runs. A handler starts the action,
 // or sets *error and returns false. Motor safety lives in MotorDiagnostic; these handlers only add the overspeed latch.
 bool startMotorRequest(const MotorDiagnostic::Request &request, const char **error) {
+  // The diagnostic build never runs the motor loop, and starting a test would enable the drivers.
+  if (SENSOR_DIAGNOSTIC_MODE) {
+    *error = "refused: sensor diagnostic build has no motor control";
+    return false;
+  }
   if (wheelOverspeed.tripped) {
     *error = "refused: wheel overspeed latched, send motor_reset";
     return false;
@@ -550,6 +560,10 @@ bool resetMotorFault(const float *, const char **error) {
 }
 
 bool startCalibration(const float *args, const char **error) {
+  if (SENSOR_DIAGNOSTIC_MODE) {  // no calibration step runs in this build, so the request would be accepted and never run
+    *error = "refused: sensor diagnostic build runs no calibration";
+    return false;
+  }
   *error = CalibrationStartRefusal(args[0], balanceRequested(), motorDiagnosticState.active || motorDiagnosticApplied);
   if (*error != nullptr) return false;
   calibrationSelect = args[0];
@@ -777,18 +791,18 @@ void applyBalanceOutput(const Output &out) {
   setWheelEnabled(motor2, false);
 }
 
+// The sensor diagnostic loop: the IMU, the receiver, the battery and the link. It has no control tick, so the entries
+// of the motors, servos, controller and loop timing read their initial values (see docs/robot/software/sensor-diagnostic-mode.md).
 void diagnosticLoop(void) {
   static uint32_t lastTimingReportUs = 0;
   static uint32_t lastTimingAcceptedSamples = 0;
   static bool timingReportStarted = false;
   static unsigned long lastVoltageMs = 0;
   const unsigned long nowMs = millis();
+  const uint32_t passStartUs = micros();
 
-  sBus.FeedLine();
-  if (sBus.toChannels == 1) {
-    sBus.UpdateChannels();
-    sBus.toChannels = 0;
-  }
+  linkPassStart(passStartUs);
+  readSbus();
 
   if (diagnosticImuReady) imu::service();
 
@@ -815,7 +829,10 @@ void diagnosticLoop(void) {
     lastVoltageMs = nowMs;
     readBatteryVoltage();
   }
+
+  linkPassEnd(passStartUs);
 }
+
 void updateMotorsAndCommands() {
   // iterative function setting the outer loop target
   if (motorDiagnosticState.active) readSbus();
@@ -935,7 +952,7 @@ void runControlTick(bool imuUpdated) {
   controlStartUs = micros();
   controlGateSequence++;
 
-  LinkServiceRequests(controlStartUs, balanceRequested());  // requests that arrived since the last tick take effect before anything is read
+  linkPassStart(controlStartUs);  // before anything is read
   readBatteryVoltage();  // Battery
 
   updateStatusLed();
@@ -970,7 +987,7 @@ void runControlTick(bool imuUpdated) {
   writeLegServos();
 
   controlExecutionUs = static_cast<uint32_t>(micros() - controlStartUs);
-  LinkSampleSignals(controlStartUs);
+  linkPassEnd(controlStartUs);
 
   previousControlTimeUs = loopTimeUs;
 }
