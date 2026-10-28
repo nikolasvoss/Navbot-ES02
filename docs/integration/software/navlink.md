@@ -1,6 +1,6 @@
 # navlink: signals, parameters and actions over the link
 
-Status: **works against the firmware's signal table; not yet run on the robot.** The `navbot_link` library and the `navlink` tool speak the catalog and subscription messages of the [protocol](ros2-uart-protocol.md#catalog-subscriptions-parameters-and-actions). The firmware answers them (migration step 3 of the [logging and control plan](../plans/logging-and-control-link.md#migration)) with 35 read-only signals, enough for the presets `trace`, `ctrl`, `bal` and `drive`. It has no parameters and no actions yet, so `set` and `call` are refused by the robot. The tool and the library were tested against the fake firmware in `tests/navbot_link/` and against the firmware's own endpoint code built for the host.
+Status: **works against the firmware's entry table (migration steps 3 and 4); not yet run on the robot.** The `navbot_link` library and the `navlink` tool speak the catalog, subscription, parameter and action messages of the [protocol](ros2-uart-protocol.md#catalog-subscriptions-parameters-and-actions). The firmware answers them with 35 signals, 17 parameters and 5 actions; the [mapping of the letter commands](#letter-commands-replaced) says where each one went. The tool and the library were tested against the fake firmware in `tests/navbot_link/` and against the firmware's own endpoint code built for the host.
 
 ## Run
 
@@ -39,7 +39,7 @@ navlink> unsub 1
 slot 1 closed
 ```
 
-The load is the row size, `4 + 4 × entries` bytes, plus 26 bytes of frame cost, times the rate.
+The load is the row size, `4 + 4 × entries` bytes, plus 26 bytes of frame cost, times the rate. The firmware budgets the same figure, so a subscription that the shell reports as fitting is accepted by the robot.
 
 ## Capture
 
@@ -109,6 +109,29 @@ To compare a preset with a K profile on the robot, capture both during the same 
 - `events` is a queue in stream order: `Row`, `LogEvent`, `Text` (raw text from the USB port), `FramesLost`, `Restarted`, `SubscriptionEnded` and `Disconnected`. A `Link` opened with `telemetry=True` also puts `Telemetry(message)` for each `WheelOdometry` and `Imu` frame on the queue; the [ROS bridge](navbot-link-bridge.md) uses this, `navlink` does not. `restarts`, `lost_frames` and `bad_frames` count what the link saw.
 - A port error or an unexpected error on the I/O thread ends the link with `Disconnected(reason)`; pending and later requests raise `LinkError(reason)`. A `Log` level the schema does not name shows as its number. A reply value that is not 4 bytes raises `LinkError`.
 - A restart of the robot (its `seq` starts over) drops the catalog and ends every subscription, because table indices can change between builds. A request still waiting for its reply raises `LinkError("robot restarted")`, even when the reply that reveals the restart accepts it.
+
+## Letter commands replaced
+
+Migration step 4 removed the letter commands. Each one is a parameter (`set`) or an action (`call`) now. The robot's names are listed by `list`.
+
+| Letter command | Now | Notes |
+| --- | --- | --- |
+| `T <left_A> <right_A> <lease_ms>` | `call motor_current left_a=… right_a=… lease_ms=…` | Bounds in [motor commissioning](../../robot/software/motor-commissioning.md#actions) |
+| `T STOP`, `M STOP` | `call motor_stop` | New: one action for both tests |
+| `T RESET`, `M RESET` | `call motor_reset` | Also re-arms the wheel overspeed guard |
+| `M <1\|2> <V> <lease_ms>` | `call motor_voltage motor=… voltage_v=… lease_ms=…` | |
+| `E 0` | `call calibrate step=0` | Ends the running step |
+| `E 1`, `E 2`, `E 3` | `call calibrate step=1` (gyroscope), `2` (attitude), `3` (servo) | Refused while balance or a motor test runs |
+| `Q <v>` | `set mahony_kp <v>` | IMU settings group |
+| `I <v>` | `set mahony_ki <v>` | IMU settings group |
+| `Z <Hz>` | `set gyro_cutoff_hz <Hz>` | Was an integer 1 to 65535; the IMU refuses cutoffs at or above 500 Hz |
+| `A`, `B`, `C`, `D <deg>` | `set servo1_trim <deg>` to `set servo4_trim <deg>` | Servo trims, limited to plus or minus 10 degrees (uncommissioned) |
+| `Y` | none | Removed in migration step 1 |
+| `K…` | unchanged | Trace selectors; removed in migration step 5 |
+
+Not exposed as parameters, by design: the balance settings that copy motor constants (`kvRating`, `phaseResistanceOhm`, `voltageLimitV`, `currentLimitA`, `leftWheelSign`, `rightWheelSign`). The balance parameters that are exposed are `speed_kp`, `speed_ki`, `speed_i_on`, `tilt_ref_limit`, `trim_envelope`, `tilt_p`, `gyro_damping`, `yaw_p`, `speed_cap` and `yaw_rate_cap`. `list` shows them with their units.
+
+A `set` applies at the start of the next control tick. The robot refuses a value that breaks a cross-field rule (for example `trim_envelope` above `tilt_ref_limit`) and keeps the running value; the Ack names the rule.
 
 ## Tests
 
