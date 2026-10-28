@@ -108,7 +108,7 @@ control loop ── odometry, Imu     ──► TX queue UART1
 - Each port has a byte-ring queue of whole frames (1024 bytes on UART1, 2560 on USB), a spinlock around it and one writer task (core 0, priority 2). `LinkWriter::Pump` is the only code that writes to a UART. The control loop only pushes.
 - Each port has its own `seq`, so a gap in a port's `seq` is a lost frame on that port.
 - A frame is written whole or not at all. On USB a `0x00` goes in front of each frame.
-- Log messages, replies and rows are sent on each port they concern and never wait: a full queue drops and counts. Odometry and `Imu` frames go to UART1 only.
+- Log messages, replies and rows are sent on each port they concern and never wait: a full queue drops and counts. Odometry and `Imu` frames are sent on UART1 and not on USB.
 - The firmware writes no text of its own. Setup messages, IMU timing, SimpleFOC debug output and the ICM42688 device check all go through `Logging::message`, so they reach the ros2_pc as `Log` frames.
 
 ## Receive path
