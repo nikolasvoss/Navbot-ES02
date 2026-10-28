@@ -125,7 +125,7 @@ Migration step 4 removed the letter commands. Each one is a parameter (`set`) or
 | `Q <v>` | `set mahony_kp <v>` | IMU settings group |
 | `I <v>` | `set mahony_ki <v>` | IMU settings group |
 | `Z <Hz>` | `set gyro_cutoff_hz <Hz>` | Was an integer 1 to 65535; the IMU refuses cutoffs at or above 500 Hz |
-| `A`, `B`, `C`, `D <deg>` | `set servo1_trim <deg>` to `set servo4_trim <deg>` | Servo trims, limited to plus or minus 10 degrees (uncommissioned) |
+| `A`, `B`, `C`, `D <deg>` | `set servo1_trim <deg>` to `set servo4_trim <deg>` | Servo trims in degrees, limited to plus or minus 90 degrees (the servo's angle limit in `ServoLimits.h`); only the trim being set is checked |
 | `Y` | none | Removed in migration step 1 |
 | `K…` | unchanged | Trace selectors; removed in migration step 5 |
 

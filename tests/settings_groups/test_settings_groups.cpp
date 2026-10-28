@@ -153,16 +153,27 @@ void NonFiniteAndRangeRefused() {
 void ServoTrimsApply() {
   ServoTrimsDegrees running{1.0f, 2.0f, 3.0f, 4.0f};
   const char* error = nullptr;
-  ServoTrimsDegrees candidate{1.0f, 2.0f, 3.0f, 10.0f};
-  Check(ApplyServoTrims(running, candidate, &error) && running.servo4Degrees == 10.0f,
-        "trims at the plus 10 degree limit are applied");
-  candidate.servo2Degrees = -10.5f;
+  ServoTrimsDegrees candidate{1.0f, 2.0f, 3.0f, 90.0f};
+  Check(ApplyServoTrims(running, candidate, &error) && running.servo4Degrees == 90.0f,
+        "trims at the plus 90 degree servo limit are applied");
+  candidate.servo2Degrees = -90.5f;
   Check(!ApplyServoTrims(running, candidate, &error) && running.servo2Degrees == 2.0f,
-        "a trim beyond minus 10 degrees is refused and the other trims stay");
-  Check(error != nullptr && std::strcmp(error, "outside plus or minus 10 degrees") == 0,
+        "a trim beyond minus 90 degrees is refused and the other trims stay");
+  Check(error != nullptr && std::strcmp(error, "outside plus or minus 90 degrees") == 0,
         "the refusal names the limit");
   candidate.servo2Degrees = std::nanf("");
   Check(!ApplyServoTrims(running, candidate, &error), "a NaN trim is refused");
+
+  // Only the trim being set is checked: a trim the candidate leaves alone may be outside the limit (a stored value).
+  ServoTrimsDegrees stored{120.0f, 2.0f, 3.0f, 4.0f};
+  ServoTrimsDegrees setServo2 = stored;
+  setServo2.servo2Degrees = 5.0f;
+  Check(ApplyServoTrims(stored, setServo2, &error) && stored.servo1Degrees == 120.0f && stored.servo2Degrees == 5.0f,
+        "setting servo2 is applied while servo1 stays at a stored 120 degrees");
+  ServoTrimsDegrees setServo3 = stored;
+  setServo3.servo3Degrees = 90.5f;
+  Check(!ApplyServoTrims(stored, setServo3, &error) && stored.servo3Degrees == 3.0f,
+        "a set trim of 90.5 degrees is refused");
 }
 
 }  // namespace
