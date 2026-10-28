@@ -28,6 +28,7 @@ class FakeEntry:
     unit: str = ""
     value: object = 0  # a number, or a function of t_us for a signal
     args: tuple = ()  # (name, min, max) for an action
+    limits: tuple | None = None  # (min, max) a PARAM accepts; SetParam outside it is refused
 
 
 def speed_loop_table() -> list[FakeEntry]:
@@ -202,7 +203,10 @@ class FakeFirmware:
             if entry.kind != E.PARAM:
                 return ack(error=f"{entry.name} is not a parameter")
             old = self._read(req.id)
-            (entry.value,) = struct.unpack(_FMT[entry.type], req.value)
+            (new,) = struct.unpack(_FMT[entry.type], req.value)
+            if entry.limits and not entry.limits[0] <= new <= entry.limits[1]:
+                return ack(error=f"{entry.name} must be within [{entry.limits[0]:g}, {entry.limits[1]:g}]")
+            entry.value = new
             ack(value=self._read(req.id))
             self._log(f"{entry.name}: {_show(entry, old)} -> {_show(entry, req.value)}", "param")
         elif body == "call":
@@ -226,6 +230,11 @@ class FakeFirmware:
 
     def _ack(self, seq: int, port: int, error: str = "", value: bytes = b"") -> None:
         self._send(pb.Message(ack=pb.Ack(command_id=seq, accepted=not error, error=error, value=value)), port)
+
+    def emit(self, msg, port: int = 0) -> None:
+        """Send any message, such as Imu or WheelOdometry, with the port's next seq."""
+        with self._lock:
+            self._send(msg, port)
 
     def log(self, text: str, tag: str, level: int = pb.Log.INFO) -> None:
         with self._lock:

@@ -1,9 +1,14 @@
+import time
+
 import pytest
 
-from navbot_link import navbot_link_pb2
-from navbot_link_bridge.bridge import ImuSample, LinkBridge
+from fake_firmware import FakeFirmware, MemoryTransport
+from navbot_link import navbot_link_pb2 as pb
 from navbot_link.framing import encode_frame
+from navbot_link.link import Link, Restarted
+from navbot_link_bridge.bridge import ImuSample, LinkBridge, RobotClock, RobotLog
 from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState
+from helpers import WireTransport, poll_until
 
 # Frames produced by the firmware encoder (tests/link/test_link_frame.cpp).
 FIRMWARE_ODOMETRY_FRAME = bytes([
@@ -16,92 +21,131 @@ FIRMWARE_IMU_FRAME = bytes([
 ])
 
 
-def new_bridge() -> LinkBridge:
-    return LinkBridge(DiffDriveOdometry(0.05, 0.2))
+def new_bridge(transport, **link_args) -> LinkBridge:
+    link = Link(transport, telemetry=True, clock=lambda: 0.0, **link_args)
+    return LinkBridge(link, DiffDriveOdometry(0.05, 0.2))
 
 
-def odom_frame(seq: int, t_us: int, left: float, right: float) -> bytes:
-    msg = navbot_link_pb2.Message(
-        seq=seq,
-        t_ms=seq,
-        odom=navbot_link_pb2.WheelOdometry(t_us=t_us, left_angle_rad=left, right_angle_rad=right),
-    )
-    return encode_frame(msg.SerializeToString())
+def odom(seq: int, t_us: int, left: float, right: float) -> pb.Message:
+    return pb.Message(seq=seq, odom=pb.WheelOdometry(t_us=t_us, left_angle_rad=left, right_angle_rad=right))
 
 
 def test_firmware_frames_decode_byte_by_byte():
-    bridge = new_bridge()
-    out = []
-    for byte in FIRMWARE_ODOMETRY_FRAME:
-        out += bridge.feed(bytes([byte]))
-    assert out == []  # first odometry sample only sets the baseline
-
-    out = []
-    for byte in FIRMWARE_IMU_FRAME:
-        out += bridge.feed(bytes([byte]))
-    assert len(out) == 1
+    bridge = new_bridge(WireTransport(FIRMWARE_ODOMETRY_FRAME + FIRMWARE_IMU_FRAME))
+    out = poll_until(bridge, 1)
+    assert len(out) == 1  # the first odometry sample only sets the baseline
     sample = out[0]
     assert isinstance(sample, ImuSample)
     assert sample.linear_acceleration == pytest.approx((9.80665, 0.0, 0.0))
     assert sample.angular_velocity == pytest.approx((0.0, 0.0, 0.5))
     assert (sample.roll_rad, sample.pitch_rad, sample.yaw_rad) == (0.0, 0.0, 0.0)
     assert sample.t_us == 1234567
-    assert bridge.lost_frames == 1  # seq 1 then seq 3
-    assert (bridge.bad_frames, bridge.decode_errors, bridge.restarts) == (0, 0, 0)
+    assert bridge.link.lost_frames == 1  # seq 1 then seq 3
+    assert (bridge.link.bad_frames, bridge.link.restarts) == (0, 0)
+    bridge.link.close()
 
 
-def test_seq_gap_counts_lost_frames():
-    bridge = new_bridge()
-    assert bridge.feed(odom_frame(1, 0, 0.0, 0.0)) == []
-    out = bridge.feed(odom_frame(4, 1_000_000, 20.0, 20.0))
+def test_wheel_angles_become_pose_and_speed():
+    fw = FakeFirmware()
+    bridge = new_bridge(MemoryTransport(fw))
+    fw.emit(odom(0, 0, 0.0, 0.0))
+    fw.emit(odom(0, 1_000_000, 20.0, 20.0))
+    out = poll_until(bridge, 1)
     assert len(out) == 1
     assert isinstance(out[0], OdometryState)
     assert out[0].x_m == pytest.approx(1.0)
     assert out[0].linear_mps == pytest.approx(1.0)
-    assert bridge.lost_frames == 2
+    bridge.link.close()
 
 
-def test_seq_reset_rebases_without_pose_jump():
-    bridge = new_bridge()
-    bridge.feed(odom_frame(1, 0, 0.0, 0.0))
-    before = bridge.feed(odom_frame(2, 1_000_000, 20.0, 20.0))
-    assert before[0].x_m == pytest.approx(1.0)
+def test_robot_restart_rebases_without_pose_jump():
+    fw = FakeFirmware()
+    bridge = new_bridge(MemoryTransport(fw))
+    fw.emit(odom(0, 0, 0.0, 0.0))
+    fw.emit(odom(0, 1_000_000, 20.0, 20.0))
+    assert poll_until(bridge, 1)[0].x_m == pytest.approx(1.0)
 
-    # Robot restarted: seq counts from 1 again and the wheel angles jump.
-    assert bridge.feed(odom_frame(1, 2_000_000, 500.0, 500.0)) == []
-    assert bridge.restarts == 1
+    fw.restart()  # seq counts from 1 again and the wheel angles jump
+    fw.emit(odom(0, 2_000_000, 500.0, 500.0))
+    restarted = poll_until(bridge, 1)
+    assert restarted == [Restarted()]
 
-    after = bridge.feed(odom_frame(2, 3_000_000, 501.0, 501.0))
-    assert after[0].x_m == pytest.approx(1.05)
-    assert bridge.lost_frames == 0
-
-
-def test_corrupted_frame_counts_bad_frame():
-    bridge = new_bridge()
-    bridge.feed(odom_frame(1, 0, 0.0, 0.0))
-    corrupted = bytearray(odom_frame(2, 1_000_000, 20.0, 20.0))
-    corrupted[3] ^= 0x01
-    assert bridge.feed(bytes(corrupted)) == []
-    assert bridge.bad_frames == 1
-
-
-def test_non_protobuf_payload_counts_decode_error():
-    bridge = new_bridge()
-    assert bridge.feed(encode_frame(b"\xff\xff\xff")) == []
-    assert bridge.decode_errors == 1
-    assert bridge.bad_frames == 0
-
-
-def imu_frame(seq: int, t_us: int, gz: float) -> bytes:
-    msg = navbot_link_pb2.Message(seq=seq, t_ms=seq, imu=navbot_link_pb2.Imu(t_us=t_us, gz=gz))
-    return encode_frame(msg.SerializeToString())
+    fw.emit(odom(0, 3_000_000, 501.0, 501.0))
+    assert poll_until(bridge, 1)[0].x_m == pytest.approx(1.05)
+    assert bridge.link.lost_frames == 0
+    bridge.link.close()
 
 
 def test_gyro_heading_uses_imu_gz_from_the_link():
-    bridge = LinkBridge(DiffDriveOdometry(0.05, 0.2, gyro_yaw_sign=-1))
-    bridge.feed(odom_frame(1, 0, 0.0, 0.0) + imu_frame(2, 0, 0.5))
-    bridge.feed(odom_frame(3, 20_000, 0.0, 0.0) + imu_frame(4, 20_000, 0.5))
-    out = bridge.feed(odom_frame(5, 40_000, 1.0, -1.0))  # wheels disagree; gyro wins
-    assert len(out) == 1
-    assert out[0].yaw_rad == pytest.approx(-0.01)
-    assert out[0].angular_rad_s == pytest.approx(-0.5)
+    fw = FakeFirmware()
+    link = Link(MemoryTransport(fw), telemetry=True, clock=lambda: 0.0)
+    bridge = LinkBridge(link, DiffDriveOdometry(0.05, 0.2, gyro_yaw_sign=-1))
+    for t_us, left, right in ((0, 0.0, 0.0), (20_000, 0.0, 0.0), (40_000, 1.0, -1.0)):
+        fw.emit(odom(0, t_us, left, right))
+        if t_us < 40_000:
+            fw.emit(pb.Message(imu=pb.Imu(t_us=t_us, gz=0.5)))
+    states = [x for x in poll_until(bridge, 4) if isinstance(x, OdometryState)]
+    assert len(states) == 2
+    assert states[-1].yaw_rad == pytest.approx(-0.01)  # wheels disagree; gyro wins
+    assert states[-1].angular_rad_s == pytest.approx(-0.5)
+    link.close()
+
+
+def test_robot_log_lines_keep_severity_tag_and_code():
+    fw = FakeFirmware()
+    bridge = new_bridge(MemoryTransport(fw))
+    for level, text, tag in (
+        (pb.Log.DEBUG, "d", "imu"),
+        (pb.Log.INFO, "i", "param"),
+        (pb.Log.WARN, "w", "imu"),
+        (pb.Log.ERROR, "e", "motor"),
+        (pb.Log.FATAL, "f", "motor"),
+        (pb.Log.INFO, "no tag", ""),
+        (pb.Log.LEVEL_UNSPECIFIED, "unnamed level", "x"),
+    ):
+        fw.log(text, tag, level)
+    assert poll_until(bridge, 7) == [
+        RobotLog(10, "imu", "d"),
+        RobotLog(20, "param", "i"),
+        RobotLog(30, "imu", "w"),
+        RobotLog(40, "motor", "e"),
+        RobotLog(50, "motor", "f"),
+        RobotLog(20, "robot", "no tag"),
+        RobotLog(20, "x", "unnamed level"),
+    ]
+    bridge.link.close()
+
+
+def test_log_code_is_appended_to_the_text():
+    bridge = new_bridge(WireTransport(
+        encode_frame(pb.Message(seq=1, log=pb.Log(level=pb.Log.ERROR, code=12, text="stall", tag="motor")
+                                ).SerializeToString())))
+    assert poll_until(bridge, 1) == [RobotLog(40, "motor", "stall (code 12)")]
+    bridge.link.close()
+
+
+def test_robot_clock_stamps_each_sample_with_its_own_robot_time():
+    clock = RobotClock()
+    assert clock.stamp_ns(1_000, 5_000_000_000) == 5_000_000_000
+    # Read 80 ms late: the stamp keeps the 20 ms spacing (plus 0.1 % of the lateness, drift tracking).
+    assert clock.stamp_ns(21_000, 5_100_000_000) == 5_020_080_000
+    assert clock.stamp_ns(41_000, 5_100_000_100) == 5_040_139_920
+
+
+def test_robot_clock_never_stamps_in_the_future_and_never_goes_back():
+    clock = RobotClock()
+    assert clock.stamp_ns(0, 10_000_000_000) == 10_000_000_000
+    # The next sample arrives 5 ms after the first although the robot made it 20 ms later:
+    # the offset drops, and the stamp may not lie before the previous one.
+    assert clock.stamp_ns(20_000, 10_005_000_000) == 10_005_000_000
+    assert clock.stamp_ns(20_000, 10_005_000_000) == 10_005_000_001  # same robot time twice
+
+
+def test_robot_clock_follows_the_32_bit_micros_wrap():
+    clock = RobotClock()
+    first = clock.stamp_ns(0xFFFFFFF0, 8_000_000_000)
+    assert first == 8_000_000_000
+    assert clock.stamp_ns(0x10, 8_000_032_000) == 8_000_032_000  # 32 us later
+
+    clock.rebase()
+    assert clock.stamp_ns(5, 9_000_000_000) == 9_000_000_000

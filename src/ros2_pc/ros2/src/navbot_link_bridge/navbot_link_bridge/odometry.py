@@ -22,6 +22,7 @@ class OdometryState:
     yaw_rad: float
     linear_mps: float
     angular_rad_s: float
+    t_us: int = 0  # robot micros() of the wheel sample
 
 
 def _positive_finite(value: float) -> bool:
@@ -137,6 +138,7 @@ class DiffDriveOdometry:
             yaw_rad=self._yaw,
             linear_mps=distance / dt_s,
             angular_rad_s=angular,
+            t_us=t_us,
         )
 
     def rebase(self) -> None:
