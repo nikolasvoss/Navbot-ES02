@@ -96,7 +96,7 @@ motor_reset()? [y/N] y
 motor_reset: started
 ```
 
-The motor-test result text (`MOTOR_TEST`, `MOTOR_ID_RESULT`) is a `Log` event on UART1. A `motor_voltage` result is also in the file as a `# log` line.
+The motor-test result text (`MOTOR_TEST`, `MOTOR_ID_RESULT`) is a `Log` event on each port. A `motor_voltage` result is also in the file as a `# log` line.
 
 ## Logged capture workflow
 
