@@ -31,6 +31,14 @@
     .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
     button { font: inherit; color: #edf3f7; background: #243442; border: 1px solid #64748b; border-radius: .4rem; padding: .5rem .8rem; }
     button:disabled { opacity: .5; }
+    .modeSwitch { display: inline-flex; align-items: center; gap: .5rem; }
+    .modeSwitch input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .modeSwitch .track { position: relative; width: 2.8rem; height: 1.5rem; border-radius: 1rem; background: #243442; border: 1px solid #64748b; cursor: pointer; transition: background .15s; }
+    .modeSwitch .track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 1.15rem; height: 1.15rem; border-radius: 50%; background: #edf3f7; transition: transform .15s; }
+    .modeSwitch input:checked + .track { background: #0e7490; }
+    .modeSwitch input:checked + .track::after { transform: translateX(1.3rem); }
+    .modeSwitch input:focus-visible + .track { outline: 2px solid #38bdf8; outline-offset: 2px; }
+    .modeSwitch input:disabled + .track { opacity: .5; cursor: default; }
     @media (max-width: 760px) {
       body { height: auto; min-height: 100dvh; grid-template-rows: auto auto auto; overflow: auto; }
       .grid { grid-template-columns: minmax(0, 1fr); }
@@ -100,7 +108,12 @@
       </dl>
       <div class="actions">
         <button id="locate" type="button" disabled title="Start a global search for the pose on the saved map">Locate again</button>
-        <button id="switchMode" type="button" disabled>Switch to mapping</button>
+        <label class="modeSwitch" title="Slide to localization to use the saved map, or to mapping to extend or remake it">
+          <span>Mapping</span>
+          <input id="switchMode" type="checkbox" role="switch" disabled>
+          <span class="track" aria-hidden="true"></span>
+          <span>Localization</span>
+        </label>
       </div>
       <div class="actions">
         <button id="saveMap" type="button" disabled>Save map</button>
@@ -135,7 +148,7 @@
       $('resetMap').disabled = actionRunning || !serverHasControl || !hasSavedMap;
       $('locate').disabled = actionRunning || !serverHasControl || !localizing;
       $('switchMode').disabled = actionRunning || !serverHasControl || currentMode === null;
-      $('switchMode').textContent = localizing ? 'Switch to mapping' : 'Switch to localization';
+      $('switchMode').checked = localizing;
     }
 
     async function runAction(path, doneText, body) {
@@ -165,8 +178,8 @@
       }
     });
     $('locate').addEventListener('click', () => runAction('/slam/locate', 'Searching for the pose on the saved map.'));
-    $('switchMode').addEventListener('click', () => {
-      const target = currentMode === 'localization' ? 'mapping' : 'localization';
+    $('switchMode').addEventListener('change', () => {
+      const target = $('switchMode').checked ? 'localization' : 'mapping';
       runAction('/slam/mode', `Switching to ${target}.`, { mode: target });
     });
     $('deleteMap').addEventListener('click', () => {
