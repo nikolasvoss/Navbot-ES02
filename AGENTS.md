@@ -58,5 +58,3 @@ On a machine with the toolchain, build the default firmware from the project roo
 5. When a new hardware finding changes the overview or reference, update the affected docs page and record the observation, evidence, and practical consequence as a dated note in `lab/robot/`.
 
 The ros2_pc starts at the [ros2_pc index](docs/ros2_pc/README.md). Treat its hardware and attached peripherals as pending until their page marks them verified; do not infer pinouts, power paths, or software behavior.
-
-Run Haiku calls with network access enabled (`sandbox_permissions: "require_escalated"`), because sandboxed calls can stall.
