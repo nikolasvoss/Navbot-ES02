@@ -1,13 +1,17 @@
-"""Turns link bytes into odometry states and IMU samples. No ROS imports."""
+"""Turns Link events into odometry states, IMU samples, robot log lines.
+No ROS imports."""
 
 from dataclasses import dataclass
 
-from google.protobuf.message import DecodeError
-
 from navbot_link import navbot_link_pb2
-from navbot_link.framing import FrameDecoder
-from navbot_link.protocol import SeqTracker
+from navbot_link.link import (
+    Disconnected, Link, LogEvent, Restarted, Telemetry,
+)
 from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState
+
+# rcl_interfaces/msg/Log levels
+ROS_SEVERITY = {"DEBUG": 10, "INFO": 20, "WARN": 30, "ERROR": 40, "FATAL": 50}
+DEFAULT_LOGGER = "robot"
 
 
 @dataclass(frozen=True)
@@ -20,53 +24,54 @@ class ImuSample:
     t_us: int  # robot micros() at the IMU read; use only differences (wraps at 2**32)
 
 
+@dataclass(frozen=True)
+class RobotLog:
+    severity: int  # ROS_SEVERITY value
+    logger: str  # the Log tag
+    text: str
+
+
 class LinkBridge:
-    def __init__(self, odometry: DiffDriveOdometry):
+    """One connection: the Link, the pose integration."""
+
+    def __init__(self, link: Link, odometry: DiffDriveOdometry):
+        self.link = link
         self._odometry = odometry
-        self._decoder = FrameDecoder()
-        self._seq = SeqTracker()
-        self.decode_errors = 0
 
-    @property
-    def bad_frames(self) -> int:
-        return self._decoder.bad_frames
-
-    @property
-    def lost_frames(self) -> int:
-        return self._seq.lost_frames
-
-    @property
-    def restarts(self) -> int:
-        return self._seq.restarts
-
-    def feed(self, chunk: bytes) -> list[OdometryState | ImuSample]:
-        results = []
-        for payload in self._decoder.feed(chunk):
-            if not isinstance(payload, bytes):
-                continue  # raw text
-            msg = navbot_link_pb2.Message()
-            try:
-                msg.ParseFromString(payload)
-            except DecodeError:
-                self.decode_errors += 1
-                continue
-            if self._seq.observe(msg.seq).restarted:
+    def poll(self) -> list:
+        """Everything that arrived since the last call, in order: OdometryState, ImuSample,
+        RobotLog, plus Restarted and Disconnected for the caller."""
+        out = []
+        while not self.link.events.empty():
+            event = self.link.events.get_nowait()
+            if isinstance(event, Telemetry):
+                self._on_telemetry(event.message, out)
+            elif isinstance(event, LogEvent):
+                out.append(_robot_log(event))
+            elif isinstance(event, Restarted):
                 self._odometry.rebase()  # keep the pose
+                out.append(event)
+            elif isinstance(event, Disconnected):
+                out.append(event)
+        return out
 
-            body = msg.WhichOneof("body")
-            if body == "odom":
-                state = self._odometry.update(
-                    msg.odom.t_us, msg.odom.left_angle_rad, msg.odom.right_angle_rad
-                )
-                if state is not None:
-                    results.append(state)
-            elif body == "imu":
-                self._odometry.add_gyro(msg.imu.t_us, msg.imu.gz)
-                results.append(_imu_sample(msg.imu))
-        return results
+    def _on_telemetry(self, msg, out: list) -> None:
+        if msg.WhichOneof("body") == "odom":
+            state = self._odometry.update(msg.odom.t_us, msg.odom.left_angle_rad, msg.odom.right_angle_rad)
+            if state is not None:
+                out.append(state)
+        else:
+            self._odometry.add_gyro(msg.imu.t_us, msg.imu.gz)
+            out.append(_imu_sample(msg.imu))
 
 
-def _imu_sample(imu) -> ImuSample:
+def _robot_log(event: LogEvent) -> RobotLog:
+    text = f"{event.text} (code {event.code})" if event.code else event.text
+    # An unnamed level (LEVEL_UNSPECIFIED, a number from newer firmware) is shown, not dropped.
+    return RobotLog(ROS_SEVERITY.get(event.level, ROS_SEVERITY["INFO"]), event.tag or DEFAULT_LOGGER, text)
+
+
+def _imu_sample(imu: navbot_link_pb2.Imu) -> ImuSample:
     return ImuSample(
         linear_acceleration=(imu.ax, imu.ay, imu.az),
         angular_velocity=(imu.gx, imu.gy, imu.gz),
