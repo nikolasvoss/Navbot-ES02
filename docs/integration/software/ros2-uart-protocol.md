@@ -119,10 +119,10 @@ Serial  (USB)   -> receive task: COBS, CRC -+                     control loop, 
 ```
 
 - One receive task per port (core 0, priority 2) polls its UART every tick, feeds `LinkRxDecoder` and pushes each valid payload into the request queue (1536 bytes, each item tagged with the port). It touches no robot state. A chunk with a bad COBS structure or CRC is dropped and counted (`rxBad` in the `Link` log line, UART1 count then USB count). A full request queue drops the request and counts it (`reqDropped`); the PC retries.
-- The control loop takes up to 4 requests at the start of each tick (`LinkServiceRequests`), so a tick never sees a half-applied change, and replies on the port that asked. Rows are sampled at the end of the tick, after the telemetry of the `K` profiles (`LinkSampleSignals`), so `control_execution_us` is the value of the same tick.
+- The control loop takes up to 2 requests at the start of each tick (`LinkServiceRequests`, `LINK_REQUESTS_PER_TICK`), so a tick never sees a half-applied change, and replies on the port that asked. Rows are sampled at the end of the tick, after the telemetry of the `K` profiles (`LinkSampleSignals`), so `control_execution_us` is the value of the same tick.
 - UART1 receives into a 1024-byte driver buffer, about 5 ms of line.
 - The USB port is shared with the letter commands. The decoder also hands out each line of printable ASCII that ends in a line feed or carriage return, and the Commander reads those lines instead of the raw port. A binary frame is taken for a command only if everything between two `0x0A` bytes of it is printable text that starts with a command letter. A frame that follows typed lines decodes even with no `0x00` between them: when the whole chunk fails, the decoder tries the frame after the last line end. Text typed without a line end before a frame spoils that frame (it fails the CRC), and the PC library retries.
-- A catalog read costs one control tick per entry, because requests are applied at the start of a tick.
+- A catalog read costs one control tick per entry: the PC asks for one entry and waits for its reply, and requests are applied at the start of a tick. The cap of 2 requests per tick does not slow it.
 
 ## Next steps
 

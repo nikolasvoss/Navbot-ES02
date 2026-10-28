@@ -27,7 +27,6 @@ constexpr UBaseType_t kReaderPriority = 2;
 constexpr size_t kRequestQueueBytes = 1536;  // a few requests of up to 252 bytes
 constexpr size_t kCommandQueueBytes = 256;   // typed letter commands are short
 constexpr size_t kUartRxBufferBytes = 1024;  // about 5 ms of line at 2000000 baud; the reader polls every tick (1 ms)
-constexpr int kMaxRequestsPerTick = 4;
 constexpr TickType_t kBlockingPushTimeoutTicks = 200;
 
 class SpinLock : public LinkLock {
@@ -224,10 +223,10 @@ int LinkUsbCommandPeek() { return commandBytesLeft() ? commandLine[commandLinePo
 void LinkServiceRequests(uint32_t tickStartUs) {
   if (!endpoint) return;
   static uint8_t payload[LINK_MAX_ITEM_LEN];
-  uint8_t port = 0;
-  size_t len = 0;
-  for (int i = 0; i < kMaxRequestsPerTick && requests.Pop(port, payload, len); ++i)
-    endpoint->Handle(port, payload, len, tickStartUs);
+  auto handle = [tickStartUs](uint8_t port, const uint8_t* data, size_t len) {
+    endpoint->Handle(port, data, len, tickStartUs);
+  };
+  LinkServeQueued(requests, LINK_REQUESTS_PER_TICK, payload, handle);
 }
 
 void LinkSampleSignals(uint32_t tickStartUs) {

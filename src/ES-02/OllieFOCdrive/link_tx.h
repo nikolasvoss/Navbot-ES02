@@ -47,6 +47,25 @@ class LinkItemQueue {
   uint32_t dropped_ = 0;
 };
 
+// Requests the control loop answers per tick. Each one runs inside the loop (a tick is about 1.4 ms), so a burst would
+// stretch that tick. The rest wait in the queue for the next tick. A catalog read asks for one entry at a time, so the
+// cap does not slow it.
+constexpr size_t LINK_REQUESTS_PER_TICK = 2;
+
+// Hands at most maxItems queued items to handle(port, payload, len), oldest first, copying each into scratch (at least
+// LINK_MAX_ITEM_LEN bytes). Returns how many it handed out.
+template <typename Handle>
+size_t LinkServeQueued(LinkItemQueue& queue, size_t maxItems, uint8_t* scratch, Handle&& handle) {
+  size_t served = 0;
+  uint8_t port = 0;
+  size_t len = 0;
+  while (served < maxItems && queue.Pop(port, scratch, len)) {
+    handle(port, scratch, len);
+    ++served;
+  }
+  return served;
+}
+
 enum LinkItemTag : uint8_t {
   kLinkItemFrame = 0,  // one encoded frame, sent whole or not at all
   kLinkItemRaw = 1,    // text/CSV bytes, may go out in pieces

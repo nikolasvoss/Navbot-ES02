@@ -194,6 +194,33 @@ bool TestRequestQueueKeepsPortAndPayload() {
   return ok;
 }
 
+bool TestServesTwoRequestsPerTick() {
+  uint8_t storage[64];
+  LinkItemQueue requests(storage, sizeof(storage));
+  const uint8_t one[] = {1};
+  const uint8_t two[] = {2};
+  const uint8_t three[] = {3};
+  bool ok = true;
+  ok &= Check("request cap is 2", LINK_REQUESTS_PER_TICK == 2);
+  ok &= Check("push three requests", requests.Push(0, one, 1) && requests.Push(1, two, 1) && requests.Push(0, three, 1));
+
+  struct Served {
+    uint8_t port;
+    uint8_t first;
+  };
+  std::vector<Served> served;
+  uint8_t scratch[LINK_MAX_ITEM_LEN];
+  auto handle = [&served](uint8_t port, const uint8_t* payload, size_t) { served.push_back({port, payload[0]}); };
+
+  const size_t tick1 = LinkServeQueued(requests, 2, scratch, handle);
+  ok &= Check("tick 1 serves the two oldest", tick1 == 2 && served.size() == 2 && served[0].port == 0 &&
+                                                  served[0].first == 1 && served[1].port == 1 && served[1].first == 2);
+  const size_t tick2 = LinkServeQueued(requests, LINK_REQUESTS_PER_TICK, scratch, handle);
+  ok &= Check("tick 2 serves the third", tick2 == 1 && served.size() == 3 && served[2].port == 0 && served[2].first == 3);
+  ok &= Check("tick 3 has nothing left", LinkServeQueued(requests, LINK_REQUESTS_PER_TICK, scratch, handle) == 0);
+  return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -203,5 +230,6 @@ int main() {
   ok &= TestSeqIsPerPort();
   ok &= TestUsbPrefixAndSharedOrder();
   ok &= TestRequestQueueKeepsPortAndPayload();
+  ok &= TestServesTwoRequestsPerTick();
   return ok ? 0 : 1;
 }
