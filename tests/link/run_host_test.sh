@@ -73,6 +73,17 @@ c++ -std=c++17 -Wall -Wextra -Werror \
 
 "$build_dir/test_link_endpoint"
 
+# The real entry file, expanded against stand-in state, must list what scripts/signals_catalog.py says it lists.
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"$sketch_dir" \
+  "$repo_root/tests/link/test_signals_def.cpp" \
+  -o "$build_dir/test_signals_def"
+
+"$build_dir/test_signals_def" | cut -f1-4 > "$build_dir/firmware_catalog.tsv"
+python3 "$repo_root/scripts/signals_catalog.py" > "$build_dir/script_catalog.tsv"
+diff "$build_dir/firmware_catalog.tsv" "$build_dir/script_catalog.tsv"
+echo "signals.def.h: the firmware expansion and signals_catalog.py agree on $(wc -l < "$build_dir/script_catalog.tsv") entries"
+
 # Each bad entry file must stop the build with the named reason.
 expect_rejected() {
   local file="$1" reason="$2"
