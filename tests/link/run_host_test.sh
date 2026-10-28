@@ -73,6 +73,14 @@ c++ -std=c++17 -Wall -Wextra -Werror \
 
 "$build_dir/test_link_endpoint"
 
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"$sketch_dir" \
+  "$sketch_dir/Logging.cpp" \
+  "$repo_root/tests/link/test_link_log.cpp" \
+  -o "$build_dir/test_link_log"
+
+"$build_dir/test_link_log"
+
 # The real entry file, expanded against stand-in state, must list what scripts/signals_catalog.py says it lists.
 c++ -std=c++17 -Wall -Wextra -Werror \
   -I"$sketch_dir" \

@@ -817,8 +817,9 @@ void diagnosticLoop(void) {
     if (elapsedUs >= 1000000U) {
       const uint32_t acceptedSamples = timing.acceptedSamples - lastTimingAcceptedSamples;
       const float acceptedRateHz = static_cast<float>(acceptedSamples) * 1000000.0f / static_cast<float>(elapsedUs);
-      Logging::message(Logging::Level::Info, "IMU_TIMING", "elapsed_us=%lu,accepted=%lu,rate_hz=%.1f,long_gap_total=%lu,max_interval_us=%lu",
-                    static_cast<unsigned long>(elapsedUs), static_cast<unsigned long>(acceptedSamples), acceptedRateHz,
+      // No elapsed_us: the window is one second, and the line must fit the 96 characters of a Log text (81 at worst).
+      Logging::message(Logging::Level::Info, "IMU_TIMING", "accepted=%lu,rate_hz=%.1f,long_gap_total=%lu,max_interval_us=%lu",
+                    static_cast<unsigned long>(acceptedSamples), acceptedRateHz,
                     static_cast<unsigned long>(timing.longGapCount), static_cast<unsigned long>(timing.maxIntervalUs));
       lastTimingReportUs = timingNowUs;
       lastTimingAcceptedSamples = timing.acceptedSamples;

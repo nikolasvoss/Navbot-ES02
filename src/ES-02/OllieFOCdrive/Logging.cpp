@@ -4,10 +4,11 @@
 #include <stdio.h>
 
 #include "link_log.h"
+#include "src/navbot_link/navbot_link.pb.h"
 
 namespace {
-// The Log frame's text field holds 96 bytes; longer text is cut to fit.
-constexpr size_t kTextBytes = 96;
+// The Log text field of navbot_link.options (max_size 97): 96 characters and the terminator. Longer text is cut.
+constexpr size_t kTextBytes = sizeof(navbot_link_v1_Log::text);
 }  // namespace
 
 namespace Logging {
