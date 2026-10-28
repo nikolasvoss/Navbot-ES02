@@ -75,6 +75,9 @@ def make_lidar_app(
     def slam_save():
         if control is None:
             return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        refusal = control.save_refusal()
+        if refusal is not None:
+            return jsonify(ok=False, error=refusal), 409
         if slam.snapshot()["map"] is None:
             return jsonify(ok=False, error="No map to save yet"), 409
         error = control.save()
@@ -94,10 +97,11 @@ def make_lidar_app(
     def slam_reset():
         if control is None:
             return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        # reload() clears the view itself (SlamControl._enter). Clearing here again could drop the map
+        # that the restarted map server has already published.
         error = control.reload()
         if error is not None:
             return jsonify(ok=False, error=error), 409
-        slam.clear()
         return jsonify(ok=True)
 
     @app.post("/slam/mode")

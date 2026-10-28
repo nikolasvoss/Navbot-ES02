@@ -158,8 +158,8 @@ class GlobalLocalizer:
         with self._lock:
             cancel, thread = self._cancel, self._thread
             self._cancel = self._thread = None
-        if cancel is not None:
-            cancel.set()
+            if cancel is not None:
+                cancel.set()
         if thread is not None and thread is not current_thread():
             thread.join()
 
@@ -179,12 +179,18 @@ class GlobalLocalizer:
             if cancel.is_set():
                 return
             self._tracker.start_search()
+        deadline = time.monotonic() + self._service_timeout
         while not cancel.is_set() and self._tracker.searching():
             error = self._call_service(NOMOTION_SERVICE, SERVICE_CALL_TIMEOUT_SEC)
-            if error is not None:
+            if error is None:
+                cancel.wait(self._nomotion_period)
+                continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 self._fail(cancel, f"{NOMOTION_SERVICE}: {error}")
                 return
-            cancel.wait(self._nomotion_period)
+            if cancel.wait(min(SERVICE_RETRY_SEC, remaining)):
+                return
 
     def _fail(self, cancel: Event, error: str) -> None:
         with self._lock:

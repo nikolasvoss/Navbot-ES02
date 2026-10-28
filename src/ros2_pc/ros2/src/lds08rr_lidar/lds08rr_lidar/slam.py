@@ -184,7 +184,9 @@ class MapStore:
                 backup.unlink(missing_ok=True)
 
     def delete(self) -> None:
-        for suffix in MAP_SUFFIXES:
+        # The two files that define exists() and has_occupancy() go first, so a failure part way
+        # never leaves them present with their data files already gone.
+        for suffix in (".posegraph", ".yaml", ".data", ".pgm"):
             self._file(suffix).unlink(missing_ok=True)
 
     def params_file(self, base_yaml: str) -> Path:
@@ -397,10 +399,17 @@ class SlamControl:
             self._localizer.start()
             return None
 
+    def save_refusal(self) -> str | None:
+        """Why save() would refuse right now, or None when it may run."""
+        if self._mode != MAPPING:
+            return "Save needs mapping mode; switch to mapping first"
+        return None
+
     def save(self) -> str | None:
         with self._lock:
-            if self._mode != MAPPING:
-                return "Save needs mapping mode; switch to mapping first"
+            refusal = self.save_refusal()
+            if refusal is not None:
+                return refusal
             tmp = self._store.directory / f"map.saving.{time.time_ns()}"
             try:
                 tmp.mkdir(parents=True)
@@ -432,8 +441,8 @@ class SlamControl:
         with self._lock:
             if not self._store.exists():
                 return "No saved map to load"
-            self._process.stop()
-            self._process.start()
+            self._halt()
+            self._enter(self._mode)
             return None
 
     def status(self) -> dict:

@@ -186,6 +186,7 @@ class LidarNode(Node):
         future = client.call_async(Empty.Request())
         future.add_done_callback(lambda _: finished.set())
         if not finished.wait(timeout):
+            client.remove_pending_request(future)
             return "call timed out"
         if future.exception() is not None:
             return f"call failed: {future.exception()}"
