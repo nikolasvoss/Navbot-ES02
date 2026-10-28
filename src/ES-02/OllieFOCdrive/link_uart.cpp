@@ -114,19 +114,6 @@ void startWriter(PortRuntime& runtime, const char* name) {
   xTaskCreatePinnedToCore(writerTask, name, kWriterStackBytes, &runtime, kWriterPriority, &runtime.task, 0);
 }
 
-class UsbPrint : public Print {
- public:
-  size_t write(uint8_t value) override { return write(&value, 1); }
-  size_t write(const uint8_t* data, size_t len) override {
-    for (size_t offset = 0; offset < len; offset += LINK_MAX_ITEM_LEN) {
-      const size_t chunk = len - offset < LINK_MAX_ITEM_LEN ? len - offset : LINK_MAX_ITEM_LEN;
-      usb.port.queue.PushOrDrop(kLinkItemRaw, data + offset, chunk);
-    }
-    wake(usb);
-    return len;  // a drop is counted, not retried: the callers are the control loop and setup
-  }
-} usbPrint;
-
 bool sendOn(PortRuntime& runtime, navbot_link_v1_Message& msg) {
   const bool queued = LinkPortSend(runtime.port, msg, millis());
   if (queued) wake(runtime);
@@ -160,8 +147,6 @@ navbot_link_v1_Log_Level linkLevel(Logging::Level level) {
 }
 
 }  // namespace
-
-Print& LinkUsbPrint() { return usbPrint; }
 
 void LinkUsbInit() { startWriter(usb, "usbTx"); }
 

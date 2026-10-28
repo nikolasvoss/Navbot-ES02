@@ -68,27 +68,20 @@ size_t LinkWriter::Pump(LinkItemQueue& queue, LinkByteSink& sink) {
   size_t written = 0;
   for (;;) {
     if (staged_ == 0) {
+      // The frame is popped one byte in when the port needs a 0x00 in front, so no second copy is made.
+      const size_t offset = prefixFrames_ ? 1 : 0;
+      uint8_t tag = 0;
       size_t len = 0;
-      // Popped one byte in, so the 0x00 prefix of a USB frame fits in front without a second copy.
-      if (!queue.Pop(tag_, buffer_ + 1, len)) return written;
-      if (tag_ == kLinkItemFrame && prefixFrames_) {
-        buffer_[0] = 0x00;
-        staged_ = len + 1;
-      } else {
-        memmove(buffer_, buffer_ + 1, len);
-        staged_ = len;
-      }
-      sent_ = 0;
+      if (!queue.Pop(tag, buffer_ + offset, len)) return written;
+      if (prefixFrames_) buffer_[0] = 0x00;
+      staged_ = offset + len;
     }
     const int availableRaw = sink.AvailableForWrite();
     const size_t available = availableRaw > 0 ? static_cast<size_t>(availableRaw) : 0;
-    const size_t remaining = staged_ - sent_;
-    const size_t n = tag_ == kLinkItemFrame ? (available >= remaining ? remaining : 0) : std::min(available, remaining);
-    if (n == 0) return written;
-    sink.Write(buffer_ + sent_, n);
-    written += n;
-    sent_ += n;
-    if (sent_ == staged_) staged_ = 0;
+    if (available < staged_) return written;
+    sink.Write(buffer_, staged_);
+    written += staged_;
+    staged_ = 0;
   }
 }
 

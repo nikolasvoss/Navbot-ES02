@@ -8,8 +8,8 @@
 // Pure transmit-path logic for one port: no Arduino or FreeRTOS, so tests/link host-tests it. The firmware wraps the
 // queue in a lock and runs LinkWriter::Pump from one writer task per port (link_uart.cpp).
 
-// Largest item the queue carries: a Logging.cpp text/CSV line is up to 576 bytes.
-constexpr size_t LINK_MAX_ITEM_LEN = 640;
+// Largest item the queue carries: one frame, or one request payload, which is shorter.
+constexpr size_t LINK_MAX_ITEM_LEN = LINK_MAX_FRAME_LEN;
 
 // Optional mutual exclusion around the queue; the firmware passes a spinlock, tests pass none.
 class LinkLock {
@@ -68,7 +68,6 @@ size_t LinkServeQueued(LinkItemQueue& queue, size_t maxItems, uint8_t* scratch, 
 
 enum LinkItemTag : uint8_t {
   kLinkItemFrame = 0,  // one encoded frame, sent whole or not at all
-  kLinkItemRaw = 1,    // text/CSV bytes, may go out in pieces
 };
 
 class LinkByteSink {
@@ -78,9 +77,9 @@ class LinkByteSink {
   virtual void Write(const uint8_t* data, size_t len) = 0;
 };
 
-// Moves items from a queue to a sink. A frame is written only when the sink has room for all of it, so a frame is never
-// split across writes and a later item never starts before it. Raw bytes go out as far as the sink allows. With
-// prefixFrames each frame gets a 0x00 in front (the USB port, where text shares the line).
+// Moves frames from a queue to a sink. A frame is written only when the sink has room for all of it, so a frame is never
+// split across writes and a later frame never starts before it. With prefixFrames each frame gets a 0x00 in front (the
+// USB port, where the receiver starts a new frame at each 0x00).
 class LinkWriter {
  public:
   explicit LinkWriter(bool prefixFrames) : prefixFrames_(prefixFrames) {}
@@ -91,9 +90,7 @@ class LinkWriter {
  private:
   bool prefixFrames_;
   uint8_t buffer_[LINK_MAX_ITEM_LEN + 1];
-  uint8_t tag_ = kLinkItemFrame;
-  size_t staged_ = 0;  // bytes in buffer_ for the current item; 0 = none
-  size_t sent_ = 0;
+  size_t staged_ = 0;  // bytes in buffer_ for the frame waiting for room; 0 = none
 };
 
 // Frame queue plus its own sequence counter. Each port owns one, so a gap in a port's seq means a lost frame on that port.

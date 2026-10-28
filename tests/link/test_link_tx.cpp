@@ -144,31 +144,25 @@ bool TestSeqIsPerPort() {
   return ok;
 }
 
-bool TestUsbPrefixAndSharedOrder() {
+bool TestUsbPrefixWaitsForRoom() {
   uint8_t storage[256];
   LinkPort usb(storage, sizeof(storage), true);
-  const uint8_t line[] = {'h', 'i', '\n'};
-  usb.queue.PushOrDrop(kLinkItemRaw, line, sizeof(line));
   Send(usb);
-  usb.queue.PushOrDrop(kLinkItemRaw, line, sizeof(line));
+  Send(usb);
   FakeSink sink;
   bool ok = true;
 
-  sink.available = 2;  // the first text line goes out in pieces
+  sink.available = sizeof(kOdomSeq1);  // one byte short of the 0x00 and the frame
   usb.writer.Pump(usb.queue, sink);
-  ok &= CheckBytes("raw text partly out", sink.written, Bytes(line, line + 2));
-
-  sink.available = 32;  // the rest of the text (1) and 0x00 + frame (32) need 33
-  usb.writer.Pump(usb.queue, sink);
-  ok &= CheckBytes("frame waits for room, not split", sink.written, Bytes(line, line + 3));
+  ok &= CheckBytes("the frame waits for room, not split", sink.written, Bytes{});
 
   sink.available = 100;
   usb.writer.Pump(usb.queue, sink);
-  Bytes expected(line, line + 3);
-  expected.push_back(0x00);
+  Bytes expected{0x00};
   expected = Concat(expected, Of(kOdomSeq1, sizeof(kOdomSeq1)));
-  expected.insert(expected.end(), line, line + 3);
-  ok &= CheckBytes("text, 0x00 + frame, text in push order", sink.written, expected);
+  expected.push_back(0x00);
+  expected = Concat(expected, Of(kOdomSeq2, sizeof(kOdomSeq2)));
+  ok &= CheckBytes("each frame goes out behind its 0x00, in push order", sink.written, expected);
   return ok;
 }
 
@@ -228,7 +222,7 @@ int main() {
   ok &= TestWholeFrameUnderPartialAvailability();
   ok &= TestDropCountedOnFullQueue();
   ok &= TestSeqIsPerPort();
-  ok &= TestUsbPrefixAndSharedOrder();
+  ok &= TestUsbPrefixWaitsForRoom();
   ok &= TestRequestQueueKeepsPortAndPayload();
   ok &= TestServesTwoRequestsPerTick();
   return ok ? 0 : 1;

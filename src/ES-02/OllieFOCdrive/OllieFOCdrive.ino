@@ -29,6 +29,31 @@
 
 bool motorDiagnosticOwnsOutput = false;
 
+// SimpleFOC's debug output is a Print that receives lines ending in '\n'. Each line goes to the link as a Log frame.
+class SimpleFocLog : public Print {
+ public:
+  size_t write(uint8_t value) override {
+    if (value == '\n') {
+      emitLine();
+    } else if (value != '\r') {
+      if (length_ == sizeof(line_) - 1) emitLine();
+      line_[length_++] = static_cast<char>(value);
+    }
+    return 1;
+  }
+
+ private:
+  void emitLine() {
+    line_[length_] = '\0';
+    Logging::message(Logging::Level::Info, "SimpleFOC", "%s", line_);
+    length_ = 0;
+  }
+
+  char line_[96];
+  size_t length_ = 0;
+};
+SimpleFocLog simpleFocLog;
+
 Calibration calibration;
 CalibrationStore calibrationStore;
 
@@ -416,10 +441,10 @@ void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params) {
 
 void initIMU(const imu::CalibrationValues &imuCalibration) {
   if (!imu::begin(imu::Settings{}, imuCalibration)) {
-    LinkUsbPrint().println("IMU initialization failed!");
+    Logging::message(Logging::Level::Error, "IMU", "initialization failed");
     while (1);
   }
-  LinkUsbPrint().println("IMU initialized successfully!");
+  Logging::message(Logging::Level::Info, "IMU", "initialized successfully");
 }
 
 void initRemoteControl() {
@@ -572,14 +597,14 @@ void setup() {
   // TODO is this the right location?
   pinMode(board::kStatusLedPin, OUTPUT);
   digitalWrite(board::kStatusLedPin, LOW);
-  LinkUsbPrint().println("system run.");
+  Logging::message(Logging::Level::Info, "Setup", "system run.");
   delay(500);
 
 #if SENSOR_DIAGNOSTIC_MODE
   biquadFilterInitLPF(&voltageFilterLpf, 20, kDiagnosticLogSampleRateHz);
   diagnosticImuReady = imu::begin(imu::Settings{}, imuCalibration);
   sBus.begin();
-  LinkUsbPrint().printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n", (int)esp_reset_reason(),
+  Logging::message(Logging::Level::Info, "DIAG", "boot reset_reason=%d imu_ok=%d motors=off servos=off", (int)esp_reset_reason(),
                 diagnosticImuReady ? 1 : 0);
   return;
 #endif
@@ -595,7 +620,7 @@ void setup() {
   initIMU(imuCalibration);
   initRemoteControl();
   LinkUartInit(kSignals, kSignalCount, kBuildId);
-  SimpleFOCDebug::enable(&LinkUsbPrint());  // TODO a more centralized way to enable debug sections would be nice
+  SimpleFOCDebug::enable(&simpleFocLog);  // TODO a more centralized way to enable debug sections would be nice
   initPositionSensors();
   initDrivers();
   configureWheelMotor(motor1, kLeftWheelMotor);
@@ -611,7 +636,7 @@ void setup() {
   motor1.target = 0;
   motor2.target = 0;
 
-  LinkUsbPrint().println("Motor ready.");
+  Logging::message(Logging::Level::Info, "Setup", "Motor ready.");
 
   _delay(1000);
 }
@@ -781,7 +806,7 @@ void diagnosticLoop(void) {
     if (elapsedUs >= 1000000U) {
       const uint32_t acceptedSamples = timing.acceptedSamples - lastTimingAcceptedSamples;
       const float acceptedRateHz = static_cast<float>(acceptedSamples) * 1000000.0f / static_cast<float>(elapsedUs);
-      LinkUsbPrint().printf("IMU_TIMING,elapsed_us=%lu,accepted=%lu,rate_hz=%.1f,long_gap_total=%lu,max_interval_us=%lu\n",
+      Logging::message(Logging::Level::Info, "IMU_TIMING", "elapsed_us=%lu,accepted=%lu,rate_hz=%.1f,long_gap_total=%lu,max_interval_us=%lu",
                     static_cast<unsigned long>(elapsedUs), static_cast<unsigned long>(acceptedSamples), acceptedRateHz,
                     static_cast<unsigned long>(timing.longGapCount), static_cast<unsigned long>(timing.maxIntervalUs));
       lastTimingReportUs = timingNowUs;

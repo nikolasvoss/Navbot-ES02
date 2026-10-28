@@ -30,12 +30,8 @@ void LinkServiceRequests(uint32_t tickStartUs, bool balanceRequested);
 // Control loop, at the end of a tick: sends the rows that are due, and drops lapsed leases.
 void LinkSampleSignals(uint32_t tickStartUs);
 
-// Starts the USB TX queue and its writer task. Call right after Serial.begin() and before anything writes to the USB port.
+// Starts the USB writer task. Call right after Serial.begin() and before any frame is queued for the USB port.
 void LinkUsbInit();
-
-// Print for text that the control loop or setup produces for the USB port. Never blocks; text that does not fit the
-// queue is dropped and counted.
-Print& LinkUsbPrint();
 
 // Queues WheelOdometry, then Imu if the snapshot is valid, for UART1. Never blocks and never touches the UART; a frame
 // that does not fit is dropped and counted.
