@@ -2,7 +2,7 @@
 
 This page describes the Package 1 diagnostic actions for the two wheel motors, the manual phase-resistance method, the `KV_rating` fit, and the commissioning record. It is the operating procedure for [Package 1 of the robust control plan](../plans/robust-control-system.md#package-1-measurement-support-controller-unchanged). Software support is implemented, and the commissioning record below holds the measurements from the unloaded runs of 2026-10-22 (robot supported, wheels clear, legs hanging free).
 
-The actions are sent with [navlink](../../integration/software/navlink.md). They replaced the `T`, `M` and `E` letter commands in migration step 4 of the [logging and control plan](../../integration/plans/logging-and-control-link.md#migration). That step is host-tested and not yet run on the robot; check the first run with `navlink shell` before relying on it.
+The actions are sent with [navlink](../../integration/software/navlink.md). The action path is host-tested and not yet run on the robot; check the first run with `navlink shell` before relying on it.
 
 ## Preconditions
 
@@ -11,7 +11,7 @@ Run these steps only on a supported robot. Support the body so that a fall canno
 - Balance is off: CH5 at position 0. The firmware refuses `motor_current` and `motor_voltage` while balance is enabled, and it latches a fault if balance is enabled during a request.
 - Calibration is inactive (no `calibrate` step is running).
 - Both wheels are below the overspeed limit (60 rad/s shaft velocity, wheel-clear runs; see the caps table). A request is refused otherwise.
-- The robot is connected to navlink on the ros2_pc UART (`/dev/ttyAMA3`, with the bridge stopped) or on the USB port (`/dev/ttyUSB0`). Logs of the actions reach the PC on UART1 only until step 5, so use `/dev/ttyAMA3` for a run whose log matters. [Trace capture](trace-capture.md) describes the logs.
+- The robot is connected to navlink on the ros2_pc UART (`/dev/ttyAMA3`, with the bridge stopped) or on the USB port (`/dev/ttyUSB0`). A started action is logged on both ports, so either port records it. [Trace capture](trace-capture.md) describes the logs.
 
 ## Actions
 
@@ -34,8 +34,6 @@ motor_current: started
 ```
 
 The records below write an action in catalog order, so `motor_current 0.01 0 500` is `call motor_current left_a=0.01 right_a=0 lease_ms=500`.
-
-These actions replace the letter commands: `T <left_A> <right_A> <lease_ms>` is `motor_current`, `T STOP` and `M STOP` are `motor_stop`, `T RESET` and `M RESET` are `motor_reset`, `M <motor> <voltage_V> <lease_ms>` is `motor_voltage`, and `E <step>` is `calibrate`. Records dated before the change use the letter spelling in their text.
 
 `motor_1` is the left wheel and `motor_2` is the right wheel (`motor1` and `motor2` in the trace). The targets reach each motor unchanged, so the sign is the motor-local SimpleFOC direction for each wheel. It is not forward-positive; the boundary sign is applied in Package 2 by `toMotorTargets()` and `fromMotorVelocities()` in [WheelBoundary.cpp](../../../src/ES-02/OllieFOCdrive/WheelBoundary.cpp). Compare left and right results only after checking this sign for each wheel.
 
@@ -102,14 +100,14 @@ The motor-test result text (`MOTOR_TEST`, `MOTOR_ID_RESULT`) is a `Log` event on
 
 ## Logged capture workflow
 
-The trace of a run is recorded by the session above. The analysis scripts read the file as they read the older K logs:
+The analysis scripts read the navlink file of the run:
 
 ```bash
 python3 scripts/summarize_balance_trace.py motor-id-left-01.csv
-python3 scripts/analyze_drive_trace.py motor-id-left-01.csv --format json
+python3 scripts/analyze_drive_trace.py motor-id-left-01.csv
 ```
 
-The DRIVE columns for this work are listed in [trace capture](trace-capture.md#capture-a-balance-shutdown). `motor1_current_sp`, `motor1_voltage_q`, and `motor1_shaft_velocity` are the per-wheel values to compare with the commanded values. Use a new output filename for each run.
+The DRIVE columns for this work are listed in [trace capture](trace-capture.md#analyse-a-drive-trial). `motor1_current_sp`, `motor1_voltage_q`, and `motor1_shaft_velocity` are the per-wheel values to compare with the commanded values. Use a new output filename for each run.
 
 ## Phase resistance by meter
 

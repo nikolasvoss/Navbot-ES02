@@ -106,7 +106,7 @@ No balance gains are active. Package 4 defines the new gain set.
 | IMU fusion and posture offsets | `imu.cpp`: `imu::service()`; `MahonyFilter.cpp` |
 | Calibration and storage | `Calibration.cpp`, `CalibrationStore.cpp`; call in `OllieFOCdrive.ino`: `loop()` |
 | Servo output | `ServoControl.cpp`; trims in `servoTrims`, set through the parameters `servo1_trim` to `servo4_trim` ([navlink](../../integration/software/navlink.md)) |
-| K58 drive trace with controller parts | [README](trace-capture.md#capture-a-balance-shutdown), `scripts/capture_balance_trace.py` |
+| Drive trace with controller parts | [trace capture](trace-capture.md#analyse-a-drive-trial), `navlink capture --preset drive` |
 
 ### Not yet resolved
 

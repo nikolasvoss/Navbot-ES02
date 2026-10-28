@@ -325,12 +325,12 @@ Status: implemented and accepted on 2026-10-22 on an unloaded robot (supported o
 
 Purpose: collect stage 1-3 data without changing the balance behavior.
 
-1. Telemetry additions to the existing `DebugTelemetry` selections and `Logging::DriveSample` in [LogSamples.h](../../../src/ES-02/OllieFOCdrive/LogSamples.h); no new protocol:
+1. Telemetry additions as entries of the signal table in [signals.def.h](../../../src/ES-02/OllieFOCdrive/signals.def.h); no new protocol (the `K` selectors this item once extended are gone, see the [logging and control plan](../../integration/plans/logging-and-control-link.md)):
    - IMU `sequence`, `readTimeUs`, `dtSec` from `imu::Snapshot`, and the `TimingStatistics` counters (`acceptedSamples`, `longGapCount`, `maxIntervalUs`);
    - control tick start time and execution time in µs, and the maximum `loop()` period since the last row;
    - per motor: `target`, `current_sp`, `voltage.q`, `shaft_velocity`; today only `motor2.current_sp` is exported (`motor2CurrentSetpoint`);
    - raw and filtered bus voltage, both already present.
-2. Update the field list in [capture_balance_trace.py](../../../scripts/capture_balance_trace.py), the parsers in [summarize_balance_trace.py](../../../scripts/summarize_balance_trace.py) and [analyze_drive_trace.py](../../../scripts/analyze_drive_trace.py), and their tests in `tests/scripts/` and `tests/telemetry/` (including `golden_stream.txt`).
+2. A new signal is one `SIGNAL` line in `signals.def.h`. Add it to a preset in [navlink_presets.yaml](../../../scripts/navlink_presets.yaml) when a capture needs it; [analyze_drive_trace.py](../../../scripts/analyze_drive_trace.py) names the drive columns it requires.
 3. Motor identification, per motor, wheels clear, balance off:
    - phase resistance: run SimpleFOC `characteriseMotor()` once in a diagnostic build, or measure phase-to-phase resistance with a meter. Record which value and convention you used; SimpleFOC uses `phase_resistance` directly in `voltage.q = current * phase_resistance + bemf`;
    - `KV_rating`: apply a fixed small `voltage.q` in voltage torque mode, wait for steady no-load speed, and repeat at three voltages. Fit speed against voltage. SimpleFOC's back-EMF estimate is `velocity / (KV_rating * √3) / RPM_TO_RADS` (`BLDCMotor::estimateBEMF`), so fit KV in that convention;
@@ -435,7 +435,7 @@ Remove the yaw PID integral, and keep `yawP` only. No integral exists in the mod
 
 1. `loop()` keeps `updateMotorsAndCommands()` (`move()`, `loopFOC()`) on every pass.
 2. Run the controller when `imu::service()` reports a new sample, decimated to the balance rate. Remove the `kControlTimestepMinSec` gate as the controller trigger.
-3. Move `DebugTelemetry::submit()` to after the controller and motor target update, so that rows describe the same tick. It must never block; on a full queue it drops rows and counts them, as the existing sender counters already report.
+3. Sample the signal rows after the controller and the motor target update, so that they describe the same tick (`LinkSampleSignals` at the end of `runControlTick()`). Sampling never blocks; on a full queue it drops rows and counts them.
 4. Leave `readBatteryVoltage()` in the tick, record its time for envelope freshness, and recheck the 50 Hz bus-voltage biquad delay against the envelope age limit.
 5. Align IMU biquad coefficients with the measured accepted-sample rate from package 1.
 6. With BLE removed, core 0 no longer runs `cpu0Task`. Recheck loop timing after the removal, since the BLE stack's own tasks also disappear.
@@ -463,11 +463,11 @@ Add `tests/balance_control/` with a `run_host_test.sh` following the existing pa
 - source timeout: speed ramps to zero at the braking cap, yaw goes to zero, balance continues;
 - `micros()` wraparound across freshness and `dt` checks.
 
-Existing suites to rerun: `tests/imu`, `tests/filter`, `tests/kinematics`, `tests/calibration`, `tests/calibration_store`, `tests/telemetry`, `tests/serial_commands`, and `tests/scripts`.
+Existing suites to rerun: `tests/imu`, `tests/filter`, `tests/kinematics`, `tests/calibration`, `tests/calibration_store`, and `tests/scripts`.
 
 ### Package 8: documentation after implementation
 
-- Rewrite [control-flow.md](../software/control-flow.md) to describe the implemented chain, states, RC map, and Commander letters.
+- Rewrite [control-flow.md](../software/control-flow.md) to describe the implemented chain, states, RC map, and the navlink parameter and action names.
 - Update [rc-channel-map.md](../software/rc-channel-map.md) to the new map, including the CH9 trim scaling.
 - Remove BLE and touchscreen behavior from [trace-capture.md](../software/trace-capture.md), [sensor-diagnostic-mode.md](../software/sensor-diagnostic-mode.md), and the robot [system overview](../hardware/system-overview.md) and [electronics reference](../hardware/electronics-reference.md). Mark the [touchscreen stand](../hardware/touchscreenstand.md) as not used by the firmware, or delete the page if the hardware is removed from the robot.
 - Move the measured motor parameters to the robot hardware docs, and the commissioning procedure to `docs/robot/software/`.

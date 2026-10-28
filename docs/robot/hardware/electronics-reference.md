@@ -72,5 +72,5 @@ The [startup capture after the library change](../../../lab/robot/captures/seria
 ## External devices, modes and data quality
 
 - The RC operation is described in the [RC channel map](../software/rc-channel-map.md). This mapping is firmware and remote-control configuration, not a property of the connector.
-- `SENSOR_DIAGNOSTIC_MODE=1` first sets GPIO16/37 LOW, skips motor and servo initialization, and outputs IMU, battery ADC, and RC state as CSV. For the safe diagnostic procedure and the observed voltage dips, read the [sensor diagnostic guide](../software/sensor-diagnostic-mode.md).
+- `SENSOR_DIAGNOSTIC_MODE=1` first sets GPIO16/37 LOW, skips motor and servo initialization, and reports its setup messages and IMU timing as `Log` frames (the CSV stream went with migration step 5). For the safe diagnostic procedure and the observed voltage dips, read the [sensor diagnostic guide](../software/sensor-diagnostic-mode.md).
 - The README contains older or differing hardware information (`MPU6050`, a different servo model). The **PCB netlist** establishes the electrical connections. The **BOM** lists purchased parts. The **firmware** establishes the currently configured GPIOs and operating modes. Assembly, cable orientation, servo voltage jumper, and voltages under load must be checked on the real board.

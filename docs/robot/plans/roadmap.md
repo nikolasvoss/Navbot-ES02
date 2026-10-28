@@ -55,10 +55,9 @@ Replace it with one conversion per channel from raw SBUS to a physical unit (m/s
 
 ## Fix the sensor diagnostic mode
 
-The diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) streams its CSV continuously from boot and never runs the serial command router, so `K0`, `K8`, and `K60`-`K75` have no effect and the stream cannot be stopped. Its 17 fields contain only the receiver frame age and failsafe flag, not the channel values, so it cannot check transmitter switches with the drivers held off.
+The diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) no longer streams a CSV: the logger and the `K` selectors went with migration step 5 of the [logging plan](../../integration/plans/logging-and-control-link.md). Its output is open until step 6 of that plan. The receiver's ten raw SBUS channel values are not in the signal table, so the mode cannot report them yet.
 
-- Run the serial command router in `diagnosticLoop()`, so that the stream can be stopped and selected.
-- Add the ten raw SBUS channel values to the diagnostic output, or allow `K8` and `K60`-`K75` in diagnostic mode, update [sensor_monitor.py](../../../scripts/sensor_monitor.py), and add a test for its parser in `tests/scripts/`.
+- Decide the diagnostic output in step 6: run the link endpoint and the sampler from `diagnosticLoop()`, or delete the mode. If the raw channels are needed, add them as `SIGNAL` entries and capture them with navlink.
 
 ## Switch the LiDAR off after a fall
 
