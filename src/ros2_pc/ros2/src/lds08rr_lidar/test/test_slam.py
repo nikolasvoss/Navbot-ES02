@@ -779,6 +779,22 @@ def test_web_map_json_passes_mode_and_localization_through(tmp_path):
     assert payload["control"]["mode"] == "localization"
 
 
+def test_web_map_json_passes_motion_gate_through(tmp_path):
+    from lds08rr_lidar.motion_gate import MotionGate
+
+    gate = MotionGate()
+    runtime = LidarRuntime(SourceConfig(mode="demo"), driver_factory=lambda *_: None)
+    client = make_lidar_app(runtime, slam=SlamState(), motion_gate=gate, radar_web=tmp_path / "missing").test_client()
+    assert client.get("/map.json").get_json()["motion_gate"]["state"] == "no_odom"
+
+    for index in range(-5, 51):
+        gate.add_odom(index / 50, 0.5, 0.0)
+    assert gate.apply(0.2, 0.2) is False
+    payload = client.get("/map.json").get_json()["motion_gate"]
+    assert payload["state"] == "limiting" and payload["scans_dropped"] == 1
+    assert payload["reason"] == "driving too fast"
+
+
 def test_web_mode_and_locate_drive_the_control(tmp_path):
     control = FakeControl()
     client = make_client(tmp_path, SlamState(), control)

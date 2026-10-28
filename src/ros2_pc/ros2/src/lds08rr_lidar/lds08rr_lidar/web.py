@@ -28,7 +28,8 @@ class FreshScanBuffer:
 
 
 def make_lidar_app(
-    runtime, slam: SlamState | None = None, control=None, radar_web: Path | None = DEFAULT_RADAR_WEB, tilt_gate=None, ros=None,
+    runtime, slam: SlamState | None = None, control=None, radar_web: Path | None = DEFAULT_RADAR_WEB, tilt_gate=None, motion_gate=None,
+    ros=None,
 ):
     from flask import Flask, abort, jsonify, render_template, request, send_from_directory
     from urllib.parse import urlsplit
@@ -69,6 +70,7 @@ def make_lidar_app(
             "mode": None if status is None else status["mode"],
             "localization": None if status is None else status["localization"],
             "tilt_gate": tilt_gate.snapshot() if tilt_gate is not None else None,
+            "motion_gate": motion_gate.snapshot() if motion_gate is not None else None,
         })
 
     @app.post("/slam/save")

@@ -16,6 +16,7 @@ from sensor_msgs.msg import Imu, LaserScan
 from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
 
 from .localization import LocalizationTracker
+from .motion_gate import MotionGate
 from .mount import SENSOR_MOUNT_X_M, SENSOR_MOUNT_Y_M, SENSOR_MOUNT_YAW_RAD
 from .runtime import LidarRuntime
 from .slam import SlamState, grid_to_dict
@@ -90,7 +91,9 @@ class LidarNode(Node):
         # /scan stays raw; slam_toolbox reads the tilt-gated copy.
         self.slam_scan_publisher = self.create_publisher(LaserScan, "/scan_slam", scan_qos)
         self.tilt_gate = TiltGate(config_from_mount())
+        self.motion_gate = MotionGate()
         self._logged_gate_state: str | None = None
+        self._logged_motion_state: str | None = None
         self.create_subscription(Imu, "/imu/data", self.on_imu, qos_profile_sensor_data)
         self.status_publisher = self.create_publisher(DiagnosticArray, "/lidar/status", 10)
         self.runtime = LidarRuntime(config, on_scan=self.publish_scan)
@@ -147,6 +150,8 @@ class LidarNode(Node):
         self._last_seen["/odom"] = time.monotonic()
         p, twist = message.pose.pose, message.twist.twist
         self.slam.set_odom(p.position.x, p.position.y, yaw_from_quaternion(p.orientation), twist.linear.x, twist.angular.z)
+        stamp = rclpy.time.Time.from_msg(message.header.stamp).nanoseconds / 1e9
+        self.motion_gate.add_odom(stamp, twist.linear.x, twist.angular.z)
 
     def on_amcl_pose(self, message: PoseWithCovarianceStamped) -> None:
         p, covariance = message.pose.pose, message.pose.covariance
@@ -242,6 +247,14 @@ class LidarNode(Node):
     def publish_slam_scan(self, message: LaserScan) -> None:
         start = rclpy.time.Time.from_msg(message.header.stamp).nanoseconds / 1e9
         ranges = self.tilt_gate.apply(message.ranges, message.angle_min, message.angle_increment, start, message.scan_time)
+        keep_for_motion = self.motion_gate.apply(start, message.scan_time)
+        if self.motion_gate.state != self._logged_motion_state:
+            self._logged_motion_state = self.motion_gate.state
+            self.get_logger().info({
+                "no_odom": "motion gate paused: no /odom covers the scan; scans kept",
+                "ok": "motion gate active on /scan_slam",
+                "limiting": "motion gate dropping scans: " + str(self.motion_gate.snapshot()["reason"]),
+            }[self._logged_motion_state])
         if self.tilt_gate.state != self._logged_gate_state:
             self._logged_gate_state = self.tilt_gate.state
             text = {
@@ -250,7 +263,7 @@ class LidarNode(Node):
                 "active": "tilt gating active on /scan_slam",
             }[self._logged_gate_state]
             self.get_logger().info(text)
-        if ranges is None:
+        if ranges is None or not keep_for_motion:
             return
         gated = LaserScan()
         gated.header = message.header

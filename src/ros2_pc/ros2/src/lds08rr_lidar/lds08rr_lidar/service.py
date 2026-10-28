@@ -113,7 +113,8 @@ def run(argv=None) -> int:
         runtime = LidarRuntime(config)
     try:
         app = make_lidar_app(
-            runtime, slam=getattr(node, "slam", None), control=control, tilt_gate=getattr(node, "tilt_gate", None), ros=node,
+            runtime, slam=getattr(node, "slam", None), control=control, tilt_gate=getattr(node, "tilt_gate", None),
+            motion_gate=getattr(node, "motion_gate", None), ros=node,
         )
         server = make_server(args.host, args.port, app, threaded=True)
     except Exception:

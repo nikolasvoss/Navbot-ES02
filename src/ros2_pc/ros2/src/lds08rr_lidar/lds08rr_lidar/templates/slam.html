@@ -103,6 +103,7 @@
         <dt>Speed</dt><dd id="odomSpeed">–</dd>
         <dt>Turn rate</dt><dd id="odomTurn">–</dd>
         <dt>Distance driven</dt><dd id="odomPath">–</dd>
+        <dt>Motion gate</dt><dd id="motionGate">–</dd>
         <dt>Odom rate</dt><dd id="odomRate">–</dd>
         <dt>SLAM correction</dt><dd id="slamCorrection">–</dd>
       </dl>
@@ -132,6 +133,9 @@
     const MAP_STATES = {
       waiting: ['Waiting for map', 'unknown'], no_pose: ['Map, no pose', 'warn'], mapping: ['Mapping', 'ok'],
       localization: ['Localization', 'ok'],
+    };
+    const MOTION_STATES = {
+      ok: ['OK', 'ok'], limiting: ['Limiting', 'warn'], no_odom: ['No odometry', 'warn'],
     };
     const LOC_STATES = {
       idle: ['Starting', 'warn'], searching: ['Searching', 'warn'], localized: ['Localized', 'ok'], lost: ['Lost', 'warn'],
@@ -446,6 +450,14 @@
         $('odomSpeed').textContent = live ? `${o.linear.toFixed(2)} m/s` : '–';
         $('odomTurn').textContent = live ? `${(o.angular * 180 / Math.PI).toFixed(0)} °/s` : '–';
         $('odomPath').textContent = o ? `${o.path_m.toFixed(2)} m` : '–';
+        const mg = slam.motion_gate;
+        if (mg) {
+          const [motionWord, motionLevel] = MOTION_STATES[mg.state] || [mg.state, 'unknown'];
+          const reason = mg.state === 'limiting' && mg.reason ? `: ${mg.reason}` : '';
+          setState('motionGate', `${motionWord}${reason} · ${mg.scans_dropped} scans dropped`, motionLevel);
+        } else {
+          setState('motionGate', '–', 'unknown');
+        }
         const linkRow = svc.robot_link;
         if (linkRow && linkRow.level !== 'ok') setState('odomRate', linkRow.short, linkRow.level);
         else setState('odomRate', live && o.rate_hz != null ? `${o.rate_hz.toFixed(0)} Hz` : (o ? 'Stale' : 'No data'), live ? 'ok' : 'error');
