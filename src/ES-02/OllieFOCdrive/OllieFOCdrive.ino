@@ -585,6 +585,8 @@ void setup() {
   Serial.setRxBufferSize(kSerialRxBufferBytes);
   Serial.begin(kSerialBaudRate);
   LinkUsbInit();
+  // Before the first Logging::message: a message queued for UART1 waits for this writer.
+  LinkUartInit(kSignals, kSignalCount, kBuildId);
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
   servoTrims = loadedCalibration.servos;
   const imu::CalibrationValues imuCalibration{loadedCalibration.gyro, loadedCalibration.attitude};
@@ -615,7 +617,6 @@ void setup() {
 
   initIMU(imuCalibration);
   initRemoteControl();
-  LinkUartInit(kSignals, kSignalCount, kBuildId);
   SimpleFOCDebug::enable(&simpleFocLog);  // TODO a more centralized way to enable debug sections would be nice
   initPositionSensors();
   initDrivers();
