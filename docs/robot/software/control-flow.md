@@ -17,10 +17,10 @@ flowchart LR
     RC[SBUS remote control<br/>CH3 drive · CH4 turn<br/>CH5 enable] --> CMD[Setpoints and operating mode]
     IMU[ICM-42688P<br/>acceleration + angular rate] --> MAH[Filter + Mahony<br/>tilt correctedRollDegrees / correctedPitchDegrees]
     ENC[2 × AS5600<br/>wheel angle] --> VEL[Wheel speed estimate]
-    CMD --> CTRL[Two-wheel control]
-    MAH --> CTRL
-    VEL --> CTRL
-    CTRL -->|2 current targets, A| FOC[2 × SimpleFOC<br/>torque mode + FOC]
+    CMD --> TWC[Two-wheel control]
+    MAH --> TWC
+    VEL --> TWC
+    TWC -->|2 current targets, A| FOC[2 × SimpleFOC<br/>torque mode + FOC]
     ENC --> FOC
     FOC --> DRV[2 × MP6536<br/>wheel motors]
     SERVO[4 × servo PWM<br/>fixed standing pose]

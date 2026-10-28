@@ -4,11 +4,11 @@ Status: **proposal, partly implemented.** Migration steps 1 to 5 are implemented
 
 | Step | Status |
 | --- | --- |
-| 1. Delete the dead yaw path (`Y`, `yawPid`, `yawPidSettings`, `K9`, `K33`, CTRL yaw columns) | Done |
+| 1. Delete the dead yaw path (`Y`, `yawPid`, `yawPidSettings`, `K9`, `K33`, yaw columns of the old controller log) | Done |
 | 2. Firmware request queue, TX queue and writer per port, per-port `seq` | Done; checked on the robot |
 | 3. Entry table, catalog, subscriptions on both ports, `navbot_link` library, `navlink`, presets | Done; host-tested; the robot check is open |
 | 4. Settings groups and actions replace the letter commands | Done; host-tested; the robot check is open |
-| 5. Delete `K`, the profiles, the CSV logger and `Commander`; the analysis scripts read navlink | Done; host-tested; the robot check is open |
+| 5. Delete `K`, the profiles, the CSV logger and the command dispatcher; the analysis scripts read navlink | Done; host-tested; the robot check is open |
 | 6. Sensor diagnostic mode | Open |
 | 7. ROS bridge: `/rosout`, `/navbot/signals`, parameters, then the dashboard | Open |
 
