@@ -89,6 +89,19 @@ def test_drive_analysis_of_a_navlink_capture_with_uneven_rows():
     assert analyze(DRIVE) == DRIVE_RESULT
 
 
+def test_stop_window_ends_by_t_us_not_by_row_count():
+    result = analyze(FIXTURES / "drive-navlink-stop-window.csv")
+    assert result["releases"] == [{
+        "at_ms": 1300.0,
+        "command_direction": "vorwaerts",
+        "command_peak": 5.0,
+        "command_duration_s": 0.2,
+        "speed_before_release": 1.0,
+        "opposite_speed_peak": 3.0,
+        "neutral_samples": 3,
+    }]
+
+
 def test_drive_analysis_cli_reports_the_stop_from_t_us():
     result = subprocess.run([sys.executable, str(ROOT / "scripts" / "analyze_drive_trace.py"), str(DRIVE),
                              "--require-stop"], capture_output=True, text=True, check=False)
