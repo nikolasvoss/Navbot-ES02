@@ -63,7 +63,7 @@ def build_slam_control(node, localization):
         localizer=GlobalLocalizer(node.call_service, localization),
         tracker=localization,
         slam_state=node.slam,
-        mapping_command=lambda: slam_command(store.params_file(base)),
+        mapping_command=lambda restore: slam_command(store.params_file(base, restore)),
     )
     return control
 
