@@ -1,6 +1,7 @@
 #include "link_frame.h"
 
 #include <cstring>
+#include "src/navbot_link/pb_decode.h"
 #include "src/navbot_link/pb_encode.h"
 
 namespace {
@@ -40,6 +41,22 @@ size_t CobsEncode(const uint8_t* in, size_t len, uint8_t* out) {
   return outLen;
 }
 
+// Returns the decoded length, or SIZE_MAX when the input is not COBS. The encoder omits the trailing zero after its
+// last block and so does this.
+size_t CobsDecode(const uint8_t* in, size_t len, uint8_t* out) {
+  size_t read = 0;
+  size_t written = 0;
+  while (read < len) {
+    const uint8_t code = in[read++];
+    if (code == 0 || read + code - 1 > len) return SIZE_MAX;
+    memcpy(out + written, in + read, code - 1);
+    read += code - 1;
+    written += code - 1;
+    if (code != 0xFF && read < len) out[written++] = 0;
+  }
+  return written;
+}
+
 }  // namespace
 
 size_t LinkEncodeFrame(const navbot_link_v1_Message& msg, uint8_t* out, size_t capacity) {
@@ -59,4 +76,66 @@ size_t LinkEncodeFrame(const navbot_link_v1_Message& msg, uint8_t* out, size_t c
   if (frameLen > capacity) return 0;
   memcpy(out, frame, frameLen);
   return frameLen;
+}
+
+bool LinkDecodeMessage(const uint8_t* payload, size_t len, navbot_link_v1_Message& msg) {
+  msg = navbot_link_v1_Message_init_zero;
+  pb_istream_t stream = pb_istream_from_buffer(payload, len);
+  return pb_decode(&stream, navbot_link_v1_Message_fields, &msg);
+}
+
+void LinkRxDecoder::Feed(const uint8_t* data, size_t len, LinkRxSink& sink) {
+  for (size_t i = 0; i < len; ++i) {
+    const uint8_t byte = data[i];
+    if (byte == 0) {
+      EndChunk(sink);
+      continue;
+    }
+    if (chunkLen_ < sizeof(chunk_))
+      chunk_[chunkLen_++] = byte;
+    else
+      chunkOverflow_ = true;
+    if (passTextLines_) TrackLine(byte, sink);
+  }
+}
+
+void LinkRxDecoder::EndChunk(LinkRxSink& sink) {
+  uint8_t body[LINK_MAX_FRAME_LEN];
+  const size_t chunkLen = chunkLen_;
+  const bool overflow = chunkOverflow_;
+  chunkLen_ = 0;
+  chunkOverflow_ = false;
+  lineLen_ = 0;
+  lineSpoiled_ = false;
+  if (chunkLen == 0 && !overflow) return;  // the 0x00 in front of a USB frame, or a repeated delimiter
+  const size_t bodyLen = overflow ? SIZE_MAX : CobsDecode(chunk_, chunkLen, body);
+  // A payload is at least one byte, and the body holds payload and CRC.
+  if (bodyLen == SIZE_MAX || bodyLen < 3 || bodyLen > LINK_MAX_PAYLOAD + 2) {
+    ++badFrames_;
+    return;
+  }
+  const size_t payloadLen = bodyLen - 2;
+  const uint16_t crc = static_cast<uint16_t>(body[payloadLen] | (body[payloadLen + 1] << 8));
+  if (Crc16CcittFalse(body, payloadLen) != crc) {
+    ++badFrames_;
+    return;
+  }
+  sink.OnPayload(body, payloadLen);
+}
+
+void LinkRxDecoder::TrackLine(uint8_t byte, LinkRxSink& sink) {
+  if (byte == '\n' || byte == '\r') {
+    if (lineLen_ > 0 && !lineSpoiled_) {
+      line_[lineLen_++] = '\n';
+      sink.OnTextLine(line_, lineLen_);
+    }
+    lineLen_ = 0;
+    lineSpoiled_ = false;
+    return;
+  }
+  const bool printable = (byte >= 0x20 && byte < 0x7F) || byte == '\t';
+  if (!printable || lineLen_ + 1 >= sizeof(line_))
+    lineSpoiled_ = true;
+  else
+    line_[lineLen_++] = byte;
 }
