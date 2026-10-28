@@ -1,39 +1,39 @@
 #!/usr/bin/env python3
-"""Focused checks for DRIVE release detection, capture-quality gating, and new measurements."""
+"""Focused checks for drive release detection, capture-quality gating, and new measurements."""
 
 import tempfile
 import unittest
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from analyze_drive_trace import analyze
-from capture_balance_trace import DRIVE_COLUMNS
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "src"))
+from analyze_drive_trace import analyze  # noqa: E402
+from navbot_link.capture import load_presets  # noqa: E402
 
-
-OLD_HEADER = ("DRIVE,time_ms,ch5_mode,voltage_min_raw_v,ch3_target,"
-              "motor1_velocity_f,motor2_velocity_f,roll_ok,motor1_target,motor2_target,angle_out_i")
+DRIVE_SIGNALS = list(load_presets(ROOT / "scripts" / "navlink_presets.yaml")["drive"].signals)
+OTHER_HEADER = "t_us,ch5_mode,ch3_target,motor1_target,motor2_target"
 
 
 def drive_row(time_ms, command, speed, *, roll=0, ch5=1, **fields):
-    values = {name: 0 for name in DRIVE_COLUMNS}
-    values.update(time_ms=time_ms, ch5_mode=ch5, voltage_min_raw_v=7.9, voltage_filtered_v=7.9,
+    values = {name: 0 for name in DRIVE_SIGNALS}
+    values.update(ch5_mode=ch5, voltage_min_raw_v=7.9, voltage_filtered_v=7.9,
                   imu_sequence=time_ms, imu_read_time_us=time_ms * 1000, imu_dt_s=0.007,
-                  imu_accepted_samples=time_ms,
-                  imu_max_interval_us=1200, control_execution_us=500, max_loop_entry_interval_us=1000,
-                  ch3_target=command, effective_speed_target=command, motor1_velocity_f=speed,
-                  motor2_velocity_f=speed, roll_ok=roll, motor1_target=2, motor2_target=-2,
+                  imu_accepted_samples=time_ms, imu_max_interval_us=1200, control_execution_us=500,
+                  loop_interval_max_us=1000, ch3_target=command, motor1_velocity_f=speed,
+                  motor2_velocity_f=speed, roll_deg=roll, motor1_target=2, motor2_target=-2,
                   motor1_current_sp=0.1, motor2_current_sp=-0.1, motor1_voltage_q=0.2,
-                  motor2_voltage_q=-0.2, battery_raw_instant_v=7.9, battery_filtered_instant_v=7.9)
+                  motor2_voltage_q=-0.2, battery_raw_instant_v=7.9)
     values.update(fields)
-    return "DRIVE," + ",".join(str(values[name]) for name in DRIVE_COLUMNS)
+    return ",".join([str(time_ms * 1000)] + [str(values[name]) for name in DRIVE_SIGNALS])
 
 
 class DriveTraceTest(unittest.TestCase):
     def write_log(self, directory, lines, header=None):
-        path = Path(directory) / "drive.log"
-        header = header or "DRIVE," + ",".join(DRIVE_COLUMNS)
-        path.write_text("# " + header + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
+        path = Path(directory) / "drive.csv"
+        header = header or "t_us," + ",".join(DRIVE_SIGNALS)
+        path.write_text("# build: test\n" + header + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
         return path
 
     def test_release_peak_uses_neutral_window_only(self):
@@ -58,7 +58,7 @@ class DriveTraceTest(unittest.TestCase):
         self.assertEqual(result["activation_roll_deg"], -23)
 
     def test_corrupted_capture_is_rejected(self):
-        lines = [drive_row(i * 50, 0, 0) for i in range(20)] + ["DRIVE,broken"] * 3
+        lines = [drive_row(i * 50, 0, 0) for i in range(20)] + ["broken"] * 3
         with tempfile.TemporaryDirectory() as directory:
             result = analyze(self.write_log(directory, lines))
         self.assertEqual(result["malformed_rows"], 3)
@@ -69,7 +69,7 @@ class DriveTraceTest(unittest.TestCase):
         for index in range(24):
             extra = {}
             if index == 3:
-                extra = dict(control_execution_us=1234, max_loop_entry_interval_us=2345,
+                extra = dict(control_execution_us=1234, loop_interval_max_us=2345,
                              motor1_current_sp=-0.21, motor2_voltage_q=0.37,
                              battery_raw_instant_v=7.25, imu_dt_s=0.0065)
             if index == 20:
@@ -102,11 +102,11 @@ class DriveTraceTest(unittest.TestCase):
         self.assertEqual(result["imu_long_gaps"], 5)
         self.assertEqual(result["imu_long_gap_fraction"], 0.0543)
 
-    def test_old_33_column_schema_is_rejected_without_fallback(self):
-        lines = [f"DRIVE,{i * 50},1,7.9,0,0,0,0,2,-2,3" for i in range(24)]
+    def test_capture_without_the_drive_columns_is_rejected_without_fallback(self):
+        lines = [f"{i * 50000},1,0,2,-2" for i in range(24)]
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(ValueError, "fehlende DRIVE-Spalten"):
-                analyze(self.write_log(directory, lines, header=OLD_HEADER))
+                analyze(self.write_log(directory, lines, header=OTHER_HEADER))
 
     def test_short_row_is_malformed_not_parsed(self):
         lines = [drive_row(i * 50, 0, 0) for i in range(24)]

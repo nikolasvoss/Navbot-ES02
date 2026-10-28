@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Check DRIVE captures and compare repeatable drive/stop measurements.
+"""Check drive captures and compare repeatable drive/stop measurements.
 
-Reads K58 DRIVE logs and navlink CSVs whose columns carry the K58 header names (see REQUIRED;
-`time_ms` comes from `t_us`). This reads saved logs only. It never opens a serial port or changes the robot.
+Reads navlink CSVs taken with the `drive` preset (see REQUIRED; `time_ms` comes from `t_us`). This reads saved logs
+only. It never opens a serial port or changes the robot.
 """
 
 import argparse
@@ -11,15 +11,15 @@ import statistics
 import sys
 from pathlib import Path
 
-from summarize_balance_trace import NAVLINK, imu_sample_rate, read_trace
+from summarize_balance_trace import imu_sample_rate, read_trace
 
 
 REQUIRED = {
     "time_ms", "ch5_mode", "ch3_target", "motor1_velocity_f",
-    "motor2_velocity_f", "roll_ok", "motor1_target", "motor2_target",
+    "motor2_velocity_f", "roll_deg", "motor1_target", "motor2_target",
     "voltage_min_raw_v", "imu_sequence", "imu_dt_s", "imu_accepted_samples",
     "imu_long_gap_count", "imu_max_interval_us", "control_execution_us",
-    "max_loop_entry_interval_us", "motor1_current_sp", "motor2_current_sp",
+    "loop_interval_max_us", "motor1_current_sp", "motor2_current_sp",
     "motor1_voltage_q", "motor2_voltage_q", "battery_raw_instant_v",
     "imu_read_time_us",
 }
@@ -41,20 +41,15 @@ def direction(row):
 
 
 def analyze(path):
-    kind, header, records, malformed, notes = read_trace(path)
-    if kind not in ("DRIVE", NAVLINK) or not header:
-        raise ValueError(f"{path}: kein DRIVE-Header")
+    _, header, records, malformed, notes = read_trace(path)
     missing = sorted(REQUIRED - set(header))
     if missing:
         raise ValueError(f"{path}: fehlende DRIVE-Spalten: {', '.join(missing)}")
-    rows = [row for record_kind, row in records if record_kind == kind]
+    rows = [row for _, row in records]
     if not rows:
         raise ValueError(f"{path}: keine vollständigen DRIVE-Zeilen")
     active = [row for row in rows if row["ch5_mode"] >= 1]
-    # K logs: a 1 s or larger step is a gap, not an interval. Navlink rows are uneven by design.
-    longest_interval_ms = float("inf") if kind == NAVLINK else 1000
-    intervals = [b["time_ms"] - a["time_ms"] for a, b in zip(rows, rows[1:])
-                 if 0 < b["time_ms"] - a["time_ms"] < longest_interval_ms]
+    intervals = [b["time_ms"] - a["time_ms"] for a, b in zip(rows, rows[1:]) if b["time_ms"] > a["time_ms"]]
     first_active = active[0] if active else None
 
     # A release counts only after at least two consecutive command samples.
@@ -110,7 +105,7 @@ def analyze(path):
         "duration_s": rounded((rows[-1]["time_ms"] - rows[0]["time_ms"]) / 1000, 2),
         "median_interval_ms": rounded(statistics.median(intervals), 1) if intervals else None,
         "active_rows": len(active),
-        "activation_roll_deg": rounded(first_active["roll_ok"]) if first_active else None,
+        "activation_roll_deg": rounded(first_active["roll_deg"]) if first_active else None,
         "command_rows": sum(bool(direction(row)) for row in rows),
         "releases": releases,
         "opposite_speed_peak": max((item["opposite_speed_peak"] for item in releases), default=None),
@@ -124,7 +119,7 @@ def analyze(path):
         "imu_long_gap_fraction": rounded(imu_long_gaps / imu_accepted, 4) if imu_accepted > 0 else None,
         "imu_max_interval_us": int(rows[-1]["imu_max_interval_us"]),
         "control_execution_us_peak": int(max(row["control_execution_us"] for row in rows)),
-        "loop_entry_interval_us_peak": int(max(row["max_loop_entry_interval_us"] for row in rows)),
+        "loop_entry_interval_us_peak": int(max(row["loop_interval_max_us"] for row in rows)),
         "motor_current_sp_abs_peak": rounded(max(abs(row[name]) for row in rows
                                                  for name in ("motor1_current_sp", "motor2_current_sp"))),
         "motor_voltage_q_abs_peak": rounded(max(abs(row[name]) for row in rows
@@ -135,7 +130,7 @@ def analyze(path):
         result["warnings"] = notes["warnings"]
     result["stop_available"] = bool(result["capture_ok"] and releases
                                     and first_active is not None
-                                    and abs(first_active["roll_ok"]) <= 10)
+                                    and abs(first_active["roll_deg"]) <= 10)
     return result
 
 
@@ -211,7 +206,7 @@ def markdown(results):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("logs", nargs="+", type=Path, help="ein oder mehrere K58-DRIVE-Logs oder navlink-CSVs")
+    parser.add_argument("logs", nargs="+", type=Path, help="eine oder mehrere navlink-CSVs des drive-Presets")
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     parser.add_argument("--output", type=Path, help="Bericht speichern statt auf stdout ausgeben")
     parser.add_argument("--require-stop", action="store_true",

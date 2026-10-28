@@ -1,16 +1,10 @@
 # Signal lists for `navlink capture --preset <name>` and `sub @<name>` in the
 # shell. rate_hz 0 streams every control tick. A preset that names a signal the
 # connected firmware does not have fails with "unknown signal <name>".
+# tests/scripts/test_navlink_presets.py checks every preset against the firmware's signals.def.h.
 #
-# trace, ctrl, bal and drive give the columns of the K55 to K58 log profiles
-# (docs/robot/software/trace-capture.md). tests/scripts/test_navlink_presets.py
-# checks them against those profiles and against the firmware's signals.def.h.
-# 100 Hz is a row on every 7th control tick at the 710 ticks per second of
-# 2026-10, which is what the K profiles print.
-#
-# Differences from the K columns: time_ms, sequence, logger_dropped and
-# uart_write_failures are replaced by t_us and the link's frame numbers. The
-# servo range columns are leg_pose_min_deg and leg_pose_max_deg (range = max - min).
+# 100 Hz is a row on every 7th control tick at the 710 ticks per second of 2026-10.
+# The leg pose window (leg_pose_min_deg, leg_pose_max_deg) gives the servo range: the four servos take the same pose.
 
 trace:
   rate_hz: 100
@@ -39,10 +33,3 @@ drive:
             motor1_target, motor2_target, motor1_current_sp, motor2_current_sp,
             motor1_voltage_q, motor2_voltage_q, motor1_shaft_velocity, motor2_shaft_velocity,
             battery_raw_instant_v, leg_pose_min_deg, leg_pose_max_deg]
-
-# The speed loop (BalanceController::speedLoopStep) runs every 20 ms;
-# 100 Hz shows every step. The firmware has no speed-loop signals yet, so this
-# preset only resolves against the test firmware (tests/navbot_link/fake_firmware.py).
-speed_loop:
-  rate_hz: 100
-  signals: [speed_target, speed_measured, speed_p, speed_i, tilt_ref, tilt_clipped]

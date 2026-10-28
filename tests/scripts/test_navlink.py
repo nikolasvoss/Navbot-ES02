@@ -15,6 +15,7 @@ SPEC.loader.exec_module(navlink)
 from fake_firmware import FakeFirmware, MemoryTransport, PtyFirmware  # noqa: E402
 from navbot_link.link import Link  # noqa: E402
 
+SPEED_LOOP_SIGNALS = "speed_target,speed_measured,speed_p,speed_i,tilt_ref,tilt_clipped"
 SPEED_LOOP_CSV = """\
 # build: fake-build-1
 # rate: 100 Hz
@@ -47,7 +48,7 @@ def test_capture_with_the_shipped_preset_writes_header_rows_and_log_comments(tmp
     fw = FakeFirmware()
     fw.log_at(1_020_000, "speed_kp: 0.08 -> 0.12", "param")
     csv = tmp_path / "speed-01.csv"
-    rc, out = run(["capture", "--port", "/dev/ttyAMA3", "--preset", "speed_loop",
+    rc, out = run(["capture", "--port", "/dev/ttyAMA3", "--signals", SPEED_LOOP_SIGNALS, "--rate", "100",
                    "--seconds", "0.05", "-o", str(csv)], fw)
     assert (rc, out) == (0, f"5 rows, 6 signals @ 100 Hz -> {csv}\n")
     assert csv.read_text() == SPEED_LOOP_CSV
@@ -58,7 +59,7 @@ def test_capture_prints_raw_text_from_the_robot_and_keeps_it_out_of_the_file(tmp
     fw = FakeFirmware(usb=True)
     fw.text_at(1_030_000, b"I (5) stray print\r\n")
     csv = tmp_path / "speed-02.csv"
-    rc, out = run(["capture", "--port", "/dev/ttyUSB0", "--preset", "speed_loop",
+    rc, out = run(["capture", "--port", "/dev/ttyUSB0", "--signals", SPEED_LOOP_SIGNALS, "--rate", "100",
                    "--seconds", "0.05", "-o", str(csv)], fw)
     assert (rc, out) == (0, f"5 rows, 6 signals @ 100 Hz -> {csv}\n")
     assert capsys.readouterr().err == "I (5) stray print\n"

@@ -1,4 +1,4 @@
-"""The analysis tools read navlink CSV captures (t_us column header, `#` comments) like K58 logs."""
+"""The analysis tools read navlink CSV captures (t_us column header, `#` comments)."""
 
 import subprocess
 import sys
@@ -8,9 +8,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "src"))
 from analyze_drive_trace import REQUIRED, analyze  # noqa: E402
-from capture_balance_trace import DRIVE_COLUMNS  # noqa: E402
+from navbot_link.capture import load_presets  # noqa: E402
 from summarize_balance_trace import read_trace, summarize  # noqa: E402
+
+DRIVE_SIGNALS = set(load_presets(ROOT / "scripts" / "navlink_presets.yaml")["drive"].signals)
 
 FIXTURES = ROOT / "tests" / "scripts" / "fixtures"
 SPEED_LOOP = FIXTURES / "speed-loop-navlink.csv"
@@ -132,7 +135,7 @@ def test_malformed_navlink_rows_are_counted_not_parsed(tmp_path):
     assert trace.malformed == 4
 
 
-def test_navlink_drive_columns_keep_the_k58_header_names():
+def test_navlink_drive_columns_are_the_drive_preset_signals():
     columns = read_trace(DRIVE).header
-    assert set(columns) - {"t_us", "time_ms"} <= set(DRIVE_COLUMNS)
+    assert set(columns) - {"t_us", "time_ms"} <= DRIVE_SIGNALS
     assert REQUIRED - {"time_ms"} <= set(columns)
