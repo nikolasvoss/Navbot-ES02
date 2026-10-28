@@ -61,6 +61,18 @@ c++ -std=c++17 -Wall -Wextra -Werror \
 
 "$build_dir/test_link_subscriptions"
 
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"$sketch_dir" \
+  "$sketch_dir/link_frame.cpp" \
+  "$sketch_dir/link_tx.cpp" \
+  "$sketch_dir/link_subscriptions.cpp" \
+  "$sketch_dir/link_endpoint.cpp" \
+  "$repo_root/tests/link/test_link_endpoint.cpp" \
+  "$build_dir/pb_common.o" "$build_dir/pb_encode.o" "$build_dir/pb_decode.o" "$build_dir/navbot_link.pb.o" \
+  -o "$build_dir/test_link_endpoint"
+
+"$build_dir/test_link_endpoint"
+
 # Each bad entry file must stop the build with the named reason.
 expect_rejected() {
   local file="$1" reason="$2"
