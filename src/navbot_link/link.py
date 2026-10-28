@@ -82,6 +82,13 @@ class LogEvent:
 
 
 @dataclass(frozen=True)
+class Telemetry:
+    """A WheelOdometry or Imu message, in stream order with the other events.
+    Only a Link opened with telemetry=True produces them."""
+    message: object  # navbot_link_pb2.Message
+
+
+@dataclass(frozen=True)
 class FramesLost:
     count: int
     seq: int  # first frame after the gap
@@ -149,16 +156,17 @@ class Link:
     """Owns the port: one I/O thread decodes frames, answers waiters, renews leases
     and puts Row, LogEvent, Text, FramesLost, Restarted, SubscriptionEnded and
     Disconnected on
-    `events` in stream order."""
+    `events` in stream order, and Telemetry when `telemetry` is set."""
 
     def __init__(self, port, baud: int = 2_000_000, *, timeout_s: float = 0.5,
                  retries: int = 3, renew_s: float = LEASE_RENEW_S, lease_s: float = LEASE_S,
-                 clock=time.monotonic):
+                 clock=time.monotonic, telemetry: bool = False):
         self._transport: Transport = SerialTransport(port, baud) if isinstance(port, str) else port
         self._timeout_s = timeout_s
         self._retries = retries
         self._renew_s = renew_s
         self._lease_s = lease_s
+        self._telemetry = telemetry
         self.events: queue.Queue = queue.Queue()
         self._decoder = FrameDecoder()
         self._seq_in = SeqTracker()
@@ -189,6 +197,10 @@ class Link:
     @property
     def bad_frames(self) -> int:
         return self._decoder.bad_frames
+
+    @property
+    def restarts(self) -> int:
+        return self._seq_in.restarts
 
     @property
     def slots(self) -> tuple[int, ...]:
@@ -374,6 +386,9 @@ class Link:
                     return
                 for t_us, values in rows:
                     self.events.put(Row(sub.slot, t_us, values))
+        elif body in ("odom", "imu"):
+            if self._telemetry:
+                self.events.put(Telemetry(msg))
         elif body == "log":
             log = msg.log
             level = pb.Log.Level.Name(log.level) if log.level in pb.Log.Level.values() else str(log.level)

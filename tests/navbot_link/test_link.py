@@ -6,7 +6,7 @@ import pytest
 from fake_firmware import FakeFirmware, MemoryTransport
 from navbot_link import navbot_link_pb2 as pb
 from navbot_link.framing import FrameDecoder, Text
-from navbot_link.link import Disconnected, FramesLost, Link, LogEvent, Restarted, Row, SubscriptionEnded
+from navbot_link.link import Disconnected, FramesLost, Link, LogEvent, Restarted, Row, SubscriptionEnded, Telemetry
 from navbot_link.protocol import Arg, Entry, Kind, LinkError, Type
 
 
@@ -362,3 +362,19 @@ def test_no_reply_raises_after_retries():
             link.catalog()
     with pytest.raises(queue.Empty):
         link.events.get_nowait()
+
+
+def test_odometry_and_imu_reach_events_only_when_telemetry_is_requested():
+    for telemetry, expected in ((True, ["odom", "imu"]), (False, [])):
+        fw = FakeFirmware()
+        with open_link(fw, telemetry=telemetry) as link:
+            fw.emit(pb.Message(odom=pb.WheelOdometry(t_us=7, left_angle_rad=1.5)))
+            fw.emit(pb.Message(imu=pb.Imu(t_us=8, gz=0.25)))
+            fw.log("done", "test")
+            seen = []
+            while True:
+                event = link.events.get(timeout=2.0)
+                if isinstance(event, LogEvent):
+                    break
+                seen.append(event.message.WhichOneof("body"))
+        assert seen == expected
