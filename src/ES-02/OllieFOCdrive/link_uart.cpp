@@ -11,22 +11,20 @@
 #include "link_frame.h"
 #include "link_log.h"
 #include "link_tx.h"
-#include "usb_out.h"
 
 namespace {
 
 constexpr float kStandardGravityMps2 = 9.80665f;
 constexpr uint32_t kLinkStatsEverySends = 100;  // 2 s at 50 Hz
 constexpr size_t kUartQueueBytes = 1024;
-// Holds a 576-byte logger line plus the frames that arrive while the CH340 drains it.
+// Frames waiting for the CH340 to drain.
 constexpr size_t kUsbQueueBytes = 2560;
 constexpr uint32_t kWriterStackBytes = 4096;
-constexpr UBaseType_t kWriterPriority = 2;  // above the logger sender (1) so a long text line does not hold up frames
+constexpr UBaseType_t kWriterPriority = 2;
 constexpr uint32_t kReaderStackBytes = 4096;
 constexpr UBaseType_t kReaderPriority = 2;
 constexpr size_t kRequestQueueBytes = 1536;  // a few requests of up to 252 bytes
 constexpr size_t kUartRxBufferBytes = 1024;  // about 5 ms of line at 2000000 baud; the reader polls every tick (1 ms)
-constexpr TickType_t kBlockingPushTimeoutTicks = 200;
 
 class SpinLock : public LinkLock {
  public:
@@ -167,27 +165,13 @@ Print& LinkUsbPrint() { return usbPrint; }
 
 void LinkUsbInit() { startWriter(usb, "usbTx"); }
 
-size_t UsbWriteBlocking(const uint8_t* data, size_t len) {
-  for (TickType_t tries = 0; tries < kBlockingPushTimeoutTicks; ++tries) {
-    if (usb.port.queue.Push(kLinkItemRaw, data, len)) {
-      wake(usb);
-      return len;
-    }
-    vTaskDelay(1);
-  }
-  usb.port.queue.NoteDrop();
-  return 0;
-}
-
 void LinkPublishLog(Logging::Level level, const char* tag, const char* text) {
   navbot_link_v1_Message message = navbot_link_v1_Message_init_zero;
   message.which_body = navbot_link_v1_Message_log_tag;
   message.body.log.level = linkLevel(level);
   strncpy(message.body.log.tag, tag, sizeof(message.body.log.tag) - 1);
   strncpy(message.body.log.text, text, sizeof(message.body.log.text) - 1);
-  // USB stays free of Log frames: between K CSV rows they corrupt the capture until step 5 deletes K.
-  for (uint8_t port = 0; port < kLinkPortCount; ++port)
-    if (LinkLogReachesPort(port)) sendOn(runtimeOf(port), message);
+  for (uint8_t port = 0; port < kLinkPortCount; ++port) sendOn(runtimeOf(port), message);
 }
 
 void LinkServiceRequests(uint32_t tickStartUs, bool balanceRequested) {

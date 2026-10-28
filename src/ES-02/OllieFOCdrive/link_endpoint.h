@@ -19,9 +19,6 @@ class LinkMessageSink {
   virtual void Send(uint8_t port, navbot_link_v1_Message& msg) = 0;
 };
 
-// Log frames from LinkPublishLog go to UART1 only.
-inline bool LinkLogReachesPort(uint8_t port) { return port == kLinkPortUart; }
-
 class LinkEndpoint : private LinkRowSink {
  public:
   // build is the firmware build ID reported with catalog entry 0 (up to 32 characters).

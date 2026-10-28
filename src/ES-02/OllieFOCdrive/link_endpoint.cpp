@@ -71,7 +71,7 @@ void LinkEndpoint::SendLog(navbot_link_v1_Log_Level level, const char* tag, cons
   message.body.log.level = level;
   CopyText(message.body.log.tag, tag);
   CopyText(message.body.log.text, text);
-  sink_.Send(kLinkPortUart, message);  // Log frames go to UART1 only (see LinkLogReachesPort)
+  for (uint8_t port = 0; port < kLinkPortCount; ++port) sink_.Send(port, message);
 }
 
 // A started action is logged with its arguments, so a capture on UART1 shows what was started and with what.
@@ -245,8 +245,7 @@ void LinkEndpoint::OnRow(uint8_t port, uint8_t slot, const uint8_t* row, size_t 
   sink_.Send(port, message);
 }
 
-void LinkEndpoint::OnLeaseExpired(uint8_t port, uint8_t slot) {
-  if (!LinkLogReachesPort(port)) return;  // a Log between K rows on USB would corrupt the capture
+void LinkEndpoint::OnLeaseExpired(uint8_t, uint8_t slot) {
   char text[sizeof(navbot_link_v1_Log::text)];
   snprintf(text, sizeof(text), "slot %u lease expired", static_cast<unsigned>(slot));
   SendLog(navbot_link_v1_Log_Level_WARN, "link", text);

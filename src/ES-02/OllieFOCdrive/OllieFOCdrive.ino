@@ -179,7 +179,6 @@ float batteryInstantRawV = 0;     // Battery voltage from the unfiltered ADC rea
 
 uint32_t controlGateSequence = 0;
 LinkSchedule linkOdometrySchedule;
-uint32_t diagnosticSequence = 0;
 ServoTrimsDegrees servoTrims{};
 constexpr int kLegPoseDegrees = 20;  // fixed leg pose for all four servos, degrees
 constexpr int kLegSagDegrees = 10;  // assumed leg angle after the robot has sagged, between 0 and kLegPoseDegrees
@@ -387,8 +386,6 @@ void readSbus();
 void readBatteryVoltage(void);
 void diagnosticLoop(void);
 bool diagnosticImuReady = false;
-unsigned long diagnosticLastRcFrameMs = 0;
-bool diagnosticHasRcFrame = false;
 
 void logCalibration(const PersistedCalibrationValues &calibrationValues) {
   Logging::message(Logging::Level::Info, "Calibration", "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
@@ -567,7 +564,6 @@ void setup() {
   Serial.setRxBufferSize(kSerialRxBufferBytes);
   Serial.begin(kSerialBaudRate);
   LinkUsbInit();
-  Logging::begin();
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
   servoTrims = loadedCalibration.servos;
   const imu::CalibrationValues imuCalibration{loadedCalibration.gyro, loadedCalibration.attitude};
@@ -585,7 +581,6 @@ void setup() {
   sBus.begin();
   LinkUsbPrint().printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n", (int)esp_reset_reason(),
                 diagnosticImuReady ? 1 : 0);
-  Logging::setProfile(Logging::Profile::Diagnostic);
   return;
 #endif
 
@@ -761,7 +756,6 @@ void applyBalanceOutput(const Output &out) {
 }
 
 void diagnosticLoop(void) {
-  static uint32_t lastLogScheduleUs = 0;
   static uint32_t lastTimingReportUs = 0;
   static uint32_t lastTimingAcceptedSamples = 0;
   static bool timingReportStarted = false;
@@ -772,37 +766,9 @@ void diagnosticLoop(void) {
   if (sBus.toChannels == 1) {
     sBus.UpdateChannels();
     sBus.toChannels = 0;
-    diagnosticLastRcFrameMs = nowMs;
-    diagnosticHasRcFrame = true;
   }
 
-  if (diagnosticImuReady && imu::service()) {
-    const imu::Snapshot &diagnosticImu = imu::latest();
-    const uint32_t imuSampleUs = diagnosticImu.readTimeUs;
-    if ((uint32_t)(imuSampleUs - lastLogScheduleUs) >= DIAGNOSTIC_LOG_INTERVAL_US) {
-      lastLogScheduleUs = imuSampleUs;
-      const long rcAgeMs = diagnosticHasRcFrame ? (long)(nowMs - diagnosticLastRcFrameMs) : -1;
-      const int rcFailsafe = diagnosticHasRcFrame ? sBus.Failsafe() : -1;
-      const float batteryRawV = board::kBatteryVoltsPerAdcCount * voltageAdc;
-      Logging::DiagnosticSample sample{};
-      sample.timestampUs = imuSampleUs;
-      sample.sequence = diagnosticSequence++;
-      sample.gyroX = diagnosticImu.angularVelocityRadPerSec.x;
-      sample.gyroY = diagnosticImu.angularVelocityRadPerSec.y;
-      sample.gyroZ = diagnosticImu.angularVelocityRadPerSec.z;
-      sample.accelX = diagnosticImu.accelerationG.x;
-      sample.accelY = diagnosticImu.accelerationG.y;
-      sample.accelZ = diagnosticImu.accelerationG.z;
-      sample.rollDeg = diagnosticImu.attitudeDegrees.roll;
-      sample.pitchDeg = diagnosticImu.attitudeDegrees.pitch;
-      sample.yawDeg = diagnosticImu.attitudeDegrees.yaw;
-      sample.batteryRawV = batteryRawV;
-      sample.receiverFrameAgeMs = rcAgeMs;
-      sample.receiverFailsafe = rcFailsafe;
-      sample.imuReady = diagnosticImuReady ? 1 : 0;
-      Logging::submit(sample);
-    }
-  }
+  if (diagnosticImuReady) imu::service();
 
   const uint32_t timingNowUs = micros();
   const imu::TimingStatistics timing = imu::timingStatistics();

@@ -9,10 +9,8 @@
 // The wire ID of an entry is its position in this file, so it shifts when a line is added or removed; the host looks
 // names up in the catalog of each connection. A name is at most 24 characters, a unit at most 16.
 //
-// The names are the column names of the K55 to K58 profiles (scripts/capture_balance_trace.py) where they fit the
-// catalog, so scripts/navlink_presets.yaml reproduces those profiles; docs/integration/software/navlink.md lists the
-// differences. The file ends in .h so that arduino-cli copies it into the build. It has no include guard: it is
-// expanded several times with different macro definitions.
+// The file ends in .h so that arduino-cli copies it into the build. It has no include guard: it is expanded several
+// times with different macro definitions.
 
 // Receiver and battery
 SIGNAL    (ch5_mode,              "",      pidGainsMode)

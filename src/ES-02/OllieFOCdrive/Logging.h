@@ -1,19 +1,12 @@
 #pragma once
 
-#include "LogSamples.h"
+#include <stdint.h>
 
+// Firmware text for the NavBot link. Each message goes out as a Log frame on every port (link_uart.cpp).
 namespace Logging {
 
-bool begin();
-void setProfile(Profile profile);
-Profile profile();
+enum class Level : uint8_t { Debug, Info, Warning, Error };
 
-Result message(Level level, const char *tag, const char *format, ...);
-Result submit(const DiagnosticSample &sample);
-Result submit(const TraceSample &sample);
-Result submit(const ControlSample &sample);
-Result submit(const BalanceSample &sample);
-Result submit(const DriveSample &sample);
-Result submit(const DebugSample &sample);
+void message(Level level, const char *tag, const char *format, ...);
 
 }  // namespace Logging
