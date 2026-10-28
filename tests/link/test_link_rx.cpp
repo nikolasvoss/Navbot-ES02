@@ -125,7 +125,7 @@ void TestBadFrames() {
   Check(decoder.badFrames() == 5 && c.payloads.size() == 1, "a frame without a payload is dropped");
 }
 
-// A typed command ends in a line end and is not part of the frame that follows it.
+// A typed command ends in a line end, the PC writes 0x00, and the frame that follows is not part of the typed text.
 void CheckTextLineThenFrame(const char* name, const uint8_t* stream, size_t len) {
   Collector c;
   LinkRxDecoder usb(true);
@@ -137,10 +137,10 @@ void CheckTextLineThenFrame(const char* name, const uint8_t* stream, size_t len)
 }
 
 void TestTextLineThenFrame() {
-  const uint8_t lfThenFrame[] = {'K', '5', '8', '\n', 0x04, 0x07, 0x17, 0x91, 0x00};
-  CheckTextLineThenFrame("K58 LF then frame decodes, no bad frame", lfThenFrame, sizeof(lfThenFrame));
-  const uint8_t crlfThenFrame[] = {'K', '5', '8', '\r', '\n', 0x04, 0x07, 0x17, 0x91, 0x00};
-  CheckTextLineThenFrame("K58 CRLF then frame decodes, no bad frame", crlfThenFrame, sizeof(crlfThenFrame));
+  const uint8_t lfThenFrame[] = {'K', '5', '8', '\n', 0x00, 0x04, 0x07, 0x17, 0x91, 0x00};
+  CheckTextLineThenFrame("K58 LF, 0x00, then frame decodes, no bad frame", lfThenFrame, sizeof(lfThenFrame));
+  const uint8_t crlfThenFrame[] = {'K', '5', '8', '\r', '\n', 0x00, 0x04, 0x07, 0x17, 0x91, 0x00};
+  CheckTextLineThenFrame("K58 CRLF, 0x00, then frame decodes, no bad frame", crlfThenFrame, sizeof(crlfThenFrame));
 }
 
 // A frame whose first bytes are text up to a 0x0A is not cut there: the whole chunk decodes.
@@ -187,10 +187,11 @@ const uint8_t kPayloadCode0D[] = {0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28
 const uint8_t kFrameCode0D[] = {0x0D, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A, 0x2B, 0x2C,
                                 0x05, 0x41, 0x42, 0xC0, 0xB1, 0x00};
 
-// Feeds typed text followed by one frame and checks the lines, the one payload and the bad-frame count.
+// Feeds typed text, the PC's 0x00 and one frame, then checks the lines, the one payload and the bad-frame count.
 void CheckTypedThenFrame(const char* name, const std::string& typed, const uint8_t* frame, size_t frameLen,
                          const uint8_t* payload, size_t payloadLen, const std::vector<std::string>& lines) {
   std::vector<uint8_t> stream(typed.begin(), typed.end());
+  stream.push_back(0x00);
   stream.insert(stream.end(), frame, frame + frameLen);
   Collector c;
   LinkRxDecoder usb(true);
@@ -207,6 +208,16 @@ void TestFrameAfterTypedLineCodeByteIsLineEnd() {
                       kPayloadCode0D, sizeof(kPayloadCode0D), {"K58\n"});
   CheckTypedThenFrame("two typed lines then a frame whose code byte is 0x0A decodes", "K58\nK0\n", kFrameCode0A,
                       sizeof(kFrameCode0A), kPayloadCode0A, sizeof(kPayloadCode0A), {"K58\n", "K0\n"});
+}
+
+// The PC writes 0x00 before each frame, so a frame with no 0x00 after typed text is one chunk, and that chunk is bad.
+void TestFrameWithoutDelimiterAfterTypedLineIsBad() {
+  std::vector<uint8_t> stream = {'K', '5', '8', '\n'};
+  stream.insert(stream.end(), kFrameCode0A, kFrameCode0A + sizeof(kFrameCode0A));
+  Collector c;
+  LinkRxDecoder usb(true);
+  usb.Feed(stream.data(), stream.size(), c);
+  Check(c.payloads.empty() && usb.badFrames() == 1, "a frame with no 0x00 after typed text is one bad chunk");
 }
 
 // The PC's 0x00 ends a chunk of typed text. That text was handed out line by line already, so it is not a bad frame.
@@ -254,8 +265,8 @@ size_t ReferenceFrame(const uint8_t* payload, size_t len, uint8_t* out) {
   return write;
 }
 
-// 20000 frames from a fixed seed, each in front of a typed prefix or none. Every one must decode to its payload with no
-// bad frame, and the run must have met frames whose first code byte is 0x0A and 0x0D.
+// 20000 frames from a fixed seed, each after a typed prefix (or none) and the PC's 0x00. Every one must decode to its
+// payload with no bad frame, and the run must have met frames whose first code byte is 0x0A and 0x0D.
 void TestRandomFramesAfterTypedText() {
   const std::vector<std::string> prefixes = {"", "K58\n", "K58\r\n", "K0\r\n\nE1\r", "K58\nK0\n"};
   uint32_t state = 0x2545F491u;
@@ -272,10 +283,8 @@ void TestRandomFramesAfterTypedText() {
   size_t code0D = 0;
   for (int i = 0; i < 20000; ++i) {
     const std::string& prefix = prefixes[next() % prefixes.size()];
-    // Prefix plus frame must fit one chunk, so a prefixed payload stays under 240 bytes.
-    const size_t maxLen = prefix.empty() ? LINK_MAX_PAYLOAD : 240;
     uint8_t payload[LINK_MAX_PAYLOAD];
-    const size_t len = 1 + next() % maxLen;
+    const size_t len = 1 + next() % LINK_MAX_PAYLOAD;
     for (size_t b = 0; b < len; ++b) payload[b] = static_cast<uint8_t>(next());
 
     uint8_t frame[LINK_MAX_FRAME_LEN];
@@ -284,6 +293,7 @@ void TestRandomFramesAfterTypedText() {
     code0D += frame[0] == 0x0D ? 1 : 0;
 
     std::vector<uint8_t> stream(prefix.begin(), prefix.end());
+    stream.push_back(0x00);
     stream.insert(stream.end(), frame, frame + frameLen);
     Collector c;
     usb.Feed(stream.data(), stream.size(), c);
@@ -303,6 +313,7 @@ int main() {
   TestTextLineThenFrame();
   TestFrameWithTextLikeStart();
   TestFrameAfterTypedLineCodeByteIsLineEnd();
+  TestFrameWithoutDelimiterAfterTypedLineIsBad();
   TestTypedLineEndedByDelimiterIsNotBad();
   TestRandomFramesAfterTypedText();
   return failed ? 1 : 0;

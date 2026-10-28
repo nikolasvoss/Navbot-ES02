@@ -78,16 +78,6 @@ size_t TypedTextLen(const uint8_t* chunk, size_t len) {
   return n;
 }
 
-// Tries the frame after each line end of the leading typed text, the latest first, and takes the first that checks. The
-// frame's own first code byte can be a line end (0x0A or 0x0D), so the latest one is not always the frame's start.
-bool DecodeAfterTypedLines(const uint8_t* chunk, size_t len, uint8_t* body, size_t& payloadLen) {
-  const size_t textLen = TypedTextLen(chunk, len);
-  for (size_t end = textLen; end > 0; --end) {
-    if (IsLineEnd(chunk[end - 1]) && DecodeBody(chunk + end, len - end, body, payloadLen)) return true;
-  }
-  return false;
-}
-
 }  // namespace
 
 size_t LinkEncodeFrame(const navbot_link_v1_Message& msg, uint8_t* out, size_t capacity) {
@@ -140,10 +130,7 @@ void LinkRxDecoder::EndChunk(LinkRxSink& sink) {
   lineSpoiled_ = false;
   if (chunkLen == 0 && !overflow) return;  // the 0x00 in front of a USB frame, or a repeated delimiter
   size_t payloadLen = 0;
-  bool ok = !overflow && DecodeBody(chunk_, chunkLen, body, payloadLen);
-  // Typed lines can sit in front of a frame with no 0x00 between them. The whole chunk is tried first, so a frame that
-  // only contains a line end still decodes.
-  if (!ok && !overflow && passTextLines_) ok = DecodeAfterTypedLines(chunk_, chunkLen, body, payloadLen);
+  const bool ok = !overflow && DecodeBody(chunk_, chunkLen, body, payloadLen);
   if (!ok) {
     // Typed lines that end in a line end were handed out as they arrived, so the chunk is not a bad frame.
     const bool onlyTypedLines = passTextLines_ && !overflow && chunkLen > 0 && IsLineEnd(chunk_[chunkLen - 1]) &&
