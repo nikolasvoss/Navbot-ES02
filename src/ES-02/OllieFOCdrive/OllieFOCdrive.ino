@@ -31,11 +31,13 @@
 
 bool motorDiagnosticOwnsOutput = false;
 
+// The Commander reads the printable lines that the link's USB receive task passes on, so the letter commands and the
+// NavBot link frames can share the port.
 class LoggingCommandStream : public Stream {
  public:
-  int available() override { return Serial.available(); }
-  int read() override { return Serial.read(); }
-  int peek() override { return Serial.peek(); }
+  int available() override { return LinkUsbCommandAvailable(); }
+  int read() override { return LinkUsbCommandRead(); }
+  int peek() override { return LinkUsbCommandPeek(); }
   size_t write(uint8_t value) override {
     if (motorDiagnosticOwnsOutput || Logging::profile() != Logging::Profile::Idle) return 1;
     return LinkUsbPrint().write(value);
@@ -64,8 +66,9 @@ CalibrationStore calibrationStore;
 constexpr uint32_t kRcFrameTimeoutMs = 100;
 constexpr float kControlTimestepMinSec = 0.001f;
 
-constexpr unsigned long kSerialBaudRate = 576000;
+constexpr unsigned long kSerialBaudRate = LINK_USB_BAUD;
 constexpr size_t kSerialTxBufferBytes = 1024;
+constexpr size_t kSerialRxBufferBytes = 512;
 #define DIAGNOSTIC_LOG_INTERVAL_US 5000  // Diagnostic CSV rows are emitted at 200 Hz.
 constexpr unsigned int kDiagnosticLogSampleRateHz = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // -------------------------------------
@@ -198,6 +201,7 @@ biquadFilter_t voltageFilterLpf;  // Second-order low-pass filter
 uint16_t voltageAdc = 0;          // Battery voltage ADC data
 float voltageAdcFiltered = 0;     // Battery voltage ADC data
 float batteryVoltage = 0;         // Battery voltage
+float batteryInstantRawV = 0;     // Battery voltage from the unfiltered ADC reading
 
 uint32_t controlGateSequence = 0;
 LinkSchedule linkOdometrySchedule;
@@ -325,6 +329,7 @@ unsigned long previousControlTimeUs = 0;
 uint32_t controlStartUs = 0;
 uint32_t controlExecutionUs = 0;
 uint32_t previousLoopEntryUs = 0;
+uint32_t loopEntryIntervalUs = 0;  // time between the last two loop() entries
 bool hasPreviousLoopEntry = false;
 
 BLDCMotor motor1 = BLDCMotor(board::kWheelMotorPolePairs);
@@ -342,6 +347,13 @@ TwoWire i2cTwo = TwoWire(1);
 
 MotorDiagnostic::State motorDiagnosticState{};
 bool motorDiagnosticApplied = false;
+
+// The values the link can log, from signals.def.h. This sits after the state those lines read.
+#define SIGNAL_DEF_FILE "signals.def.h"
+#include "signal_table_expand.h"
+// No git hash is available to the Arduino build, so the build ID is the compile time.
+constexpr char kBuildId[] = __DATE__ " " __TIME__;
+static_assert(sizeof(kBuildId) <= 33, "the build ID has to fit CatalogEntry.build");
 
 void selectCalibration(char *cmd) {
   float requested = calibrationSelect;
@@ -675,6 +687,7 @@ void setup() {
 #endif
 
   Serial.setTxBufferSize(kSerialTxBufferBytes);
+  Serial.setRxBufferSize(kSerialRxBufferBytes);
   Serial.begin(kSerialBaudRate);
   LinkUsbInit();
   Logging::begin();
@@ -709,7 +722,7 @@ void setup() {
 
   initIMU(imuCalibration);
   initRemoteControl();
-  LinkUartInit();
+  LinkUartInit(kSignals, kSignalCount, kBuildId);
   SimpleFOCDebug::enable(&LinkUsbPrint());  // TODO a more centralized way to enable debug sections would be nice
   initPositionSensors();
   initDrivers();
@@ -810,7 +823,7 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
   in.voltageAdc = voltageAdc;
   in.voltageAdcFiltered = voltageAdcFiltered;
   in.voltage = batteryVoltage;
-  in.batteryInstantRawV = board::kBatteryVoltsPerAdcCount * voltageAdc;
+  in.batteryInstantRawV = batteryInstantRawV;
   in.batteryInstantFilteredV = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
   in.controlStartUs = controlStartUs;
   in.controlExecutionUs = controlExecutionUs;
@@ -831,6 +844,7 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
 void readBatteryVoltage(void) {
   busReadTimeUs = micros();
   voltageAdc = analogRead(board::kBatteryAdcPin);
+  batteryInstantRawV = board::kBatteryVoltsPerAdcCount * voltageAdc;
   if (debugTelemetryState.voltageAdcMin == 0 || voltageAdc < debugTelemetryState.voltageAdcMin)
     debugTelemetryState.voltageAdcMin = voltageAdc;
   voltageAdcFiltered = biquadFilterApply(&voltageFilterLpf, voltageAdc);
@@ -1125,6 +1139,7 @@ void runControlTick(bool imuUpdated) {
   controlStartUs = micros();
   controlGateSequence++;
 
+  LinkServiceRequests(controlStartUs);  // requests that arrived since the last tick take effect before anything is read
   readBatteryVoltage();  // Battery
 
   updateStatusLed();
@@ -1161,6 +1176,7 @@ void runControlTick(bool imuUpdated) {
 
   controlExecutionUs = static_cast<uint32_t>(micros() - controlStartUs);
   DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
+  LinkSampleSignals(controlStartUs);
 
   previousControlTimeUs = loopTimeUs;
 }
@@ -1182,9 +1198,9 @@ void loop() {
 #endif
   loopTimeUs = micros();
   if (hasPreviousLoopEntry) {
-    const uint32_t intervalUs = static_cast<uint32_t>(loopTimeUs - previousLoopEntryUs);
-    if (intervalUs > debugTelemetryState.maxLoopEntryIntervalUs)
-      debugTelemetryState.maxLoopEntryIntervalUs = intervalUs;
+    loopEntryIntervalUs = static_cast<uint32_t>(loopTimeUs - previousLoopEntryUs);
+    if (loopEntryIntervalUs > debugTelemetryState.maxLoopEntryIntervalUs)
+      debugTelemetryState.maxLoopEntryIntervalUs = loopEntryIntervalUs;
   }
   previousLoopEntryUs = loopTimeUs;
   hasPreviousLoopEntry = true;
