@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <initializer_list>
 #include <limits>
 
@@ -2847,6 +2848,32 @@ int main() {
         assert(out.state == State::Fault && out.fault == FaultReason::InvalidConfig && !out.driveEnabled);
       }
     }
+  }
+
+  // Every state and fault has the name the log and the link show.
+  {
+    const struct {
+      State state;
+      const char *name;
+    } states[] = {{State::Disabled, "Disabled"}, {State::Arming, "Arming"}, {State::Run, "Run"},
+                  {State::Commissioning, "Commissioning"}, {State::Fault, "Fault"}};
+    for (const auto &s : states) assert(std::strcmp(StateName(s.state), s.name) == 0);
+    const struct {
+      FaultReason reason;
+      const char *name;
+    } faults[] = {{FaultReason::None, "None"},
+                  {FaultReason::StaleImu, "StaleImu"},
+                  {FaultReason::StaleWheels, "StaleWheels"},
+                  {FaultReason::StaleBus, "StaleBus"},
+                  {FaultReason::InvalidInput, "InvalidInput"},
+                  {FaultReason::BadDt, "BadDt"},
+                  {FaultReason::Fall, "Fall"},
+                  {FaultReason::Overspeed, "Overspeed"},
+                  {FaultReason::InvalidEnvelope, "InvalidEnvelope"},
+                  {FaultReason::InvalidConfig, "InvalidConfig"},
+                  {FaultReason::AuthorityExhausted, "AuthorityExhausted"},
+                  {FaultReason::TiltSaturated, "TiltSaturated"}};
+    for (const auto &f : faults) assert(std::strcmp(FaultReasonName(f.reason), f.name) == 0);
   }
 
   std::puts("balance controller passed");

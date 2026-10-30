@@ -110,6 +110,7 @@ bool TestEveryLevelMapsToItsWireLevel() {
   Ports ports;
   PortsSink sink(ports);
   activeSink = &sink;
+  Logging::setMinLevel(Logging::Level::Debug);  // the default drops Debug
   Logging::message(Logging::Level::Debug, "L", "d");
   Logging::message(Logging::Level::Info, "L", "i");
   Logging::message(Logging::Level::Warning, "L", "w");

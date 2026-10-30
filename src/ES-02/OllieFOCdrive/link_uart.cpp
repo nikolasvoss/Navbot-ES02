@@ -13,7 +13,6 @@
 namespace {
 
 constexpr float kStandardGravityMps2 = 9.80665f;
-constexpr uint32_t kLinkStatsEverySends = 100;  // 2 s at 50 Hz
 constexpr size_t kUartQueueBytes = 1024;
 // Frames waiting for the CH340 to drain.
 constexpr size_t kUsbQueueBytes = 2560;
@@ -76,6 +75,7 @@ struct Reader : LinkRxSink {
   uint8_t port;
   Stream& serial;
   LinkRxDecoder decoder;
+  TaskHandle_t task = nullptr;
 };
 
 Reader uartReader(kLinkPortUart, Serial1);
@@ -96,7 +96,7 @@ void readerTask(void* arg) {
 }
 
 void startReader(Reader& reader, const char* name) {
-  xTaskCreatePinnedToCore(readerTask, name, kReaderStackBytes, &reader, kReaderPriority, nullptr, 0);
+  xTaskCreatePinnedToCore(readerTask, name, kReaderStackBytes, &reader, kReaderPriority, &reader.task, 0);
 }
 
 // The only code that writes to a UART. It sleeps one tick when the queue is empty or the UART buffer is too full for
@@ -151,6 +151,28 @@ void LinkSampleSignals(uint32_t tickStartUs) {
   if (endpoint) endpoint->Sample(tickStartUs);
 }
 
+LinkCounters LinkCountersNow() {
+  LinkCounters counters;
+  counters.txDropUart = uart.port.queue.dropped();
+  counters.txDropUsb = usb.port.queue.dropped();
+  counters.rxBadUart = uartReader.decoder.badFrames();
+  counters.rxBadUsb = usbReader.decoder.badFrames();
+  counters.reqDropped = requests.dropped();
+  counters.undecodable = endpoint ? endpoint->undecodable() : 0;
+  return counters;
+}
+
+uint32_t LinkMinStackFreeBytes() {
+  const TaskHandle_t tasks[] = {uart.task, usb.task, uartReader.task, usbReader.task};
+  uint32_t minFree = UINT32_MAX;
+  for (const TaskHandle_t task : tasks) {
+    if (!task) continue;  // the USB writer and the readers exist only after their Init
+    const uint32_t free = uxTaskGetStackHighWaterMark(task);
+    if (free < minFree) minFree = free;
+  }
+  return minFree;
+}
+
 void LinkSetCommandHandler(LinkCommandHandler handler) {
   if (endpoint) endpoint->SetCommandHandler(handler);
 }
@@ -185,13 +207,6 @@ void LinkUartInit(const SignalEntry* table, size_t count, const char* build) {
 }
 
 void LinkPublishOdometry(uint32_t sampleTimeUs, double leftWheelAngleRad, double rightWheelAngleRad, const imu::Snapshot& imuSnapshot) {
-  static uint32_t publishCount = 0;
-  if (++publishCount % kLinkStatsEverySends == 0)
-    Logging::message(Logging::Level::Info, "Link", "seq=%u dropped=%u txFree=%d rxBad=%u/%u reqDropped=%u undecoded=%u",
-                     static_cast<unsigned>(uart.port.seq), static_cast<unsigned>(uart.port.queue.dropped()),
-                     Serial1.availableForWrite(), static_cast<unsigned>(uartReader.decoder.badFrames()),
-                     static_cast<unsigned>(usbReader.decoder.badFrames()), static_cast<unsigned>(requests.dropped()),
-                     static_cast<unsigned>(endpoint ? endpoint->undecodable() : 0));
   navbot_link_v1_Message odom = navbot_link_v1_Message_init_zero;
   odom.which_body = navbot_link_v1_Message_odom_tag;
   odom.body.odom.t_us = sampleTimeUs;

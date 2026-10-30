@@ -50,6 +50,10 @@ enum class FaultReason : uint8_t {
   TiltSaturated,
 };
 
+// The enum names as text for logs: "Run", "Fall", ...
+const char *StateName(State state);
+const char *FaultReasonName(FaultReason reason);
+
 struct Diagnostics {
   float c = 0.0f;
   float d = 0.0f;

@@ -9,11 +9,18 @@
 namespace {
 // The Log text field of navbot_link.options (max_size 97): 96 characters and the terminator. Longer text is cut.
 constexpr size_t kTextBytes = sizeof(navbot_link_v1_Log::text);
+
+Logging::Level minimumLevel = Logging::Level::Info;
 }  // namespace
 
 namespace Logging {
 
+void setMinLevel(Level level) { minimumLevel = level; }
+
+Level minLevel() { return minimumLevel; }
+
 void message(Level level, const char *tag, const char *format, ...) {
+  if (level < minimumLevel) return;
   char text[kTextBytes];
   va_list args;
   va_start(args, format);

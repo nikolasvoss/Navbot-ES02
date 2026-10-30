@@ -24,6 +24,21 @@
 // subscription and parameter requests over `table` (build is the firmware build ID, up to 32 characters).
 void LinkUartInit(const SignalEntry *table, size_t count, const char *build);
 
+// Link counters since boot, read by the signal table: frames dropped on the way out, frames that failed their check on
+// the way in, requests dropped before the control loop, and requests the endpoint could not decode.
+struct LinkCounters {
+  uint32_t txDropUart;
+  uint32_t txDropUsb;
+  uint32_t rxBadUart;
+  uint32_t rxBadUsb;
+  uint32_t reqDropped;
+  uint32_t undecodable;
+};
+LinkCounters LinkCountersNow();
+
+// The smallest free stack of the link tasks (both readers and both writers), in bytes. Call after LinkUartInit.
+uint32_t LinkMinStackFreeBytes();
+
 // Sets the handler of the Command requests. Call after LinkUartInit; before that the handler is not stored.
 void LinkSetCommandHandler(LinkCommandHandler handler);
 

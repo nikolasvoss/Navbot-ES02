@@ -2,6 +2,8 @@
 #include <SimpleFOC.h>
 #include <esp_system.h>
 #include <esp_timer.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include <algorithm>
 #include <cctype>
@@ -20,6 +22,7 @@
 #include "MotorDiagnostic.h"
 #include "settings_groups.h"
 #include "OverspeedGuard.h"
+#include "rc_mode.h"
 #include "WheelBoundary.h"
 #include "OllieFOCdrive.h"
 #include "LegPoseRamp.h"
@@ -216,17 +219,32 @@ int servoTraceAngle[4] = {0, 0, 0, 0};  // Last angle arguments sent to the four
 
 // Remote control
 FUTABA_SBUS sBus;
-int pidGainsMode = REMOTE_CONTROL_PID_GAINS_MODE_OFF;  // telemetry: 1 while the CH5 balance enable is on
 // Raw S.BUS values (SBUS_CHANNEL_MIN 192 to SBUS_CHANNEL_MAX 1792, centre 992). Decided and measured 2026-10-22 (plan: RC map).
 constexpr int kRcCenterRaw = (SBUS_CHANNEL_MAX + SBUS_CHANNEL_MIN) / 2;     // 992
 constexpr int kRcHalfRangeRaw = (SBUS_CHANNEL_MAX - SBUS_CHANNEL_MIN) / 2;  // 800
-constexpr int kRcEnableOnRaw = 592;   // CH5: 0 below, 1 and 2 at or above; 3-position switch
 constexpr int kRcSwitchOnRaw = 992;   // CH6 and CH7: 2-position latching switches
 constexpr int kRcKnobMinRaw = 172;    // CH9 trim knob: outside 172 to 1811 the knob is invalid
 constexpr int kRcKnobMaxRaw = 1811;
 int16_t rcChannels[18] = {};          // last S.BUS frame, raw
 bool rcFrameSeen = false;
 uint32_t rcFrameUs = 0;               // micros() when the last frame was decoded
+uint8_t ch5Position = 0;              // CH5 position 0, 1 (link) or 2 (RC), from the last frame (rc_mode.h)
+uint8_t previousCh5Position = 0;      // the position the last fresh RC frame had
+bool rcValid = false;                 // telemetry: the RC frame is fresh and the receiver reports no failsafe
+bool linkBalance = false;             // the link holds balance on, in CH5 position 1
+struct LinkCommand {
+  bool seen;
+  float speedMps;
+  float turnRadPerSec;
+  uint32_t receivedUs;
+};
+LinkCommand linkCommand{};            // the last Command accepted in CH5 position 1
+bool rebootPending = false;
+uint32_t rebootAtMs = 0;
+constexpr uint32_t kRebootDelayMs = 300;  // a reboot waits this long, so the Ack and the action Log leave first
+
+// Milliseconds since the last accepted Command; UINT32_MAX before the first one.
+uint32_t linkCommandAgeMs() { return linkCommand.seen ? (micros() - linkCommand.receivedUs) / 1000U : UINT32_MAX; }
 
 // Balance controller and the sketch inputs it reads
 BalanceController balanceController;
@@ -238,12 +256,34 @@ uint32_t busReadTimeUs = 0;
 
 bool balanceActive() { return balanceOutput.state != State::Disabled; }
 // Balance is requested by the CH5 switch or is running. Motor tests and calibration steps wait for it.
-bool balanceRequested() { return pidGainsMode != REMOTE_CONTROL_PID_GAINS_MODE_OFF || balanceActive(); }
+bool balanceRequested() { return ch5Position != 0 || balanceActive(); }
 
 // The link's share of a pass, shared by the control tick and the sensor diagnostic loop. Requests that arrived since the
 // last pass take effect at its start; the due signal rows leave at its end.
 void linkPassStart(uint32_t passStartUs) { LinkServiceRequests(passStartUs, balanceRequested()); }
 void linkPassEnd(uint32_t passStartUs) { LinkSampleSignals(passStartUs); }
+
+// System health, the rows of the "Link and system health" section of signals.def.h. updateSystemHealth() refreshes it
+// once a second; it runs in the loop task, so the stack figure of this task is its own.
+struct SystemHealth {
+  uint32_t uptimeS;
+  uint32_t heapFreeB;
+  uint32_t heapMinFreeB;
+  uint32_t stackFreeLoopB;
+  uint32_t stackFreeLinkB;
+} systemHealth{};
+
+void updateSystemHealth() {
+  static uint32_t nextUpdateMs = 0;  // the first call updates
+  const uint32_t nowMs = millis();
+  if (nowMs < nextUpdateMs) return;
+  nextUpdateMs = nowMs + 1000;
+  systemHealth.uptimeS = nowMs / 1000;
+  systemHealth.heapFreeB = esp_get_free_heap_size();
+  systemHealth.heapMinFreeB = esp_get_minimum_free_heap_size();
+  systemHealth.stackFreeLoopB = uxTaskGetStackHighWaterMark(nullptr);
+  systemHealth.stackFreeLinkB = LinkMinStackFreeBytes();
+}
 
 float calibrationSelect = 0;  // The calibrate action: 0 ends a step, 1 gyroscope, 2 Euler angle, 3 servo
 
@@ -501,6 +541,24 @@ struct ServoTrimGroup {
   }
 };
 
+// The log level, in the proto numbers the link uses: 1 DEBUG, 2 INFO, 3 WARN, 4 ERROR (Logging::Level is one less).
+struct LogSettings {
+  uint32_t minLevel;
+};
+
+struct LogGroup {
+  using Struct = LogSettings;
+  static LogSettings current() { return {static_cast<uint32_t>(Logging::minLevel()) + 1}; }
+  static bool apply(const LogSettings &candidate, const char **error) {
+    if (candidate.minLevel < 1 || candidate.minLevel > 4) {
+      *error = "takes 1 (DEBUG) to 4 (ERROR)";
+      return false;
+    }
+    Logging::setMinLevel(static_cast<Logging::Level>(candidate.minLevel - 1));
+    return true;
+  }
+};
+
 // Actions. The endpoint checks each argument against its ARG bounds before a handler runs. A handler starts the action,
 // or sets *error and returns false. Motor safety lives in MotorDiagnostic; these handlers only add the overspeed latch.
 bool startMotorRequest(const MotorDiagnostic::Request &request, const char **error) {
@@ -570,6 +628,52 @@ bool startCalibration(const float *args, const char **error) {
   return true;
 }
 
+// Balance on or off from the link. Only in CH5 position 1, so a switch in another position never starts a robot.
+bool setLinkBalance(const float *args, const char **error) {
+  if (SENSOR_DIAGNOSTIC_MODE) {
+    *error = "sensor diagnostic build has no motor control";
+    return false;
+  }
+  if (ch5Position != 1) {
+    *error = "CH5 not in link position (1)";
+    return false;
+  }
+  if (wheelOverspeed.tripped) {
+    *error = "wheel overspeed latched, send motor_reset";
+    return false;
+  }
+  linkBalance = args[0] >= 0.5f;
+  return true;
+}
+
+// Reboot. Refused while balance is requested, so a reboot never restarts a robot that drives or is about to.
+bool requestReboot(const float *, const char **error) {
+  if (balanceRequested()) {
+    *error = "CH5 must be 0 and balance off";
+    return false;
+  }
+  if (motorDiagnosticState.active || motorDiagnosticApplied) {
+    *error = "motor test running";
+    return false;
+  }
+  if (calibrationSelect != 0.0f) {
+    *error = "calibration running";
+    return false;
+  }
+  rebootPending = true;
+  rebootAtMs = millis() + kRebootDelayMs;
+  return true;
+}
+
+// A Command from the link. The handler refuses in this order and returns the first text that applies (nullptr accepts).
+const char *handleLinkCommand(float speedMps, float turnRadPerSec) {
+  if (SENSOR_DIAGNOSTIC_MODE) return "sensor diagnostic build has no motor control";
+  if (ch5Position != 1) return "CH5 not in link position (1)";
+  if (!std::isfinite(speedMps) || !std::isfinite(turnRadPerSec)) return "speed and turn must be finite numbers";
+  linkCommand = {true, speedMps, turnRadPerSec, micros()};
+  return nullptr;
+}
+
 // The entry table (signals.def.h), expanded after the groups and handlers it names.
 #define SIGNAL_DEF_FILE "signals.def.h"
 #include "signal_table_expand.h"
@@ -606,6 +710,7 @@ void setup() {
   LinkUsbInit();
   // Before the first Logging::message: a message queued for UART1 waits for this writer.
   LinkUartInit(kSignals, kSignalCount, kBuildId);
+  LinkSetCommandHandler(handleLinkCommand);  // only stores the handler once LinkUartInit has run
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
   servoTrims = loadedCalibration.servos;
   const imu::CalibrationValues imuCalibration{loadedCalibration.gyro, loadedCalibration.attitude};
@@ -659,13 +764,13 @@ void setup() {
 
 /**
  * @brief Stores a decoded S.BUS frame with its arrival time. balanceRequest() reads the channels every tick.
- *        The CH5 balance enable also sets the pidGainsMode telemetry field.
+ *        The CH5 position is taken from the same frame.
  */
 void applyRcChannels(const int16_t *ch) {
   for (int i = 0; i < 18; ++i) rcChannels[i] = ch[i];
   rcFrameUs = micros();
   rcFrameSeen = true;
-  pidGainsMode = rcChannels[4] >= kRcEnableOnRaw ? REMOTE_CONTROL_PID_GAINS_MODE_ON : REMOTE_CONTROL_PID_GAINS_MODE_OFF;
+  ch5Position = RcMode::Ch5Position(rcChannels[4]);
 }
 
 /**
@@ -738,21 +843,49 @@ float rcStickFraction(int16_t raw) {
 }
 
 /**
+ * @brief Moves link_balance with CH5. Entering position 1 starts it only while the controller drives; leaving position 1
+ *        clears it and the stored Command. Called only while the RC frame is fresh.
+ */
+void updateLinkBalance() {
+  if (ch5Position == previousCh5Position) return;
+  if (ch5Position == 1) {
+    const bool driving = balanceOutput.state == State::Run || balanceOutput.state == State::Commissioning;
+    linkBalance = RcMode::LinkBalanceOnEntry(driving);
+  }
+  if (previousCh5Position == 1) {
+    linkBalance = false;
+    linkCommand = {};
+  }
+  previousCh5Position = ch5Position;
+}
+
+/**
  * @brief Builds the balance request from the latest S.BUS frame. The frame counts only while it is younger than
  *        kRcFrameTimeoutMs and the receiver reports no failsafe.
  */
 Request balanceRequest(uint32_t nowUs) {
   const Config &config = balanceSettings;
   const bool fresh = rcFrameSeen && static_cast<uint32_t>(nowUs - rcFrameUs) <= kRcFrameTimeoutMs * 1000U;
-  // CH5 off rearms a tripped overspeed guard (once both wheels are below the limit), so no serial command is needed.
-  if (fresh && rcChannels[4] < kRcEnableOnRaw) resetWheelOverspeed();
+  if (fresh) {
+    // CH5 off rearms a tripped overspeed guard (once both wheels are below the limit), so no serial command is needed.
+    if (ch5Position == 0) resetWheelOverspeed();
+    updateLinkBalance();
+  }
   Request request{};
   request.receivedTimeUs = rcFrameUs;
   request.sourceValid = fresh && sBus.Failsafe() == FUTABA_SBUS::kSignalOk;
-  request.speedMps = config.speedCapMps * rcStickFraction(rcChannels[2]);         // CH3: forward is positive
-  request.yawRateRadPerSec = -config.yawRateCapRadPerSec * rcStickFraction(rcChannels[3]);  // CH4: left is positive
+  rcValid = request.sourceValid;
+  if (ch5Position == 1) {
+    // The link drives. A missing or old Command is zero demand; the controller keeps balancing in place.
+    const bool commandFresh = RcMode::CommandFresh(linkCommand.seen, nowUs, linkCommand.receivedUs);
+    request.speedMps = commandFresh ? linkCommand.speedMps : 0.0f;
+    request.yawRateRadPerSec = commandFresh ? linkCommand.turnRadPerSec : 0.0f;
+  } else {
+    request.speedMps = config.speedCapMps * rcStickFraction(rcChannels[2]);         // CH3: forward is positive
+    request.yawRateRadPerSec = -config.yawRateCapRadPerSec * rcStickFraction(rcChannels[3]);  // CH4: left is positive
+  }
   // A guard trip reads as enable off, so the controller goes Disabled. The operator must switch CH5 off and on to rearm.
-  request.enableSwitch = rcChannels[4] >= kRcEnableOnRaw && !wheelOverspeed.tripped;  // CH5
+  request.enableSwitch = RcMode::EnableSwitch(ch5Position, linkBalance) && !wheelOverspeed.tripped;  // CH5
   request.saveSwitch = rcChannels[5] >= kRcSwitchOnRaw;                           // CH6
   request.commissioningSwitch = rcChannels[6] >= kRcSwitchOnRaw;                  // CH7
   request.knobValid = rcChannels[8] >= kRcKnobMinRaw && rcChannels[8] <= kRcKnobMaxRaw;  // CH9
@@ -765,8 +898,8 @@ Request balanceRequest(uint32_t nowUs) {
  */
 void logBalanceChange(const Output &out) {
   if (out.state != balanceOutput.state || out.fault != balanceOutput.fault)
-    Logging::message(Logging::Level::Info, "BALANCE", "state=%d fault=%d commissioningRefused=%d",
-                     static_cast<int>(out.state), static_cast<int>(out.fault), out.diag.commissioningRefused ? 1 : 0);
+    Logging::message(out.state == State::Fault ? Logging::Level::Warning : Logging::Level::Info, "BALANCE",
+                     "%s -> %s (%s)", StateName(balanceOutput.state), StateName(out.state), FaultReasonName(out.fault));
   if (out.saveTrimRequested)  // one-tick pulse
     Logging::message(Logging::Level::Info, "BALANCE", "save requested trim=%.3f deg; storage not wired", out.trimToSaveDeg);
   if (out.diag.saveRefused && !balanceOutput.diag.saveRefused)
@@ -807,6 +940,7 @@ void diagnosticLoop(void) {
   const uint32_t passStartUs = micros();
 
   linkPassStart(passStartUs);
+  updateSystemHealth();
   readSbus();
 
   if (diagnosticImuReady) imu::service();
@@ -959,6 +1093,7 @@ void runControlTick(bool imuUpdated) {
   controlGateSequence++;
 
   linkPassStart(controlStartUs);  // before anything is read
+  updateSystemHealth();
   readBatteryVoltage();  // Battery
 
   updateStatusLed();
@@ -1009,6 +1144,8 @@ void runControlTick(bool imuUpdated) {
  *    the fixed servo pose, and telemetry.
  */
 void loop() {
+  // A reboot requested over the link. Checked before the diagnostic branch, so both images restart.
+  if (rebootPending && static_cast<int32_t>(millis() - rebootAtMs) >= 0) ESP.restart();
 #if SENSOR_DIAGNOSTIC_MODE
   diagnosticLoop();
   return;
