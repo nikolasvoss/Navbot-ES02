@@ -263,8 +263,9 @@ bool balanceRequested() { return ch5Position != 0 || balanceActive(); }
 void linkPassStart(uint32_t passStartUs) { LinkServiceRequests(passStartUs, balanceRequested()); }
 void linkPassEnd(uint32_t passStartUs) { LinkSampleSignals(passStartUs); }
 
-// System health, the rows of the "Link and system health" section of signals.def.h. updateSystemHealth() refreshes it
-// once a second; it runs in the loop task, so the stack figure of this task is its own.
+// System health, the rows of the "Link and system health" section of signals.def.h. systemHealthTask() refreshes it
+// once a second on core 0, so the control tick does no stack scans. Each field is one aligned uint32_t that only that
+// task writes and the control loop reads unlocked; acceptable on this target.
 struct SystemHealth {
   uint32_t uptimeS;
   uint32_t heapFreeB;
@@ -273,16 +274,20 @@ struct SystemHealth {
   uint32_t stackFreeLinkB;
 } systemHealth{};
 
-void updateSystemHealth() {
-  static uint32_t nextUpdateMs = 0;  // the first call updates
-  const uint32_t nowMs = millis();
-  if (static_cast<int32_t>(nowMs - nextUpdateMs) < 0) return;
-  nextUpdateMs = nowMs + 1000;
-  systemHealth.uptimeS = nowMs / 1000;
-  systemHealth.heapFreeB = esp_get_free_heap_size();
-  systemHealth.heapMinFreeB = esp_get_minimum_free_heap_size();
-  systemHealth.stackFreeLoopB = uxTaskGetStackHighWaterMark(nullptr);
-  systemHealth.stackFreeLinkB = LinkMinStackFreeBytes();
+TaskHandle_t loopTaskHandle = nullptr;  // the loop task, whose stack the health task measures; set in setup()
+constexpr uint32_t kSystemHealthStackBytes = 3072;
+constexpr UBaseType_t kSystemHealthPriority = 1;
+
+void systemHealthTask(void*) {
+  for (;;) {
+    const uint32_t nowMs = millis();
+    systemHealth.uptimeS = nowMs / 1000;
+    systemHealth.heapFreeB = esp_get_free_heap_size();
+    systemHealth.heapMinFreeB = esp_get_minimum_free_heap_size();
+    systemHealth.stackFreeLoopB = uxTaskGetStackHighWaterMark(loopTaskHandle);
+    systemHealth.stackFreeLinkB = LinkMinStackFreeBytes();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
 }
 
 float calibrationSelect = 0;  // The calibrate action: 0 ends a step, 1 gyroscope, 2 Euler angle, 3 servo
@@ -729,6 +734,8 @@ void setup() {
   // Before the first Logging::message: a message queued for UART1 waits for this writer.
   LinkUartInit(kSignals, kSignalCount, kBuildId);
   LinkSetCommandHandler(handleLinkCommand);  // only stores the handler once LinkUartInit has run
+  loopTaskHandle = xTaskGetCurrentTaskHandle();
+  xTaskCreatePinnedToCore(systemHealthTask, "health", kSystemHealthStackBytes, nullptr, kSystemHealthPriority, nullptr, 0);
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
   servoTrims = loadedCalibration.servos;
   const imu::CalibrationValues imuCalibration{loadedCalibration.gyro, loadedCalibration.attitude};
@@ -966,7 +973,6 @@ void diagnosticLoop(void) {
   const uint32_t passStartUs = micros();
 
   linkPassStart(passStartUs);
-  updateSystemHealth();
   readSbus();
   rcValid = rcSourceValid(passStartUs);  // telemetry, as balanceRequest() sets it in the control tick
 
@@ -1120,7 +1126,6 @@ void runControlTick(bool imuUpdated) {
   controlGateSequence++;
 
   linkPassStart(controlStartUs);  // before anything is read
-  updateSystemHealth();
   readBatteryVoltage();  // Battery
 
   updateStatusLed();
