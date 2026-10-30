@@ -13,12 +13,12 @@ from analyze_drive_trace import analyze  # noqa: E402
 from navbot_link.capture import load_presets  # noqa: E402
 
 DRIVE_SIGNALS = list(load_presets(ROOT / "scripts" / "navlink_presets.yaml")["drive"].signals)
-OTHER_HEADER = "t_us,ch5_mode,ch3_target,motor1_target,motor2_target"
+OTHER_HEADER = "t_us,ch5_position,ch3_target,motor1_target,motor2_target"
 
 
 def drive_row(time_ms, command, speed, *, roll=0, ch5=1, **fields):
     values = {name: 0 for name in DRIVE_SIGNALS}
-    values.update(ch5_mode=ch5, voltage_min_raw_v=7.9, voltage_filtered_v=7.9,
+    values.update(ch5_position=ch5, voltage_min_raw_v=7.9, voltage_filtered_v=7.9,
                   imu_sequence=time_ms, imu_read_time_us=time_ms * 1000, imu_dt_s=0.007,
                   imu_accepted_samples=time_ms, imu_max_interval_us=1200, control_execution_us=500,
                   loop_interval_max_us=1000, ch3_target=command, motor1_velocity_f=speed,

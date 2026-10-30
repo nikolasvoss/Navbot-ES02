@@ -1,5 +1,6 @@
 import importlib.util
 import io
+import json
 import subprocess
 import sys
 import time
@@ -13,6 +14,7 @@ navlink = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(navlink)
 
 from fake_firmware import FakeFirmware, MemoryTransport, PtyFirmware  # noqa: E402
+from navbot_link import navbot_link_pb2 as pb  # noqa: E402
 from navbot_link.link import Link  # noqa: E402
 
 SPEED_LOOP_SIGNALS = "speed_target,speed_measured,speed_p,speed_i,tilt_ref,tilt_clipped"
@@ -72,7 +74,7 @@ def test_capture_fails_on_a_signal_the_firmware_lacks(tmp_path, capsys):
     csv = tmp_path / "drive.csv"
     rc, _ = run(["capture", "--port", "/dev/ttyAMA3", "--presets", str(presets), "--preset", "drive",
                  "--seconds", "1", "-o", str(csv)], FakeFirmware())
-    assert rc == 1
+    assert rc == 2
     assert capsys.readouterr().err == "navlink: error: unknown signal k58_drive_mode\n"
     assert not csv.exists()
 
@@ -131,8 +133,8 @@ def test_shell_session(tmp_path):
     rc, out = run(["shell", "--port", "/dev/ttyAMA3"], fw, stdin=stdin, opened=opened)
     assert rc == 0
     assert out == """\
-speed_kp                 param      f32  rad/(m/s)
-speed_ki                 param      f32  rad/(m/s*s)
+speed_kp                 param      f32  rad/(m/s) live ±0.05
+speed_ki                 param      f32  rad/(m/s*s) live ±0.02
 motor_current            action          left_a [-2, 2], right_a [-2, 2], lease_ms [1, 1000]
 speed_kp = 0.08
 speed_i_on = 1
@@ -196,3 +198,119 @@ t_us,speed_target,loop_count
 1070000,0.5,107
 1090000,0.5,109
 """
+
+
+def test_info_is_text_and_json():
+    rc, out = run(["info"], FakeFirmware())
+    assert (rc, out) == (0, "build fake-build-1\nentries 14\nport tcp:127.0.0.1:7650\n")
+    rc, out = run(["info", "--json"], FakeFirmware())
+    assert (rc, out) == (0, '{"build": "fake-build-1", "entries": 14, "port": "tcp:127.0.0.1:7650"}\n')
+
+
+def test_list_text_and_json():
+    rc, out = run(["list", "speed_k*"], FakeFirmware())
+    assert (rc, out) == (0, "speed_kp                 param      f32  rad/(m/s) live ±0.05\n"
+                            "speed_ki                 param      f32  rad/(m/s*s) live ±0.02\n")
+    rc, out = run(["list", "speed_k*", "--json"], FakeFirmware())
+    assert json.loads(out) == [
+        {"name": "speed_kp", "kind": "PARAM", "type": "F32", "unit": "rad/(m/s)", "live_step": 0.05},
+        {"name": "speed_ki", "kind": "PARAM", "type": "F32", "unit": "rad/(m/s*s)", "live_step": 0.02},
+    ]
+    rc, out = run(["list", "motor_current", "--json"], FakeFirmware())
+    assert (rc, out) == (0, '[{"name": "motor_current", "kind": "ACTION", "unit": "", "args": ['
+                            '{"name": "left_a", "min": -2.0, "max": 2.0}, '
+                            '{"name": "right_a", "min": -2.0, "max": 2.0}, '
+                            '{"name": "lease_ms", "min": 1.0, "max": 1000.0}]}]\n')
+
+
+def test_get_set_and_call_in_json():
+    fw = FakeFirmware()
+    rc, out = run(["get", "speed_kp", "speed_i_on", "--json"], fw)
+    assert (rc, out) == (0, '{"speed_kp": 0.08, "speed_i_on": true}\n')
+    rc, out = run(["set", "speed_kp", "0.12", "--json"], fw)
+    assert (rc, out) == (0, '{"name": "speed_kp", "old": 0.08, "new": 0.12}\n')
+    rc, out = run(["call", "motor_current", "left_a=0.5", "right_a=0", "lease_ms=200", "--yes", "--json"], fw)
+    assert (rc, out) == (0, '{"name": "motor_current", "args": {"left_a": 0.5, "right_a": 0.0, '
+                            '"lease_ms": 200.0}, "accepted": true}\n')
+    assert fw.calls == [("motor_current", [0.5, 0.0, 200.0])]
+
+
+def test_call_without_yes_is_a_usage_error_and_sends_nothing(capsys):
+    fw = FakeFirmware()
+    rc, out = run(["call", "motor_reset"], fw)
+    assert (rc, out) == (2, "")
+    assert capsys.readouterr().err == "navlink: error: call needs --yes\n"
+    assert fw.calls == []
+
+
+def test_exit_codes_for_usage_refusal_and_no_connection(capsys):
+    fw = FakeFirmware()
+    fw.entries[9].limits = (0.0, 1.0)
+    assert run(["get", "nope"], fw) == (2, "")
+    assert capsys.readouterr().err == "navlink: error: unknown signal nope\n"
+    assert run(["set", "speed_kp", "2"], fw) == (1, "")
+    assert capsys.readouterr().err == "navlink: error: set_param refused: speed_kp must be within [0, 1]\n"
+
+    class Silent:
+        def read(self):
+            time.sleep(0.01)
+            return b""
+
+        def write(self, data):
+            pass
+
+        def close(self):
+            pass
+
+    code = navlink.main(["info"], open_link=lambda port, baud: Link(Silent(), timeout_s=0.05, retries=1),
+                        stdout=io.StringIO())
+    assert code == 3
+    assert capsys.readouterr().err == "navlink: error: no reply to get_catalog\n"
+
+
+class LateTransport:
+    """Drops what the PC writes until `answer_at`, like a robot that boots late."""
+
+    def __init__(self, firmware, answer_at):
+        self.inner = MemoryTransport(firmware)
+        self.answer_at = answer_at
+
+    def read(self):
+        return self.inner.read()
+
+    def write(self, data):
+        if time.monotonic() >= self.answer_at:
+            self.inner.write(data)
+
+    def close(self):
+        self.inner.close()
+
+
+def test_wait_retries_until_the_robot_answers():
+    fw = FakeFirmware()
+    answer_at = time.monotonic() + 0.3
+    out = io.StringIO()
+    code = navlink.main(["info", "--wait", "3"],
+                        open_link=lambda port, baud: Link(LateTransport(fw, answer_at), timeout_s=0.1, retries=1),
+                        stdout=out)
+    assert (code, out.getvalue()) == (0, "build fake-build-1\nentries 14\nport tcp:127.0.0.1:7650\n")
+
+
+def test_log_prints_events_at_or_above_the_minimum_level():
+    fw = FakeFirmware()
+    fw.log("speed_kp: 0.08 -> 0.12", "param", pb.Log.INFO)
+    fw.log("noisy", "imu", pb.Log.DEBUG)
+    rc, out = run(["log", "--seconds", "0.3", "--min-level", "INFO"], fw)
+    assert (rc, out) == (0, "log t_ms=1000 INFO [param] speed_kp: 0.08 -> 0.12\n")
+    fw.log("again", "param", pb.Log.WARN)
+    rc, out = run(["log", "--seconds", "0.3", "--min-level", "WARN", "--json"], fw)
+    assert (rc, out) == (0, '{"t_ms": 1000, "level": "WARN", "tag": "param", "text": "again"}\n')
+
+
+def test_set_follows_the_live_step_rule_while_balancing(capsys):
+    fw = FakeFirmware(balancing=True)
+    assert run(["set", "speed_kp", "0.12"], fw) == (0, "speed_kp: 0.08 -> 0.12\n")
+    assert run(["set", "speed_kp", "0.2"], fw) == (1, "")  # from 0.12: a step of 0.08
+    assert capsys.readouterr().err == "navlink: error: set_param refused: speed_kp: step 0.08 over 0.05 while balancing\n"
+    assert run(["set", "speed_i_on", "0"], fw) == (1, "")
+    assert capsys.readouterr().err == "navlink: error: set_param refused: speed_i_on: refused while balancing\n"

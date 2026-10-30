@@ -29,6 +29,7 @@ class FakeEntry:
     value: object = 0  # a number, or a function of t_us for a signal
     args: tuple = ()  # (name, min, max) for an action
     limits: tuple | None = None  # (min, max) a PARAM accepts; SetParam outside it is refused
+    live_step: float = 0.0  # PARAM only: largest change while balancing; 0 = refused, inf = any change
 
 
 def speed_loop_table() -> list[FakeEntry]:
@@ -44,8 +45,8 @@ def speed_loop_table() -> list[FakeEntry]:
         FakeEntry("loop_count", E.SIGNAL, E.U32, "", tick),
         FakeEntry("battery_min", E.SIGNAL_MIN, E.F32, "V", lambda t: 7.5),
         FakeEntry("wheel_offset", E.SIGNAL, E.I32, "", lambda t: -3),
-        FakeEntry("speed_kp", E.PARAM, E.F32, "rad/(m/s)", 0.08),
-        FakeEntry("speed_ki", E.PARAM, E.F32, "rad/(m/s*s)", 0.5),
+        FakeEntry("speed_kp", E.PARAM, E.F32, "rad/(m/s)", 0.08, live_step=0.05),
+        FakeEntry("speed_ki", E.PARAM, E.F32, "rad/(m/s*s)", 0.5, live_step=0.02),
         FakeEntry("speed_i_on", E.PARAM, E.BOOL, "", 1),
         FakeEntry("motor_reset", E.ACTION),
         FakeEntry("motor_current", E.ACTION, args=(("left_a", -2.0, 2.0), ("right_a", -2.0, 2.0),
@@ -53,7 +54,7 @@ def speed_loop_table() -> list[FakeEntry]:
     ]
 
 
-MAX_SLOTS = 4
+MAX_SLOTS = 8
 MAX_PERIOD_US = 60_000_000  # the protocol page's limit; the firmware and the PC library refuse longer periods too
 
 
@@ -85,10 +86,13 @@ class FakeFirmware:
     t_us: int = 1_000_000
     stop_us: int | None = None  # the clock does not pass this time
     batch_rows: int = 1  # rows per SignalBatch
+    balancing: bool = False  # SetParam follows the live-step rule
+    link_position: bool = False  # CH5 in the link position: Command is accepted
 
     def __post_init__(self):
         self.received = []  # every decoded PC payload, in order
         self.calls = []  # (name, args) of started actions
+        self.commands = []  # (speed_mps, turn_rad_s) of accepted Commands
         self._ports = [_Port(self.usb)]
         self._subs: dict[int, _Sub] = {}
         self._scheduled = []  # (t_us, action) run at the first tick at or after t_us
@@ -202,13 +206,25 @@ class FakeFirmware:
             entry = self.entries[req.id]
             if entry.kind != E.PARAM:
                 return ack(error=f"{entry.name} is not a parameter")
+            if self.balancing and entry.live_step == 0:
+                return ack(error=f"{entry.name}: refused while balancing")
             old = self._read(req.id)
             (new,) = struct.unpack(_FMT[entry.type], req.value)
+            if self.balancing:
+                (before,) = struct.unpack(_FMT[entry.type], old)
+                if abs(new - before) > entry.live_step:
+                    return ack(error=f"{entry.name}: step {abs(new - before):g} over {entry.live_step:g} "
+                                     "while balancing")
             if entry.limits and not entry.limits[0] <= new <= entry.limits[1]:
                 return ack(error=f"{entry.name} must be within [{entry.limits[0]:g}, {entry.limits[1]:g}]")
             entry.value = new
             ack(value=self._read(req.id))
             self._log(f"{entry.name}: {_show(entry, old)} -> {_show(entry, req.value)}", "param")
+        elif body == "command":
+            if not self.link_position:
+                return ack(error="CH5 not in link position (1)")
+            self.commands.append((req.speed_mps, req.turn_rad_s))
+            ack()
         elif body == "call":
             entry = self.entries[req.id]
             self.calls.append((entry.name, [round(a, 6) for a in req.args]))
@@ -219,7 +235,7 @@ class FakeFirmware:
     def _catalog_entry(self, index: int):
         e = self.entries[index]
         msg = E(index=index, count=len(self.entries), name=e.name, unit=e.unit, kind=e.kind, type=e.type,
-                args=[E.Arg(name=n, min=lo, max=hi) for n, lo, hi in e.args])
+                args=[E.Arg(name=n, min=lo, max=hi) for n, lo, hi in e.args], live_step=e.live_step)
         if index == 0:
             msg.build = self.build
         return msg

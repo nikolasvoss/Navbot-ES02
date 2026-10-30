@@ -4,6 +4,7 @@ actions and an ordered event stream."""
 import queue
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -17,6 +18,7 @@ from navbot_link.protocol import (
     LinkError,
     NoReply,
     SeqTracker,
+    UsageError,
     entry_from_pb,
     pack_value,
     unpack_rows,
@@ -32,6 +34,8 @@ ROW_FRAME_OVERHEAD = 26
 MAX_PERIOD_US = 60_000_000
 LEASE_S = 5.0
 LEASE_RENEW_S = 2.0
+# Command seqs remembered for a refusal; an Ack for an older one is dropped.
+MAX_COMMANDS_TRACKED = 64
 # Pending bytes count as text once the line has been idle this long. The robot
 # writes whole frames, so this only has to exceed a gap inside one frame
 # (scheduling, a USB packet boundary), not the time between frames.
@@ -79,6 +83,12 @@ class FramesLost:
 @dataclass(frozen=True)
 class Restarted:
     """The robot's seq started over: catalog and subscriptions are gone."""
+
+
+@dataclass(frozen=True)
+class CommandRefused:
+    """The robot refused a Command sent with Link.command, such as CH5 not in the link position."""
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -136,8 +146,8 @@ class _Waiter:
 
 class Link:
     """Owns the port: one I/O thread decodes frames, answers waiters, renews leases
-    and puts Row, LogEvent, Text, FramesLost, Restarted, SubscriptionEnded and
-    Disconnected on
+    and puts Row, LogEvent, Text, FramesLost, Restarted, SubscriptionEnded,
+    CommandRefused and Disconnected on
     `events` in stream order, and Telemetry when `telemetry` is set."""
 
     def __init__(self, port, baud: int = 2_000_000, *, timeout_s: float = 0.5,
@@ -158,6 +168,7 @@ class Link:
         self._started = clock()
         self._waiters: dict[tuple, _Waiter] = {}
         self._renewals: dict[int, int] = {}  # renewal request seq -> slot
+        self._commands: deque[int] = deque(maxlen=MAX_COMMANDS_TRACKED)  # seqs of Commands not yet acknowledged
         self._subs: dict[int, Subscription] = {}
         self._releasing: dict[int, float] = {}  # slot -> monotonic time its lease has surely run out
         self._catalog: Catalog | None = None
@@ -221,6 +232,14 @@ class Link:
         ack = self._request(pb.Message(
             set_param=pb.SetParam(id=entry.index, value=pack_value(entry.type, value))))
         return unpack_value(entry.type, ack.value)
+
+    def command(self, speed_mps: float, turn_rad_s: float) -> None:
+        """Sends a Command and returns at once: no retry, no wait. A refusal comes back as CommandRefused on `events`."""
+        msg = pb.Message(command=pb.Command(speed_mps=speed_mps, turn_rad_s=turn_rad_s))
+        with self._lock:
+            if self._dead is not None:
+                raise LinkError(self._dead)
+            self._commands.append(self._send_locked(msg))
 
     def call(self, name: str, **args) -> None:
         entry = self.catalog().action(name)
@@ -394,6 +413,11 @@ class Link:
         with self._lock:
             slot = self._renewals.pop(ack.command_id, None)
             ended = slot is not None and not ack.accepted and self._subs.pop(slot, None) is not None
+            command = ack.command_id in self._commands
+            if command:
+                self._commands.remove(ack.command_id)
+        if command and not ack.accepted:
+            self.events.put(CommandRefused(ack.error))
         if slot is None:
             self._resolve(("ack", ack.command_id), msg)
         elif ended:
@@ -407,6 +431,7 @@ class Link:
             self._subs.clear()
             self._releasing.clear()
             self._renewals.clear()
+            self._commands.clear()
             self._catalog = None
             waiters, self._waiters = set(self._waiters.values()), {}
         for waiter in waiters:
@@ -428,14 +453,14 @@ def check_args(entry: Entry, args: dict) -> list[float]:
     unknown = sorted(set(args) - set(names))
     missing = [n for n in names if n not in args]
     if unknown or missing:
-        raise LinkError(f"{entry.name} takes {', '.join(names) or 'no arguments'}"
+        raise UsageError(f"{entry.name} takes {', '.join(names) or 'no arguments'}"
                         f"{'; unknown: ' + ', '.join(unknown) if unknown else ''}"
                         f"{'; missing: ' + ', '.join(missing) if missing else ''}")
     values = []
     for arg in entry.args:
         value = float(args[arg.name])
         if not arg.min <= value <= arg.max:
-            raise LinkError(f"{arg.name}={value:g} is outside [{arg.min:g}, {arg.max:g}]")
+            raise UsageError(f"{arg.name}={value:g} is outside [{arg.min:g}, {arg.max:g}]")
         values.append(value)
     return values
 

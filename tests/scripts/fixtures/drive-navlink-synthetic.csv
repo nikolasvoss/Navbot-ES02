@@ -2,7 +2,7 @@
 # build: synthetic-1
 # rate: every tick
 # param speed_kp=0.08
-t_us,ch5_mode,voltage_min_raw_v,ch3_target,motor1_velocity_f,motor2_velocity_f,roll_deg,motor1_target,motor2_target,imu_sequence,imu_read_time_us,imu_dt_s,imu_accepted_samples,imu_long_gap_count,imu_max_interval_us,control_execution_us,loop_interval_max_us,motor1_current_sp,motor2_current_sp,motor1_voltage_q,motor2_voltage_q,battery_raw_instant_v
+t_us,ch5_position,voltage_min_raw_v,ch3_target,motor1_velocity_f,motor2_velocity_f,roll_deg,motor1_target,motor2_target,imu_sequence,imu_read_time_us,imu_dt_s,imu_accepted_samples,imu_long_gap_count,imu_max_interval_us,control_execution_us,loop_interval_max_us,motor1_current_sp,motor2_current_sp,motor1_voltage_q,motor2_voltage_q,battery_raw_instant_v
 5020000,1,7.9,0,0,0,0.2,0,0,0,13,0.001,0,0,1200,300,1000,0,0,0,0,7.9
 5042400,1,7.89,0,0,0,0.2,0.1,-0.1,7,7013,0.001,7,0,1200,301,1010,0.01,-0.01,0.02,-0.02,7.88
 5060700,1,7.88,0,0,0,0.2,0.2,-0.2,14,14013,0.001,14,0,1200,302,1020,0.02,-0.02,0.04,-0.04,7.86

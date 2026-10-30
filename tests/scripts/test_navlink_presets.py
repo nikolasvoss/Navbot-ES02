@@ -20,6 +20,7 @@ def load(name):
 signals_catalog = load("signals_catalog")
 
 from navbot_link.capture import load_presets  # noqa: E402
+from navbot_link.health import HEALTH_SIGNALS  # noqa: E402
 from navbot_link.protocol import Catalog, Entry, Kind, Type, UnknownName  # noqa: E402
 
 PRESETS = load_presets(ROOT / "scripts" / "navlink_presets.yaml")
@@ -41,6 +42,11 @@ def test_every_preset_resolves_against_the_firmware_catalog(name):
         catalog.signal(signal)
     assert len(signals) == len(set(signals)), "a repeated name would give two CSV columns the same header"
     assert len(signals) <= MAX_ENTRIES
+
+
+def test_the_health_preset_is_the_health_signal_list_at_1_hz():
+    assert PRESETS["health"].signals == HEALTH_SIGNALS
+    assert PRESETS["health"].rate_hz == 1
 
 
 def test_a_signal_renamed_in_the_firmware_breaks_the_presets_that_use_it():

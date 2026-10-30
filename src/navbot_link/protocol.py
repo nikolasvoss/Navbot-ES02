@@ -39,6 +39,10 @@ class NoReply(LinkError):
     """The robot did not answer; it may or may not have acted on the request."""
 
 
+class UsageError(LinkError, ValueError):
+    """The request is wrong before it reaches the robot: a bad argument or a value that does not parse."""
+
+
 @dataclass(frozen=True)
 class Arg:
     name: str
@@ -54,6 +58,7 @@ class Entry:
     kind: Kind
     type: Type | None  # None for an action
     args: tuple[Arg, ...] = ()
+    live_step: float = 0.0  # PARAM only: largest change one SetParam may make while balance is requested
 
 
 @dataclass(frozen=True)
@@ -93,6 +98,7 @@ def entry_from_pb(msg) -> Entry:
         kind=kind,
         type=None if kind == Kind.ACTION else Type(msg.type),
         args=tuple(Arg(a.name, a.min, a.max) for a in msg.args),
+        live_step=msg.live_step,
     )
 
 

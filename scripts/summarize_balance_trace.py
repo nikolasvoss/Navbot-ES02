@@ -203,8 +203,8 @@ def summarize(path):
                      + (f"{rate:.1f} Hz" if rate is not None else "—")
                      + "**; Zeilen überspringen IMU-Samples, daher keine Lückenzählung")
 
-    if "ch5_mode" in header:
-        modes = [int(row["ch5_mode"]) for row in data]
+    if "ch5_position" in header:
+        modes = [int(row["ch5_position"]) for row in data]
         counts = Counter(modes)
         transitions = [(times[index], modes[index], modes[index + 1])
                        for index in range(len(modes) - 1)

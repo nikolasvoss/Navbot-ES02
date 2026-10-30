@@ -7,9 +7,12 @@ Talks the NavBot link protocol; docs: docs/integration/software/navlink.md
 import argparse
 import cmd
 import fnmatch
+import json
+import math
 import queue
 import sys
 import threading
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +22,7 @@ from navbot_link.capture import CsvWriter, describe, load_presets, rate_text  # 
 from navbot_link.framing import Text  # noqa: E402
 from navbot_link.link import (  # noqa: E402
     ROW_FRAME_OVERHEAD,
+    CommandRefused,
     Disconnected,
     FramesLost,
     Link,
@@ -28,12 +32,26 @@ from navbot_link.link import (  # noqa: E402
     SubscriptionEnded,
     check_args,
 )
-from navbot_link.protocol import LinkError, format_value, parse_value  # noqa: E402
+from navbot_link.protocol import (  # noqa: E402
+    Kind,
+    LinkError,
+    NoReply,
+    Type,
+    UnknownName,
+    UsageError,
+    format_value,
+    parse_value,
+)
 
 DEFAULT_PRESETS = ROOT / "scripts" / "navlink_presets.yaml"
+DEFAULT_PORT = "tcp:127.0.0.1:7650"  # the link multiplexer
 USB_BAUD = 576_000
 UART_BAUD = 2_000_000
 STALL_S = 2.0
+WAIT_STEP_S = 0.25
+# Exit codes of the one-shot commands.
+EXIT_DONE, EXIT_REFUSED, EXIT_USAGE, EXIT_NO_CONNECTION = 0, 1, 2, 3
+LEVEL_RANK = {"DEBUG": 1, "INFO": 2, "WARN": 3, "ERROR": 4, "FATAL": 5}
 
 
 def default_baud(port: str) -> int:
@@ -50,7 +68,7 @@ def resolve_signals(spec: list[str], presets_path: Path) -> tuple[list[str], flo
         presets = load_presets(presets_path)
         preset = presets.get(item[1:])
         if preset is None:
-            raise LinkError(f"unknown preset {item[1:]} (have: {', '.join(sorted(presets))})")
+            raise UsageError(f"unknown preset {item[1:]} (have: {', '.join(sorted(presets))})")
         names += preset.signals
         rate = preset.rate_hz
     return names, rate
@@ -78,7 +96,7 @@ def capture(link: Link, args, out) -> int:
                 try:
                     event = link.events.get(timeout=max(STALL_S, 3 * period_s))
                 except queue.Empty:
-                    raise LinkError(f"no data for {max(STALL_S, 3 * period_s):g} s") from None
+                    raise NoReply(f"no data for {max(STALL_S, 3 * period_s):g} s") from None
                 if isinstance(event, Row) and event.slot == sub.slot:
                     t0 = event.t_us if t0 is None else t0
                     # Robot time, not PC time: the file holds exactly --seconds of data.
@@ -143,12 +161,8 @@ class Shell(cmd.Cmd):
 
     def do_list(self, arg):
         """list [pattern]: entries whose name matches the glob pattern."""
-        for e in self.link.catalog().entries:
-            if fnmatch.fnmatch(e.name, arg.strip() or "*"):
-                detail = ", ".join(f"{a.name} [{a.min:g}, {a.max:g}]" for a in e.args)
-                kind = e.kind.name.lower()
-                type_ = e.type.name.lower() if e.type is not None else ""
-                self.say(f"{e.name:<24} {kind:<10} {type_:<4} {e.unit or detail}".rstrip())
+        for e in matching(self.link.catalog(), arg.strip() or "*"):
+            self.say(entry_line(e))
 
     def do_get(self, arg):
         """get <name>...: current values."""
@@ -160,19 +174,16 @@ class Shell(cmd.Cmd):
     def do_set(self, arg):
         """set <param> <value>"""
         name, text = _two_words(arg, "set <param> <value>")
-        entry = self.link.catalog().param(name)
-        old = self.link.get(name)
-        new = self.link.set(name, parse_value(entry.type, text))
+        entry, old, new = set_param(self.link, name, text)
         self.say(f"{name}: {format_value(entry.type, old)} -> {format_value(entry.type, new)}")
 
     def do_call(self, arg):
         """call <action> [arg=value]...: asks y/N before it sends."""
         words = arg.split()
         if not words:
-            raise ValueError("call <action> [arg=value]...")
+            raise UsageError("call <action> [arg=value]...")
         entry = self.link.catalog().action(words[0])
-        kwargs = dict(w.split("=", 1) for w in words[1:])
-        values = check_args(entry, kwargs)
+        values = action_values(entry, words[1:])
         shown = ", ".join(f"{a.name}={v:g} [{a.min:g}, {a.max:g}]" for a, v in zip(entry.args, values))
         with self._out_lock:
             self.stdout.write(f"{entry.name}({shown})? [y/N] ")
@@ -180,7 +191,7 @@ class Shell(cmd.Cmd):
         if self.stdin.readline().strip().lower() != "y":
             self.say("not sent")
             return
-        self.link.call(entry.name, **{a.name: v for a, v in zip(entry.args, values)})
+        self.link.call(entry.name, **dict(zip((a.name for a in entry.args), values)))
         self.say(f"{entry.name}: started")
 
     def do_sub(self, arg):
@@ -282,6 +293,8 @@ class Shell(cmd.Cmd):
                         writer.event(event)
                 self._close_writer(event.slot)
                 self.say(describe(event))
+            elif isinstance(event, CommandRefused):
+                self.say(f"command refused: {event.reason}")
             elif isinstance(event, Restarted):
                 self._report_restart()
             elif isinstance(event, Disconnected):
@@ -302,6 +315,157 @@ class Shell(cmd.Cmd):
                  + (f"; removed {', '.join(removed)}" if removed else ""))
 
 
+def matching(catalog, pattern: str) -> list:
+    return [e for e in catalog.entries if fnmatch.fnmatch(e.name, pattern)]
+
+
+def entry_line(e) -> str:
+    detail = ", ".join(f"{a.name} [{a.min:g}, {a.max:g}]" for a in e.args)
+    kind = e.kind.name.lower()
+    type_ = e.type.name.lower() if e.type is not None else ""
+    live = ""
+    if e.kind == Kind.PARAM and e.live_step > 0:
+        live = " live" if math.isinf(e.live_step) else f" live ±{e.live_step:g}"
+    return f"{e.name:<24} {kind:<10} {type_:<4} {e.unit or detail}{live}".rstrip()
+
+
+def json_number(value: float):
+    """JSON has no infinity: it goes out as the string the text output uses."""
+    return value if math.isfinite(value) else str(value)
+
+
+def json_value(type_: Type, value):
+    if type_ == Type.BOOL:
+        return bool(value)
+    if type_ == Type.F32:
+        return json_number(float(format_value(type_, value)))
+    return value
+
+
+def entry_record(e) -> dict:
+    record = {"name": e.name, "kind": e.kind.name}
+    if e.type is not None:
+        record["type"] = e.type.name
+    record["unit"] = e.unit
+    if e.kind == Kind.PARAM:
+        record["live_step"] = json_value(Type.F32, e.live_step)
+    if e.kind == Kind.ACTION:
+        record["args"] = [{"name": a.name, "min": json_number(a.min), "max": json_number(a.max)} for a in e.args]
+    return record
+
+
+def set_param(link: Link, name: str, text: str):
+    """The parameter's entry, the value before and the value now in effect."""
+    entry = link.catalog().param(name)
+    old = link.get(name)
+    new = link.set(name, parse_value(entry.type, text))
+    return entry, old, new
+
+
+def action_values(entry, words: list[str]) -> list[float]:
+    """Argument values in catalog order from `name=value` words."""
+    kwargs = {}
+    for word in words:
+        name, sep, text = word.partition("=")
+        if not sep:
+            raise UsageError(f"{word}: an argument is written name=value")
+        kwargs[name] = text
+    return check_args(entry, kwargs)
+
+
+def open_ready(open_link, port: str, baud: int, wait_s: float) -> Link:
+    """Opens the link and reads the catalog. With wait_s, retries until the robot answers or the time is up."""
+    deadline = time.monotonic() + wait_s
+    while True:
+        link = None
+        try:
+            link = open_link(port, baud)
+            link.catalog()
+            return link
+        except (LinkError, OSError):
+            if link is not None:
+                link.close()
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(WAIT_STEP_S)
+
+
+def cmd_info(link: Link, args, out) -> int:
+    catalog = link.catalog()
+    if args.json:
+        print(json.dumps({"build": catalog.build, "entries": len(catalog.entries), "port": args.port}), file=out)
+    else:
+        print(f"build {catalog.build}\nentries {len(catalog.entries)}\nport {args.port}", file=out)
+    return EXIT_DONE
+
+
+def cmd_list(link: Link, args, out) -> int:
+    entries = matching(link.catalog(), args.pattern)
+    if args.json:
+        print(json.dumps([entry_record(e) for e in entries]), file=out)
+    else:
+        for e in entries:
+            print(entry_line(e), file=out)
+    return EXIT_DONE
+
+
+def cmd_get(link: Link, args, out) -> int:
+    catalog = link.catalog()
+    values = {}
+    for name in args.names:
+        entry = catalog.signal(name)
+        values[name] = (entry, link.get(name))
+    if args.json:
+        print(json.dumps({name: json_value(e.type, v) for name, (e, v) in values.items()}), file=out)
+    else:
+        for name, (e, v) in values.items():
+            print(f"{name} = {format_value(e.type, v)}", file=out)
+    return EXIT_DONE
+
+
+def cmd_set(link: Link, args, out) -> int:
+    entry, old, new = set_param(link, args.name, args.value)
+    if args.json:
+        print(json.dumps({"name": args.name, "old": json_value(entry.type, old),
+                          "new": json_value(entry.type, new)}), file=out)
+    else:
+        print(f"{args.name}: {format_value(entry.type, old)} -> {format_value(entry.type, new)}", file=out)
+    return EXIT_DONE
+
+
+def cmd_call(link: Link, args, out) -> int:
+    entry = link.catalog().action(args.action)
+    named = dict(zip((a.name for a in entry.args), action_values(entry, args.args)))
+    link.call(entry.name, **named)
+    if args.json:
+        print(json.dumps({"name": entry.name, "args": named, "accepted": True}), file=out)
+    else:
+        print(f"{entry.name}: started", file=out)
+    return EXIT_DONE
+
+
+def cmd_log(link: Link, args, out) -> int:
+    floor = LEVEL_RANK[args.min_level]
+    deadline = time.monotonic() + args.seconds
+    while (remaining := deadline - time.monotonic()) > 0:
+        try:
+            event = link.events.get(timeout=remaining)
+        except queue.Empty:
+            break
+        if isinstance(event, Disconnected):
+            raise LinkError(f"port closed: {event.reason}")
+        if isinstance(event, LogEvent) and LEVEL_RANK.get(event.level, 5) >= floor:
+            if args.json:
+                print(json.dumps({"t_ms": event.t_ms, "level": event.level, "tag": event.tag,
+                                  "text": event.text}), file=out)
+            else:
+                print(describe(event), file=out)
+    return EXIT_DONE
+
+
+ONE_SHOT = {"info": cmd_info, "list": cmd_list, "get": cmd_get, "set": cmd_set, "call": cmd_call, "log": cmd_log}
+
+
 def _two_words(arg: str, usage: str) -> tuple[str, str]:
     words = arg.split()
     if len(words) != 2:
@@ -320,9 +484,14 @@ def _is_number(text: str) -> bool:
 def parse_args(argv):
     parser = argparse.ArgumentParser(prog="navlink", description=__doc__.splitlines()[0])
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--port", required=True, help="/dev/ttyAMA3 (stop the bridge first) or /dev/ttyUSB0")
+    common.add_argument("--port", default=DEFAULT_PORT,
+                        help=f"the link multiplexer (default {DEFAULT_PORT}), or a serial port such as /dev/ttyUSB0")
     common.add_argument("--baud", type=int, help=f"default {UART_BAUD}, or {USB_BAUD} for a USB port")
     common.add_argument("--presets", type=Path, default=DEFAULT_PRESETS, help="preset YAML file")
+    common.add_argument("--wait", type=float, default=0, metavar="SECONDS",
+                        help="retry opening the link and reading the catalog for this long (after a reboot or a flash)")
+    as_json = argparse.ArgumentParser(add_help=False)
+    as_json.add_argument("--json", action="store_true", help="JSON on stdout instead of text")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("shell", parents=[common], help="interactive shell")
     cap = sub.add_parser("capture", parents=[common], help="stream signals to a CSV file")
@@ -332,22 +501,54 @@ def parse_args(argv):
     cap.add_argument("--rate", type=float, help="Hz; 0 = every control tick (default: the preset's rate)")
     cap.add_argument("--seconds", type=float, required=True, help="robot time to capture")
     cap.add_argument("-o", "--output", required=True, help="CSV file")
+    sub.add_parser("info", parents=[common, as_json], help="build ID, entry count and port")
+    lst = sub.add_parser("list", parents=[common, as_json], help="entries whose name matches a glob pattern")
+    lst.add_argument("pattern", nargs="?", default="*")
+    get = sub.add_parser("get", parents=[common, as_json], help="current values of signals and parameters")
+    get.add_argument("names", nargs="+")
+    set_cmd = sub.add_parser("set", parents=[common, as_json], help="set a parameter")
+    set_cmd.add_argument("name")
+    set_cmd.add_argument("value")
+    call = sub.add_parser("call", parents=[common, as_json], help="start an action")
+    call.add_argument("action")
+    call.add_argument("args", nargs="*", metavar="arg=value")
+    call.add_argument("--yes", action="store_true", help="required: starts the action on the robot")
+    log = sub.add_parser("log", parents=[common, as_json], help="print log events for a few seconds")
+    log.add_argument("--seconds", type=float, required=True, help="PC time to listen")
+    log.add_argument("--min-level", choices=["DEBUG", "INFO", "WARN", "ERROR"], default="DEBUG")
     return parser.parse_args(argv)
+
+
+def _fail(code: int, exc) -> int:
+    print(f"navlink: error: {exc}", file=sys.stderr)
+    return code
 
 
 def main(argv=None, *, open_link=None, stdin=None, stdout=None) -> int:
     args = parse_args(argv)
     stdin, stdout = stdin or sys.stdin, stdout or sys.stdout
     open_link = open_link or (lambda port, baud: Link(port, baud))
+    if args.command == "call" and not args.yes:
+        return _fail(EXIT_USAGE, "call needs --yes")
+    link = None
     try:
-        with open_link(args.port, args.baud or default_baud(args.port)) as link:
-            if args.command == "capture":
-                return capture(link, args, stdout)
+        link = open_ready(open_link, args.port, args.baud or default_baud(args.port), args.wait)
+        if args.command == "capture":
+            return capture(link, args, stdout)
+        if args.command == "shell":
             Shell(link, args.presets, stdin, stdout).cmdloop()
-            return 0
-    except (LinkError, ValueError, OSError) as exc:
-        print(f"navlink: error: {exc}", file=sys.stderr)
-        return 1
+            return EXIT_DONE
+        return ONE_SHOT[args.command](link, args, stdout)
+    except (UnknownName, UsageError, ValueError) as exc:
+        return _fail(EXIT_USAGE, exc)
+    except (NoReply, OSError) as exc:
+        return _fail(EXIT_NO_CONNECTION, exc)
+    except LinkError as exc:
+        dead = link is not None and link.dead_reason is not None
+        return _fail(EXIT_NO_CONNECTION if dead else EXIT_REFUSED, exc)
+    finally:
+        if link is not None:
+            link.close()
 
 
 if __name__ == "__main__":

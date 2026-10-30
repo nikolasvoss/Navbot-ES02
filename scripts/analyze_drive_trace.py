@@ -15,7 +15,7 @@ from summarize_balance_trace import imu_sample_rate, read_trace
 
 
 REQUIRED = {
-    "time_ms", "ch5_mode", "ch3_target", "motor1_velocity_f",
+    "time_ms", "ch5_position", "ch3_target", "motor1_velocity_f",
     "motor2_velocity_f", "roll_deg", "motor1_target", "motor2_target",
     "voltage_min_raw_v", "imu_sequence", "imu_dt_s", "imu_accepted_samples",
     "imu_long_gap_count", "imu_max_interval_us", "control_execution_us",
@@ -35,7 +35,7 @@ def rounded(value, places=3):
 
 
 def direction(row):
-    if row["ch5_mode"] < 1 or abs(row["ch3_target"]) < NEUTRAL_THRESHOLD:
+    if row["ch5_position"] < 1 or abs(row["ch3_target"]) < NEUTRAL_THRESHOLD:
         return 0
     return 1 if row["ch3_target"] > 0 else -1
 
@@ -48,7 +48,7 @@ def analyze(path):
     rows = [row for _, row in records]
     if not rows:
         raise ValueError(f"{path}: keine vollständigen DRIVE-Zeilen")
-    active = [row for row in rows if row["ch5_mode"] >= 1]
+    active = [row for row in rows if row["ch5_position"] >= 1]
     intervals = [b["time_ms"] - a["time_ms"] for a, b in zip(rows, rows[1:]) if b["time_ms"] > a["time_ms"]]
     first_active = active[0] if active else None
 
@@ -61,12 +61,12 @@ def analyze(path):
         current = direction(row)
         if current:
             command_run = command_run + [row] if current == previous_direction else [row]
-        elif previous_direction and len(command_run) >= 2 and row["ch5_mode"] >= 1:
+        elif previous_direction and len(command_run) >= 2 and row["ch5_position"] >= 1:
             window = []
             start_ms = row["time_ms"]
             for candidate in rows[index:]:
                 if (candidate["time_ms"] - start_ms > STOP_WINDOW_MS
-                        or direction(candidate) or candidate["ch5_mode"] < 1):
+                        or direction(candidate) or candidate["ch5_position"] < 1):
                     break
                 window.append(candidate)
             if window:

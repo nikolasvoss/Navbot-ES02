@@ -27,7 +27,7 @@ from navbot_link.link import Disconnected, Link, Row  # noqa: E402
 from navbot_link.protocol import LinkError  # noqa: E402
 
 BAUD_RATE = 576_000
-SIGNALS = ["ch5_mode", "ch3_target", "body_turn_command"]
+SIGNALS = ["ch5_position", "ch3_target", "body_turn_command"]
 
 
 def find_port():

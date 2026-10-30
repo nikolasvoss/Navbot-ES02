@@ -6,8 +6,8 @@ import pytest
 from fake_firmware import FakeFirmware, MemoryTransport
 from navbot_link import navbot_link_pb2 as pb
 from navbot_link.framing import FrameDecoder, Text, encode_frame
-from navbot_link.link import (Disconnected, FramesLost, Link, LogEvent, Restarted, Row, SubscriptionEnded,
-                              Telemetry)
+from navbot_link.link import (CommandRefused, Disconnected, FramesLost, Link, LogEvent, Restarted, Row,
+                              SubscriptionEnded, Telemetry)
 from navbot_link.protocol import Arg, Entry, Kind, LinkError, Type
 
 
@@ -58,7 +58,8 @@ def test_catalog_is_read_entry_by_entry_starting_with_the_literal_request_frame(
     assert transport.written[0] == bytes.fromhex("00 05 08 01 b2 01 03 3b c6 00")
     assert len(transport.written) == 14
     assert catalog.build == "fake-build-1"
-    assert catalog.entries[9] == Entry(9, "speed_kp", "rad/(m/s)", Kind.PARAM, Type.F32)
+    assert catalog.entries[9] == Entry(9, "speed_kp", "rad/(m/s)", Kind.PARAM, Type.F32,
+                                       live_step=pytest.approx(0.05))
     assert catalog.entries[13] == Entry(13, "motor_current", "", Kind.ACTION, None, (
         Arg("left_a", -2.0, 2.0), Arg("right_a", -2.0, 2.0), Arg("lease_ms", 1.0, 1000.0)))
 
@@ -238,21 +239,37 @@ def test_an_unconfirmed_unsubscribe_keeps_the_slot_until_its_lease_has_run_out()
         assert (link.slots, fw.subscribed_slots()) == ((), [])
 
 
+def test_command_is_sent_at_once_and_only_a_refusal_comes_back():
+    fw = FakeFirmware()
+    with open_link(fw) as link:
+        link.command(0.2, 0.5)
+        (refused,) = next_events(link, 1, CommandRefused)
+        assert refused.reason == "CH5 not in link position (1)"
+        fw.link_position = True
+        link.command(0.1, 0.0)
+        assert link.get("speed_kp") == pytest.approx(0.08)  # the Ack of the Command is ahead of this reply
+        queued = []
+        while not link.events.empty():
+            queued.append(link.events.get_nowait())
+        assert [e for e in queued if isinstance(e, CommandRefused)] == []
+    assert fw.commands == [pytest.approx((0.1, 0.0))]
+
+
 def test_a_refused_subscribe_ends_nothing_even_while_renewals_run():
     fw = FakeFirmware()
     other = fw.add_port()
     with Link(MemoryTransport(fw, other), clock=lambda: 0.0) as other_link:
-        for _ in range(4):
+        for _ in range(8):
             other_link.subscribe(["loop_count"], 10)
         with open_link(fw, renew_s=0.001) as link:
-            with pytest.raises(LinkError, match="^subscribe refused: all 4 slots are in use$"):
+            with pytest.raises(LinkError, match="^subscribe refused: all 8 slots are in use$"):
                 link.subscribe(["loop_count"], 10)
             time.sleep(0.1)
             events = []
             while not link.events.empty():
                 events.append(link.events.get_nowait())
         assert [e for e in events if isinstance(e, SubscriptionEnded)] == []
-        assert fw.subscribed_slots() == [1, 2, 3, 4]
+        assert fw.subscribed_slots() == [1, 2, 3, 4, 5, 6, 7, 8]
 
 
 def test_renewals_whose_ack_is_lost_are_forgotten():
