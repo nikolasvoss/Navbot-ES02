@@ -274,7 +274,7 @@ struct SystemHealth {
   uint32_t stackFreeLinkB;
 } systemHealth{};
 
-TaskHandle_t loopTaskHandle = nullptr;  // the loop task, whose stack the health task measures; set in setup()
+extern TaskHandle_t loopTaskHandle;  // defined and set by the Arduino core (main.cpp); the health task measures its stack
 constexpr uint32_t kSystemHealthStackBytes = 3072;
 constexpr UBaseType_t kSystemHealthPriority = 1;
 
@@ -734,7 +734,6 @@ void setup() {
   // Before the first Logging::message: a message queued for UART1 waits for this writer.
   LinkUartInit(kSignals, kSignalCount, kBuildId);
   LinkSetCommandHandler(handleLinkCommand);  // only stores the handler once LinkUartInit has run
-  loopTaskHandle = xTaskGetCurrentTaskHandle();
   xTaskCreatePinnedToCore(systemHealthTask, "health", kSystemHealthStackBytes, nullptr, kSystemHealthPriority, nullptr, 0);
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
   servoTrims = loadedCalibration.servos;
