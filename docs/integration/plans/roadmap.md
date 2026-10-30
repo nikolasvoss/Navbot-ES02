@@ -39,9 +39,9 @@ Context: the CH5 link position, `balance` and `reboot` from the link, the drive 
 - [x] Build ID: `scripts/build_remote.sh`, flash, `navlink info`: the build ID starts with `git rev-parse --short=8 HEAD`. Checked on 2026-10-30 with 9c3c5531 ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md)).
 - [x] Multiplexer sharing: a health capture, a 100 Hz capture and a third client's parameter write ran at the same time through the multiplexer, with no lost rows ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md)).
 - [ ] Multiplexer and bridge: reinstall both services and start them, then a 10 s `navlink capture` while the bridge publishes `/odom`: no `FramesLost`.
-- [ ] CH5: move through positions 0, 1 and 2 and read `ch5_position` each time (checks the raw thresholds 592 and 1402).
+- [x] CH5: move through positions 0, 1 and 2 and read `ch5_position` each time (checks the raw thresholds 592 and 1402). A quick move 0 to 2 starts nothing on the way through 1 ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md#ch5-and-reboot-with-the-transmitter-2026-10-30)).
 - [x] `navlink call reboot --yes` at CH5 position 0 is accepted, and `navlink call reboot` without `--yes` sends nothing. `navlink get --wait 60` reconnects with a new `uptime_s` ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md)).
-- [ ] `navlink call reboot --yes` is refused in positions 1 and 2.
+- [x] `navlink call reboot --yes` is refused in positions 1 and 2 ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md#ch5-and-reboot-with-the-transmitter-2026-10-30)).
 - [x] Health values: `navlink capture --preset health` shows plausible heap and stack values at boot, and zero link counters ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md)).
 - [ ] Bridge health topics: `/diagnostics` and `/battery_state` arrive at 1 Hz.
 - [ ] `navlink set log_level 3`: no INFO lines in `navlink log --seconds 10`. Set it back to 2.

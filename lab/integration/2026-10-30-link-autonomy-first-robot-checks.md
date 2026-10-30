@@ -27,3 +27,14 @@ Not yet checked: the CH5 thresholds 592 and 1402 and the reboot refusal in posit
 - `navlink` can capture while the ROS bridge runs, because both use the multiplexer. Two captures and a parameter write at the same time did not lose rows.
 - `reboot` is safe from the link only at CH5 position 0. The refusal in positions 1 and 2 must still be shown before the link drives the robot.
 - The CH5 thresholds, the reboot refusal in positions 1 and 2, and all motor checks stay open in the [integration roadmap](../../docs/integration/plans/roadmap.md#link-autonomy-on-the-robot) until they are run with the transmitter and the robot secured.
+
+## CH5 and reboot with the transmitter, 2026-10-30
+
+Same build 9c3c5531, RC transmitter on (`rc_valid` 1 throughout), robot held upright with the wheels free. A 120 s capture at 10 Hz of `ch5_position`, `rc_valid`, `balance_state`, `balance_fault`, `link_balance` and `overspeed_tripped` while CH5 was moved by hand (`work/ch5-check.csv`, not kept):
+
+- `ch5_position` read 0, 1 and 2 as separate stable values in each switch position, so the thresholds 592 and 1402 separate the three positions of this transmitter.
+- Moving 0 to 2 slowly showed position 1 for 0.1 to 0.2 s on the way; `link_balance` stayed 0 and the controller stayed `Disabled` until position 2. A quick move 0 to 2 showed no sample at 1. `link_balance` was 0 for the whole capture.
+- Every time CH5 reached position 2, the controller went `Disabled -> Arming -> Run` within 2 ms (the robot was upright, inside the 5 degree arming window). With the wheels free, about 50 to 70 ms later the wheel speed reached 75 to 78 rad/s, the overspeed guard (30 rad/s) disabled both drivers and the controller went back to `Disabled`. This happened five times. Each return to position 0 cleared `overspeed_tripped`.
+- `navlink call reboot --yes` was refused in position 1 and in position 2 with `CH5 must be 0 and balance off` (exit 1); `uptime_s` kept counting.
+
+Consequence: the CH5 positions and the reboot refusal behave as designed. Position 2 with free wheels and an upright robot spins the wheels up to the overspeed limit before the guard stops them; for bench checks that do not need balance, keep CH5 out of position 2. The motor checks with balance on the ground stay open.
