@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <cmath>
+
 #include "link_log.h"
 
 namespace {
@@ -26,6 +28,17 @@ void PutLe32(uint8_t* out, uint32_t value) {
 uint32_t GetLe32(const uint8_t* in) {
   return static_cast<uint32_t>(in[0]) | static_cast<uint32_t>(in[1]) << 8 | static_cast<uint32_t>(in[2]) << 16 |
          static_cast<uint32_t>(in[3]) << 24;
+}
+
+// A value of the catalog type as a double, for comparing a SetParam with the current value.
+double ValueAsDouble(SignalType type, uint32_t bits) {
+  if (type == SignalType::F32) {
+    float value;
+    memcpy(&value, &bits, sizeof(value));
+    return static_cast<double>(value);
+  }
+  if (type == SignalType::I32) return static_cast<double>(static_cast<int32_t>(bits));
+  return static_cast<double>(bits);
 }
 
 // A value as the log shows it: a float with 6 significant digits, an integer or a bool as a plain number.
@@ -95,6 +108,7 @@ void LinkEndpoint::SendCatalogEntry(uint8_t port, uint32_t index) {
     out.args[i].max = args.items[i].max;
   }
   out.args_count = args.count;
+  if (entry.kind == SignalKind::Param) out.live_step = entry.liveStep;  // a PARAM's step; 0 for every other entry
   if (index == 0) CopyText(out.build, build_);
   sink_.Send(port, reply);
 }
@@ -158,8 +172,8 @@ void LinkEndpoint::Handle(uint8_t port, const uint8_t* payload, size_t len, uint
         SendAck(port, seq, error, nullptr, 0);
         break;
       }
-      // Every parameter feeds the balance controller or a sensor filter, so none changes while it runs.
-      if (balanceRequested) {
+      // A parameter with no live step feeds the balance controller or a sensor filter: it does not change while it runs.
+      if (balanceRequested && entry.liveStep == 0.0f) {
         snprintf(error, sizeof(error), "%s: refused while balancing", entry.name);
         SendAck(port, seq, error, nullptr, 0);
         break;
@@ -170,6 +184,17 @@ void LinkEndpoint::Handle(uint8_t port, const uint8_t* payload, size_t len, uint
         break;
       }
       const uint32_t before = entry.read();
+      // A live parameter may move by at most its step while balancing.
+      if (balanceRequested) {
+        const double candidate = ValueAsDouble(entry.type, GetLe32(set.value.bytes));
+        const double change = std::fabs(candidate - ValueAsDouble(entry.type, before));
+        if (change > static_cast<double>(entry.liveStep)) {
+          snprintf(error, sizeof(error), "%s: step %g over %g while balancing", entry.name, change,
+                   static_cast<double>(entry.liveStep));
+          SendAck(port, seq, error, nullptr, 0);
+          break;
+        }
+      }
       const char* reason = nullptr;
       if (!entry.write(GetLe32(set.value.bytes), &reason)) {
         snprintf(error, sizeof(error), "%s: %s", entry.name, reason);
@@ -223,8 +248,15 @@ void LinkEndpoint::Handle(uint8_t port, const uint8_t* payload, size_t len, uint
       SendActionLog(entry, args, call.args);
       break;
     }
+    case navbot_link_v1_Message_command_tag: {
+      const navbot_link_v1_Command& command = request.body.command;
+      const char* reason = "this build takes no commands";
+      if (commandHandler_) reason = commandHandler_(command.speed_mps, command.turn_rad_s);
+      SendAck(port, seq, reason, nullptr, 0);
+      break;
+    }
     default:
-      break;  // Command and anything unknown: the firmware does not act on them yet
+      break;  // a body this firmware does not know
   }
 }
 

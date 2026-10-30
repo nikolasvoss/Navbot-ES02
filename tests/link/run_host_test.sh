@@ -93,7 +93,7 @@ c++ -std=c++17 -Wall -Wextra -Werror \
   "$repo_root/tests/link/test_signals_def.cpp" \
   -o "$build_dir/test_signals_def"
 
-"$build_dir/test_signals_def" | cut -f1-4 > "$build_dir/firmware_catalog.tsv"
+"$build_dir/test_signals_def" | cut -f1-5 > "$build_dir/firmware_catalog.tsv"
 python3 "$repo_root/scripts/signals_catalog.py" > "$build_dir/script_catalog.tsv"
 diff "$build_dir/firmware_catalog.tsv" "$build_dir/script_catalog.tsv"
 echo "signals.def.h: the firmware expansion and signals_catalog.py agree on $(wc -l < "$build_dir/script_catalog.tsv") entries"
@@ -113,3 +113,4 @@ expect_rejected() {
 expect_rejected reject_duplicate.def.h "duplicate signal name"
 expect_rejected reject_long_name.def.h "longer than 24 characters"
 expect_rejected reject_wide_type.def.h "at most 32 bits"
+expect_rejected reject_live_step.def.h "a live step is negative"

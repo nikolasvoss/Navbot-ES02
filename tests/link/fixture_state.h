@@ -25,6 +25,21 @@ inline Vector& latest() {
   return v;
 }
 
+// A settings group as the sketch has them: Struct, current() and apply().
+struct Tuning {
+  float gain;
+};
+inline Tuning tuning{0.25f};
+struct TuningGroup {
+  using Struct = Tuning;
+  static Tuning current() { return tuning; }
+  static bool apply(const Tuning& candidate, const char** error) {
+    (void)error;
+    tuning = candidate;
+    return true;
+  }
+};
+
 }  // namespace fixture
 
 #endif

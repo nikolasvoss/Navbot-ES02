@@ -81,8 +81,21 @@ def test_command_line_prints_tab_separated_rows(capsys, tmp_path):
     path.write_text(SAMPLE, encoding="utf-8")
     assert signals_catalog.main([str(path)]) == 0
     assert capsys.readouterr().out == (
-        "0\tspeed\tm/s\tSIGNAL\n1\tbattery_min\tV\tSIGNAL_MIN\n2\tloop_max_us\tus\tSIGNAL_MAX\n3\tflag\t\tSIGNAL\n"
+        "0\tspeed\tm/s\tSIGNAL\t0\n1\tbattery_min\tV\tSIGNAL_MIN\t0\n2\tloop_max_us\tus\tSIGNAL_MAX\t0\n3\tflag\t\tSIGNAL\t0\n"
     )
+
+
+def test_a_live_param_carries_its_step():
+    entries = signals_catalog.parse(
+        'PARAM_LIVE(speed_kp, "rad/(m/s)", BalanceGroup, speedKpRadPerMps, 0.05f)\n'
+        'PARAM_LIVE(log_level, "", LogGroup, minLevel, INFINITY)\n'
+        'PARAM(gain, "", BalanceGroup, gain)\n'
+    )
+    assert [(e.name, e.kind, e.live_step) for e in entries] == [
+        ("speed_kp", "PARAM", 0.05),
+        ("log_level", "PARAM", float("inf")),
+        ("gain", "PARAM", 0.0),
+    ]
 
 
 def test_command_line_reports_a_bad_file(capsys, tmp_path):
@@ -94,7 +107,7 @@ def test_command_line_reports_a_bad_file(capsys, tmp_path):
 
 def test_the_firmware_file_parses():
     entries = signals_catalog.parse(signals_catalog.DEFAULT_FILE.read_text(encoding="utf-8"))
-    assert entries[0].name == "ch5_mode"
+    assert entries[0].name == "ch5_position"
     assert len(entries) == len({e.name for e in entries})
 
 

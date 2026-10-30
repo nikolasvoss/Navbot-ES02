@@ -19,8 +19,11 @@ DEFAULT_FILE = ROOT / "src" / "ES-02" / "OllieFOCdrive" / "signals.def.h"
 
 # SIGNAL(name, "unit", expression), also SIGNAL_MIN and SIGNAL_MAX.
 ENTRY = re.compile(r'^(SIGNAL_MIN|SIGNAL_MAX|SIGNAL)\s*\(\s*(\w+)\s*,\s*"([^"]*)"\s*,\s*(\S.*)\)$')
-# PARAM(name, "unit", group, field)
+# PARAM(name, "unit", group, field) and PARAM_LIVE(name, "unit", group, field, step)
 PARAM = re.compile(r'^PARAM\s*\(\s*(\w+)\s*,\s*"([^"]*)"\s*,\s*(\w+)\s*,\s*(\w+)\s*\)$')
+PARAM_LIVE = re.compile(
+    r'^PARAM_LIVE\s*\(\s*(\w+)\s*,\s*"([^"]*)"\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*([0-9.]+f?|INFINITY)\s*\)$'
+)
 # ACTION(name, handler, ARG(name, min, max), ...) and ACTION_NO_ARGS(name, handler)
 ACTION = re.compile(r'^ACTION\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(ARG\(.*\))\s*\)$')
 ACTION_NO_ARGS = re.compile(r'^ACTION_NO_ARGS\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)$')
@@ -37,6 +40,7 @@ class DefEntry:
     name: str
     unit: str
     kind: str  # SIGNAL, SIGNAL_MIN, SIGNAL_MAX, PARAM or ACTION
+    live_step: float = 0.0  # PARAM_LIVE only: the largest change while balancing; 0 for every other entry
 
 
 def _check_args(number: int, text: str) -> None:
@@ -54,10 +58,14 @@ def parse(text: str) -> list[DefEntry]:
         line = raw.split("//", 1)[0].strip()
         if not line:
             continue
+        live_step = 0.0
         if match := ENTRY.match(line):
             kind, name, unit = match[1], match[2], match[3]
         elif match := PARAM.match(line):
             name, unit, kind = match[1], match[2], "PARAM"
+        elif match := PARAM_LIVE.match(line):
+            name, unit, kind = match[1], match[2], "PARAM"
+            live_step = float(match[5].removesuffix("f").replace("INFINITY", "inf"))
         elif match := ACTION.match(line):
             name, unit, kind = match[1], "", "ACTION"
             _check_args(number, match[3])
@@ -67,7 +75,7 @@ def parse(text: str) -> list[DefEntry]:
             raise DefError(f"line {number}: not an entry this tool knows: {raw.strip()}")
         if any(e.name == name for e in entries):
             raise DefError(f"line {number}: duplicate name {name}")
-        entries.append(DefEntry(len(entries), name, unit, kind))
+        entries.append(DefEntry(len(entries), name, unit, kind, live_step))
     return entries
 
 
@@ -81,7 +89,7 @@ def main(argv: list[str]) -> int:
         print(f"{args.file}: {error}", file=sys.stderr)
         return 1
     for e in entries:
-        print(f"{e.index}\t{e.name}\t{e.unit}\t{e.kind}")
+        print(f"{e.index}\t{e.name}\t{e.unit}\t{e.kind}\t{e.live_step:g}")
     return 0
 
 

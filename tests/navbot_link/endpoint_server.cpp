@@ -6,6 +6,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <cmath>
 #include <cstring>
 
 #include "link_endpoint.h"
@@ -41,6 +42,12 @@ bool WriteGain(uint32_t bits, const char** error) {
   }
   gGain = value;
   return true;
+}
+
+// Accepts any finite speed and turn, as the sketch's handler does for a robot in the link position.
+const char* TakeCommand(float speedMps, float turnRadPerSec) {
+  if (!std::isfinite(speedMps) || !std::isfinite(turnRadPerSec)) return "speed and turn must be finite numbers";
+  return nullptr;
 }
 
 bool StartGo(const float*, const char**) { return true; }
@@ -102,6 +109,7 @@ struct Requests : LinkRxSink {
 int main() {
   StdoutSink sink;
   LinkEndpoint endpoint(kTable, sizeof(kTable) / sizeof(kTable[0]), "server-1", kBudgets, sink);
+  endpoint.SetCommandHandler(TakeCommand);
   LinkRxDecoder decoder;
   Requests requests;
   requests.endpoint = &endpoint;

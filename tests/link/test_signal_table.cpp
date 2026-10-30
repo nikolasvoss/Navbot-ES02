@@ -25,7 +25,7 @@ uint32_t Bits(const char* name) { return Find(name)->read(); }
 }  // namespace
 
 int main() {
-  Check(kSignalCount == 9, "the fixture file expands to 9 rows");
+  Check(kSignalCount == 10, "the fixture file expands to 10 rows");
 
   struct Expected {
     const char* name;
@@ -43,6 +43,7 @@ int main() {
       {"loop_max", "us", SignalKind::Max, SignalType::U32},
       {"raw_adc", "", SignalKind::Signal, SignalType::U32},
       {"latest_x", "g", SignalKind::Signal, SignalType::F32},
+      {"tuning_gain", "", SignalKind::Param, SignalType::F32},
   };
   bool rowsMatch = true;
   for (size_t i = 0; i < kSignalCount; ++i) {
@@ -76,6 +77,8 @@ int main() {
   Check(Bits("latest_x") == 0x40000000u, "the next call sees the new state");
   fixture::flag = false;
   Check(Bits("flag") == 0u, "bool false is 0");
+  Check(kSignals[9].liveStep == 0.5f && kSignals[0].liveStep == 0.0f, "PARAM_LIVE keeps its step, a SIGNAL has none");
+  Check(SignalLiveStepsValid(kSignals, kSignalCount), "every live step is a number that is not negative");
 
   const SignalEntry same[] = {{"a", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr, 0.0f},
                               {"b", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr, 0.0f}};
