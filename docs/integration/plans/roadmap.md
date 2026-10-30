@@ -44,7 +44,7 @@ Context: the CH5 link position, `balance` and `reboot` from the link, the drive 
 - [x] `navlink call reboot --yes` is refused in positions 1 and 2 ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md#ch5-and-reboot-with-the-transmitter-2026-10-30)).
 - [x] Health values: `navlink capture --preset health` shows plausible heap and stack values at boot, and zero link counters ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md)).
 - [x] Bridge health topics: `/diagnostics` and `/battery_state` arrive at 1 Hz. ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md#multiplexer-and-bridge-as-services-2026-10-30))
-- [ ] `navlink set log_level 3`: no INFO lines in `navlink log --seconds 10`. Set it back to 2.
+- [x] `navlink set log_level 3`: no INFO lines in `navlink log --seconds 10`. Set it back to 2. Checked with `calibrate step=1` as the trigger ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md#log_level-2026-10-30)).
 - [ ] With the user, balance in position 2: a live `set speed_kp` within its step is accepted, and one over it is refused. The steps in the [signal table](../software/signal-table.md#parameters-settings-groups) are confirmed or changed here.
 - [ ] With the user: moving CH5 from 2 to 1 keeps balancing; `call balance on=0` and `on=1` in position 1.
 - [ ] With the user: `/cmd_vel` at 0.1 m/s from `teleop_twist_keyboard`; stop publishing and the robot stops within the timeout.

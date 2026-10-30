@@ -49,3 +49,12 @@ Same build 9c3c5531. Rebuilt `navbot_link_bridge` with colcon and ran `scripts/i
 - The bridge log showed only the single startup warning that one odometry step used wheel yaw before the first IMU sample.
 
 Consequence: the services run the multiplexer and the bridge together as designed, and `navlink` can be used next to the running bridge.
+
+## log_level, 2026-10-30
+
+Same build 9c3c5531, CH5 0, balance off, robot resting on the bench. Nothing logs INFO text lines on its own, and a `servo1_trim` set logs only the `[param]` frame, so `navlink call calibrate step=1 --yes` (gyroscope bias, as at boot) was the trigger, with `navlink log --seconds 12` running:
+
+- `log_level` 3: only `INFO [action] calibrate started step=1`.
+- `log_level` 2: the same `[action]` line, then `INFO [IMU] Calibrating gyroscope...`, `INFO [IMU] Gyroscope calibration completed.` and `INFO [Calibration] gyroBiasX: 17.72, gyroBiasY: -13.91, gyroBiasZ: 24.20`.
+
+`log_level` was set back to 2. Consequence: `log_level` 3 hides the INFO text lines, and the `param` and `action` frames go out at every level, as the [signal table](../../docs/integration/software/signal-table.md) states.
