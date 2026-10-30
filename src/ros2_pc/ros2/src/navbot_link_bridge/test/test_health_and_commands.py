@@ -92,6 +92,21 @@ def test_a_rising_link_counter_is_a_warning_once():
     assert monitor.report(health_row(link_rx_bad_uart=4)).level == "OK"
 
 
+def test_a_restart_judges_the_counters_against_the_new_boot():
+    monitor = HealthMonitor()
+    assert monitor.report(health_row(link_rx_bad_uart=5)).level == "OK"
+    monitor.reset()  # the robot restarted: its counters start again at 0
+    assert monitor.report(health_row(link_rx_bad_uart=0)).level == "OK"
+    assert monitor.report(health_row(link_rx_bad_uart=1)).level == "WARN"
+
+
+def test_the_first_row_after_a_restart_is_the_baseline_not_a_rise():
+    monitor = HealthMonitor()
+    monitor.report(health_row(link_rx_bad_uart=5))
+    monitor.reset()
+    assert monitor.report(health_row(link_rx_bad_uart=6)).level == "OK"
+
+
 def test_the_values_show_the_state_and_fault_by_name():
     report = HealthMonitor().report(health_row(balance_state=4, balance_fault=6, rc_valid=1))
     shown = dict(report.values)

@@ -25,6 +25,10 @@ class HealthMonitor:
     def __init__(self):
         self._counters: tuple | None = None
 
+    def reset(self) -> None:
+        """A new boot or a new link: the counters start again, so the next row is the baseline."""
+        self._counters = None
+
     def report(self, row: HealthRow) -> HealthReport:
         signals = dict(zip(row.names, row.values))
         state = _name(BALANCE_STATES, signals["balance_state"])

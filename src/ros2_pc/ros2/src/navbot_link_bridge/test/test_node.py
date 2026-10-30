@@ -1,5 +1,6 @@
 """The node against the in-memory firmware. Needs a sourced ROS 2; skipped otherwise."""
 
+import math
 import os
 import struct
 import threading
@@ -302,7 +303,8 @@ def test_a_restart_whose_catalog_read_fails_takes_the_firmware_parameters_away(h
     h.spin(3.0, until=lambda: h.node_warnings())
     assert h.node_warnings() == [
         "catalog read failed (no reply to get_catalog); "
-        "continuing with odometry and IMU only, no firmware parameters or signals"]
+        "continuing with odometry and IMU only: "
+        "no firmware parameters or signals, and /diagnostics and /battery_state are unavailable"]
     assert not h.node.has_parameter("speed_ki")
     assert not h.node.has_parameter("speed_kp")
 
@@ -345,7 +347,8 @@ def test_a_silent_catalog_read_gives_one_warning_and_keeps_publishing_telemetry(
     assert len(got) == 1 and got[0].angular_velocity.z == 0.5
     assert h.node_warnings() == [
         "catalog read failed (no reply to get_catalog); "
-        "continuing with odometry and IMU only, no firmware parameters or signals"]
+        "continuing with odometry and IMU only: "
+        "no firmware parameters or signals, and /diagnostics and /battery_state are unavailable"]
     assert not h.node.has_parameter("speed_kp")
     result = h.node.set_parameters([Parameter("signals", value=["speed_target"])])[0]
     assert (result.successful, result.reason) == (False, "the robot sent no catalog")
@@ -488,7 +491,9 @@ def test_a_catalog_read_that_fails_after_a_restart_does_not_stall_odometry(harne
         h.spin(2.3)
     finally:
         feeder.stop()
-    assert odom.worst_gap_s(after=restarted_at) < 0.045  # 40 ms are the baseline frame after a restart
+    # 60 ms, not a tight bound: frames come every 20 ms, and the 45 ms limit flaked under load with ~5 ms
+    # margin. What matters is that odometry never stalls for hundreds of ms.
+    assert odom.worst_gap_s(after=restarted_at) < 0.06
     assert odom.stamps_strictly_increase()
 
 
@@ -562,6 +567,39 @@ def test_a_refused_command_warns_once_with_the_reason(harness):
     assert h.node_warnings() == ["command refused by the robot: CH5 not in link position (1)"]
 
 
+class BrokenWrites(MemoryTransport):
+    """The port reads fine, but writes fail as they do on a timeout or a broken pipe."""
+
+    broken = False
+
+    def write(self, data: bytes) -> None:
+        if self.broken:
+            raise OSError("write timed out")
+        super().write(data)
+
+
+def test_a_cmd_vel_whose_write_fails_is_dropped_and_odometry_keeps_flowing(harness):
+    fw = FakeFirmware(link_position=True)
+    port = BrokenWrites(fw)
+    h = harness(fw, transport=port)
+    odom = OdomLog(h)
+    pub = h.listener.create_publisher(Twist, "/cmd_vel", 10)
+    h.spin(2.0, until=lambda: pub.get_subscription_count() > 0)
+    feeder = TelemetryFeeder(fw)
+    try:
+        h.spin(0.5, until=lambda: len(odom.arrivals) >= 1)
+        port.broken = True
+        before = len(odom.arrivals)
+        for _ in range(5):
+            pub.publish(twist(0.2, 0.0))
+        h.spin(0.5)
+        assert h._spinner.is_alive()  # the node still spins: the OSError did not escape the callback
+        assert len(odom.arrivals) > before + 10
+    finally:
+        feeder.stop()
+    assert fw.commands == []
+
+
 def test_a_health_row_becomes_a_diagnostics_status_and_a_battery_voltage(harness):
     h = harness(FakeFirmware())
     diagnostics, batteries = [], []
@@ -572,3 +610,6 @@ def test_a_health_row_becomes_a_diagnostics_status_and_a_battery_voltage(harness
     assert (status.name, status.level, status.message) == ("navbot_firmware", DiagnosticStatus.OK, "Run")
     assert status.hardware_id == "fake-build-1"
     assert batteries[0].voltage == pytest.approx(7.4, abs=1e-3)
+    battery = batteries[0]
+    unknown = [battery.current, battery.charge, battery.capacity, battery.design_capacity, battery.temperature]
+    assert all(math.isnan(value) for value in unknown)

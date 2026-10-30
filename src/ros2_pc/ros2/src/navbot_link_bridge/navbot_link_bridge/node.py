@@ -117,7 +117,11 @@ class LinkBridgeNode(Node):
         self._diagnostics_pub = self.create_publisher(DiagnosticArray, "/diagnostics", 10)
         self._battery_pub = self.create_publisher(BatteryState, "/battery_state", 10)
         self._health = HealthMonitor()
-        self.create_subscription(Twist, "/cmd_vel", self._on_cmd_vel, 10)
+        # Its own group: a parameter set holds the default group, and /cmd_vel must not wait behind it.
+        # Depth 1: after a stall, only the newest Twist is delivered, not a burst of old ones.
+        self.create_subscription(
+            Twist, "/cmd_vel", self._on_cmd_vel, 1, callback_group=MutuallyExclusiveCallbackGroup()
+        )
 
         self._bridge = None
         self._opened_before = False
@@ -162,6 +166,7 @@ class LinkBridgeNode(Node):
         self._opened_before = True
         self._bridge = LinkBridge(link, self._odometry)
         self._robot_clock.rebase()
+        self._health.reset()
         self._warned_counts = (0, 0)
         self._warned_catalog_failure = False
         self.attached.clear()
@@ -200,8 +205,8 @@ class LinkBridgeNode(Node):
             if not self._warned_catalog_failure:
                 self._warned_catalog_failure = True
                 self.get_logger().warning(
-                    f"catalog read failed ({exc}); "
-                    "continuing with odometry and IMU only, no firmware parameters or signals"
+                    f"catalog read failed ({exc}); continuing with odometry and IMU only: "
+                    "no firmware parameters or signals, and /diagnostics and /battery_state are unavailable"
                 )
             return
         try:
@@ -343,6 +348,7 @@ class LinkBridgeNode(Node):
             elif isinstance(result, Restarted):
                 self.get_logger().info("robot restart detected (seq reset); pose kept, odometry rebased")
                 self._robot_clock.rebase()
+                self._health.reset()  # the new boot's counters start at 0
                 self._submit(self._attach, bridge, True)  # table indices and slots may differ in the new build
             elif isinstance(result, SubscriptionEnded):
                 self.get_logger().warning(f"signal stream ended: {result.reason}; resubscribing")
@@ -381,8 +387,10 @@ class LinkBridgeNode(Node):
             return
         try:
             bridge.link.command(msg.linear.x, msg.angular.z)
-        except LinkError:
-            pass  # the link is down and reopens by itself; the robot stops by its own command timeout
+        except (LinkError, OSError):
+            # The link is down, or its write failed (timeout, broken pipe, closed during a reconnect).
+            # The link reopens by itself; the robot stops by its own command timeout.
+            pass
 
     def _warn_refused(self, reason: str) -> None:
         now = time.monotonic()
@@ -406,7 +414,13 @@ class LinkBridgeNode(Node):
         battery.header.stamp = stamp
         battery.voltage = report.voltage_v
         battery.present = True
-        battery.percentage = float("nan")
+        # The robot reports none of these: NaN is "unknown", where 0.0 would be a reading.
+        battery.current = math.nan
+        battery.charge = math.nan
+        battery.capacity = math.nan
+        battery.design_capacity = math.nan
+        battery.temperature = math.nan
+        battery.percentage = math.nan
         battery.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_UNKNOWN
         self._battery_pub.publish(battery)
 
