@@ -34,6 +34,16 @@ Context: the log frames, the signal table, the parameters and the actions are im
 - [ ] Bridge on the ros2_pc against the robot (so far run only against the fake firmware): `/rosout` shows the robot's `Log` lines, `/navbot/signals` streams a chosen set of signals, and the firmware parameters appear as ROS parameters.
 - [ ] The firmware does not act on ROS `Command` yet. RC/ROS arbitration and a command timeout belong with the ROS control work.
 
+## Optional: fault-triggered recording (black box)
+
+Status: optional, not planned. Start only after the user's go-ahead. A balance fault (a fall, overspeed, a saturated tilt reference) develops within a few control ticks, and a subscription that streams every tick is limited by the link budget, so the ticks before a fault are usually missing from a capture.
+
+- A ring buffer in RAM keeps the last 1.0 s of a fixed signal list at every control tick and freezes on the transition into `Fault` or an overspeed trip; the PC reads it out afterwards as a CSV file in the `navlink capture` format.
+- Size: 16 signals × 4 bytes + 4 bytes `t_us` = 68 bytes per tick; at about 710 ticks per second, 1.0 s before and 0.25 s after the fault is about 61 kB of internal SRAM (the board has no PSRAM). The free heap decides whether it fits; half the sampling rate halves it.
+- Work: a pure ring buffer class with host tests, a flag on the chosen entries in `signals.def.h`, an action to clear and rearm, a readout request that sends the frozen rows as `SignalBatch` frames while balance is off, and `navlink blackbox -o fall.csv`. About 250 lines of firmware and tests, 100 lines of Python, one proto message.
+
+- [ ] Decide whether to build it, after the free heap has been measured on the robot.
+
 ## Decide the dashboard for logs and debug signals
 
 Context: the [signal table](../software/signal-table.md) and the link logs go over the NavBot link on UART1 to the ros2_pc, and on the USB port as a backup. The ROS 2 bridge publishes them as `/rosout` and `/navbot/signals`. The protocol does not depend on this decision.
