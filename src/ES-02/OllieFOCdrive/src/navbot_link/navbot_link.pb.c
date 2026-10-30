@@ -15,12 +15,6 @@ PB_BIND(navbot_link_v1_Imu, navbot_link_v1_Imu, AUTO)
 PB_BIND(navbot_link_v1_WheelOdometry, navbot_link_v1_WheelOdometry, AUTO)
 
 
-PB_BIND(navbot_link_v1_Battery, navbot_link_v1_Battery, AUTO)
-
-
-PB_BIND(navbot_link_v1_Status, navbot_link_v1_Status, AUTO)
-
-
 PB_BIND(navbot_link_v1_Log, navbot_link_v1_Log, AUTO)
 
 
@@ -55,8 +49,6 @@ PB_BIND(navbot_link_v1_SetParam, navbot_link_v1_SetParam, AUTO)
 
 
 PB_BIND(navbot_link_v1_Call, navbot_link_v1_Call, AUTO)
-
-
 
 
 

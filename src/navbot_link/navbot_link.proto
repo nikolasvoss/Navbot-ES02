@@ -9,8 +9,6 @@ message Message {
   uint32 t_ms = 2;        // sender millis(), monotonic
   oneof body {
     Imu imu = 10;
-    Battery battery = 11;
-    Status status = 12;
     Log log = 13;         // errors, warnings, info
     WheelOdometry odom = 14;
     CatalogEntry catalog_entry = 15;
@@ -24,6 +22,7 @@ message Message {
     SetParam set_param = 26;
     Call call = 27;
   }
+  reserved 11, 12;     // Battery and Status, removed
 }
 
 // Sensor data. SI units; the field name carries the unit where it is not SI.
@@ -42,17 +41,6 @@ message WheelOdometry {
   double right_angle_rad = 3;
 }
 
-message Battery {
-  float voltage_v = 1;
-}
-
-message Status {
-  enum Mode { MODE_UNSPECIFIED = 0; IDLE = 1; DIAGNOSTIC = 2; BALANCE = 3; FALLEN = 4; }
-  Mode mode = 1;
-  bool motors_enabled = 2;
-  uint32 dropped_frames = 3; // TX frames the robot dropped (queue full)
-}
-
 message Log {
   enum Level { LEVEL_UNSPECIFIED = 0; DEBUG = 1; INFO = 2; WARN = 3; ERROR = 4; FATAL = 5; }
   Level level = 1;
@@ -61,14 +49,14 @@ message Log {
   string tag = 4;    // source, such as "param" or "imu"
 }
 
+// Drive request, PC -> robot. Accepted only while CH5 is in the link position.
 message Command {
-  uint32 id = 1;         // echoed in Ack
-  float speed_mps = 2;
-  float turn_rad_s = 3;
+  reserved 1;
+  float speed_mps = 2;   // m/s, forward positive
+  float turn_rad_s = 3;  // rad/s, positive to the left (counter-clockwise, REP 103)
 }
 
-// command_id echoes Command.id for a Command and the request's Message.seq
-// for every other request.
+// command_id echoes the request's Message.seq.
 message Ack {
   uint32 command_id = 1;
   bool accepted = 2;

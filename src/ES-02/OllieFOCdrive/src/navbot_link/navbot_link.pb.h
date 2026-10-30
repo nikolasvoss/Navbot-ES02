@@ -10,14 +10,6 @@
 #endif
 
 /* Enum definitions */
-typedef enum _navbot_link_v1_Status_Mode {
-    navbot_link_v1_Status_Mode_MODE_UNSPECIFIED = 0,
-    navbot_link_v1_Status_Mode_IDLE = 1,
-    navbot_link_v1_Status_Mode_DIAGNOSTIC = 2,
-    navbot_link_v1_Status_Mode_BALANCE = 3,
-    navbot_link_v1_Status_Mode_FALLEN = 4
-} navbot_link_v1_Status_Mode;
-
 typedef enum _navbot_link_v1_Log_Level {
     navbot_link_v1_Log_Level_LEVEL_UNSPECIFIED = 0,
     navbot_link_v1_Log_Level_DEBUG = 1,
@@ -67,16 +59,6 @@ typedef struct _navbot_link_v1_WheelOdometry {
     double right_angle_rad;
 } navbot_link_v1_WheelOdometry;
 
-typedef struct _navbot_link_v1_Battery {
-    float voltage_v;
-} navbot_link_v1_Battery;
-
-typedef struct _navbot_link_v1_Status {
-    navbot_link_v1_Status_Mode mode;
-    bool motors_enabled;
-    uint32_t dropped_frames; /* TX frames the robot dropped (queue full) */
-} navbot_link_v1_Status;
-
 typedef struct _navbot_link_v1_Log {
     navbot_link_v1_Log_Level level;
     uint32_t code; /* stable numeric error code, documented in the spec */
@@ -84,15 +66,14 @@ typedef struct _navbot_link_v1_Log {
     char tag[17]; /* source, such as "param" or "imu" */
 } navbot_link_v1_Log;
 
+/* Drive request, PC -> robot. Accepted only while CH5 is in the link position. */
 typedef struct _navbot_link_v1_Command {
-    uint32_t id; /* echoed in Ack */
-    float speed_mps;
-    float turn_rad_s;
+    float speed_mps; /* m/s, forward positive */
+    float turn_rad_s; /* rad/s, positive to the left (counter-clockwise, REP 103) */
 } navbot_link_v1_Command;
 
 typedef PB_BYTES_ARRAY_T(4) navbot_link_v1_Ack_value_t;
-/* command_id echoes Command.id for a Command and the request's Message.seq
- for every other request. */
+/* command_id echoes the request's Message.seq. */
 typedef struct _navbot_link_v1_Ack {
     uint32_t command_id;
     bool accepted;
@@ -170,8 +151,6 @@ typedef struct _navbot_link_v1_Message {
     pb_size_t which_body;
     union {
         navbot_link_v1_Imu imu;
-        navbot_link_v1_Battery battery;
-        navbot_link_v1_Status status;
         navbot_link_v1_Log log; /* errors, warnings, info */
         navbot_link_v1_WheelOdometry odom;
         navbot_link_v1_CatalogEntry catalog_entry;
@@ -193,10 +172,6 @@ extern "C" {
 #endif
 
 /* Helper constants for enums */
-#define _navbot_link_v1_Status_Mode_MIN navbot_link_v1_Status_Mode_MODE_UNSPECIFIED
-#define _navbot_link_v1_Status_Mode_MAX navbot_link_v1_Status_Mode_FALLEN
-#define _navbot_link_v1_Status_Mode_ARRAYSIZE ((navbot_link_v1_Status_Mode)(navbot_link_v1_Status_Mode_FALLEN+1))
-
 #define _navbot_link_v1_Log_Level_MIN navbot_link_v1_Log_Level_LEVEL_UNSPECIFIED
 #define _navbot_link_v1_Log_Level_MAX navbot_link_v1_Log_Level_FATAL
 #define _navbot_link_v1_Log_Level_ARRAYSIZE ((navbot_link_v1_Log_Level)(navbot_link_v1_Log_Level_FATAL+1))
@@ -211,9 +186,6 @@ extern "C" {
 
 
 
-
-
-#define navbot_link_v1_Status_mode_ENUMTYPE navbot_link_v1_Status_Mode
 
 #define navbot_link_v1_Log_level_ENUMTYPE navbot_link_v1_Log_Level
 
@@ -235,10 +207,8 @@ extern "C" {
 #define navbot_link_v1_Message_init_default      {0, 0, 0, {navbot_link_v1_Imu_init_default}}
 #define navbot_link_v1_Imu_init_default          {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define navbot_link_v1_WheelOdometry_init_default {0, 0, 0}
-#define navbot_link_v1_Battery_init_default      {0}
-#define navbot_link_v1_Status_init_default       {_navbot_link_v1_Status_Mode_MIN, 0, 0}
 #define navbot_link_v1_Log_init_default          {_navbot_link_v1_Log_Level_MIN, 0, "", ""}
-#define navbot_link_v1_Command_init_default      {0, 0, 0}
+#define navbot_link_v1_Command_init_default      {0, 0}
 #define navbot_link_v1_Ack_init_default          {0, 0, "", {0, {0}}}
 #define navbot_link_v1_GetCatalog_init_default   {0}
 #define navbot_link_v1_CatalogEntry_init_default {0, 0, "", "", _navbot_link_v1_CatalogEntry_Kind_MIN, _navbot_link_v1_CatalogEntry_Type_MIN, 0, {navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default}, ""}
@@ -252,10 +222,8 @@ extern "C" {
 #define navbot_link_v1_Message_init_zero         {0, 0, 0, {navbot_link_v1_Imu_init_zero}}
 #define navbot_link_v1_Imu_init_zero             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define navbot_link_v1_WheelOdometry_init_zero   {0, 0, 0}
-#define navbot_link_v1_Battery_init_zero         {0}
-#define navbot_link_v1_Status_init_zero          {_navbot_link_v1_Status_Mode_MIN, 0, 0}
 #define navbot_link_v1_Log_init_zero             {_navbot_link_v1_Log_Level_MIN, 0, "", ""}
-#define navbot_link_v1_Command_init_zero         {0, 0, 0}
+#define navbot_link_v1_Command_init_zero         {0, 0}
 #define navbot_link_v1_Ack_init_zero             {0, 0, "", {0, {0}}}
 #define navbot_link_v1_GetCatalog_init_zero      {0}
 #define navbot_link_v1_CatalogEntry_init_zero    {0, 0, "", "", _navbot_link_v1_CatalogEntry_Kind_MIN, _navbot_link_v1_CatalogEntry_Type_MIN, 0, {navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero}, ""}
@@ -281,15 +249,10 @@ extern "C" {
 #define navbot_link_v1_WheelOdometry_t_us_tag    1
 #define navbot_link_v1_WheelOdometry_left_angle_rad_tag 2
 #define navbot_link_v1_WheelOdometry_right_angle_rad_tag 3
-#define navbot_link_v1_Battery_voltage_v_tag     1
-#define navbot_link_v1_Status_mode_tag           1
-#define navbot_link_v1_Status_motors_enabled_tag 2
-#define navbot_link_v1_Status_dropped_frames_tag 3
 #define navbot_link_v1_Log_level_tag             1
 #define navbot_link_v1_Log_code_tag              2
 #define navbot_link_v1_Log_text_tag              3
 #define navbot_link_v1_Log_tag_tag               4
-#define navbot_link_v1_Command_id_tag            1
 #define navbot_link_v1_Command_speed_mps_tag     2
 #define navbot_link_v1_Command_turn_rad_s_tag    3
 #define navbot_link_v1_Ack_command_id_tag        1
@@ -322,8 +285,6 @@ extern "C" {
 #define navbot_link_v1_Message_seq_tag           1
 #define navbot_link_v1_Message_t_ms_tag          2
 #define navbot_link_v1_Message_imu_tag           10
-#define navbot_link_v1_Message_battery_tag       11
-#define navbot_link_v1_Message_status_tag        12
 #define navbot_link_v1_Message_log_tag           13
 #define navbot_link_v1_Message_odom_tag          14
 #define navbot_link_v1_Message_catalog_entry_tag 15
@@ -342,8 +303,6 @@ extern "C" {
 X(a, STATIC,   SINGULAR, UINT32,   seq,               1) \
 X(a, STATIC,   SINGULAR, UINT32,   t_ms,              2) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,imu,body.imu),  10) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (body,battery,body.battery),  11) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (body,status,body.status),  12) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,log,body.log),  13) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,odom,body.odom),  14) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,catalog_entry,body.catalog_entry),  15) \
@@ -359,8 +318,6 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (body,call,body.call),  27)
 #define navbot_link_v1_Message_CALLBACK NULL
 #define navbot_link_v1_Message_DEFAULT NULL
 #define navbot_link_v1_Message_body_imu_MSGTYPE navbot_link_v1_Imu
-#define navbot_link_v1_Message_body_battery_MSGTYPE navbot_link_v1_Battery
-#define navbot_link_v1_Message_body_status_MSGTYPE navbot_link_v1_Status
 #define navbot_link_v1_Message_body_log_MSGTYPE navbot_link_v1_Log
 #define navbot_link_v1_Message_body_odom_MSGTYPE navbot_link_v1_WheelOdometry
 #define navbot_link_v1_Message_body_catalog_entry_MSGTYPE navbot_link_v1_CatalogEntry
@@ -395,18 +352,6 @@ X(a, STATIC,   SINGULAR, DOUBLE,   right_angle_rad,   3)
 #define navbot_link_v1_WheelOdometry_CALLBACK NULL
 #define navbot_link_v1_WheelOdometry_DEFAULT NULL
 
-#define navbot_link_v1_Battery_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, FLOAT,    voltage_v,         1)
-#define navbot_link_v1_Battery_CALLBACK NULL
-#define navbot_link_v1_Battery_DEFAULT NULL
-
-#define navbot_link_v1_Status_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, UENUM,    mode,              1) \
-X(a, STATIC,   SINGULAR, BOOL,     motors_enabled,    2) \
-X(a, STATIC,   SINGULAR, UINT32,   dropped_frames,    3)
-#define navbot_link_v1_Status_CALLBACK NULL
-#define navbot_link_v1_Status_DEFAULT NULL
-
 #define navbot_link_v1_Log_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UENUM,    level,             1) \
 X(a, STATIC,   SINGULAR, UINT32,   code,              2) \
@@ -416,7 +361,6 @@ X(a, STATIC,   SINGULAR, STRING,   tag,               4)
 #define navbot_link_v1_Log_DEFAULT NULL
 
 #define navbot_link_v1_Command_FIELDLIST(X, a) \
-X(a, STATIC,   SINGULAR, UINT32,   id,                1) \
 X(a, STATIC,   SINGULAR, FLOAT,    speed_mps,         2) \
 X(a, STATIC,   SINGULAR, FLOAT,    turn_rad_s,        3)
 #define navbot_link_v1_Command_CALLBACK NULL
@@ -493,8 +437,6 @@ X(a, STATIC,   REPEATED, FLOAT,    args,              2)
 extern const pb_msgdesc_t navbot_link_v1_Message_msg;
 extern const pb_msgdesc_t navbot_link_v1_Imu_msg;
 extern const pb_msgdesc_t navbot_link_v1_WheelOdometry_msg;
-extern const pb_msgdesc_t navbot_link_v1_Battery_msg;
-extern const pb_msgdesc_t navbot_link_v1_Status_msg;
 extern const pb_msgdesc_t navbot_link_v1_Log_msg;
 extern const pb_msgdesc_t navbot_link_v1_Command_msg;
 extern const pb_msgdesc_t navbot_link_v1_Ack_msg;
@@ -512,8 +454,6 @@ extern const pb_msgdesc_t navbot_link_v1_Call_msg;
 #define navbot_link_v1_Message_fields &navbot_link_v1_Message_msg
 #define navbot_link_v1_Imu_fields &navbot_link_v1_Imu_msg
 #define navbot_link_v1_WheelOdometry_fields &navbot_link_v1_WheelOdometry_msg
-#define navbot_link_v1_Battery_fields &navbot_link_v1_Battery_msg
-#define navbot_link_v1_Status_fields &navbot_link_v1_Status_msg
 #define navbot_link_v1_Log_fields &navbot_link_v1_Log_msg
 #define navbot_link_v1_Command_fields &navbot_link_v1_Command_msg
 #define navbot_link_v1_Ack_fields &navbot_link_v1_Ack_msg
@@ -530,11 +470,10 @@ extern const pb_msgdesc_t navbot_link_v1_Call_msg;
 /* Maximum encoded size of messages (where known) */
 #define NAVBOT_LINK_V1_NAVBOT_LINK_PB_H_MAX_SIZE navbot_link_v1_Message_size
 #define navbot_link_v1_Ack_size                  80
-#define navbot_link_v1_Battery_size              5
 #define navbot_link_v1_Call_size                 26
 #define navbot_link_v1_CatalogEntry_Arg_size     28
 #define navbot_link_v1_CatalogEntry_size         214
-#define navbot_link_v1_Command_size              16
+#define navbot_link_v1_Command_size              10
 #define navbot_link_v1_GetCatalog_size           6
 #define navbot_link_v1_GetParam_size             6
 #define navbot_link_v1_Imu_size                  51
@@ -542,7 +481,6 @@ extern const pb_msgdesc_t navbot_link_v1_Call_msg;
 #define navbot_link_v1_Message_size              229
 #define navbot_link_v1_SetParam_size             12
 #define navbot_link_v1_SignalBatch_size          205
-#define navbot_link_v1_Status_size               10
 #define navbot_link_v1_Subscribe_size            204
 #define navbot_link_v1_Unsubscribe_size          6
 #define navbot_link_v1_WheelOdometry_size        24

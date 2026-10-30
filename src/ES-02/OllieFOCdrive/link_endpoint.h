@@ -19,11 +19,17 @@ class LinkMessageSink {
   virtual void Send(uint8_t port, navbot_link_v1_Message& msg) = 0;
 };
 
+// Takes one Command. Returns nullptr when accepted, or the reason the Ack carries.
+typedef const char* (*LinkCommandHandler)(float speedMps, float turnRadPerSec);
+
 class LinkEndpoint : private LinkRowSink {
  public:
   // build is the firmware build ID reported with catalog entry 0 (up to 32 characters).
   LinkEndpoint(const SignalEntry* table, size_t count, const char* build, const LinkPortBudget (&budgets)[kLinkPortCount],
                LinkMessageSink& sink);
+
+  // Stores the handler that takes Command requests. Without one, a Command is refused.
+  void SetCommandHandler(LinkCommandHandler handler) { commandHandler_ = handler; }
 
   // Applies one request that arrived on port and sends the reply to the same port. nowUs is the micros() value at the
   // start of the tick, and stamps lease renewals. balanceRequested is CH5 on or the balance controller running; the
@@ -50,6 +56,7 @@ class LinkEndpoint : private LinkRowSink {
   const char* build_;
   LinkSubscriptions subscriptions_;
   LinkMessageSink& sink_;
+  LinkCommandHandler commandHandler_ = nullptr;
   uint32_t undecodable_ = 0;
 };
 

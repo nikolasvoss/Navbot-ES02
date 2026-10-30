@@ -49,14 +49,14 @@ SignalArgs GoArgs() {
   return {items, 2};
 }
 const SignalEntry kTable[] = {
-    {"tick", "", SignalKind::Signal, SignalType::U32, ReadTick, nullptr, nullptr, nullptr},
-    {"ramp", "m", SignalKind::Signal, SignalType::F32, ReadRamp, nullptr, nullptr, nullptr},
-    {"negative", "", SignalKind::Signal, SignalType::I32, ReadNegative, nullptr, nullptr, nullptr},
-    {"odd", "", SignalKind::Signal, SignalType::Bool, ReadOdd, nullptr, nullptr, nullptr},
-    {"falling_min", "V", SignalKind::Min, SignalType::F32, ReadFalling, nullptr, nullptr, nullptr},
-    {"spike_max", "", SignalKind::Max, SignalType::U32, ReadSpike, nullptr, nullptr, nullptr},
-    {"gain", "A/rad", SignalKind::Param, SignalType::F32, ReadGain, WriteGain, nullptr, nullptr},
-    {"go", "", SignalKind::Action, SignalType::None, nullptr, nullptr, StartGo, GoArgs},
+    {"tick", "", SignalKind::Signal, SignalType::U32, ReadTick, nullptr, nullptr, nullptr, 0.0f},
+    {"ramp", "m", SignalKind::Signal, SignalType::F32, ReadRamp, nullptr, nullptr, nullptr, 0.0f},
+    {"negative", "", SignalKind::Signal, SignalType::I32, ReadNegative, nullptr, nullptr, nullptr, 0.0f},
+    {"odd", "", SignalKind::Signal, SignalType::Bool, ReadOdd, nullptr, nullptr, nullptr, 0.0f},
+    {"falling_min", "V", SignalKind::Min, SignalType::F32, ReadFalling, nullptr, nullptr, nullptr, 0.0f},
+    {"spike_max", "", SignalKind::Max, SignalType::U32, ReadSpike, nullptr, nullptr, nullptr, 0.0f},
+    {"gain", "A/rad", SignalKind::Param, SignalType::F32, ReadGain, WriteGain, nullptr, nullptr, 0.0f},
+    {"go", "", SignalKind::Action, SignalType::None, nullptr, nullptr, StartGo, GoArgs, 0.0f},
 };
 const LinkPortBudget kBudgets[kLinkPortCount] = {{200000, 5000}, {57600, 0}};
 

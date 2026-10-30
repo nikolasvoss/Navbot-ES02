@@ -35,6 +35,8 @@ struct SignalArgs {
 //   SIGNAL, SIGNAL_MIN, SIGNAL_MAX: read.
 //   PARAM: read, and write, which applies a value in 4 wire bytes or sets *error and returns false.
 //   ACTION: call, which starts the action or sets *error and returns false, and args.
+// liveStep is the largest change a SetParam may make while balance is requested (navbot_link.proto CatalogEntry
+// live_step). 0 refuses every change while balancing, infinity allows any change. Only a PARAM has a live step.
 struct SignalEntry {
   const char* name;
   const char* unit;
@@ -44,6 +46,7 @@ struct SignalEntry {
   bool (*write)(uint32_t bits, const char** error);
   bool (*call)(const float* args, const char** error);
   SignalArgs (*args)();
+  float liveStep;
 };
 
 template <class T>
@@ -106,7 +109,7 @@ const char* SignalFromBits(uint32_t bits, T& out) {
 // One table row for a SIGNAL, SIGNAL_MIN or SIGNAL_MAX line. The lambda reads the state each time it is called, so an
 // expression such as imu::latest().x needs no pointer that could go stale.
 #define SIGNAL_TABLE_ROW(kind, name, unit, expr) \
-  {#name, unit, kind, SignalTypeOf<decltype(expr)>(), +[]() -> uint32_t { return SignalBits(expr); }, nullptr, nullptr, nullptr},
+  {#name, unit, kind, SignalTypeOf<decltype(expr)>(), +[]() -> uint32_t { return SignalBits(expr); }, nullptr, nullptr, nullptr, 0.0f},
 
 constexpr size_t SignalStringLength(const char* text) {
   size_t length = 0;
@@ -126,6 +129,18 @@ constexpr bool SignalNamesUnique(const SignalEntry* table, size_t count) {
   for (size_t i = 0; i < count; ++i)
     for (size_t j = i + 1; j < count; ++j)
       if (SignalStringsEqual(table[i].name, table[j].name)) return false;
+  return true;
+}
+
+// A live step is a number that is not negative (infinity is allowed), and only a parameter may carry one.
+constexpr bool SignalLiveStepsValid(const SignalEntry* table, size_t count) {
+  for (size_t i = 0; i < count; ++i) {
+    if (table[i].kind != SignalKind::Param) {
+      if (table[i].liveStep != 0.0f) return false;
+    } else if (!(table[i].liveStep >= 0.0f)) {
+      return false;
+    }
+  }
   return true;
 }
 

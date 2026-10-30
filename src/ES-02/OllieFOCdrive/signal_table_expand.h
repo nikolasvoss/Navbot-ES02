@@ -14,7 +14,9 @@
 // A settings group is a type with Struct (the group's struct), current() (a copy of the running struct) and
 // apply(candidate, error), which returns false with *error set when it refuses the candidate. A PARAM takes a copy,
 // changes one field of it, and hands the copy to apply, so a refused value never reaches the running struct.
-#define PARAM(name, unit, group, field)                                                                      \
+// PARAM_LIVE(name, unit, group, field, step) is a PARAM that a SetParam may change while balance is requested, by at
+// most step in absolute value (step 0 refuses every change, INFINITY allows any change). PARAM has step 0.
+#define PARAM_ROW(name, unit, group, field, step)                                                            \
   {#name, unit, SignalKind::Param, SignalTypeOf<decltype(group::current().field)>(),                         \
    +[]() -> uint32_t { return SignalBits(group::current().field); },                                         \
    +[](uint32_t bits, const char** error) -> bool {                                                          \
@@ -22,7 +24,9 @@
      *error = SignalFromBits(bits, candidate.field);                                                         \
      return *error == nullptr && group::apply(candidate, error);                                             \
    },                                                                                                        \
-   nullptr, nullptr},
+   nullptr, nullptr, static_cast<float>(step)},
+#define PARAM(name, unit, group, field) PARAM_ROW(name, unit, group, field, 0.0f)
+#define PARAM_LIVE(name, unit, group, field, step) PARAM_ROW(name, unit, group, field, step)
 
 // An action takes its arguments as ARG(name, min, max) and is refused by its handler, which has the safety checks.
 // ACTION_NO_ARGS is for an action without arguments: an empty list would not compile.
@@ -32,9 +36,9 @@
    +[]() -> SignalArgs {                                                                                         \
      static constexpr SignalArg items[] = {__VA_ARGS__};                                                         \
      return {items, sizeof(items) / sizeof(items[0])};                                                           \
-   }},
+   }, 0.0f},
 #define ACTION_NO_ARGS(name, handler) \
-  {#name, "", SignalKind::Action, SignalType::None, nullptr, nullptr, handler, +[]() -> SignalArgs { return {nullptr, 0}; }},
+  {#name, "", SignalKind::Action, SignalType::None, nullptr, nullptr, handler, +[]() -> SignalArgs { return {nullptr, 0}; }, 0.0f},
 
 constexpr SignalEntry kSignals[] = {
 #include SIGNAL_DEF_FILE
@@ -44,6 +48,8 @@ constexpr SignalEntry kSignals[] = {
 #undef SIGNAL_MIN
 #undef SIGNAL_MAX
 #undef PARAM
+#undef PARAM_LIVE
+#undef PARAM_ROW
 #undef ARG
 #undef ACTION
 #undef ACTION_NO_ARGS
@@ -51,5 +57,7 @@ constexpr SignalEntry kSignals[] = {
 constexpr size_t kSignalCount = sizeof(kSignals) / sizeof(kSignals[0]);
 
 static_assert(SignalNamesUnique(kSignals, kSignalCount), "duplicate signal name in the entry file");
+static_assert(SignalLiveStepsValid(kSignals, kSignalCount),
+              "a live step is negative or set on an entry that is not a parameter");
 static_assert(SignalStringsFit(kSignals, kSignalCount),
               "a signal name is empty or longer than 24 characters, or a unit is longer than 16");

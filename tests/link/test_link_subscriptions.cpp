@@ -21,10 +21,10 @@ uint32_t ReadMax() { return static_cast<uint32_t>(gMax); }
 
 // Ids: 0 plain u32, 1 running minimum f32, 2 running maximum i32, 3 an action.
 const SignalEntry kTable[] = {
-    {"plain", "", SignalKind::Signal, SignalType::U32, ReadPlain, nullptr, nullptr, nullptr},
-    {"low", "V", SignalKind::Min, SignalType::F32, ReadMin, nullptr, nullptr, nullptr},
-    {"high", "us", SignalKind::Max, SignalType::I32, ReadMax, nullptr, nullptr, nullptr},
-    {"go", "", SignalKind::Action, SignalType::None, nullptr, nullptr, nullptr, nullptr},
+    {"plain", "", SignalKind::Signal, SignalType::U32, ReadPlain, nullptr, nullptr, nullptr, 0.0f},
+    {"low", "V", SignalKind::Min, SignalType::F32, ReadMin, nullptr, nullptr, nullptr, 0.0f},
+    {"high", "us", SignalKind::Max, SignalType::I32, ReadMax, nullptr, nullptr, nullptr, 0.0f},
+    {"go", "", SignalKind::Action, SignalType::None, nullptr, nullptr, nullptr, nullptr, 0.0f},
 };
 constexpr size_t kTableCount = sizeof(kTable) / sizeof(kTable[0]);
 
@@ -127,12 +127,12 @@ void TestSlotsAndOwnership() {
   Check(Refused(Sub(s, kLinkPortUart, 3, 2, 10000), "no subscription in slot 3"), "a free slot cannot be renewed");
   Check(Refused(Sub(s, kLinkPortUart, 9, 2, 10000), "no subscription in slot 9"), "a slot number past the table is refused");
 
-  Check(Sub(s, kLinkPortUart, 0, 1, 10000).slot == 3 && Sub(s, kLinkPortUsb, 0, 1, 10000).slot == 4,
-        "slots 3 and 4 fill up");
-  Check(Refused(Sub(s, kLinkPortUart, 0, 1, 10000), "all 4 slots are in use"), "a fifth subscription is refused");
-  Check(s.activeCount() == 4, "four slots are active");
+  for (uint32_t expected = 3; expected <= kLinkMaxSlots; ++expected)
+    Check(Sub(s, expected % 2 ? kLinkPortUart : kLinkPortUsb, 0, 1, 10000).slot == expected, "the slots fill up in order");
+  Check(Refused(Sub(s, kLinkPortUart, 0, 1, 10000), "all 8 slots are in use"), "a ninth subscription is refused");
+  Check(s.activeCount() == kLinkMaxSlots, "every slot is active");
 
-  Check(s.Unsubscribe(kLinkPortUart, 1).accepted && s.activeCount() == 3, "the owner unsubscribes");
+  Check(s.Unsubscribe(kLinkPortUart, 1).accepted && s.activeCount() == kLinkMaxSlots - 1, "the owner unsubscribes");
   Check(s.Unsubscribe(kLinkPortUart, 1).accepted, "unsubscribing a free slot is accepted");
   Check(Sub(s, kLinkPortUsb, 0, 1, 10000).slot == 1, "a freed slot is handed out again");
 

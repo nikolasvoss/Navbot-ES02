@@ -259,13 +259,13 @@ bool GoCall(const float* args, const char** error) {
   return true;
 }
 const SignalEntry kTable[] = {
-    {"speed", "m/s", SignalKind::Signal, SignalType::F32, ReadSpeed, nullptr, nullptr, nullptr},
-    {"count", "", SignalKind::Signal, SignalType::U32, ReadCount, nullptr, nullptr, nullptr},
-    {"low", "V", SignalKind::Min, SignalType::F32, ReadLow, nullptr, nullptr, nullptr},
-    {"high", "us", SignalKind::Max, SignalType::I32, ReadHigh, nullptr, nullptr, nullptr},
-    {"flag", "", SignalKind::Signal, SignalType::Bool, ReadFlag, nullptr, nullptr, nullptr},
-    {"gain", "A/rad", SignalKind::Param, SignalType::F32, ReadGain, WriteGain, nullptr, nullptr},
-    {"go", "", SignalKind::Action, SignalType::None, nullptr, nullptr, GoCall, GoArgs},
+    {"speed", "m/s", SignalKind::Signal, SignalType::F32, ReadSpeed, nullptr, nullptr, nullptr, 0.0f},
+    {"count", "", SignalKind::Signal, SignalType::U32, ReadCount, nullptr, nullptr, nullptr, 0.0f},
+    {"low", "V", SignalKind::Min, SignalType::F32, ReadLow, nullptr, nullptr, nullptr, 0.0f},
+    {"high", "us", SignalKind::Max, SignalType::I32, ReadHigh, nullptr, nullptr, nullptr, 0.0f},
+    {"flag", "", SignalKind::Signal, SignalType::Bool, ReadFlag, nullptr, nullptr, nullptr, 0.0f},
+    {"gain", "A/rad", SignalKind::Param, SignalType::F32, ReadGain, WriteGain, nullptr, nullptr, 0.0f},
+    {"go", "", SignalKind::Action, SignalType::None, nullptr, nullptr, GoCall, GoArgs, 0.0f},
 };
 constexpr size_t kTableCount = sizeof(kTable) / sizeof(kTable[0]);
 const LinkPortBudget kBudgets[kLinkPortCount] = {{200000, 5000}, {57600, 0}};

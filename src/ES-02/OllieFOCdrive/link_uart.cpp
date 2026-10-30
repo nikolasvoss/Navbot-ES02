@@ -151,6 +151,10 @@ void LinkSampleSignals(uint32_t tickStartUs) {
   if (endpoint) endpoint->Sample(tickStartUs);
 }
 
+void LinkSetCommandHandler(LinkCommandHandler handler) {
+  if (endpoint) endpoint->SetCommandHandler(handler);
+}
+
 void LinkUartInit(const SignalEntry* table, size_t count, const char* build) {
   // GPIO19 and GPIO20 are the USB Serial/JTAG D- and D+ pads. They power up in USB mode (pad function and D+ pull-up
   // on), which keeps the UART signals off the pins. Nothing here uses native USB, so release the pads first.

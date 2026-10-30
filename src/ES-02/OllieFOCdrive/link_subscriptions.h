@@ -11,7 +11,7 @@
 // whether the port can carry it. Pure logic; the control loop calls it at tick start (Subscribe, Unsubscribe) and at
 // tick end (Sample).
 
-constexpr size_t kLinkMaxSlots = 4;
+constexpr size_t kLinkMaxSlots = 8;
 constexpr size_t kLinkMaxIds = 48;  // one row of 48 values (196 bytes) fits one frame
 constexpr size_t kLinkMaxRowLen = 4 + 4 * kLinkMaxIds;
 constexpr uint32_t kLinkLeaseUs = 5000000;

@@ -77,17 +77,17 @@ int main() {
   fixture::flag = false;
   Check(Bits("flag") == 0u, "bool false is 0");
 
-  const SignalEntry same[] = {{"a", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr},
-                              {"b", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
-  const SignalEntry dup[] = {{"a", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr},
-                             {"b", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr},
-                             {"a", "", SignalKind::Min, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
+  const SignalEntry same[] = {{"a", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr, 0.0f},
+                              {"b", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr, 0.0f}};
+  const SignalEntry dup[] = {{"a", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr, 0.0f},
+                             {"b", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr, 0.0f},
+                             {"a", "", SignalKind::Min, SignalType::F32, nullptr, nullptr, nullptr, nullptr, 0.0f}};
   Check(SignalNamesUnique(same, 2) && !SignalNamesUnique(dup, 3), "a repeated name is detected, whatever the kind");
 
-  const SignalEntry longName[] = {{"abcdefghijklmnopqrstuvwxy", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
-  const SignalEntry longNameFits[] = {{"abcdefghijklmnopqrstuvwx", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
-  const SignalEntry longUnit[] = {{"a", "12345678901234567", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
-  const SignalEntry noName[] = {{"", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr}};
+  const SignalEntry longName[] = {{"abcdefghijklmnopqrstuvwxy", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr, 0.0f}};
+  const SignalEntry longNameFits[] = {{"abcdefghijklmnopqrstuvwx", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr, 0.0f}};
+  const SignalEntry longUnit[] = {{"a", "12345678901234567", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr, 0.0f}};
+  const SignalEntry noName[] = {{"", "", SignalKind::Signal, SignalType::F32, nullptr, nullptr, nullptr, nullptr, 0.0f}};
   Check(SignalStringsFit(longNameFits, 1) && !SignalStringsFit(longName, 1) && !SignalStringsFit(longUnit, 1) &&
             !SignalStringsFit(noName, 1),
         "names up to 24 and units up to 16 characters fit the catalog");

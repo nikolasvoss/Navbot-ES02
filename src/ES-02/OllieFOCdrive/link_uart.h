@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "BoardConfig.h"
 #include "imu.h"
+#include "link_endpoint.h"
 #include "link_schedule.h"
 #include "signal_table.h"
 
@@ -22,6 +23,9 @@
 // Opens UART1, starts its writer and the receive tasks of both ports, and creates the endpoint that answers the catalog,
 // subscription and parameter requests over `table` (build is the firmware build ID, up to 32 characters).
 void LinkUartInit(const SignalEntry *table, size_t count, const char *build);
+
+// Sets the handler of the Command requests. Call after LinkUartInit; before that the handler is not stored.
+void LinkSetCommandHandler(LinkCommandHandler handler);
 
 // Control loop, at the start of a tick: applies the requests that the receive tasks queued since the last tick.
 // balanceRequested is the sketch's balance state at that moment (see LinkEndpoint::Handle).
