@@ -39,6 +39,10 @@ class NoReply(LinkError):
     """The robot did not answer; it may or may not have acted on the request."""
 
 
+class RobotRestarted(NoReply):
+    """The robot restarted while the request was pending, so it may or may not have acted on it."""
+
+
 class UsageError(LinkError, ValueError):
     """The request is wrong before it reaches the robot: a bad argument or a value that does not parse."""
 

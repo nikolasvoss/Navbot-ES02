@@ -17,6 +17,7 @@ from navbot_link.protocol import (
     Entry,
     LinkError,
     NoReply,
+    RobotRestarted,
     SeqTracker,
     UsageError,
     entry_from_pb,
@@ -426,16 +427,16 @@ class Link:
     def _on_restart(self) -> None:
         # A pending request may have been lost or cut short by the restart, so
         # even the reply that reveals the restart does not count as success.
+        # Remembered Command seqs stay: seqs are unique, so a refusal in this frame still matches.
         with self._lock:
             ended = sorted(self._subs)
             self._subs.clear()
             self._releasing.clear()
             self._renewals.clear()
-            self._commands.clear()
             self._catalog = None
             waiters, self._waiters = set(self._waiters.values()), {}
         for waiter in waiters:
-            waiter.fail(LinkError("robot restarted"))
+            waiter.fail(RobotRestarted("robot restarted"))
         self.events.put(Restarted())
         for slot in ended:
             self.events.put(SubscriptionEnded(slot, "robot restarted"))
@@ -458,7 +459,10 @@ def check_args(entry: Entry, args: dict) -> list[float]:
                         f"{'; missing: ' + ', '.join(missing) if missing else ''}")
     values = []
     for arg in entry.args:
-        value = float(args[arg.name])
+        try:
+            value = float(args[arg.name])
+        except ValueError:
+            raise UsageError(f"{arg.name}={args[arg.name]} is not a number") from None
         if not arg.min <= value <= arg.max:
             raise UsageError(f"{arg.name}={value:g} is outside [{arg.min:g}, {arg.max:g}]")
         values.append(value)

@@ -28,6 +28,8 @@ MAX_BAD_FRACTION = 0.02
 NEUTRAL_THRESHOLD = 1.0
 STOP_WINDOW_MS = 1000
 UINT32_MODULO = 2 ** 32
+# ch5_position: 1 is link mode, where CH3 has no effect; 2 is RC balance, the only position this analysis reads.
+RC_BALANCE = 2
 
 
 def rounded(value, places=3):
@@ -35,7 +37,7 @@ def rounded(value, places=3):
 
 
 def direction(row):
-    if row["ch5_position"] < 1 or abs(row["ch3_target"]) < NEUTRAL_THRESHOLD:
+    if row["ch5_position"] != RC_BALANCE or abs(row["ch3_target"]) < NEUTRAL_THRESHOLD:
         return 0
     return 1 if row["ch3_target"] > 0 else -1
 
@@ -48,7 +50,7 @@ def analyze(path):
     rows = [row for _, row in records]
     if not rows:
         raise ValueError(f"{path}: keine vollständigen DRIVE-Zeilen")
-    active = [row for row in rows if row["ch5_position"] >= 1]
+    active = [row for row in rows if row["ch5_position"] == RC_BALANCE]
     intervals = [b["time_ms"] - a["time_ms"] for a, b in zip(rows, rows[1:]) if b["time_ms"] > a["time_ms"]]
     first_active = active[0] if active else None
 
@@ -61,12 +63,12 @@ def analyze(path):
         current = direction(row)
         if current:
             command_run = command_run + [row] if current == previous_direction else [row]
-        elif previous_direction and len(command_run) >= 2 and row["ch5_position"] >= 1:
+        elif previous_direction and len(command_run) >= 2 and row["ch5_position"] == RC_BALANCE:
             window = []
             start_ms = row["time_ms"]
             for candidate in rows[index:]:
                 if (candidate["time_ms"] - start_ms > STOP_WINDOW_MS
-                        or direction(candidate) or candidate["ch5_position"] < 1):
+                        or direction(candidate) or candidate["ch5_position"] != RC_BALANCE):
                     break
                 window.append(candidate)
             if window:
@@ -159,11 +161,11 @@ def markdown(results):
         if not run["capture_ok"]:
             issues.append(f"Tracequalität unzureich ({run['valid_rows']} gültig, {run['malformed_rows']} defekt)")
         if not run["active_rows"]:
-            issues.append("CH5 nie aktiv")
+            issues.append("CH5 nie auf RC-Balance (2)")
         if not run["command_rows"]:
-            issues.append("CH3 blieb neutral")
+            issues.append("CH3 blieb in RC-Balance neutral")
         if run["command_rows"] and not run["releases"]:
-            issues.append("kein vollständiger CH3→neutral-Stopp")
+            issues.append("kein vollständiger CH3→neutral-Stopp in RC-Balance")
         if run["activation_roll_deg"] is not None and abs(run["activation_roll_deg"]) > 10:
             issues.append("Startneigung über 10°; Vergleich durch Anlauf gestört")
         if not issues:

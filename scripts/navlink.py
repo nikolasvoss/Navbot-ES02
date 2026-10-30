@@ -36,6 +36,7 @@ from navbot_link.protocol import (  # noqa: E402
     Kind,
     LinkError,
     NoReply,
+    RobotRestarted,
     Type,
     UnknownName,
     UsageError,
@@ -50,7 +51,7 @@ UART_BAUD = 2_000_000
 STALL_S = 2.0
 WAIT_STEP_S = 0.25
 # Exit codes of the one-shot commands.
-EXIT_DONE, EXIT_REFUSED, EXIT_USAGE, EXIT_NO_CONNECTION = 0, 1, 2, 3
+EXIT_DONE, EXIT_REFUSED, EXIT_USAGE, EXIT_NO_CONNECTION, EXIT_INTERRUPTED = 0, 1, 2, 3, 130
 LEVEL_RANK = {"DEBUG": 1, "INFO": 2, "WARN": 3, "ERROR": 4, "FATAL": 5}
 
 
@@ -78,7 +79,7 @@ def read_params(link: Link) -> list:
     return [(e, link.get(e.name)) for e in link.catalog().params]
 
 
-def capture(link: Link, args, out) -> int:
+def capture(link: Link, args, out, f) -> int:
     spec = [f"@{args.preset}"] if args.preset else args.signals.split(",")
     names, preset_rate = resolve_signals(spec, args.presets)
     rate = args.rate if args.rate is not None else (preset_rate or 0)
@@ -90,30 +91,31 @@ def capture(link: Link, args, out) -> int:
     period_s = sub.period_us / 1e6
     rows, t0 = 0, None
     try:
-        with open(args.output, "w", newline="", encoding="utf-8") as f:
-            writer = CsvWriter(f, sub.entries, catalog.build, rate, params)
-            while True:
-                try:
-                    event = link.events.get(timeout=max(STALL_S, 3 * period_s))
-                except queue.Empty:
-                    raise NoReply(f"no data for {max(STALL_S, 3 * period_s):g} s") from None
-                if isinstance(event, Row) and event.slot == sub.slot:
-                    t0 = event.t_us if t0 is None else t0
-                    # Robot time, not PC time: the file holds exactly --seconds of data.
-                    if (event.t_us - t0) & 0xFFFFFFFF >= args.seconds * 1e6:
-                        break
-                    writer.row(event)
-                    rows += 1
-                elif isinstance(event, (LogEvent, FramesLost)):
-                    writer.event(event)
-                    print(describe(event), file=sys.stderr)
-                elif isinstance(event, Text):
-                    print(event.text.rstrip("\r\n"), file=sys.stderr)
-                elif isinstance(event, SubscriptionEnded) and event.slot == sub.slot:
-                    writer.event(event)
-                    raise LinkError(f"capture stopped: {event.reason}")
-                elif isinstance(event, Disconnected):
-                    raise LinkError(f"port closed: {event.reason}")
+        writer = CsvWriter(f, sub.entries, catalog.build, rate, params)
+        while True:
+            try:
+                event = link.events.get(timeout=max(STALL_S, 3 * period_s))
+            except queue.Empty:
+                raise NoReply(f"no data for {max(STALL_S, 3 * period_s):g} s") from None
+            if isinstance(event, Row) and event.slot == sub.slot:
+                t0 = event.t_us if t0 is None else t0
+                # Robot time, not PC time: the file holds exactly --seconds of data.
+                if (event.t_us - t0) & 0xFFFFFFFF >= args.seconds * 1e6:
+                    break
+                writer.row(event)
+                rows += 1
+            elif isinstance(event, (LogEvent, FramesLost)):
+                writer.event(event)
+                print(describe(event), file=sys.stderr)
+            elif isinstance(event, Text):
+                print(event.text.rstrip("\r\n"), file=sys.stderr)
+            elif isinstance(event, Restarted):
+                raise RobotRestarted("robot restarted")
+            elif isinstance(event, SubscriptionEnded) and event.slot == sub.slot:
+                writer.event(event)
+                raise LinkError(f"capture stopped: {event.reason}")
+            elif isinstance(event, Disconnected):
+                raise LinkError(f"port closed: {event.reason}")
     finally:
         try:
             link.unsubscribe(sub.slot)
@@ -350,7 +352,8 @@ def entry_record(e) -> dict:
     if e.kind == Kind.PARAM:
         record["live_step"] = json_value(Type.F32, e.live_step)
     if e.kind == Kind.ACTION:
-        record["args"] = [{"name": a.name, "min": json_number(a.min), "max": json_number(a.max)} for a in e.args]
+        record["args"] = [{"name": a.name, "min": json_value(Type.F32, a.min), "max": json_value(Type.F32, a.max)}
+                          for a in e.args]
     return record
 
 
@@ -373,8 +376,19 @@ def action_values(entry, words: list[str]) -> list[float]:
     return check_args(entry, kwargs)
 
 
+def _close_quietly(link: Link | None) -> None:
+    """Closes the link; a failing close must not replace the exit code of the command."""
+    if link is None:
+        return
+    try:
+        link.close()
+    except Exception as exc:  # noqa: BLE001
+        print(f"navlink: warning: closing the link failed: {exc}", file=sys.stderr)
+
+
 def open_ready(open_link, port: str, baud: int, wait_s: float) -> Link:
-    """Opens the link and reads the catalog. With wait_s, retries until the robot answers or the time is up."""
+    """Opens the link and reads the catalog. A failure to get there is no connection (exit 3), retried
+    with wait_s until the robot answers. An attempt starts only if it can finish before the deadline."""
     deadline = time.monotonic() + wait_s
     while True:
         link = None
@@ -382,12 +396,21 @@ def open_ready(open_link, port: str, baud: int, wait_s: float) -> Link:
             link = open_link(port, baud)
             link.catalog()
             return link
-        except (LinkError, OSError):
-            if link is not None:
-                link.close()
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(WAIT_STEP_S)
+        except (UnknownName, UsageError):
+            _close_quietly(link)
+            raise
+        except LinkError as exc:
+            _close_quietly(link)
+            error = NoReply(str(exc))
+        except OSError as exc:
+            _close_quietly(link)
+            error = exc
+        except BaseException:
+            _close_quietly(link)
+            raise
+        if time.monotonic() + WAIT_STEP_S > deadline:
+            raise error
+        time.sleep(WAIT_STEP_S)
 
 
 def cmd_info(link: Link, args, out) -> int:
@@ -524,17 +547,27 @@ def _fail(code: int, exc) -> int:
     return code
 
 
+def _open_output(path: str):
+    """Opened before the link, so a bad path is a usage error and no robot is contacted for it."""
+    try:
+        return open(path, "w", newline="", encoding="utf-8")
+    except OSError as exc:
+        raise UsageError(f"cannot write {path}: {exc.strerror or exc}") from None
+
+
 def main(argv=None, *, open_link=None, stdin=None, stdout=None) -> int:
     args = parse_args(argv)
     stdin, stdout = stdin or sys.stdin, stdout or sys.stdout
     open_link = open_link or (lambda port, baud: Link(port, baud))
     if args.command == "call" and not args.yes:
         return _fail(EXIT_USAGE, "call needs --yes")
-    link = None
+    link, output = None, None
     try:
+        if args.command == "capture":
+            output = _open_output(args.output)
         link = open_ready(open_link, args.port, args.baud or default_baud(args.port), args.wait)
         if args.command == "capture":
-            return capture(link, args, stdout)
+            return capture(link, args, stdout, output)
         if args.command == "shell":
             Shell(link, args.presets, stdin, stdout).cmdloop()
             return EXIT_DONE
@@ -546,9 +579,13 @@ def main(argv=None, *, open_link=None, stdin=None, stdout=None) -> int:
     except LinkError as exc:
         dead = link is not None and link.dead_reason is not None
         return _fail(EXIT_NO_CONNECTION if dead else EXIT_REFUSED, exc)
+    except KeyboardInterrupt:
+        print("navlink: interrupted", file=sys.stderr)
+        return EXIT_INTERRUPTED
     finally:
-        if link is not None:
-            link.close()
+        if output is not None:
+            output.close()
+        _close_quietly(link)
 
 
 if __name__ == "__main__":

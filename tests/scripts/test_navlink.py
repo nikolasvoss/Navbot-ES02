@@ -6,6 +6,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tests" / "navbot_link"))
@@ -16,6 +18,7 @@ SPEC.loader.exec_module(navlink)
 from fake_firmware import FakeFirmware, MemoryTransport, PtyFirmware  # noqa: E402
 from navbot_link import navbot_link_pb2 as pb  # noqa: E402
 from navbot_link.link import Link  # noqa: E402
+from navbot_link.protocol import Arg, Entry, Kind  # noqa: E402
 
 SPEED_LOOP_SIGNALS = "speed_target,speed_measured,speed_p,speed_i,tilt_ref,tilt_clipped"
 SPEED_LOOP_CSV = """\
@@ -76,7 +79,110 @@ def test_capture_fails_on_a_signal_the_firmware_lacks(tmp_path, capsys):
                  "--seconds", "1", "-o", str(csv)], FakeFirmware())
     assert rc == 2
     assert capsys.readouterr().err == "navlink: error: unknown signal k58_drive_mode\n"
-    assert not csv.exists()
+    assert csv.read_text() == ""  # the output is opened before the link, so it exists and stays empty
+
+
+def test_capture_output_that_cannot_be_written_is_a_usage_error_before_the_link_opens(tmp_path, capsys):
+    opened = []
+    missing = tmp_path / "no-such-dir" / "out.csv"
+    rc, out = run(["capture", "--port", "/dev/ttyAMA3", "--signals", "speed_target", "--rate", "100",
+                   "--seconds", "0.05", "-o", str(missing)], FakeFirmware(), opened=opened)
+    assert (rc, out) == (2, "")
+    assert capsys.readouterr().err == f"navlink: error: cannot write {missing}: No such file or directory\n"
+    assert opened == []
+    rc, _ = run(["capture", "--port", "/dev/ttyAMA3", "--signals", "speed_target", "--rate", "100",
+                 "--seconds", "0.05", "-o", str(tmp_path)], FakeFirmware())
+    assert rc == 2
+    assert capsys.readouterr().err == f"navlink: error: cannot write {tmp_path}: Is a directory\n"
+
+
+class RestartAfterSubscribe(MemoryTransport):
+    """The robot restarts as soon as the subscription is in place."""
+
+    restarted = False
+
+    def read(self):
+        if not self.restarted and self.firmware.subscribed_slots():
+            self.restarted = True
+            self.firmware.restart()
+        return super().read()
+
+
+def test_capture_ends_with_no_connection_when_the_robot_restarts(tmp_path, capsys):
+    fw = FakeFirmware()
+    csv = tmp_path / "restart.csv"
+    code = navlink.main(["capture", "--port", "/dev/ttyAMA3", "--signals", "speed_target", "--rate", "100",
+                         "--seconds", "5", "-o", str(csv)],
+                        open_link=lambda port, baud: Link(RestartAfterSubscribe(fw)), stdout=io.StringIO())
+    assert code == 3
+    assert capsys.readouterr().err == "navlink: error: robot restarted\n"
+
+
+def test_ctrl_c_exits_130_with_one_line(capsys):
+    def open_link(port, baud):
+        raise KeyboardInterrupt
+
+    assert run_with(["info"], open_link) == 130
+    assert capsys.readouterr().err == "navlink: interrupted\n"
+
+
+def run_with(argv, open_link):
+    return navlink.main(argv, open_link=open_link, stdout=io.StringIO())
+
+
+def test_open_ready_closes_the_link_on_any_exception():
+    class Interrupted:
+        closed = False
+
+        def catalog(self):
+            raise KeyboardInterrupt
+
+        def close(self):
+            self.closed = True
+
+    link = Interrupted()
+    with pytest.raises(KeyboardInterrupt):
+        navlink.open_ready(lambda port, baud: link, "port", 1, 0)
+    assert link.closed
+
+
+def test_a_link_that_dies_while_opening_is_no_connection(capsys):
+    class ResetTransport:
+        def read(self):
+            raise OSError("connection reset")
+
+        def write(self, data):
+            pass
+
+        def close(self):
+            pass
+
+    def open_link(port, baud):
+        return Link(ResetTransport())
+
+    for argv in (["info"], ["get", "speed_kp", "--wait", "0.3"]):
+        assert run_with(argv, open_link) == 3
+        assert capsys.readouterr().err == "navlink: error: connection reset\n"
+
+
+def test_a_failing_close_does_not_change_the_exit_code(capsys):
+    fw = FakeFirmware()
+
+    def open_link(port, baud):
+        link = Link(MemoryTransport(fw))
+        close_link = link.close
+
+        def close_then_fail():
+            close_link()
+            raise OSError("port already closed")
+
+        link.close = close_then_fail
+        return link
+
+    assert run_with(["get", "nope"], open_link) == 2
+    err = capsys.readouterr().err
+    assert "navlink: error: unknown signal nope\n" in err
+    assert "navlink: warning: closing the link failed: port already closed\n" in err
 
 
 class Script:
@@ -314,3 +420,50 @@ def test_set_follows_the_live_step_rule_while_balancing(capsys):
     assert capsys.readouterr().err == "navlink: error: set_param refused: speed_kp: step 0.08 over 0.05 while balancing\n"
     assert run(["set", "speed_i_on", "0"], fw) == (1, "")
     assert capsys.readouterr().err == "navlink: error: set_param refused: speed_i_on: refused while balancing\n"
+
+
+def test_wait_gives_up_before_its_deadline_and_closes_every_link(capsys):
+    class Silent:
+        closed = False
+
+        def read(self):
+            time.sleep(0.01)
+            return b""
+
+        def write(self, data):
+            pass
+
+        def close(self):
+            self.closed = True
+
+    transports = []
+
+    def open_link(port, baud):
+        transports.append(Silent())
+        return Link(transports[-1], timeout_s=0.05, retries=1)
+
+    started = time.monotonic()
+    code = run_with(["info", "--wait", "0.5"], open_link)
+    assert code == 3
+    assert time.monotonic() - started < 2.0
+    assert len(transports) == 2  # a third attempt could not finish before the deadline
+    assert all(transport.closed for transport in transports)
+    assert capsys.readouterr().err == "navlink: error: no reply to get_catalog\n"
+
+
+def test_log_json_is_one_object_per_event_at_or_above_the_minimum_level():
+    fw = FakeFirmware()
+    fw.log("first", "a", pb.Log.WARN)
+    fw.log("skipped", "b", pb.Log.DEBUG)
+    fw.log("second", "c", pb.Log.ERROR)
+    rc, out = run(["log", "--seconds", "0.3", "--min-level", "WARN", "--json"], fw)
+    assert rc == 0
+    assert [json.loads(line) for line in out.splitlines()] == [
+        {"t_ms": 1000, "level": "WARN", "tag": "a", "text": "first"},
+        {"t_ms": 1000, "level": "ERROR", "tag": "c", "text": "second"},
+    ]
+
+
+def test_action_argument_bounds_in_json_go_through_the_float32_rounding():
+    entry = Entry(0, "tune", "", Kind.ACTION, None, (Arg("gain", 0.1, 0.3),))
+    assert json.dumps(navlink.entry_record(entry)["args"]) == '[{"name": "gain", "min": 0.1, "max": 0.3}]'

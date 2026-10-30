@@ -16,7 +16,7 @@ DRIVE_SIGNALS = list(load_presets(ROOT / "scripts" / "navlink_presets.yaml")["dr
 OTHER_HEADER = "t_us,ch5_position,ch3_target,motor1_target,motor2_target"
 
 
-def drive_row(time_ms, command, speed, *, roll=0, ch5=1, **fields):
+def drive_row(time_ms, command, speed, *, roll=0, ch5=2, **fields):  # ch5 2: RC balance
     values = {name: 0 for name in DRIVE_SIGNALS}
     values.update(ch5_position=ch5, voltage_min_raw_v=7.9, voltage_filtered_v=7.9,
                   imu_sequence=time_ms, imu_read_time_us=time_ms * 1000, imu_dt_s=0.007,
@@ -47,6 +47,28 @@ class DriveTraceTest(unittest.TestCase):
         self.assertEqual(len(result["releases"]), 1)
         self.assertEqual(result["opposite_speed_peak"], 7)
         self.assertEqual(result["releases"][0]["command_peak"], 5)
+
+    def test_link_mode_ch3_is_not_a_command_or_a_stop(self):
+        # CH5 1 is link mode: the RC stick has no effect there, so its stop is not counted.
+        lines = [drive_row(i * 50, 0, 0, ch5=1) for i in range(10)]
+        lines += [drive_row(i * 50, 5, 4, ch5=1) for i in range(10, 14)]
+        lines += [drive_row(i * 50, 0, 0, ch5=1) for i in range(14, 24)]
+        with tempfile.TemporaryDirectory() as directory:
+            result = analyze(self.write_log(directory, lines))
+        self.assertEqual(result["active_rows"], 0)
+        self.assertEqual(result["command_rows"], 0)
+        self.assertEqual(result["releases"], [])
+        self.assertFalse(result["stop_available"])
+
+    def test_stop_that_leaves_rc_balance_is_not_counted(self):
+        lines = [drive_row(i * 50, 0, 0) for i in range(10)]
+        lines += [drive_row(i * 50, 5, 4) for i in range(10, 14)]
+        lines += [drive_row(700, 0, -7, ch5=1), drive_row(750, 0, -7, ch5=1)]
+        lines += [drive_row(i * 50, 0, -7) for i in range(16, 24)]
+        with tempfile.TemporaryDirectory() as directory:
+            result = analyze(self.write_log(directory, lines))
+        self.assertEqual(result["releases"], [])
+        self.assertFalse(result["stop_available"])
 
     def test_neutral_ch3_and_tilt_do_not_pass_stop_gate(self):
         lines = [drive_row(i * 50, 0, 0, roll=-23) for i in range(24)]

@@ -1,4 +1,5 @@
 import queue
+import threading
 import time
 
 import pytest
@@ -8,7 +9,32 @@ from navbot_link import navbot_link_pb2 as pb
 from navbot_link.framing import FrameDecoder, Text, encode_frame
 from navbot_link.link import (CommandRefused, Disconnected, FramesLost, Link, LogEvent, Restarted, Row,
                               SubscriptionEnded, Telemetry)
-from navbot_link.protocol import Arg, Entry, Kind, LinkError, Type
+from navbot_link.protocol import Arg, Entry, Kind, LinkError, RobotRestarted, Type
+
+
+class PushTransport:
+    """Sends only the frames the test pushes, and keeps what the PC writes."""
+
+    def __init__(self):
+        self.written = []
+        self._inbox = []
+        self._lock = threading.Lock()
+
+    def push(self, msg) -> None:
+        with self._lock:
+            self._inbox.append(encode_frame(msg.SerializeToString()))
+
+    def read(self) -> bytes:
+        time.sleep(0.001)
+        with self._lock:
+            out, self._inbox = b"".join(self._inbox), []
+        return out
+
+    def write(self, data: bytes) -> None:
+        self.written.append(data)
+
+    def close(self) -> None:
+        pass
 
 
 class RecordingTransport(MemoryTransport):
@@ -315,10 +341,40 @@ def test_a_restart_during_a_call_fails_the_call():
     with Link(transport, clock=lambda: 0.0) as link:
         link.catalog()
         transport.restart_before_write = True
-        with pytest.raises(LinkError, match="^robot restarted$"):
+        with pytest.raises(RobotRestarted, match="^robot restarted$"):
             link.call("motor_reset")
         assert next_events(link, 1, Restarted) == [Restarted()]
     assert fw.calls == [("motor_reset", [])]
+
+
+def test_a_refusal_in_the_frame_that_reveals_a_restart_is_still_reported():
+    transport = PushTransport()
+    with Link(transport, clock=lambda: 0.0, renew_s=60) as link:
+        link.command(0.2, 0.5)  # seq 1
+        transport.push(pb.Message(seq=50, log=pb.Log(level=pb.Log.INFO, text="alive", tag="t")))
+        next_events(link, 1, LogEvent)
+        transport.push(pb.Message(seq=2, ack=pb.Ack(command_id=1, accepted=False,
+                                                    error="CH5 not in link position (1)")))
+        events = next_events(link, 2, (Restarted, CommandRefused))
+    assert events == [Restarted(), CommandRefused("CH5 not in link position (1)")]
+
+
+def test_refusals_of_commands_older_than_the_64_remembered_are_dropped():
+    transport = PushTransport()
+    with Link(transport, clock=lambda: 0.0, renew_s=60) as link:
+        for _ in range(65):
+            link.command(0.0, 0.0)  # seqs 1 to 65; seq 1 is forgotten
+        transport.push(pb.Message(seq=1, ack=pb.Ack(command_id=1, accepted=False, error="refused 1")))
+        transport.push(pb.Message(seq=2, ack=pb.Ack(command_id=65, accepted=False, error="refused 65")))
+        transport.push(pb.Message(seq=3, log=pb.Log(level=pb.Log.INFO, text="done", tag="t")))
+        reasons = []
+        while True:
+            event = link.events.get(timeout=2.0)
+            if isinstance(event, LogEvent):
+                break
+            if isinstance(event, CommandRefused):
+                reasons.append(event.reason)
+    assert reasons == ["refused 65"]
 
 
 def test_usb_port_passes_boot_text_through_between_frames():
