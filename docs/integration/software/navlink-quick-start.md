@@ -4,15 +4,14 @@ Talk to the robot from the ros2_pc: read values, watch streams, change settings,
 
 ## 1. Start
 
-Only one program can use the serial port, so stop the ROS bridge first.
+The link multiplexer (`navbot-link-mux.service`) owns the serial port and shares it with the ROS bridge, so `navlink` runs next to the bridge without stopping it.
 
 ```bash
-sudo systemctl stop navbot-link-bridge
 cd ~/Navbot-wt/fw
-python3 scripts/navlink.py shell --port /dev/ttyAMA3
+python3 scripts/navlink.py shell
 ```
 
-When you are done, type `quit` and run `sudo systemctl start navbot-link-bridge`.
+When you are done, type `quit`.
 
 Over USB, use `--port /dev/ttyUSB0`. Opening it resets the robot, so wait about 20 seconds before the first command.
 
@@ -38,19 +37,28 @@ Over USB, use `--port /dev/ttyUSB0`. Opening it resets the robot, so wait about 
 | `log on` / `log off` | Show or hide robot log messages. |
 | `quit` | Stop all streams and exit. |
 
-Presets (`@trace`, `@ctrl`, `@bal`, `@drive`) are named signal lists at 100 Hz, defined in `scripts/navlink_presets.yaml`.
+Presets (`@trace`, `@ctrl`, `@bal`, `@drive` at 100 Hz, `@health` at 1 Hz) are named signal lists, defined in `scripts/navlink_presets.yaml`.
 
 ## 4. Record a file without the shell
 
 ```bash
-python3 scripts/navlink.py capture --port /dev/ttyAMA3 --preset drive --seconds 30 -o drive-01.csv
+python3 scripts/navlink.py capture --preset drive --seconds 30 -o drive-01.csv
 ```
 
 The file has a `#` header with the firmware build and all parameters, then `t_us,<names>` rows. Robot log messages appear as `#` lines.
 
+One command at a time, with JSON for scripts:
+
+```bash
+python3 scripts/navlink.py get roll_deg ch5_position --json
+python3 scripts/navlink.py set speed_kp 0.12
+```
+
+Exit codes are 0 done, 1 refused by the robot, 2 usage error, 3 no connection. [Full list](navlink.md#one-shot-commands).
+
 ## 5. How many streams
 
-- **At most 4 streams at once**, counted over all connections to the robot. The robot assigns the number; `unsub` frees it.
+- **At most 8 streams at once**, counted over all connections to the robot. The robot assigns the number; `unsub` frees it.
 - **At most 48 signals per stream.**
 - **Each connection has a bandwidth budget.** A stream costs `(4 + 4 × signals + 26) × rate` bytes per second. The shell prints the cost when you start a stream. The robot refuses a stream that goes over the budget and names both numbers.
 
@@ -65,16 +73,20 @@ A stream belongs to the connection that started it. Another connection cannot st
 
 ## 6. Rules and safety
 
-- The robot refuses every `set` while balance is on (CH5 on). Switch balance off first.
+- While balance is requested (CH5 not at 0), the robot refuses a `set` of a parameter without a live step. A live parameter may change by at most its step per `set` (`speed_kp` by 0.05, for example). Set the others with CH5 at 0.
 - The robot refuses a value that breaks a rule, such as `trim_envelope` above `tilt_ref_limit`. The old value stays, and the message says why.
 - The motor actions and `calibrate` move the motors. Lift the wheels first and keep a hand on the power. `motor_stop` stops them.
+- `balance` starts or stops balance only with CH5 in the middle position (link). `reboot` needs CH5 at 0.
 - Streams stop 5 seconds after the shell dies, so a crashed shell never leaves the robot streaming.
 
 ## 7. If something is wrong
 
 | Message | Meaning |
 | --- | --- |
-| `no reply to get_catalog` | The robot is still booting, or another program holds the port. Wait 20 seconds, check that the bridge is stopped, and try again. |
+| `no reply to get_catalog` | The robot is still booting, or the multiplexer is not running. Wait 20 seconds, check `systemctl status navbot-link-mux`, and try again. |
 | `unknown signal <name>` | The name is not in the robot's list. Use `list`. |
-| `refused while balancing` | Switch balance off. |
-| `slot in use` | Another port owns the stream. Stop it there first. |
+| `refused while balancing` | The parameter has no live step. Set CH5 to 0 first. |
+| `step <d> over <step> while balancing` | A live parameter may move by at most its step while balancing. Change it in smaller steps. |
+| `CH5 not in link position (1)` | `balance` and drive commands work only with CH5 in the middle position. |
+| `CH5 must be 0 and balance off` | `reboot` needs CH5 at 0. |
+| `slot in use` | Another client owns the stream. Stop it there first. |

@@ -26,13 +26,26 @@ Status: the protocol (COBS, CRC-16, Protobuf), the firmware sender for `WheelOdo
 
 Context: the log frames, the signal table, the parameters and the actions are implemented and host-tested: [signal table](../software/signal-table.md), [navlink](../software/navlink.md), [bridge](../software/navbot-link-bridge.md) and [sensor diagnostic mode](../../robot/software/sensor-diagnostic-mode.md). None of the checks below has run on the robot. Run them with the robot supported, balance off and the motor outputs safe.
 
-- [ ] Normal image, on the ros2_pc: `navlink capture --preset drive` runs over `/dev/ttyAMA3`, and `navlink shell` lists the catalog and reads the parameters.
+- [ ] Normal image, on the ros2_pc: `navlink capture --preset drive` runs through the link multiplexer (`/dev/ttyAMA3`), and `navlink shell` lists the catalog and reads the parameters.
 - [ ] Normal image: `navlink shell` sets one parameter, then calls `motor_stop` and `motor_reset`.
 - [ ] A `Log` from a `set` made on one port appears on the other port, and the USB port shows the same `Log` frames as UART1.
 - [ ] Boot, both images: the setup lines (`system run.`, the calibration lines, the `Link` GPIO19 check) arrive on UART1 from the first boot, not only on USB.
 - [ ] Diagnostic image: `sensor_monitor.py` prints the `IMU_TIMING` line in full; `navlink shell` reads the catalog and the live signals on the [diagnostic page](../../robot/software/sensor-diagnostic-mode.md#which-signals-are-live); `motor_current`, `motor_voltage` and `calibrate` are refused with their reasons.
 - [ ] Bridge on the ros2_pc against the robot (so far run only against the fake firmware): `/rosout` shows the robot's `Log` lines, `/navbot/signals` streams a chosen set of signals, and the firmware parameters appear as ROS parameters.
-- [ ] The firmware does not act on ROS `Command` yet. RC/ROS arbitration and a command timeout belong with the ROS control work.
+## Link autonomy on the robot
+
+Context: the CH5 link position, `balance` and `reboot` from the link, the drive `Command` and its timeout, the live parameters and their steps, the link multiplexer, the one-shot navlink commands, the build ID, `log_level`, the health signals and the bridge's `/cmd_vel`, `/diagnostics` and `/battery_state` are implemented and host-tested: [protocol](../software/ros2-uart-protocol.md#command), [navlink](../software/navlink.md), [bridge](../software/navbot-link-bridge.md#drive-and-health-topics) and [signal table](../software/signal-table.md#health-balance-state-and-link-signals). None of the checks below has run on the robot. Run them with the robot supported, wheels free, and balance off unless a check says otherwise.
+
+- [ ] Build ID: `scripts/build_remote.sh`, flash, `navlink info`: the build ID starts with `git rev-parse --short=8 HEAD`.
+- [ ] Multiplexer and bridge: reinstall both services and start them. `navlink get uptime_s` and a 10 s `navlink capture` while the bridge publishes `/odom`: no `FramesLost` in either.
+- [ ] CH5: move through positions 0, 1 and 2 and read `ch5_position` each time (checks the raw thresholds 592 and 1402).
+- [ ] `navlink call reboot --yes` is refused in positions 1 and 2 and accepted in 0. `navlink info --wait 40` returns with a new `uptime_s`.
+- [ ] Health: `navlink capture --preset health --seconds 5` shows plausible heap, stack and uptime, and zero link counters; `/diagnostics` and `/battery_state` arrive at 1 Hz.
+- [ ] `navlink set log_level 3`: no INFO lines in `navlink log --seconds 10`. Set it back to 2.
+- [ ] With the user, balance in position 2: a live `set speed_kp` within its step is accepted, and one over it is refused. The steps in the [signal table](../software/signal-table.md#parameters-settings-groups) are confirmed or changed here.
+- [ ] With the user: moving CH5 from 2 to 1 keeps balancing; `call balance on=0` and `on=1` in position 1.
+- [ ] With the user: `/cmd_vel` at 0.1 m/s from `teleop_twist_keyboard`; stop publishing and the robot stops within the timeout.
+- [ ] With the user: CH5 from 1 to 0 ends balance; 0 to 2 in one move starts balance only at 2; 2 to 0 in one move ends it. Record the results in a lab note.
 
 ## Optional: fault-triggered recording (black box)
 

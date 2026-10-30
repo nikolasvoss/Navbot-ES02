@@ -16,7 +16,7 @@ def main():
                         help="new CSV path (default: drive-YYYYMMDD-HHMMSS.csv)")
     parser.add_argument("--seconds", type=float, default=25)
     parser.add_argument("--port", required=True,
-                        help="/dev/ttyAMA3 (stop the bridge first) or /dev/ttyUSB0")
+                        help="tcp:127.0.0.1:7650 (the link multiplexer, which owns /dev/ttyAMA3) or /dev/ttyUSB0")
     parser.add_argument("--baud", type=int, help="default: navlink's baud rate for the port")
     args = parser.parse_args()
     if args.seconds <= 0:
