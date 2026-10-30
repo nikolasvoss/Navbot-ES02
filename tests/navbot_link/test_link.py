@@ -272,6 +272,11 @@ def test_command_is_sent_at_once_and_only_a_refusal_comes_back():
         (refused,) = next_events(link, 1, CommandRefused)
         assert refused.reason == "CH5 not in link position (1)"
         fw.link_position = True
+        fw.position_change_pending = True
+        link.command(0.1, 0.0)
+        (refused,) = next_events(link, 1, CommandRefused)
+        assert refused.reason == "CH5 position change pending"
+        fw.position_change_pending = False
         link.command(0.1, 0.0)
         assert link.get("speed_kp") == pytest.approx(0.08)  # the Ack of the Command is ahead of this reply
         queued = []

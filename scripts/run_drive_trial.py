@@ -29,7 +29,7 @@ def main():
         parser.error(f"Verzeichnis fehlt: {log_path.parent}")
 
     print("Drive-Versuch: CH3/CH4 zunächst neutral, CH9/CH10 mittig; ",
-          "CH5 und Startlage prüfen. Nach Aufnahmebeginn CH5 aktivieren, ",
+          "CH5 und Startlage prüfen. Nach Aufnahmebeginn CH5 auf Position 2 (das ferne Ende, RC-Balance) schalten, ",
           "CH3-Impuls geben und auf neutral zurückstellen.", sep="", flush=True)
     print(f"Log: {log_path}; Bericht: {report_path}", flush=True)
     capture = ["capture", "--port", args.port, "--preset", "drive",

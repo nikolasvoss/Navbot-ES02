@@ -52,7 +52,7 @@ The behavior is coupled through the mechanics: a servo movement changes the posi
 | **CH1, CH2** | Unused (body roll, leg height, and pitch were removed). |
 | **CH3** | Speed request, forward stick positive, scaled to plus and minus 0.3 m/s. Ignored in Commissioning. |
 | **CH4** | Yaw-rate request, left stick positive, scaled to plus and minus 1.0 rad/s. |
-| **CH5** | Enable. Raw below 592 is off; 592 or above is on. Only the change from off to on starts Arming; off takes every state to Disabled and clears a fault. |
+| **CH5** | Enable, three positions. Raw below 592 is off (0). 592 to 1401 is link mode (1): balance follows the link's `balance` action, and the link drives with `Command`. 1402 and above is RC balance (2). In position 2, only the change from off to on starts Arming; off takes every state to Disabled and clears a fault. |
 | **CH6** | Save request for the trim (raw 992 or above), only in Commissioning. |
 | **CH7** | Commissioning (raw 992 or above). |
 | **CH8, CH10** | Unused. |

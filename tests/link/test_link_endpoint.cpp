@@ -685,7 +685,7 @@ int main() {
   Check(Is(sink.Take(0), kRepCallGain), "Call of a parameter is refused");
   Check(gGoStarts == 1 && sink.Take(0).empty(), "the handler ran once, and nothing else was sent");
 
-  // SetParam is refused while balance is requested (CH5 on or the controller running); GetParam still reads.
+  // While balance is requested (CH5 in position 1 or 2, or the controller running), a non-live PARAM is refused and a live one is allowed within its step; GetParam still reads.
   gGain = 0.25f;
   QueueSink balanceSink;
   LinkEndpoint balanceEndpoint(kTable, kTableCount, "fw-test-1", kBudgets, balanceSink);

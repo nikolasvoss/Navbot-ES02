@@ -61,7 +61,7 @@ Disabled, Arming and Fault keep the drivers off. Run and Commissioning run the c
 | --- | --- | --- |
 | CH3 | Drive request | Forward stick = forward, up to the speed cap. Raw 992 is centre. |
 | CH4 | Turn request | Left stick = left turn (positive yaw rate). |
-| CH5 | Enable | Raw below 592 = off. 592 or above = on (positions 1 and 2 are both on). Only the change from off to on starts Arming. A position that is already on at boot, or when the remote reconnects, is ignored: flip CH5 off and on again. |
+| CH5 | Enable | Three positions. 0 (raw below 592) = off. 1 (592 to 1401) = link mode: balance follows the link's `balance` action (signal `link_balance`), and the link drives with `Command`; see [Command](../../integration/software/ros2-uart-protocol.md#command). 2 (1402 and above) = RC balance on. Only the change from off to on in position 2 starts Arming. Position 2 that is already on at boot, or when the remote reconnects, is ignored: flip CH5 off and on again. |
 | CH6 | Save trim | Raw 992 or above = on. Only the change from off to on counts, and only in Commissioning. |
 | CH7 | Commissioning | Raw 992 or above = on. Switch it on in Run to enter Commissioning, off to leave. |
 | CH9 | Trim knob | Works only in Commissioning, with pickup (below). Raw 992 = trim 0, the end stops are plus and minus 3 degrees. |
