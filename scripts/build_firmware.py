@@ -8,9 +8,13 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from firmware_build_config import DEFAULT_FQBN, DEFAULT_OUTPUT_DIR, DEFAULT_SKETCH, REPOSITORY_ROOT
+
+BUILD_ID_LIMIT = 32
+BUILD_TIME_FORMAT = "%Y-%m-%d %H:%M"
 
 
 @dataclass(frozen=True)
@@ -83,7 +87,46 @@ def _validate(parser: argparse.ArgumentParser, request: BuildRequest) -> None:
         parser.error(f"output path is not a directory: {request.output_dir}")
 
 
+def build_id(revision: str | None, dirty: bool, now: datetime) -> str:
+    """Return '<revision>[-dirty] <time>', or 'nogit <time>' without a revision."""
+    stamp = now.strftime(BUILD_TIME_FORMAT)
+    text = f"nogit {stamp}" if revision is None else f"{revision}{'-dirty' if dirty else ''} {stamp}"
+    if len(text) > BUILD_ID_LIMIT:
+        raise ValueError(f"build ID is {len(text)} characters, the limit is {BUILD_ID_LIMIT}: {text!r}")
+    return text
+
+
+def _git(sketch: Path, *args: str) -> str | None:
+    try:
+        result = subprocess.run(["git", "-C", str(sketch), *args], capture_output=True, text=True, check=False)
+    except OSError:
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
+def write_build_id_header(sketch: Path, now: datetime) -> str:
+    """Write <sketch>/build_id.h with the build ID and return the ID."""
+    revision = _git(sketch, "rev-parse", "--short=8", "HEAD")
+    dirty = False
+    if revision is not None:
+        revision = revision.strip()
+        dirty = bool((_git(sketch, "status", "--porcelain", "--untracked-files=no") or "").strip())
+    text = build_id(revision, dirty, now)
+    (sketch / "build_id.h").write_text(
+        "// Written by scripts/build_firmware.py before each build. Not in git.\n"
+        f'#define NAVBOT_BUILD_ID "{text}"\n',
+        encoding="utf-8",
+    )
+    return text
+
+
 def _compile(request: BuildRequest) -> int:
+    try:
+        write_build_id_header(request.sketch, datetime.now())
+    except (OSError, ValueError) as error:
+        print(f"build_firmware: could not write build_id.h: {error}", file=sys.stderr)
+        return 1
+
     command = [
         "arduino-cli", "compile", "--fqbn", request.fqbn,
         "--output-dir", str(request.output_dir), "--build-path", str(request.build_path),

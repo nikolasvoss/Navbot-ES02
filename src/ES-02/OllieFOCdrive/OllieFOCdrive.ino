@@ -573,8 +573,13 @@ bool startCalibration(const float *args, const char **error) {
 // The entry table (signals.def.h), expanded after the groups and handlers it names.
 #define SIGNAL_DEF_FILE "signals.def.h"
 #include "signal_table_expand.h"
-// No git hash is available to the Arduino build, so the build ID is the compile time.
-constexpr char kBuildId[] = __DATE__ " " __TIME__;
+// Git revision and build time, written by scripts/build_firmware.py. A build without the script says "unknown".
+#if __has_include("build_id.h")
+#include "build_id.h"
+#else
+#define NAVBOT_BUILD_ID "unknown " __DATE__
+#endif
+constexpr char kBuildId[] = NAVBOT_BUILD_ID;
 static_assert(sizeof(kBuildId) <= 33, "the build ID has to fit CatalogEntry.build");
 
 /**
