@@ -109,8 +109,17 @@ def write_build_id_header(sketch: Path, now: datetime) -> str:
     revision = _git(sketch, "rev-parse", "--short=8", "HEAD")
     dirty = False
     if revision is not None:
-        revision = revision.strip()
-        dirty = bool((_git(sketch, "status", "--porcelain", "--untracked-files=no") or "").strip())
+        revision = revision.strip()[:8]
+        # The build script rewrites firmware-build-environment.json after each build; that alone is not a dirty tree.
+        status = _git(
+            sketch,
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+            "--",
+            ":(top,exclude)firmware-build-environment.json",
+        )
+        dirty = status is None or bool(status.strip())
     text = build_id(revision, dirty, now)
     (sketch / "build_id.h").write_text(
         "// Written by scripts/build_firmware.py before each build. Not in git.\n"

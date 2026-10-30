@@ -69,7 +69,16 @@ def test_header_has_revision_and_dirty_flag(monkeypatch, tmp_path):
         '#define NAVBOT_BUILD_ID "d9802212-dirty 2026-10-30 14:05"\n'
     )
     assert fake.calls[0] == ["git", "-C", str(tmp_path), "rev-parse", "--short=8", "HEAD"]
-    assert fake.calls[1] == ["git", "-C", str(tmp_path), "status", "--porcelain", "--untracked-files=no"]
+    assert fake.calls[1] == [
+        "git",
+        "-C",
+        str(tmp_path),
+        "status",
+        "--porcelain",
+        "--untracked-files=no",
+        "--",
+        ":(top,exclude)firmware-build-environment.json",
+    ]
 
 
 def test_header_of_clean_checkout_has_no_dirty_flag(monkeypatch, tmp_path):
@@ -78,6 +87,21 @@ def test_header_of_clean_checkout_has_no_dirty_flag(monkeypatch, tmp_path):
 
     assert BUILD.write_build_id_header(tmp_path, NOW) == "d9802212 2026-10-30 14:05"
     assert '#define NAVBOT_BUILD_ID "d9802212 2026-10-30 14:05"' in (tmp_path / "build_id.h").read_text(encoding="utf-8")
+
+
+def test_revision_longer_than_eight_characters_is_truncated(monkeypatch, tmp_path):
+    fake = FakeGit({"rev-parse": "d9802212abc\n", "status": ""})
+    monkeypatch.setattr(BUILD.subprocess, "run", fake)
+
+    assert BUILD.write_build_id_header(tmp_path, NOW) == "d9802212 2026-10-30 14:05"
+
+
+def test_failed_status_after_revision_counts_as_dirty(monkeypatch, tmp_path):
+    fake = FakeGit({"rev-parse": "d9802212\n"})
+    monkeypatch.setattr(BUILD.subprocess, "run", fake)
+
+    assert BUILD.write_build_id_header(tmp_path, NOW) == "d9802212-dirty 2026-10-30 14:05"
+    assert len(fake.calls) == 2
 
 
 def test_header_without_git_says_nogit(monkeypatch, tmp_path):
