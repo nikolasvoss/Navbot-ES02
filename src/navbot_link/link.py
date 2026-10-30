@@ -22,6 +22,7 @@ from navbot_link.protocol import (
     unpack_rows,
     unpack_value,
 )
+from navbot_link.transport import open_transport
 
 MAX_SUBSCRIBED = 48
 # Frame cost of each row: header, CRC, COBS and delimiter. Mirrors kLinkFrameOverheadBytes in the firmware's
@@ -44,30 +45,6 @@ class Transport(Protocol):
     def write(self, data: bytes) -> None: ...
 
     def close(self) -> None: ...
-
-
-class SerialTransport:
-    def __init__(self, port: str, baud: int):
-        import serial
-
-        self._ser = serial.Serial()
-        self._ser.port = port
-        self._ser.baudrate = baud
-        self._ser.timeout = 0.05
-        # Asserting DTR or RTS on open resets the board through the CH340
-        # auto-reset circuit; it can still reset on some adapters.
-        self._ser.dtr = False
-        self._ser.rts = False
-        self._ser.open()
-
-    def read(self) -> bytes:
-        return self._ser.read(max(1, self._ser.in_waiting))
-
-    def write(self, data: bytes) -> None:
-        self._ser.write(data)
-
-    def close(self) -> None:
-        self._ser.close()
 
 
 @dataclass(frozen=True)
@@ -166,7 +143,7 @@ class Link:
     def __init__(self, port, baud: int = 2_000_000, *, timeout_s: float = 0.5,
                  retries: int = 3, renew_s: float = LEASE_RENEW_S, lease_s: float = LEASE_S,
                  clock=time.monotonic, telemetry: bool = False):
-        self._transport: Transport = SerialTransport(port, baud) if isinstance(port, str) else port
+        self._transport: Transport = open_transport(port, baud) if isinstance(port, str) else port
         self._timeout_s = timeout_s
         self._retries = retries
         self._renew_s = renew_s
