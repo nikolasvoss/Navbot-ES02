@@ -98,6 +98,14 @@ def test_a_live_param_carries_its_step():
     ]
 
 
+def test_a_live_step_that_is_not_a_number_is_a_def_error():
+    with pytest.raises(signals_catalog.DefError, match="line 2: live step 1.2.3f is not a number"):
+        signals_catalog.parse(
+            'SIGNAL(speed, "m/s", a)\n'
+            'PARAM_LIVE(speed_kp, "", BalanceGroup, speedKpRadPerMps, 1.2.3f)\n'
+        )
+
+
 def test_command_line_reports_a_bad_file(capsys, tmp_path):
     path = tmp_path / "entries.def.h"
     path.write_text("nonsense\n", encoding="utf-8")

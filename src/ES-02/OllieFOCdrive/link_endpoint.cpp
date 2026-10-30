@@ -10,6 +10,10 @@
 
 namespace {
 
+// A live step is compared in double against floats widened to double, so a move of exactly one step can come out a
+// rounding error over it. This relative slack lets exactly one step through and still refuses anything larger.
+constexpr double kLiveStepSlack = 1e-6;
+
 // The wire numbers of kinds and types are the table's own.
 static_assert(static_cast<int>(SignalKind::Signal) == navbot_link_v1_CatalogEntry_Kind_SIGNAL, "kind numbers");
 static_assert(static_cast<int>(SignalKind::Min) == navbot_link_v1_CatalogEntry_Kind_SIGNAL_MIN, "kind numbers");
@@ -184,11 +188,13 @@ void LinkEndpoint::Handle(uint8_t port, const uint8_t* payload, size_t len, uint
         break;
       }
       const uint32_t before = entry.read();
-      // A live parameter may move by at most its step while balancing.
+      // A live parameter may move by at most its step while balancing. The test is written as a refusal so that a NaN
+      // change, for which every comparison is false, is refused too. An infinite step accepts any finite change.
       if (balanceRequested) {
         const double candidate = ValueAsDouble(entry.type, GetLe32(set.value.bytes));
         const double change = std::fabs(candidate - ValueAsDouble(entry.type, before));
-        if (change > static_cast<double>(entry.liveStep)) {
+        const double limit = static_cast<double>(entry.liveStep) * (1.0 + kLiveStepSlack);
+        if (!(change <= limit)) {
           snprintf(error, sizeof(error), "%s: step %g over %g while balancing", entry.name, change,
                    static_cast<double>(entry.liveStep));
           SendAck(port, seq, error, nullptr, 0);

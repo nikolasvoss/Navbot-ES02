@@ -1,6 +1,7 @@
 #include "link_endpoint.h"
 #include "link_tx.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -473,6 +474,121 @@ bool AckGivesSlot(const std::vector<uint8_t>& frame, uint32_t slot) {
          value == slot;
 }
 
+// The frame is an Ack that refuses.
+bool AckRefuses(const std::vector<uint8_t>& frame) {
+  const navbot_link_v1_Message msg = DecodeOne(frame);
+  return msg.which_body == navbot_link_v1_Message_ack_tag && !msg.body.ack.accepted;
+}
+
+// Live-step cases, one fresh endpoint each: a float with step 0.05, an integer with step 2, a bool with step 1 and a
+// float whose step is infinite. The 0.30 values below are the floats 0.3f.
+const uint8_t kReqStepOneStep[] = {
+    0x08, 0x08, 0x50, 0xD2, 0x01, 0x06, 0x12, 0x04, 0x01, 0x05, 0x80, 0x3E, 0xCE, 0xD7, 0x00,
+};
+const uint8_t kRepStepOneStep[] = {
+    0x0E, 0x08, 0x01, 0x10, 0x2A, 0xAA, 0x01, 0x0A, 0x08, 0x50, 0x10, 0x01, 0x22, 0x04, 0x01, 0x05,
+    0x80, 0x3E, 0xDA, 0x06, 0x00,
+};
+const uint8_t kRepStepOneStepLog[] = {
+    0x2A, 0x08, 0x02, 0x10, 0x2A, 0x6A, 0x21, 0x08, 0x02, 0x1A, 0x16, 0x73, 0x74, 0x65, 0x70, 0x5F,
+    0x67, 0x61, 0x69, 0x6E, 0x3A, 0x20, 0x30, 0x2E, 0x33, 0x20, 0x2D, 0x3E, 0x20, 0x30, 0x2E, 0x32,
+    0x35, 0x22, 0x05, 0x70, 0x61, 0x72, 0x61, 0x6D, 0x11, 0x1E, 0x00,
+};
+const uint8_t kReqStepCountIn[] = {
+    0x0B, 0x08, 0x51, 0xD2, 0x01, 0x08, 0x08, 0x01, 0x12, 0x04, 0x0C, 0x01, 0x01, 0x03, 0x33, 0x45,
+    0x00,
+};
+const uint8_t kRepStepCountIn[] = {
+    0x0F, 0x08, 0x01, 0x10, 0x2A, 0xAA, 0x01, 0x0A, 0x08, 0x51, 0x10, 0x01, 0x22, 0x04, 0x0C, 0x01,
+    0x01, 0x03, 0xCE, 0x6E, 0x00,
+};
+const uint8_t kRepStepCountInLog[] = {
+    0x28, 0x08, 0x02, 0x10, 0x2A, 0x6A, 0x1F, 0x08, 0x02, 0x1A, 0x14, 0x73, 0x74, 0x65, 0x70, 0x5F,
+    0x63, 0x6F, 0x75, 0x6E, 0x74, 0x3A, 0x20, 0x31, 0x30, 0x20, 0x2D, 0x3E, 0x20, 0x31, 0x32, 0x22,
+    0x05, 0x70, 0x61, 0x72, 0x61, 0x6D, 0xF3, 0x79, 0x00,
+};
+const uint8_t kReqStepCountOver[] = {
+    0x0B, 0x08, 0x52, 0xD2, 0x01, 0x08, 0x08, 0x01, 0x12, 0x04, 0x0F, 0x01, 0x01, 0x03, 0x70, 0xDB,
+    0x00,
+};
+const uint8_t kRepStepCountOver[] = {
+    0x37, 0x08, 0x01, 0x10, 0x2A, 0xAA, 0x01, 0x2D, 0x08, 0x52, 0x1A, 0x29, 0x73, 0x74, 0x65, 0x70,
+    0x5F, 0x63, 0x6F, 0x75, 0x6E, 0x74, 0x3A, 0x20, 0x73, 0x74, 0x65, 0x70, 0x20, 0x33, 0x20, 0x6F,
+    0x76, 0x65, 0x72, 0x20, 0x32, 0x20, 0x77, 0x68, 0x69, 0x6C, 0x65, 0x20, 0x62, 0x61, 0x6C, 0x61,
+    0x6E, 0x63, 0x69, 0x6E, 0x67, 0x31, 0xCD, 0x00,
+};
+const uint8_t kReqStepFlag[] = {
+    0x0B, 0x08, 0x53, 0xD2, 0x01, 0x08, 0x08, 0x02, 0x12, 0x04, 0x01, 0x01, 0x01, 0x03, 0xDD, 0xA2,
+    0x00,
+};
+const uint8_t kRepStepFlag[] = {
+    0x0F, 0x08, 0x01, 0x10, 0x2A, 0xAA, 0x01, 0x0A, 0x08, 0x53, 0x10, 0x01, 0x22, 0x04, 0x01, 0x01,
+    0x01, 0x03, 0x2F, 0x91, 0x00,
+};
+const uint8_t kRepStepFlagLog[] = {
+    0x25, 0x08, 0x02, 0x10, 0x2A, 0x6A, 0x1C, 0x08, 0x02, 0x1A, 0x11, 0x73, 0x74, 0x65, 0x70, 0x5F,
+    0x66, 0x6C, 0x61, 0x67, 0x3A, 0x20, 0x30, 0x20, 0x2D, 0x3E, 0x20, 0x31, 0x22, 0x05, 0x70, 0x61,
+    0x72, 0x61, 0x6D, 0xB0, 0x35, 0x00,
+};
+const uint8_t kReqStepFree[] = {
+    0x08, 0x08, 0x54, 0xD2, 0x01, 0x06, 0x12, 0x04, 0x01, 0x01, 0x04, 0x40, 0x3A, 0xFE, 0x00,
+};
+const uint8_t kRepStepFree[] = {
+    0x0E, 0x08, 0x01, 0x10, 0x2A, 0xAA, 0x01, 0x0A, 0x08, 0x54, 0x10, 0x01, 0x22, 0x04, 0x01, 0x01,
+    0x04, 0x40, 0xF4, 0x1E, 0x00,
+};
+const uint8_t kRepStepFreeLog[] = {
+    0x27, 0x08, 0x02, 0x10, 0x2A, 0x6A, 0x1E, 0x08, 0x02, 0x1A, 0x13, 0x73, 0x74, 0x65, 0x70, 0x5F,
+    0x67, 0x61, 0x69, 0x6E, 0x3A, 0x20, 0x30, 0x2E, 0x33, 0x20, 0x2D, 0x3E, 0x20, 0x32, 0x22, 0x05,
+    0x70, 0x61, 0x72, 0x61, 0x6D, 0x85, 0x73, 0x00,
+};
+const uint8_t kReqStepInfinite[] = {
+    0x0A, 0x08, 0x55, 0xD2, 0x01, 0x08, 0x08, 0x03, 0x12, 0x04, 0x01, 0x05, 0x7A, 0x44, 0xE4, 0x88,
+    0x00,
+};
+const uint8_t kRepStepInfinite[] = {
+    0x0E, 0x08, 0x01, 0x10, 0x2A, 0xAA, 0x01, 0x0A, 0x08, 0x55, 0x10, 0x01, 0x22, 0x04, 0x01, 0x05,
+    0x7A, 0x44, 0xC1, 0x52, 0x00,
+};
+const uint8_t kRepStepInfiniteLog[] = {
+    0x27, 0x08, 0x02, 0x10, 0x2A, 0x6A, 0x1E, 0x08, 0x02, 0x1A, 0x13, 0x73, 0x74, 0x65, 0x70, 0x5F,
+    0x61, 0x6E, 0x79, 0x3A, 0x20, 0x30, 0x20, 0x2D, 0x3E, 0x20, 0x31, 0x30, 0x30, 0x30, 0x22, 0x05,
+    0x70, 0x61, 0x72, 0x61, 0x6D, 0xF3, 0x03, 0x00,
+};
+const uint8_t kReqStepNan[] = {
+    0x08, 0x08, 0x56, 0xD2, 0x01, 0x06, 0x12, 0x04, 0x01, 0x05, 0xC0, 0x7F, 0x58, 0xF1, 0x00,
+};
+
+float gStepGain = 0.30f;
+int32_t gStepCount = 10;
+bool gStepFlag = false;
+float gStepAny = 0.0f;
+
+// Stores a candidate of the parameter's type, or returns the reason the bits are not a value of that type.
+template <class T>
+bool StoreParam(uint32_t bits, T& running, const char** error) {
+  T value{};
+  *error = SignalFromBits(bits, value);
+  if (*error != nullptr) return false;
+  running = value;
+  return true;
+}
+uint32_t ReadStepGain() { return Bits(gStepGain); }
+bool WriteStepGain(uint32_t bits, const char** error) { return StoreParam(bits, gStepGain, error); }
+uint32_t ReadStepCount() { return static_cast<uint32_t>(gStepCount); }
+bool WriteStepCount(uint32_t bits, const char** error) { return StoreParam(bits, gStepCount, error); }
+uint32_t ReadStepFlag() { return gStepFlag ? 1u : 0u; }
+bool WriteStepFlag(uint32_t bits, const char** error) { return StoreParam(bits, gStepFlag, error); }
+uint32_t ReadStepAny() { return Bits(gStepAny); }
+bool WriteStepAny(uint32_t bits, const char** error) { return StoreParam(bits, gStepAny, error); }
+const SignalEntry kStepTable[] = {
+    {"step_gain", "A/rad", SignalKind::Param, SignalType::F32, ReadStepGain, WriteStepGain, nullptr, nullptr, 0.05f},
+    {"step_count", "", SignalKind::Param, SignalType::I32, ReadStepCount, WriteStepCount, nullptr, nullptr, 2.0f},
+    {"step_flag", "", SignalKind::Param, SignalType::Bool, ReadStepFlag, WriteStepFlag, nullptr, nullptr, 1.0f},
+    {"step_any", "", SignalKind::Param, SignalType::F32, ReadStepAny, WriteStepAny, nullptr, nullptr, INFINITY},
+};
+constexpr size_t kStepCount = sizeof(kStepTable) / sizeof(kStepTable[0]);
+
 }  // namespace
 
 int main() {
@@ -601,6 +717,63 @@ int main() {
   Check(gLive == 0.3f, "the refused value did not reach the running value");
   Send(liveEndpoint, kLinkPortUart, kReqSetPlainBalancing, 1000, true);
   Check(Is(liveSink.Take(0), kRepSetPlainBalancing), "balancing: a parameter without a live step is refused");
+
+  // The step rule per type. Each case starts a fresh endpoint whose replies count seq from 1.
+  gStepGain = 0.30f;
+  QueueSink oneStepSink;
+  LinkEndpoint oneStepEndpoint(kStepTable, kStepCount, "fw-test-1", kBudgets, oneStepSink);
+  Send(oneStepEndpoint, kLinkPortUart, kReqStepOneStep, 1000, true);
+  Check(Is(oneStepSink.Take(0), kRepStepOneStep), "balancing: a move of exactly one step (0.30 to 0.25, step 0.05) is accepted");
+  Check(Is(oneStepSink.Take(0), kRepStepOneStepLog), "and logged on UART1");
+  Check(LogIs(oneStepSink.Take(1), "param", "step_gain: 0.3 -> 0.25"), "and on USB");
+  Check(gStepGain == 0.25f, "the running float is 0.25");
+
+  gStepGain = 0.30f;
+  QueueSink nanSink;
+  LinkEndpoint nanEndpoint(kStepTable, kStepCount, "fw-test-1", kBudgets, nanSink);
+  Send(nanEndpoint, kLinkPortUart, kReqStepNan, 1000, true);
+  Check(AckRefuses(nanSink.Take(0)), "balancing: a NaN candidate for a live parameter is refused");
+  Check(gStepGain == 0.30f, "the refused NaN did not reach the running value");
+  Check(nanSink.Take(0).empty() && nanSink.Take(1).empty(), "a refused NaN logs nothing");
+
+  gStepCount = 10;
+  QueueSink countSink;
+  LinkEndpoint countEndpoint(kStepTable, kStepCount, "fw-test-1", kBudgets, countSink);
+  Send(countEndpoint, kLinkPortUart, kReqStepCountIn, 1000, true);
+  Check(Is(countSink.Take(0), kRepStepCountIn), "balancing: an integer 10 to 12 within its step 2 is accepted");
+  Check(Is(countSink.Take(0), kRepStepCountInLog), "and logged on UART1");
+  Check(gStepCount == 12, "the running integer is 12");
+
+  gStepCount = 12;
+  QueueSink countOverSink;
+  LinkEndpoint countOverEndpoint(kStepTable, kStepCount, "fw-test-1", kBudgets, countOverSink);
+  Send(countOverEndpoint, kLinkPortUart, kReqStepCountOver, 1000, true);
+  Check(Is(countOverSink.Take(0), kRepStepCountOver), "balancing: an integer 12 to 15 over its step 2 is refused with both numbers");
+  Check(gStepCount == 12, "the refused integer did not reach the running value");
+
+  gStepFlag = false;
+  QueueSink flagSink;
+  LinkEndpoint flagEndpoint(kStepTable, kStepCount, "fw-test-1", kBudgets, flagSink);
+  Send(flagEndpoint, kLinkPortUart, kReqStepFlag, 1000, true);
+  Check(Is(flagSink.Take(0), kRepStepFlag), "balancing: a bool changing by its step 1 is accepted");
+  Check(Is(flagSink.Take(0), kRepStepFlagLog), "and logged on UART1");
+  Check(gStepFlag, "the running bool is true");
+
+  gStepGain = 0.30f;
+  QueueSink freeSink;
+  LinkEndpoint freeEndpoint(kStepTable, kStepCount, "fw-test-1", kBudgets, freeSink);
+  Send(freeEndpoint, kLinkPortUart, kReqStepFree, 1000, false);
+  Check(Is(freeSink.Take(0), kRepStepFree), "not balancing: a move of 1.7, far over the step, is accepted");
+  Check(Is(freeSink.Take(0), kRepStepFreeLog), "and logged on UART1");
+  Check(gStepGain == 2.0f, "the running float is 2.0");
+
+  gStepAny = 0.0f;
+  QueueSink anySink;
+  LinkEndpoint anyEndpoint(kStepTable, kStepCount, "fw-test-1", kBudgets, anySink);
+  Send(anyEndpoint, kLinkPortUart, kReqStepInfinite, 1000, true);
+  Check(Is(anySink.Take(0), kRepStepInfinite), "balancing: an infinite step accepts any finite value, here 1000");
+  Check(Is(anySink.Take(0), kRepStepInfiniteLog), "and logged on UART1");
+  Check(gStepAny == 1000.0f, "the running float is 1000");
 
   // A Command is refused until a handler is set; then the handler's answer is the Ack.
   Send(liveEndpoint, kLinkPortUart, kReqCommandNoHandler);

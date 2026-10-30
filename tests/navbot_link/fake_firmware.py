@@ -212,7 +212,8 @@ class FakeFirmware:
             (new,) = struct.unpack(_FMT[entry.type], req.value)
             if self.balancing:
                 (before,) = struct.unpack(_FMT[entry.type], old)
-                if abs(new - before) > entry.live_step:
+                # The same rule as the firmware: a relative slack for float rounding, and a NaN change is refused.
+                if not abs(new - before) <= entry.live_step * (1.0 + 1e-6):
                     return ack(error=f"{entry.name}: step {abs(new - before):g} over {entry.live_step:g} "
                                      "while balancing")
             if entry.limits and not entry.limits[0] <= new <= entry.limits[1]:

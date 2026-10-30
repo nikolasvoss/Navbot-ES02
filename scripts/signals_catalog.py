@@ -52,6 +52,14 @@ def _check_args(number: int, text: str) -> None:
         raise DefError(f"line {number}: an ACTION needs at least one ARG; use ACTION_NO_ARGS")
 
 
+def _live_step(number: int, literal: str) -> float:
+    """The step literal of a PARAM_LIVE line: a float such as 0.05f, or INFINITY."""
+    try:
+        return float(literal.removesuffix("f").replace("INFINITY", "inf"))
+    except ValueError:
+        raise DefError(f"line {number}: live step {literal} is not a number") from None
+
+
 def parse(text: str) -> list[DefEntry]:
     entries: list[DefEntry] = []
     for number, raw in enumerate(text.splitlines(), 1):
@@ -65,7 +73,7 @@ def parse(text: str) -> list[DefEntry]:
             name, unit, kind = match[1], match[2], "PARAM"
         elif match := PARAM_LIVE.match(line):
             name, unit, kind = match[1], match[2], "PARAM"
-            live_step = float(match[5].removesuffix("f").replace("INFINITY", "inf"))
+            live_step = _live_step(number, match[5])
         elif match := ACTION.match(line):
             name, unit, kind = match[1], "", "ACTION"
             _check_args(number, match[3])
