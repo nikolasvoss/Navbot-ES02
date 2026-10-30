@@ -1,6 +1,6 @@
 # navlink: signals, parameters and actions over the link
 
-Status: **implemented and host-tested against the firmware's entry table; not yet run on the robot.** The `navbot_link` library and the `navlink` tool speak the catalog, subscription, parameter and action messages of the [protocol](ros2-uart-protocol.md#catalog-subscriptions-parameters-and-actions). The firmware serves the table described in the [signal table](signal-table.md). The tool and the library were tested against the fake firmware in `tests/navbot_link/` and against the firmware's own endpoint code built for the host.
+Status: **implemented, host-tested against the firmware's entry table, and run on the robot** for the catalog, parameters, subscriptions and the diagnostic image. The motor actions, `calibrate` and the refusal while balancing are not yet run on the robot. A one-page guide is the [quick start](navlink-quick-start.md). The `navbot_link` library and the `navlink` tool speak the catalog, subscription, parameter and action messages of the [protocol](ros2-uart-protocol.md#catalog-subscriptions-parameters-and-actions). The firmware serves the table described in the [signal table](signal-table.md). The tool and the library were tested against the fake firmware in `tests/navbot_link/` and against the firmware's own endpoint code built for the host.
 
 ## Run
 
