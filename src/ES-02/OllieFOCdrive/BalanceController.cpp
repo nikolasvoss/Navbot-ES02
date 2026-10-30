@@ -76,9 +76,6 @@ bool armingConditionsMet(const Measurements &measurements, const Request &reques
 
 }  // namespace
 
-// Demand caps must be usable: a zero brake cap would hold the last speed when the request times out,
-// and a negative or NaN rate would move speed the wrong way. A zero slew rate would freeze the tilt
-// reference, and a zero wheel radius or loop period would divide by zero or never run the loop.
 const char *StateName(State state) {
   switch (state) {
     case State::Disabled: return "Disabled";
@@ -108,6 +105,9 @@ const char *FaultReasonName(FaultReason reason) {
   return "?";
 }
 
+// Demand caps must be usable: a zero brake cap would hold the last speed when the request times out,
+// and a negative or NaN rate would move speed the wrong way. A zero slew rate would freeze the tilt
+// reference, and a zero wheel radius or loop period would divide by zero or never run the loop.
 bool configValid(const Config &config) {
   return std::isfinite(config.speedCapMps) && config.speedCapMps >= 0.0f &&
          std::isfinite(config.accelCapMps2) && config.accelCapMps2 > 0.0f &&

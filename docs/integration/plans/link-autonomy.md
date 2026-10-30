@@ -131,7 +131,7 @@ Actions:
 | Name | Arguments | Refused when (exact text) | Task |
 | --- | --- | --- | --- |
 | `reboot` | none | balance requested: `CH5 must be 0 and balance off`; motor test active or applied: `motor test running`; calibration selected: `calibration running` | T6 |
-| `balance` | `ARG(on, 0, 1)` | diagnostic build: `sensor diagnostic build has no motor control`; CH5 not 1: `CH5 not in link position (1)`; overspeed latched: `wheel overspeed latched, send motor_reset` | T6 |
+| `balance` | `ARG(on, 0, 1)` | diagnostic build: `sensor diagnostic build has no motor control`; CH5 not 1: `CH5 not in link position (1)`; previous CH5 position not 1: `CH5 position change pending`; on=1 only: overspeed latched: `wheel overspeed latched, switch CH5 to 0`, motor test active or applied: `motor test running`, calibration selected: `calibration running` | T6 |
 
 ## Schedule
 

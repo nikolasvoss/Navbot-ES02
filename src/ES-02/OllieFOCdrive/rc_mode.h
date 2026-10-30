@@ -27,4 +27,10 @@ inline bool CommandFresh(bool seen, uint32_t nowUs, uint32_t receivedUs) {
   return seen && static_cast<uint32_t>(nowUs - receivedUs) <= kLinkCommandTimeoutUs;
 }
 
+// A stored Command that has gone stale. The sketch latches it by clearing it, so it stays expired until a new Command
+// arrives and a later micros() wrap cannot make the old age small again.
+inline bool CommandExpired(bool seen, uint32_t nowUs, uint32_t receivedUs) {
+  return seen && !CommandFresh(seen, nowUs, receivedUs);
+}
+
 }  // namespace RcMode

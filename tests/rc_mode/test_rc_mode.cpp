@@ -63,6 +63,18 @@ int main() {
     assert(!CommandFresh(true, received + kLinkCommandTimeoutUs + 1, received));
   }
 
+  // Expiry latch: a Command turns expired once it is stale, also across the wrap. A latched (cleared) Command stays
+  // stale even when the age would wrap back below the timeout after 2^32 us.
+  {
+    const uint32_t received = UINT32_MAX - 100;
+    assert(!CommandExpired(true, received + kLinkCommandTimeoutUs, received));
+    assert(CommandExpired(true, received + kLinkCommandTimeoutUs + 1, received));  // wraps past zero
+    assert(!CommandExpired(false, received + kLinkCommandTimeoutUs + 1, received));  // nothing stored
+    const uint32_t wrappedNow = 10;  // micros() after the wrap: the age is 111 us
+    assert(CommandFresh(true, wrappedNow, received));  // why the latch is needed
+    assert(!CommandFresh(false, wrappedNow, received));  // cleared: never fresh again
+  }
+
   // 2 -> 1: a balancing robot is handed to the link and keeps balancing.
   {
     Sketch s;

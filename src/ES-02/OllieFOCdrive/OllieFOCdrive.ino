@@ -276,7 +276,7 @@ struct SystemHealth {
 void updateSystemHealth() {
   static uint32_t nextUpdateMs = 0;  // the first call updates
   const uint32_t nowMs = millis();
-  if (nowMs < nextUpdateMs) return;
+  if (static_cast<int32_t>(nowMs - nextUpdateMs) < 0) return;
   nextUpdateMs = nowMs + 1000;
   systemHealth.uptimeS = nowMs / 1000;
   systemHealth.heapFreeB = esp_get_free_heap_size();
@@ -628,7 +628,9 @@ bool startCalibration(const float *args, const char **error) {
   return true;
 }
 
-// Balance on or off from the link. Only in CH5 position 1, so a switch in another position never starts a robot.
+// Balance on or off from the link. Only in CH5 position 1, so a switch in another position never starts a robot. Entering
+// position 1 is applied by updateLinkBalance() in the next balanceRequest(); until then the switch position has not
+// been seen, so an on or off here would be undone by that tick. Balance on also waits for any motor test or calibration.
 bool setLinkBalance(const float *args, const char **error) {
   if (SENSOR_DIAGNOSTIC_MODE) {
     *error = "sensor diagnostic build has no motor control";
@@ -638,11 +640,26 @@ bool setLinkBalance(const float *args, const char **error) {
     *error = "CH5 not in link position (1)";
     return false;
   }
-  if (wheelOverspeed.tripped) {
-    *error = "wheel overspeed latched, send motor_reset";
+  if (previousCh5Position != 1) {
+    *error = "CH5 position change pending";
     return false;
   }
-  linkBalance = args[0] >= 0.5f;
+  const bool on = args[0] >= 0.5f;
+  if (on) {
+    if (wheelOverspeed.tripped) {
+      *error = "wheel overspeed latched, switch CH5 to 0";
+      return false;
+    }
+    if (motorDiagnosticState.active || motorDiagnosticApplied) {
+      *error = "motor test running";
+      return false;
+    }
+    if (calibrationSelect != 0.0f) {
+      *error = "calibration running";
+      return false;
+    }
+  }
+  linkBalance = on;
   return true;
 }
 
@@ -669,6 +686,7 @@ bool requestReboot(const float *, const char **error) {
 const char *handleLinkCommand(float speedMps, float turnRadPerSec) {
   if (SENSOR_DIAGNOSTIC_MODE) return "sensor diagnostic build has no motor control";
   if (ch5Position != 1) return "CH5 not in link position (1)";
+  if (previousCh5Position != 1) return "CH5 position change pending";
   if (!std::isfinite(speedMps) || !std::isfinite(turnRadPerSec)) return "speed and turn must be finite numbers";
   linkCommand = {true, speedMps, turnRadPerSec, micros()};
   return nullptr;
@@ -859,27 +877,35 @@ void updateLinkBalance() {
   previousCh5Position = ch5Position;
 }
 
+// The RC frame is younger than kRcFrameTimeoutMs.
+bool rcFrameFresh(uint32_t nowUs) {
+  return rcFrameSeen && static_cast<uint32_t>(nowUs - rcFrameUs) <= kRcFrameTimeoutMs * 1000U;
+}
+
+// The RC is a valid source: the frame is fresh and the receiver reports no failsafe. Shared by balanceRequest() and the
+// sensor diagnostic loop.
+bool rcSourceValid(uint32_t nowUs) { return rcFrameFresh(nowUs) && sBus.Failsafe() == FUTABA_SBUS::kSignalOk; }
+
 /**
- * @brief Builds the balance request from the latest S.BUS frame. The frame counts only while it is younger than
- *        kRcFrameTimeoutMs and the receiver reports no failsafe.
+ * @brief Builds the balance request from the latest S.BUS frame. The frame counts only while rcSourceValid() holds.
  */
 Request balanceRequest(uint32_t nowUs) {
   const Config &config = balanceSettings;
-  const bool fresh = rcFrameSeen && static_cast<uint32_t>(nowUs - rcFrameUs) <= kRcFrameTimeoutMs * 1000U;
-  if (fresh) {
+  if (rcFrameFresh(nowUs)) {
     // CH5 off rearms a tripped overspeed guard (once both wheels are below the limit), so no serial command is needed.
     if (ch5Position == 0) resetWheelOverspeed();
     updateLinkBalance();
   }
   Request request{};
   request.receivedTimeUs = rcFrameUs;
-  request.sourceValid = fresh && sBus.Failsafe() == FUTABA_SBUS::kSignalOk;
+  request.sourceValid = rcSourceValid(nowUs);
   rcValid = request.sourceValid;
   if (ch5Position == 1) {
-    // The link drives. A missing or old Command is zero demand; the controller keeps balancing in place.
-    const bool commandFresh = RcMode::CommandFresh(linkCommand.seen, nowUs, linkCommand.receivedUs);
-    request.speedMps = commandFresh ? linkCommand.speedMps : 0.0f;
-    request.yawRateRadPerSec = commandFresh ? linkCommand.turnRadPerSec : 0.0f;
+    // The link drives. A missing or old Command is zero demand; the controller keeps balancing in place. An old Command
+    // is latched as expired: it is cleared here and stays cleared until a new Command arrives.
+    if (RcMode::CommandExpired(linkCommand.seen, nowUs, linkCommand.receivedUs)) linkCommand = {};
+    request.speedMps = linkCommand.seen ? linkCommand.speedMps : 0.0f;
+    request.yawRateRadPerSec = linkCommand.seen ? linkCommand.turnRadPerSec : 0.0f;
   } else {
     request.speedMps = config.speedCapMps * rcStickFraction(rcChannels[2]);         // CH3: forward is positive
     request.yawRateRadPerSec = -config.yawRateCapRadPerSec * rcStickFraction(rcChannels[3]);  // CH4: left is positive
@@ -942,6 +968,7 @@ void diagnosticLoop(void) {
   linkPassStart(passStartUs);
   updateSystemHealth();
   readSbus();
+  rcValid = rcSourceValid(passStartUs);  // telemetry, as balanceRequest() sets it in the control tick
 
   if (diagnosticImuReady) imu::service();
 
@@ -1145,7 +1172,15 @@ void runControlTick(bool imuUpdated) {
  */
 void loop() {
   // A reboot requested over the link. Checked before the diagnostic branch, so both images restart.
-  if (rebootPending && static_cast<int32_t>(millis() - rebootAtMs) >= 0) ESP.restart();
+  if (rebootPending && static_cast<int32_t>(millis() - rebootAtMs) >= 0) {
+    // Balance or motor activity during the delay cancels the reboot: the checks of requestReboot() apply again.
+    if (balanceRequested() || motorDiagnosticState.active || motorDiagnosticApplied || calibrationSelect != 0.0f) {
+      rebootPending = false;
+      Logging::message(Logging::Level::Warning, "REBOOT", "reboot cancelled: balance or motor activity");
+    } else {
+      ESP.restart();
+    }
+  }
 #if SENSOR_DIAGNOSTIC_MODE
   diagnosticLoop();
   return;
