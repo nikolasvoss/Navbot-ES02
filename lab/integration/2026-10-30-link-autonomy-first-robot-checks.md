@@ -38,3 +38,14 @@ Same build 9c3c5531, RC transmitter on (`rc_valid` 1 throughout), robot held upr
 - `navlink call reboot --yes` was refused in position 1 and in position 2 with `CH5 must be 0 and balance off` (exit 1); `uptime_s` kept counting.
 
 Consequence: the CH5 positions and the reboot refusal behave as designed. Position 2 with free wheels and an upright robot spins the wheels up to the overspeed limit before the guard stops them; for bench checks that do not need balance, keep CH5 out of position 2. The motor checks with balance on the ground stay open.
+
+## Multiplexer and bridge as services, 2026-10-30
+
+Same build 9c3c5531. Rebuilt `navbot_link_bridge` with colcon and ran `scripts/install_link_bridge_service.py --heading-source gyro --gyro-yaw-sign 1`; both `navbot-link-mux.service` and `navbot-link-bridge.service` started and are enabled at boot. The bridge connects to `tcp:127.0.0.1:7650`. Robot on the bench, CH5 0, transmitter off (`rc_valid` 0).
+
+- While the bridge ran, `ros2 topic hz` over 12 s measured `/odom` 50.0 Hz, `/imu/data` 50.0 Hz, `/diagnostics` 1.000 Hz and `/battery_state` 1.000 Hz.
+- At the same time, `navlink capture --preset drive --seconds 10` through the multiplexer wrote 1000 rows at 100 Hz with no `FramesLost`.
+- `/diagnostics` carries one status `navbot_firmware` with level OK, message `Disabled`, the build ID as `hardware_id` and all health keys (heap 294216 B, loop stack 4600 B, link stack 2988 B, all link counters 0). `/battery_state` carries `voltage` 7.55 V, `present` true, and NaN for the unknown fields.
+- The bridge log showed only the single startup warning that one odometry step used wheel yaw before the first IMU sample.
+
+Consequence: the services run the multiplexer and the bridge together as designed, and `navlink` can be used next to the running bridge.

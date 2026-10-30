@@ -10,7 +10,7 @@ Status: the protocol (COBS, CRC-16, Protobuf), the firmware sender for `WheelOdo
 - [x] Choose the ros2_pc UART: GPIO8/GPIO9 (J8 pins 24 and 21), recorded in the [J8 allocation](../../ros2_pc/hardware/system-overview.md#j8-pin-allocation) on 2026-10-25. The user called it UART4. The carrier datasheet lists GPIO8/9 as UART3 and UART4 as GPIO12/13, so the pins decide.
 - [x] Enable the UART on the ros2_pc (boot overlay and reboot), confirm the `/dev/ttyAMA*` path, verify pins and 3.3 V levels on the board, wire it, and replace the `port` placeholder in the [bridge page](../software/navbot-link-bridge.md).
 - [x] Flash the firmware and check the 500 kBd link on the real robot (2026-10-26): `WheelOdometry` and `Imu` at 50.0 Hz each on a 20 ms schedule, 12002 CRC-valid frames in 2 minutes with the robot balancing, no lost frames. Measured with a script, not with the bridge.
-- [ ] Run the bridge on the ros2_pc against the robot: `/odom` and `/imu/data` at about 50 Hz, no `bad_frames` or `lost_frames` in the bridge log.
+- [x] Run the bridge on the ros2_pc against the robot: `/odom` and `/imu/data` at about 50 Hz, no `bad_frames` or `lost_frames` in the bridge log. Checked through the multiplexer on 2026-10-30 ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md#multiplexer-and-bridge-as-services-2026-10-30)).
 - [x] Track width 113 mm (2026-10-26) and wheel diameter 38.3 mm (2026-10-24) are documented in the [robot hardware overview](../../robot/hardware/system-overview.md#key-findings-and-consequences). The control firmware uses a radius of 0.019 m (exact: 0.01915 m). The bridge has no default for either parameter; pass `wheel_radius_m` and `wheel_separation_m`.
 - [x] Left/right mapping checked with a 3-turn spin on 2026-10-26: correct ([lab note](../../../lab/integration/2026-10-26-odometry-turn-test.md)). The same test showed that the wheel yaw over-reads by 1.135 (effective separation 0.128 m with the measured radius).
 - [ ] Check the wheel radius with a straight push along a tape measure, and the `/odom` twist signs on the robot.
@@ -20,7 +20,7 @@ Status: the protocol (COBS, CRC-16, Protobuf), the firmware sender for `WheelOdo
 - [ ] Define the static TF `base_link` to `imu_link` from the IMU mounting. `/imu/data` is in the sensor frame.
 - [x] Align the SLAM branch (`feat/slam`): the static `odom` to `lds08rr` TF is gone, the LiDAR service publishes a static TF `base_link` to `lds08rr`, and `slam_toolbox` runs with `base_frame: base_link`. Not yet run on the robot.
 - [ ] Check the LiDAR yaw offset on the robot: `SENSOR_MOUNT_YAW_RAD` is −120° (ahead reads 240° clockwise on the LiDAR page). Push the robot straight forward and confirm the SLAM pose arrow points along the direction of travel. `SENSOR_MOUNT_X_M` and `SENSOR_MOUNT_Y_M` stay zero because the LiDAR sits at the robot's rotation centre.
-- [x] Start `navbot_link_bridge` at boot with `scripts/install_link_bridge_service.py` (unit and installer written, test passes). Not yet installed or run on the robot.
+- [x] Start `navbot_link_bridge` at boot with `scripts/install_link_bridge_service.py` (unit and installer written, test passes). Installed and running together with the multiplexer since 2026-10-30.
 
 ## Link logs, signals and parameters on the robot
 
@@ -38,12 +38,12 @@ Context: the CH5 link position, `balance` and `reboot` from the link, the drive 
 
 - [x] Build ID: `scripts/build_remote.sh`, flash, `navlink info`: the build ID starts with `git rev-parse --short=8 HEAD`. Checked on 2026-10-30 with 9c3c5531 ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md)).
 - [x] Multiplexer sharing: a health capture, a 100 Hz capture and a third client's parameter write ran at the same time through the multiplexer, with no lost rows ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md)).
-- [ ] Multiplexer and bridge: reinstall both services and start them, then a 10 s `navlink capture` while the bridge publishes `/odom`: no `FramesLost`.
+- [x] Multiplexer and bridge: reinstall both services and start them, then a 10 s `navlink capture` while the bridge publishes `/odom`: no `FramesLost`. ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md#multiplexer-and-bridge-as-services-2026-10-30))
 - [x] CH5: move through positions 0, 1 and 2 and read `ch5_position` each time (checks the raw thresholds 592 and 1402). A quick move 0 to 2 starts nothing on the way through 1 ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md#ch5-and-reboot-with-the-transmitter-2026-10-30)).
 - [x] `navlink call reboot --yes` at CH5 position 0 is accepted, and `navlink call reboot` without `--yes` sends nothing. `navlink get --wait 60` reconnects with a new `uptime_s` ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md)).
 - [x] `navlink call reboot --yes` is refused in positions 1 and 2 ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md#ch5-and-reboot-with-the-transmitter-2026-10-30)).
 - [x] Health values: `navlink capture --preset health` shows plausible heap and stack values at boot, and zero link counters ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md)).
-- [ ] Bridge health topics: `/diagnostics` and `/battery_state` arrive at 1 Hz.
+- [x] Bridge health topics: `/diagnostics` and `/battery_state` arrive at 1 Hz. ([lab note](../../../lab/integration/2026-10-30-link-autonomy-first-robot-checks.md#multiplexer-and-bridge-as-services-2026-10-30))
 - [ ] `navlink set log_level 3`: no INFO lines in `navlink log --seconds 10`. Set it back to 2.
 - [ ] With the user, balance in position 2: a live `set speed_kp` within its step is accepted, and one over it is refused. The steps in the [signal table](../software/signal-table.md#parameters-settings-groups) are confirmed or changed here.
 - [ ] With the user: moving CH5 from 2 to 1 keeps balancing; `call balance on=0` and `on=1` in position 1.
