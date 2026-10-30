@@ -48,14 +48,29 @@ python3 scripts/navlink.py capture --port /dev/ttyAMA3 --preset drive --seconds 
 
 The file has a `#` header with the firmware build and all parameters, then `t_us,<names>` rows. Robot log messages appear as `#` lines.
 
-## 5. Rules and safety
+## 5. How many streams
+
+- **At most 4 streams at once**, counted over all connections to the robot. The robot assigns the number; `unsub` frees it.
+- **At most 48 signals per stream.**
+- **Each connection has a bandwidth budget.** A stream costs `(4 + 4 × signals + 26) × rate` bytes per second. The shell prints the cost when you start a stream. The robot refuses a stream that goes over the budget and names both numbers.
+
+| Connection | Budget |
+| --- | --- |
+| Pi UART (`/dev/ttyAMA3`) | 135 kB/s |
+| USB (`/dev/ttyUSB0`) | 40 kB/s |
+
+Examples: `@bal` (7 signals, 100 Hz) costs 5.8 kB/s and `@drive` (28 signals, 100 Hz) costs 14.2 kB/s. Four `@drive` streams fit on the Pi UART. Over USB two fit and a third is refused.
+
+A stream belongs to the connection that started it. Another connection cannot stop it and gets `slot in use`.
+
+## 6. Rules and safety
 
 - The robot refuses every `set` while balance is on (CH5 on). Switch balance off first.
 - The robot refuses a value that breaks a rule, such as `trim_envelope` above `tilt_ref_limit`. The old value stays, and the message says why.
 - The motor actions and `calibrate` move the motors. Lift the wheels first and keep a hand on the power. `motor_stop` stops them.
 - Streams stop 5 seconds after the shell dies, so a crashed shell never leaves the robot streaming.
 
-## 6. If something is wrong
+## 7. If something is wrong
 
 | Message | Meaning |
 | --- | --- |
