@@ -29,6 +29,9 @@ def _as_type(type_: Type, value):
     return value if isinstance(value, int) else None
 
 
+HEALTH_RATE_HZ = 1.0
+
+
 class FirmwareControls:
     """What the catalog makes possible. Without one (its read failed on this connection) every
     operation refuses and the bridge carries telemetry only."""
@@ -36,7 +39,8 @@ class FirmwareControls:
     def __init__(self, link: Link):
         self._link = link
         self._catalog: Catalog | None = None
-        self.subscription: Subscription | None = None
+        self.subscription: Subscription | None = None  # the signal stream behind the signals parameter
+        self.health: Subscription | None = None  # HEALTH_SIGNALS at HEALTH_RATE_HZ
 
     def attach(self) -> None:
         """Read the catalog. Raises LinkError when the robot does not answer or refuses."""
@@ -45,6 +49,10 @@ class FirmwareControls:
     def restarted(self) -> None:
         """The robot restarted: its catalog may differ, so the old one goes until attach() reads the new one."""
         self._catalog = None
+
+    def build_id(self) -> str:
+        """The firmware's build ID from the catalog, "" before the catalog is read."""
+        return self._catalog.build if self._catalog is not None else ""
 
     def params(self) -> list[ParamInfo]:
         return [ParamInfo(e.name, e.type, self._link.get(e.name)) for e in self._catalog.params]
@@ -93,6 +101,22 @@ class FirmwareControls:
 
         try:
             self._link.subscribe(names, rate_hz, on_subscribed=adopt)
+        except LinkError as exc:
+            return str(exc)
+        return self._release(old)
+
+    def set_health(self, names: list[str]) -> str:
+        """Streams `names` at HEALTH_RATE_HZ into `self.health`. Returns "" on success; on failure the
+        previous health subscription keeps running."""
+        if self._catalog is None:
+            return "the robot sent no catalog"
+        old = self.health
+
+        def adopt(sub: Subscription) -> None:
+            self.health = sub
+
+        try:
+            self._link.subscribe(names, HEALTH_RATE_HZ, on_subscribed=adopt)
         except LinkError as exc:
             return str(exc)
         return self._release(old)

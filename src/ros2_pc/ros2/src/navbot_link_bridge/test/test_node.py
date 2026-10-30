@@ -13,12 +13,15 @@ from rcl_interfaces.msg import Log  # noqa: E402
 from rclpy.parameter import Parameter  # noqa: E402
 from sensor_msgs.msg import Imu  # noqa: E402
 from std_msgs.msg import Float64MultiArray  # noqa: E402
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus  # noqa: E402
+from geometry_msgs.msg import Twist  # noqa: E402
+from sensor_msgs.msg import BatteryState  # noqa: E402
 from rclpy.executors import MultiThreadedExecutor, SingleThreadedExecutor  # noqa: E402
 from nav_msgs.msg import Odometry  # noqa: E402
 from rcl_interfaces.srv import SetParameters  # noqa: E402
 
 from fake_firmware import FakeEntry, FakeFirmware, MemoryTransport, speed_loop_table  # noqa: E402
-from helpers import WireTransport  # noqa: E402
+from helpers import WireTransport, with_health  # noqa: E402
 from navbot_link import navbot_link_pb2 as pb  # noqa: E402
 from navbot_link.framing import encode_frame  # noqa: E402
 from navbot_link.link import Link  # noqa: E402
@@ -34,6 +37,7 @@ def ros():
 
 class Harness:
     def __init__(self, firmware, transport=None, link_args=None, ros_args=(), wait_for_attach=True):
+        firmware.entries = with_health(firmware.entries)  # the bridge always subscribes the health signals
         self.firmware = firmware
         link_args = link_args or {}
         self.node = LinkBridgeNode(
@@ -197,16 +201,20 @@ def test_signals_parameter_starts_and_changes_the_signals_topic(harness):
     h.spin(until=lambda: len(h.signals) >= 2)
     first = h.signals[0]
     assert [(d.label, d.size, d.stride) for d in first.layout.dim] == [("t_us,speed_target,tilt_clipped", 3, 3)]
-    assert list(first.data) == [1_010_000.0, 0.5, 1.0]
-    assert list(h.signals[1].data) == [1_020_000.0, 0.5, 0.0]
+    # Rows sit on the fake's 10 ms ticks, and the clock moves while any stream runs (the health
+    # stream starts at attach), so the expected values follow each row's own tick.
+    for row in h.signals[:2]:
+        t_us = row.data[0]
+        assert t_us % 10_000 == 0
+        assert list(row.data) == [t_us, 0.5, float((t_us // 10_000) % 2)]
 
     refused = h.node.set_parameters([Parameter("signals", value=["speed_target", "nope"])])[0]
     assert (refused.successful, refused.reason) == (False, "unknown signal nope")
     assert h.node.get_parameter("signals").value == ["speed_target", "tilt_clipped"]
-    assert fw.subscribed_slots() == [1]
+    assert len(fw.subscribed_slots()) == 2  # the signal stream and the health stream
 
     assert h.node.set_parameters([Parameter("signals", value=[])])[0].successful
-    assert fw.subscribed_slots() == []
+    assert len(fw.subscribed_slots()) == 1  # only the health stream
 
 
 def test_signals_from_the_launch_file_start_at_startup(harness):
@@ -214,7 +222,9 @@ def test_signals_from_the_launch_file_start_at_startup(harness):
     h = harness(fw, ros_args=[Parameter("signals", value=["loop_count"]),
                               Parameter("signals_rate_hz", value=100.0)])
     h.spin(until=lambda: len(h.signals) >= 1)
-    assert list(h.signals[0].data) == [1_010_000.0, 101.0]
+    t_us = h.signals[0].data[0]
+    assert t_us % 10_000 == 0
+    assert list(h.signals[0].data) == [t_us, t_us / 10_000]  # loop_count is the tick number
 
 
 def test_startup_value_of_a_firmware_parameter_is_applied_or_reported(harness):
@@ -265,7 +275,9 @@ def test_a_firmware_parameter_with_an_empty_name_is_skipped_with_a_warning(harne
     assert (h.node.get_parameter("speed_kp").value, h.node.get_parameter("speed_ki").value) == (
         0.07999999821186066, 0.5)
     assert h.node_errors() == []
-    assert list(h.signals[0].data) == [1_010_000.0, 101.0]
+    t_us = h.signals[0].data[0]
+    assert t_us % 10_000 == 0
+    assert list(h.signals[0].data) == [t_us, t_us / 10_000]  # loop_count is the tick number
 
 
 def test_a_restart_with_an_unusable_firmware_parameter_name_keeps_the_others(harness):
@@ -350,10 +362,10 @@ def test_a_robot_restart_reads_the_catalog_again_and_resumes_the_stream(harness)
     fw.entries[:] = [e for e in fw.entries if e.name != "speed_ki"]  # a new build without speed_ki
     fw.log("boot", "system")
     seen = len(h.signals)
-    h.spin(2.0, until=lambda: fw.subscribed_slots() == [1] and len(h.signals) > seen)
+    h.spin(2.0, until=lambda: fw.subscribed_slots() == [1, 2] and len(h.signals) > seen)
     assert not h.node.has_parameter("speed_ki")
     assert h.node.has_parameter("speed_kp")
-    assert fw.subscribed_slots() == [1]
+    assert fw.subscribed_slots() == [1, 2]  # the signal stream, then the health stream, as at attach
     assert len(h.signals) > seen
 
 
@@ -519,3 +531,44 @@ def test_a_reconnect_keeps_the_pose_and_takes_the_wheel_angles_as_a_new_baseline
     port.unplugged = False
     h.spin(3.0, until=lambda: len(odom.xs) >= 2)
     assert odom.xs == pytest.approx([1.0, 1.05])
+
+
+def twist(speed: float, turn: float) -> Twist:
+    msg = Twist()
+    msg.linear.x = speed
+    msg.angular.z = turn
+    return msg
+
+
+def test_cmd_vel_becomes_a_command_the_robot_takes(harness):
+    fw = FakeFirmware(link_position=True)
+    h = harness(fw)
+    pub = h.listener.create_publisher(Twist, "/cmd_vel", 10)
+    h.spin(2.0, until=lambda: pub.get_subscription_count() > 0)
+    pub.publish(twist(0.2, -0.5))
+    h.spin(2.0, until=lambda: fw.commands)
+    assert len(fw.commands) == 1
+    assert fw.commands[0] == pytest.approx((0.2, -0.5))
+
+
+def test_a_refused_command_warns_once_with_the_reason(harness):
+    h = harness(FakeFirmware())  # CH5 not in the link position: every Command is refused
+    pub = h.listener.create_publisher(Twist, "/cmd_vel", 10)
+    h.spin(2.0, until=lambda: pub.get_subscription_count() > 0)
+    for _ in range(3):
+        pub.publish(twist(0.1, 0.0))
+        h.spin(0.2)
+    h.spin(1.0, until=lambda: h.node_warnings())
+    assert h.node_warnings() == ["command refused by the robot: CH5 not in link position (1)"]
+
+
+def test_a_health_row_becomes_a_diagnostics_status_and_a_battery_voltage(harness):
+    h = harness(FakeFirmware())
+    diagnostics, batteries = [], []
+    h.listener.create_subscription(DiagnosticArray, "/diagnostics", diagnostics.append, 10)
+    h.listener.create_subscription(BatteryState, "/battery_state", batteries.append, 10)
+    h.spin(4.0, until=lambda: diagnostics and batteries)
+    status = diagnostics[0].status[0]
+    assert (status.name, status.level, status.message) == ("navbot_firmware", DiagnosticStatus.OK, "Run")
+    assert status.hardware_id == "fake-build-1"
+    assert batteries[0].voltage == pytest.approx(7.4, abs=1e-3)

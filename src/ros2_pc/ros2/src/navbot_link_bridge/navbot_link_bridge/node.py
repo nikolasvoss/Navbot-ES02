@@ -11,7 +11,8 @@ import serial
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.exceptions import ParameterException
 from rclpy.executors import ExternalShutdownException, MultiThreadedExecutor
-from geometry_msgs.msg import TransformStamped
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
 from rcl_interfaces.msg import Log, ParameterDescriptor, SetParametersResult
 from rclpy.node import Node
@@ -19,18 +20,23 @@ from rclpy.parameter import Parameter
 from rclpy.duration import Duration
 from rclpy.time import Time
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile, QoSReliabilityPolicy
-from sensor_msgs.msg import Imu
-from std_msgs.msg import Float64MultiArray, MultiArrayDimension
+from sensor_msgs.msg import BatteryState, Imu
+from std_msgs.msg import Float64MultiArray, Header, MultiArrayDimension
 from tf2_ros import TransformBroadcaster
 
-from navbot_link.link import Disconnected, Link, Restarted, SubscriptionEnded
+from navbot_link.health import HEALTH_SIGNALS
+from navbot_link.link import CommandRefused, Disconnected, Link, Restarted, SubscriptionEnded
 from navbot_link.protocol import LinkError
-from navbot_link_bridge.bridge import ImuSample, LinkBridge, RobotClock, RobotLog, SignalRow
+from navbot_link_bridge.bridge import (
+    HealthEnded, HealthRow, ImuSample, LinkBridge, RobotClock, RobotLog, SignalRow,
+)
+from navbot_link_bridge.health import HealthMonitor
 from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState, gyro_yaw_sign_for
 
 POLL_HZ = 200
 WARN_INTERVAL_S = 5.0
 REOPEN_INTERVAL_S = 1.0
+DIAGNOSTIC_LEVELS = {"OK": DiagnosticStatus.OK, "WARN": DiagnosticStatus.WARN, "ERROR": DiagnosticStatus.ERROR}
 # The profile rcl uses for /rosout, which rclpy does not export.
 ROSOUT_QOS = QoSProfile(
     depth=1000,
@@ -65,7 +71,7 @@ class LinkBridgeNode(Node):
     def __init__(self, open_link=_open_link, **node_args):
         super().__init__("navbot_link_bridge", **node_args)
         self._open_link = open_link
-        self.declare_parameter("port", "")
+        self.declare_parameter("port", "tcp:127.0.0.1:7650")
         self.declare_parameter("baud", 2000000)
         self.declare_parameter("wheel_radius_m", 0.0)
         self.declare_parameter("wheel_separation_m", 0.0)
@@ -108,11 +114,16 @@ class LinkBridgeNode(Node):
         # robot's lines (logger name = Log tag) go out as Log messages directly.
         self._rosout_pub = self.create_publisher(Log, "/rosout", ROSOUT_QOS)
         self._signals_pub = self.create_publisher(Float64MultiArray, "/navbot/signals", 1000)
+        self._diagnostics_pub = self.create_publisher(DiagnosticArray, "/diagnostics", 10)
+        self._battery_pub = self.create_publisher(BatteryState, "/battery_state", 10)
+        self._health = HealthMonitor()
+        self.create_subscription(Twist, "/cmd_vel", self._on_cmd_vel, 10)
 
         self._bridge = None
         self._opened_before = False
         self._next_open_s = 0.0
         self._last_warn_s = -WARN_INTERVAL_S
+        self._last_refused_warn_s = -WARN_INTERVAL_S
         self._warned_counts = (0, 0)
         self._last_fallback_warn_s = -WARN_INTERVAL_S
         self._warned_fallbacks = 0
@@ -198,6 +209,12 @@ class LinkBridgeNode(Node):
         except LinkError as exc:
             self.get_logger().warning(f"reading firmware parameters failed: {exc}")
         self._subscribe_configured_signals(bridge)
+        self._subscribe_health(bridge)
+
+    def _subscribe_health(self, bridge: LinkBridge) -> None:
+        reason = bridge.controls.set_health(list(HEALTH_SIGNALS))
+        if reason:
+            self.get_logger().error(f"health topics not started: {reason}")
 
     def _forget_firmware_parameters(self) -> None:
         for name in self._firmware_params:
@@ -319,6 +336,10 @@ class LinkBridgeNode(Node):
                 self._publish_robot_log(result, self.get_clock().now().to_msg())
             elif isinstance(result, SignalRow):
                 self._publish_signals(result)
+            elif isinstance(result, HealthRow):
+                self._publish_health(result, bridge)
+            elif isinstance(result, CommandRefused):
+                self._warn_refused(result.reason)
             elif isinstance(result, Restarted):
                 self.get_logger().info("robot restart detected (seq reset); pose kept, odometry rebased")
                 self._robot_clock.rebase()
@@ -326,6 +347,9 @@ class LinkBridgeNode(Node):
             elif isinstance(result, SubscriptionEnded):
                 self.get_logger().warning(f"signal stream ended: {result.reason}; resubscribing")
                 self._submit(self._subscribe_configured_signals, bridge)
+            elif isinstance(result, HealthEnded):
+                self.get_logger().warning(f"health stream ended: {result.reason}; resubscribing")
+                self._submit(self._subscribe_health, bridge)
             elif isinstance(result, Disconnected):
                 self.get_logger().error(f"link failed: {result.reason}; reopening")
                 self.close()
@@ -350,6 +374,41 @@ class LinkBridgeNode(Node):
         msg.layout.dim = [MultiArrayDimension(label=row.column_header, size=len(row.data), stride=len(row.data))]
         msg.data = row.data
         self._signals_pub.publish(msg)
+
+    def _on_cmd_vel(self, msg: Twist) -> None:
+        bridge = self._bridge
+        if bridge is None:
+            return
+        try:
+            bridge.link.command(msg.linear.x, msg.angular.z)
+        except LinkError:
+            pass  # the link is down and reopens by itself; the robot stops by its own command timeout
+
+    def _warn_refused(self, reason: str) -> None:
+        now = time.monotonic()
+        if now - self._last_refused_warn_s >= WARN_INTERVAL_S:
+            self.get_logger().warning(f"command refused by the robot: {reason}")
+            self._last_refused_warn_s = now
+
+    def _publish_health(self, row: HealthRow, bridge: LinkBridge) -> None:
+        report = self._health.report(row)
+        stamp = self.get_clock().now().to_msg()
+        status = DiagnosticStatus(
+            name="navbot_firmware",
+            hardware_id=bridge.controls.build_id(),
+            level=DIAGNOSTIC_LEVELS[report.level],
+            message=report.message,
+            values=[KeyValue(key=key, value=value) for key, value in report.values],
+        )
+        self._diagnostics_pub.publish(DiagnosticArray(header=Header(stamp=stamp), status=[status]))
+
+        battery = BatteryState()
+        battery.header.stamp = stamp
+        battery.voltage = report.voltage_v
+        battery.present = True
+        battery.percentage = float("nan")
+        battery.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_UNKNOWN
+        self._battery_pub.publish(battery)
 
     def _publish_odometry(self, state: OdometryState, stamp) -> None:
         quat = _quaternion(0.0, 0.0, state.yaw_rad)

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from navbot_link import navbot_link_pb2
 from navbot_link.link import (
-    Disconnected, Link, LogEvent, Restarted, Row, SubscriptionEnded, Telemetry,
+    CommandRefused, Disconnected, Link, LogEvent, Restarted, Row, SubscriptionEnded, Telemetry,
 )
 from navbot_link_bridge.controls import FirmwareControls
 from navbot_link_bridge.odometry import DiffDriveOdometry, OdometryState
@@ -45,6 +45,18 @@ class SignalRow:
     @property
     def data(self) -> list[float]:
         return [float(self.t_us)] + [float(v) for v in self.values]
+
+
+@dataclass(frozen=True)
+class HealthRow:
+    t_us: int
+    names: tuple[str, ...]  # HEALTH_SIGNALS, in subscription order
+    values: tuple
+
+
+@dataclass(frozen=True)
+class HealthEnded:
+    reason: str
 
 
 class RobotClock:
@@ -92,7 +104,8 @@ class LinkBridge:
 
     def poll(self) -> list:
         """Everything that arrived since the last call, in order: OdometryState, ImuSample,
-        RobotLog, SignalRow, plus Restarted, SubscriptionEnded and Disconnected for the caller."""
+        RobotLog, SignalRow, HealthRow, plus Restarted, SubscriptionEnded, HealthEnded, CommandRefused
+        and Disconnected for the caller."""
         out = []
         while not self.link.events.empty():
             event = self.link.events.get_nowait()
@@ -102,17 +115,26 @@ class LinkBridge:
                 out.append(_robot_log(event))
             elif isinstance(event, Row):
                 sub = self.controls.subscription
+                health = self.controls.health
                 if sub is not None and sub.slot == event.slot:
                     out.append(SignalRow(event.t_us, sub.names, event.values))
+                elif health is not None and health.slot == event.slot:
+                    out.append(HealthRow(event.t_us, health.names, event.values))
             elif isinstance(event, Restarted):
                 self._odometry.rebase()  # keep the pose
                 self.controls.subscription = None  # the robot's slots are gone
+                self.controls.health = None
                 out.append(event)
             elif isinstance(event, SubscriptionEnded):
                 sub = self.controls.subscription
                 if sub is not None and sub.slot == event.slot:
                     self.controls.subscription = None
                     out.append(event)
+                elif self.controls.health is not None and self.controls.health.slot == event.slot:
+                    self.controls.health = None
+                    out.append(HealthEnded(event.reason))
+            elif isinstance(event, CommandRefused):
+                out.append(event)
             elif isinstance(event, Disconnected):
                 out.append(event)
         return out
