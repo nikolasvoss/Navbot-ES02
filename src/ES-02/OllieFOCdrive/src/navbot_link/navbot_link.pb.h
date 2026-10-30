@@ -103,6 +103,7 @@ typedef struct _navbot_link_v1_CatalogEntry {
     pb_size_t args_count;
     navbot_link_v1_CatalogEntry_Arg args[4]; /* ACTION only */
     char build[33]; /* firmware build ID; set in the reply to index 0 */
+    float live_step; /* PARAM only: largest change one SetParam may make while balance is requested; 0 = refused while balancing, inf = any */
 } navbot_link_v1_CatalogEntry;
 
 /* slot 0 asks the robot for a free slot; the Ack carries it in value. A
@@ -211,7 +212,7 @@ extern "C" {
 #define navbot_link_v1_Command_init_default      {0, 0}
 #define navbot_link_v1_Ack_init_default          {0, 0, "", {0, {0}}}
 #define navbot_link_v1_GetCatalog_init_default   {0}
-#define navbot_link_v1_CatalogEntry_init_default {0, 0, "", "", _navbot_link_v1_CatalogEntry_Kind_MIN, _navbot_link_v1_CatalogEntry_Type_MIN, 0, {navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default}, ""}
+#define navbot_link_v1_CatalogEntry_init_default {0, 0, "", "", _navbot_link_v1_CatalogEntry_Kind_MIN, _navbot_link_v1_CatalogEntry_Type_MIN, 0, {navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default, navbot_link_v1_CatalogEntry_Arg_init_default}, "", 0}
 #define navbot_link_v1_CatalogEntry_Arg_init_default {"", 0, 0}
 #define navbot_link_v1_Subscribe_init_default    {0, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0}
 #define navbot_link_v1_Unsubscribe_init_default  {0}
@@ -226,7 +227,7 @@ extern "C" {
 #define navbot_link_v1_Command_init_zero         {0, 0}
 #define navbot_link_v1_Ack_init_zero             {0, 0, "", {0, {0}}}
 #define navbot_link_v1_GetCatalog_init_zero      {0}
-#define navbot_link_v1_CatalogEntry_init_zero    {0, 0, "", "", _navbot_link_v1_CatalogEntry_Kind_MIN, _navbot_link_v1_CatalogEntry_Type_MIN, 0, {navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero}, ""}
+#define navbot_link_v1_CatalogEntry_init_zero    {0, 0, "", "", _navbot_link_v1_CatalogEntry_Kind_MIN, _navbot_link_v1_CatalogEntry_Type_MIN, 0, {navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero, navbot_link_v1_CatalogEntry_Arg_init_zero}, "", 0}
 #define navbot_link_v1_CatalogEntry_Arg_init_zero {"", 0, 0}
 #define navbot_link_v1_Subscribe_init_zero       {0, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0}
 #define navbot_link_v1_Unsubscribe_init_zero     {0}
@@ -271,6 +272,7 @@ extern "C" {
 #define navbot_link_v1_CatalogEntry_type_tag     6
 #define navbot_link_v1_CatalogEntry_args_tag     7
 #define navbot_link_v1_CatalogEntry_build_tag    8
+#define navbot_link_v1_CatalogEntry_live_step_tag 9
 #define navbot_link_v1_Subscribe_slot_tag        1
 #define navbot_link_v1_Subscribe_ids_tag         2
 #define navbot_link_v1_Subscribe_period_us_tag   3
@@ -387,7 +389,8 @@ X(a, STATIC,   SINGULAR, STRING,   unit,              4) \
 X(a, STATIC,   SINGULAR, UENUM,    kind,              5) \
 X(a, STATIC,   SINGULAR, UENUM,    type,              6) \
 X(a, STATIC,   REPEATED, MESSAGE,  args,              7) \
-X(a, STATIC,   SINGULAR, STRING,   build,             8)
+X(a, STATIC,   SINGULAR, STRING,   build,             8) \
+X(a, STATIC,   SINGULAR, FLOAT,    live_step,         9)
 #define navbot_link_v1_CatalogEntry_CALLBACK NULL
 #define navbot_link_v1_CatalogEntry_DEFAULT NULL
 #define navbot_link_v1_CatalogEntry_args_MSGTYPE navbot_link_v1_CatalogEntry_Arg
@@ -472,13 +475,13 @@ extern const pb_msgdesc_t navbot_link_v1_Call_msg;
 #define navbot_link_v1_Ack_size                  80
 #define navbot_link_v1_Call_size                 26
 #define navbot_link_v1_CatalogEntry_Arg_size     28
-#define navbot_link_v1_CatalogEntry_size         214
+#define navbot_link_v1_CatalogEntry_size         219
 #define navbot_link_v1_Command_size              10
 #define navbot_link_v1_GetCatalog_size           6
 #define navbot_link_v1_GetParam_size             6
 #define navbot_link_v1_Imu_size                  51
 #define navbot_link_v1_Log_size                  124
-#define navbot_link_v1_Message_size              229
+#define navbot_link_v1_Message_size              234
 #define navbot_link_v1_SetParam_size             12
 #define navbot_link_v1_SignalBatch_size          205
 #define navbot_link_v1_Subscribe_size            204

@@ -87,6 +87,7 @@ message CatalogEntry {
   Type type = 6;         // unset for ACTION
   repeated Arg args = 7; // ACTION only
   string build = 8;      // firmware build ID; set in the reply to index 0
+  float live_step = 9;   // PARAM only: largest change one SetParam may make while balance is requested; 0 = refused while balancing, inf = any
 }
 
 // slot 0 asks the robot for a free slot; the Ack carries it in value. A
