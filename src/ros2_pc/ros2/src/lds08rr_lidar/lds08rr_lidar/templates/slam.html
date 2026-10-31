@@ -36,14 +36,9 @@
     .undo { align-items: center; }
     .undo .label { color: #cbd5e1; }
     .undo .empty { flex-basis: 100%; margin: 0; }
-    .modeSwitch { display: inline-flex; align-items: center; gap: .5rem; }
-    .modeSwitch input { position: absolute; opacity: 0; width: 0; height: 0; }
-    .modeSwitch .track { position: relative; width: 2.8rem; height: 1.5rem; border-radius: 1rem; background: #243442; border: 1px solid #64748b; cursor: pointer; transition: background .15s; }
-    .modeSwitch .track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 1.15rem; height: 1.15rem; border-radius: 50%; background: #edf3f7; transition: transform .15s; }
-    .modeSwitch input:checked + .track { background: #0e7490; }
-    .modeSwitch input:checked + .track::after { transform: translateX(1.3rem); }
-    .modeSwitch input:focus-visible + .track { outline: 2px solid #38bdf8; outline-offset: 2px; }
-    .modeSwitch input:disabled + .track { opacity: .5; cursor: default; }
+    button[aria-pressed="true"] { background: #0e7490; border-color: #38bdf8; }
+    button.danger { background: #7f1d1d; border-color: #f87171; }
+    #map.placing { cursor: crosshair; }
     @media (max-width: 760px) {
       body { height: auto; min-height: 100dvh; grid-template-rows: auto auto auto; overflow: auto; }
       .grid { grid-template-columns: minmax(0, 1fr); }
@@ -112,14 +107,28 @@
         <dt>Odom rate</dt><dd id="odomRate">–</dd>
         <dt>SLAM correction</dt><dd id="slamCorrection">–</dd>
       </dl>
+      <div id="navPanel" hidden>
+        <h2>Navigation</h2>
+        <dl>
+          <dt>State</dt><dd id="navState">–</dd>
+          <dt>Distance remaining</dt><dd id="navDistance">–</dd>
+          <dt>Outcome</dt><dd id="navOutcome">–</dd>
+        </dl>
+        <dl id="navChecks"></dl>
+        <div class="actions">
+          <button id="setGoal" type="button" aria-pressed="false" disabled title="Then press on the map for the position and drag for the heading">Set goal</button>
+          <button id="cancelGoal" type="button" disabled>Cancel goal</button>
+          <button id="stopNav" type="button" class="danger" disabled title="Stop the robot in place and keep it balancing">Stop</button>
+          <button id="resumeNav" type="button" disabled>Resume</button>
+        </div>
+      </div>
+      <div id="modeButtons" class="actions" role="group" aria-label="Mode">
+        <button id="modeMapping" type="button" data-mode="mapping" disabled>Mapping</button>
+        <button id="modeLocalization" type="button" data-mode="localization" disabled>Localization</button>
+        <button id="modeNavigation" type="button" data-mode="navigation" disabled>Navigation</button>
+      </div>
       <div class="actions">
         <button id="locate" type="button" disabled title="Start a global search for the pose on the saved map">Locate again</button>
-        <label class="modeSwitch" title="Slide to localization to use the saved map, or to mapping to extend or remake it">
-          <span>Mapping</span>
-          <input id="switchMode" type="checkbox" role="switch" disabled>
-          <span class="track" aria-hidden="true"></span>
-          <span>Localization</span>
-        </label>
       </div>
       <div class="actions">
         <button id="saveMap" type="button" disabled>Save map</button>
@@ -151,22 +160,74 @@
     const LOC_STATES = {
       idle: ['Starting', 'warn'], searching: ['Searching', 'warn'], localized: ['Localized', 'ok'], lost: ['Lost', 'warn'],
     };
+    const NAV_STATES = {
+      not_ready: ['Not ready', 'warn'], ready: ['Ready', 'ok'], driving: ['Driving', 'ok'], stopped: ['Stopped', 'error'],
+    };
+    const NAV_CHECKS = {
+      balance: 'Balance running', ch5: 'CH5 in link position', remote: 'Remote signal', health: 'Robot health',
+      localization: 'Localized', scan: 'LiDAR scans', battery: 'Battery', nav2: 'Nav2 running',
+    };
+    const MODE_LABELS = { mapping: 'Mapping', localization: 'Localization', navigation: 'Navigation' };
+    const modeButtons = [...document.querySelectorAll('#modeButtons button')];
     let serverHasControl = false;
     let actionRunning = false;
     let hasSavedMap = false;
     let currentMode = null;
+    let currentNav = null;     // control.nav: null outside navigation mode
+    let goalArmed = false;     // Set goal pressed: the next press on the map places a goal
+    let goalPlace = null;      // {id, x, y, yaw} of the goal being placed while the pointer is down
 
     function syncButtons() {
-      const localizing = currentMode === 'localization';
-      $('saveMap').disabled = actionRunning || !serverHasControl || localizing;
-      $('deleteMap').disabled = actionRunning || !serverHasControl;
-      $('resetMap').disabled = actionRunning || !serverHasControl || !hasSavedMap;
-      $('locate').disabled = actionRunning || !serverHasControl || !localizing;
-      $('switchMode').disabled = actionRunning || !serverHasControl || currentMode === null;
-      $('switchMode').checked = localizing;
+      const idle = actionRunning || !serverHasControl;
+      const navigating = currentMode === 'navigation';
+      const nav = navigating ? currentNav : null;
+      const goalRunning = nav !== null && nav.goal_id > 0 && nav.outcome === null;
+      const stopped = nav !== null && nav.supervisor.state === 'stopped';
+      $('saveMap').disabled = idle || currentMode !== 'mapping';
+      $('deleteMap').disabled = idle || navigating;
+      $('resetMap').disabled = idle || navigating || !hasSavedMap;
+      $('locate').disabled = idle || currentMode !== 'localization';
+      for (const button of modeButtons) {
+        button.disabled = idle || currentMode === null;
+        button.setAttribute('aria-pressed', String(button.dataset.mode === currentMode));
+      }
+      $('setGoal').disabled = idle || !navigating;
+      $('stopNav').disabled = idle || !navigating;
+      $('cancelGoal').disabled = idle || !goalRunning;
+      $('resumeNav').disabled = idle || !stopped;
       const undoable = currentMode === 'mapping' && $('undoSelect').options.length > 0;
-      $('undoSelect').disabled = actionRunning || !serverHasControl || !undoable;
-      $('undoMap').disabled = actionRunning || !serverHasControl || !undoable;
+      $('undoSelect').disabled = idle || !undoable;
+      $('undoMap').disabled = idle || !undoable;
+    }
+
+    // The navigation panel shows while the server is in navigation mode and hides otherwise.
+    function renderNav(nav) {
+      $('navPanel').hidden = !nav;
+      if (!nav) {
+        if (goalArmed) setGoalArmed(false);
+        return;
+      }
+      const [word, level] = NAV_STATES[nav.supervisor.state] || [nav.supervisor.state, 'unknown'];
+      setState('navState', word + (nav.supervisor.reason ? ` · ${nav.supervisor.reason}` : ''), level);
+      $('navChecks').replaceChildren(...nav.supervisor.checks.flatMap((check) => {
+        const label = document.createElement('dt');
+        label.textContent = NAV_CHECKS[check.name] || check.name;
+        const detail = document.createElement('dd');
+        detail.textContent = check.detail;
+        detail.dataset.level = check.ok ? 'ok' : 'error';
+        return [label, detail];
+      }));
+      $('navDistance').textContent = nav.distance_remaining_m == null ? '–' : `${nav.distance_remaining_m.toFixed(2)} m`;
+      $('navOutcome').textContent = nav.goal_id === 0 ? '–'
+        : nav.outcome === null ? 'Running' : nav.outcome + (nav.error ? `: ${nav.error}` : '');
+    }
+
+    function setGoalArmed(on) {
+      goalArmed = on;
+      goalPlace = null;
+      $('setGoal').setAttribute('aria-pressed', String(on));
+      canvas.classList.toggle('placing', on);
+      draw();
     }
 
     async function runAction(path, doneText, body) {
@@ -196,9 +257,18 @@
       }
     });
     $('locate').addEventListener('click', () => runAction('/slam/locate', 'Searching for the pose on the saved map.'));
-    $('switchMode').addEventListener('change', () => {
-      const target = $('switchMode').checked ? 'localization' : 'mapping';
-      runAction('/slam/mode', `Switching to ${target}.`, { mode: target });
+    for (const button of modeButtons) {
+      button.addEventListener('click', () => {
+        const mode = button.dataset.mode;
+        if (mode !== currentMode) runAction('/slam/mode', `Switching to ${MODE_LABELS[mode]}.`, { mode });
+      });
+    }
+    $('setGoal').addEventListener('click', () => setGoalArmed(!goalArmed));
+    $('cancelGoal').addEventListener('click', () => runAction('/nav/cancel', 'Goal canceled.'));
+    $('stopNav').addEventListener('click', () => runAction('/nav/stop', 'Navigation stopped.'));
+    $('resumeNav').addEventListener('click', () => runAction('/nav/resume', 'Navigation resumed.'));
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') setGoalArmed(false);
     });
     $('deleteMap').addEventListener('click', () => {
       if (confirm('Delete the saved map and restart mapping from scratch?')) {
@@ -312,17 +382,44 @@
       ctx.imageSmoothingEnabled = false;
       const left = v.sx(m.origin_x), top = v.sy(m.origin_y + m.height * m.resolution);
       ctx.drawImage(mapImage, left, top, m.width * m.resolution * v.scale, m.height * m.resolution * v.scale);
-      const pose = currentPose;
-      if (pose) {
-        ctx.save();
-        ctx.translate(v.sx(pose.x), v.sy(pose.y));
-        ctx.rotate(-pose.yaw);
-        ctx.fillStyle = '#38bdf8';
-        ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-9, 8); ctx.lineTo(-9, -8); ctx.closePath(); ctx.fill();
-        ctx.restore();
-      }
+      if (currentNav) drawNavigation(v);
+      if (currentPose) drawArrow(v, currentPose, '#38bdf8');
       drawScaleBar(v);
       $('viewLabel').textContent = `View: ${(v.width / v.scale).toFixed(1)} m wide`;
+    }
+
+    function drawArrow(v, pose, color) {
+      ctx.save();
+      ctx.translate(v.sx(pose.x), v.sy(pose.y));
+      ctx.rotate(-pose.yaw);
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-9, 8); ctx.lineTo(-9, -8); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    // Nav2 plan and goal, in the map frame. The arrow being placed replaces the stored goal.
+    function drawNavigation(v) {
+      const plan = currentNav.plan;
+      if (plan.length > 1) {
+        ctx.save();
+        ctx.strokeStyle = '#a3e635';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        plan.forEach(([x, y], i) => {
+          if (i === 0) ctx.moveTo(v.sx(x), v.sy(y));
+          else ctx.lineTo(v.sx(x), v.sy(y));
+        });
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (goalPlace) drawArrow(v, goalPlace, '#f59e0b');
+      else if (currentNav.goal) drawArrow(v, currentNav.goal, '#a3e635');
+    }
+
+    // Map coordinates (metres) of a canvas point, the inverse of view().sx and view().sy.
+    function worldAt(p) {
+      const v = view();
+      return { x: v.c.x + (p.x - v.width / 2) / v.scale, y: v.c.y - (p.y - v.height / 2) / v.scale };
     }
 
     // Scale bar like on a geographic map: a round length (1, 2 or 5 × 10^n m) about 120 px long.
@@ -417,10 +514,25 @@
     canvas.addEventListener('pointerdown', (event) => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
       canvas.setPointerCapture(event.pointerId);
+      if (goalArmed) {
+        // While a goal is armed the map does not pan: the press sets the position, the drag the heading.
+        if (currentMap && !goalPlace) {
+          const p = worldAt(canvasPoint(event));
+          goalPlace = { id: event.pointerId, x: p.x, y: p.y, yaw: 0 };
+          draw();
+        }
+        return;
+      }
       pointers.set(event.pointerId, canvasPoint(event));
       startGesture();
     });
     canvas.addEventListener('pointermove', (event) => {
+      if (goalPlace && goalPlace.id === event.pointerId) {
+        const p = worldAt(canvasPoint(event));
+        goalPlace.yaw = Math.atan2(p.y - goalPlace.y, p.x - goalPlace.x);
+        draw();
+        return;
+      }
       if (!pointers.has(event.pointerId)) return;
       pointers.set(event.pointerId, canvasPoint(event));
       if (!drag || !currentMap) return;
@@ -443,8 +555,21 @@
       if (!pointers.delete(event.pointerId)) return;
       startGesture();
     };
-    canvas.addEventListener('pointerup', endPointer);
-    canvas.addEventListener('pointercancel', endPointer);
+    // Releasing the placing pointer sends the goal; a cancelled press (the browser took it) sends nothing.
+    function endGoal(send) {
+      const goal = goalPlace;
+      goalPlace = null;
+      draw();
+      if (send) runAction('/nav/goal', 'Goal sent.', { x: goal.x, y: goal.y, yaw: goal.yaw });
+    }
+    canvas.addEventListener('pointerup', (event) => {
+      if (goalPlace && goalPlace.id === event.pointerId) endGoal(true);
+      else endPointer(event);
+    });
+    canvas.addEventListener('pointercancel', (event) => {
+      if (goalPlace && goalPlace.id === event.pointerId) endGoal(false);
+      else endPointer(event);
+    });
     window.addEventListener('resize', resizeCanvas);
     new ResizeObserver(resizeCanvas).observe(canvas);
 
@@ -494,17 +619,21 @@
         const svc = Object.fromEntries(services.map((row) => [row.key, row]));
         const slamRow = svc.slam;
         currentMode = slam.mode;
-        const localizing = currentMode === 'localization';
+        // Navigation runs on the saved map, so it localizes like the localization mode does.
+        const usesSavedMap = currentMode === 'localization' || currentMode === 'navigation';
+        const control = slam.control;
+        currentNav = (control && control.nav) || null;
         const loc = slam.localization;
         const [mapText, mapLevel] = MAP_STATES[slam.state] || [slam.state, 'unknown'];
         if (slamRow.level === 'ok') {
-          const [locStateText, locStateLevel] = localizing ? locText(loc) : [mapText, mapLevel];
+          const [locStateText, locStateLevel] = usesSavedMap ? locText(loc) : [mapText, mapLevel];
           setState('stateBadge', locStateText, locStateLevel);
         } else {
           setState('stateBadge', slamRow.short, slamRow.level);
         }
         if (currentMode === null) setState('modeBadge', 'Mode –', 'unknown');
-        else setState('modeBadge', localizing ? 'Localization' : 'Mapping', 'ok');
+        else setState('modeBadge', MODE_LABELS[currentMode], 'ok');
+        renderNav(currentNav);
         setState('lidarState', svc.lidar.short, svc.lidar.level);
         const m = slam.map;
         $('mapSize').textContent = m ? `${(m.width * m.resolution).toFixed(1)} × ${(m.height * m.resolution).toFixed(1)} m` : '–';
@@ -531,8 +660,8 @@
         const c = slam.correction;
         $('slamCorrection').textContent = c ? `${Math.hypot(c.x, c.y).toFixed(2)} m, ${deg(c.yaw)}` : '–';
         const std = loc && loc.std;
-        $('locMode').textContent = localizing ? 'Localization' : (currentMode === null ? '–' : 'Mapping');
-        const [locWord, locWordLevel] = localizing ? locText(loc) : ['–', 'unknown'];
+        $('locMode').textContent = currentMode === null ? '–' : MODE_LABELS[currentMode];
+        const [locWord, locWordLevel] = usesSavedMap ? locText(loc) : ['–', 'unknown'];
         setState('locState', locWord, locWordLevel);
         const ap = loc && loc.pose;
         $('locXY').textContent = ap ? `${ap.x.toFixed(2)}, ${ap.y.toFixed(2)} m` : '–';
@@ -545,7 +674,6 @@
         $('poseXY').textContent = p ? `${p.x.toFixed(2)}, ${p.y.toFixed(2)} m` : '–';
         $('poseYaw').textContent = p ? `${(p.yaw * 180 / Math.PI).toFixed(0)}°` : '–';
         $('mapAge').textContent = slam.map_age_sec == null ? '–' : slam.map_age_sec.toFixed(0) + ' s';
-        const control = slam.control;
         const saved = control && control.saved_map;
         setState('slamProcess', slamRow.level === 'ok' ? 'Running' + (control.process.restarts > 0 ? ` (restarts ${control.process.restarts})` : '') : slamRow.short, slamRow.level);
         $('savedMap').textContent = saved && saved.exists ? new Date(saved.saved_at * 1000).toLocaleString() : (control ? 'none' : '–');
@@ -558,6 +686,8 @@
         setState('stateBadge', 'Unreachable', 'error');
         setState('modeBadge', 'Mode –', 'unknown');
         currentMode = null;
+        currentNav = null;
+        renderNav(null);
         serverHasControl = false;
         syncButtons();   // the undo list keeps its last state; the buttons are disabled while unreachable
         setMap(null, null);
