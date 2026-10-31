@@ -13,7 +13,7 @@ RULES = "See AGENTS.md, section 'Where files go'."
 
 ROOT_FILES = {"README.md", "AGENTS.md", "CLAUDE.md", ".gitignore", "firmware-build-environment.json"}
 ROOT_DIRS = {"src", "scripts", "tests", "cad", "docs", "lab"}
-SRC_DIRS = {"ES-02", "ros2_pc", "navbot_link", "libraries"}
+SRC_DIRS = {"ES-02", "ros2_pc", "navbot_link", "sim", "libraries"}
 SYSTEMS = {"robot", "ros2_pc", "integration"}
 DOCS_DIRS = {"hardware", "software", "plans", "assets"}
 MD_NAME = re.compile(r"^[a-z0-9]+(?:[-.][a-z0-9]+)*\.md$")
