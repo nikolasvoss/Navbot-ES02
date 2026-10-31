@@ -31,6 +31,11 @@ health:
             link_req_dropped, link_undecodable,
             uptime_s, heap_free_b, heap_min_free_b, stack_free_loop_b, stack_free_link_b]
 
+steps:
+  rate_hz: 100
+  signals: [ch5_position, balance_state, cmd_speed_mps, cmd_turn_rad_s, cmd_age_ms,
+            motor1_velocity_f, motor2_velocity_f, roll_deg, gyro_z_rad_s, voltage_filtered_v]
+
 drive:
   rate_hz: 100
   signals: [ch5_position, voltage_min_raw_v, voltage_filtered_v,
