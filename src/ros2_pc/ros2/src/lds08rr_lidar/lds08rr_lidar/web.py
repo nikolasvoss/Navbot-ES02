@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from lds2d.viz import ScanBuffer
@@ -9,6 +10,12 @@ from .mount import robot_bearing_deg
 from .slam import SlamState
 
 DEFAULT_RADAR_WEB = Path(__file__).resolve().parents[2] / "hmmd_radar" / "web"
+
+
+def pose_number(body, key: str) -> float:
+    value = body.get(key) if isinstance(body, dict) else None
+    # type() rather than isinstance(): JSON true/false must not pass as the numbers 1/0.
+    return float(value) if type(value) in (int, float) else math.nan
 
 
 class FreshScanBuffer:
@@ -135,6 +142,41 @@ def make_lidar_app(
         if control is None:
             return jsonify(ok=False, error="SLAM is not running on this service"), 409
         error = control.locate()
+        if error is not None:
+            return jsonify(ok=False, error=error), 409
+        return jsonify(ok=True)
+
+    @app.post("/nav/goal")
+    def nav_goal():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        body = request.get_json(silent=True)
+        error = control.nav_goal(pose_number(body, "x"), pose_number(body, "y"), pose_number(body, "yaw"))
+        if error is not None:
+            return jsonify(ok=False, error=error), 409
+        return jsonify(ok=True)
+
+    @app.post("/nav/cancel")
+    def nav_cancel():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        error = control.nav_cancel()
+        if error is not None:
+            return jsonify(ok=False, error=error), 409
+        return jsonify(ok=True)
+
+    @app.post("/nav/stop")
+    def nav_stop():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        control.nav_stop()
+        return jsonify(ok=True)
+
+    @app.post("/nav/resume")
+    def nav_resume():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        error = control.nav_resume()
         if error is not None:
             return jsonify(ok=False, error=error), 409
         return jsonify(ok=True)
