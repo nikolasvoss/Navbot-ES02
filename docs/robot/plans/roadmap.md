@@ -58,3 +58,7 @@ The diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) no longer streams a CSV. It is
 ## Switch the LiDAR off after a fall
 
 Route the LiDAR's `M−` pin (LiDAR enable) to the robot PCB, most likely, and drive it so that the LiDAR switches off when the robot falls.
+
+## Host simulation of the balancing robot
+
+A PC program runs the firmware's control code against a model of the robot, so sign errors, unstable gains and wrong state changes show up in host tests before a robot test. Plan: [host simulation](simulation.md).
