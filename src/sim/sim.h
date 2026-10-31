@@ -15,6 +15,7 @@
 #include "ICM42688.h"
 #include "Logging.h"
 #include "RobotConfig.h"
+#include "signal_table.h"
 
 namespace sim {
 
@@ -277,6 +278,12 @@ bool applyStep(Robot &robot, const ScenarioStep &step, std::string &error);
 bool setParam(Params &params, const std::string &name, const std::string &value);
 
 // ----- Live mode (link_server.cpp)
+
+// The expansion of signals.def.h (sim_signals.cpp): the table the endpoint serves, and the health rows refreshed from
+// the clock.
+const SignalEntry *signalTableEntries();
+size_t signalTableCount();
+void updateSystemHealth(uint32_t nowUs);
 
 // Runs the robot in real time and serves the NavBot link on one TCP client at listen ("HOST:PORT"). Steps of the
 // scenario apply at their times. Returns the process exit code.
