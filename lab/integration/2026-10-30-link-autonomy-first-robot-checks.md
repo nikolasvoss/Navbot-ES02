@@ -1,6 +1,6 @@
 # First robot checks of the link autonomy features, 2026-10-30
 
-Status: open
+Status: concluded
 
 ## Observation
 
@@ -58,3 +58,7 @@ Same build 9c3c5531, CH5 0, balance off, robot resting on the bench. Nothing log
 - `log_level` 2: the same `[action]` line, then `INFO [IMU] Calibrating gyroscope...`, `INFO [IMU] Gyroscope calibration completed.` and `INFO [Calibration] gyroBiasX: 17.72, gyroBiasY: -13.91, gyroBiasZ: 24.20`.
 
 `log_level` was set back to 2. Consequence: `log_level` 3 hides the INFO text lines, and the `param` and `action` frames go out at every level, as the [signal table](../../docs/integration/software/signal-table.md) states.
+
+## Motor checks, 2026-10-31
+
+The motor checks with balance on the ground ran on 2026-10-31 and are recorded in [their own note](2026-10-31-link-autonomy-motor-checks.md). This note is concluded.
