@@ -27,6 +27,7 @@ The presets are:
 | `ctrl` | 10 | Tilt, yaw rate, body turn command and motor targets at 100 Hz |
 | `bal` | 7 | Tilt and motor targets at 100 Hz, for a balance shutdown |
 | `drive` | 28 | Forward and reverse runs, IMU timing, loop timing and motor state at 100 Hz |
+| `health` | 20 | Balance state, RC and link counters, voltage, heap and stack at 1 Hz |
 
 A preset row is due every 10 ms. The control loop runs at about 710 ticks per second, so each row is taken on the first tick at or after its deadline.
 

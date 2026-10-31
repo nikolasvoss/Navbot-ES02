@@ -262,7 +262,11 @@ def port_holders(port: str) -> list[str]:
         except OSError:
             continue
         if any(_link(fd) == port for fd in fds):
-            lines.append(f"{pid.name} {(pid / 'comm').read_text().strip()}")
+            try:
+                comm = (pid / "comm").read_text().strip()
+            except OSError:
+                continue
+            lines.append(f"{pid.name} {comm}")
     return lines
 
 
@@ -274,6 +278,11 @@ def _link(path: Path) -> str | None:
 
 
 def raw_serial(port: str, seconds: float) -> None:
+    """Print the bytes from port for seconds.
+
+    DTR and RTS are deasserted as early as pyserial allows. On Linux the kernel may still pulse DTR
+    when the port opens, which can reset the board, so this does not guarantee that it never resets.
+    """
     import serial
 
     link = serial.Serial()
@@ -298,7 +307,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Host helpers for the agent workflow.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("probe", help="print this host's probe as JSON")
-    raw = sub.add_parser("raw-serial", help="print bytes from a port for SECONDS, without resetting the robot")
+    raw = sub.add_parser(
+        "raw-serial",
+        help="print bytes from a port for SECONDS; DTR and RTS are deasserted as early as pyserial allows, "
+        "but on Linux the kernel may still pulse DTR on open and reset the board",
+    )
     raw.add_argument("port")
     raw.add_argument("seconds", type=float)
     holder = sub.add_parser("port-holder", help="list processes holding a port open")

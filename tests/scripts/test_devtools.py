@@ -184,6 +184,67 @@ def test_probe_reports_the_robot_port_and_the_link(tmp_path, monkeypatch):
     }
 
 
+def test_probe_refuses_two_robot_ports(tmp_path, monkeypatch):
+    tty = tmp_path / "sys" / "class" / "tty"
+    for name, vendor in [("ttyUSB0", "1a86"), ("ttyACM0", "1a86")]:
+        usb = tmp_path / "sys" / "devices" / name
+        (usb / "interface").mkdir(parents=True)
+        (usb / "idVendor").write_text(f"{vendor}\n")
+        (usb / "idProduct").write_text("7523\n")
+        (tty / name).mkdir(parents=True)
+        (tty / name / "device").symlink_to(usb / "interface")
+
+    monkeypatch.setattr(devtools, "SYS_TTY", tty)
+    monkeypatch.setattr(socket, "gethostname", lambda: "niko-desktop")
+    with pytest.raises(RuntimeError, match=r"^more than one robot USB port: /dev/ttyACM0, /dev/ttyUSB0$"):
+        devtools.probe(None)
+
+
+def test_probe_reports_the_mux_when_the_tcp_connect_succeeds(tmp_path, monkeypatch):
+    class Connected:
+        def close(self):
+            pass
+
+    monkeypatch.setattr(devtools, "SYS_TTY", tmp_path / "no-tty")
+    monkeypatch.setattr(devtools, "ROS_SETUP", tmp_path / "setup.bash")
+    monkeypatch.setattr(devtools, "_toolchain", lambda: None)
+    monkeypatch.setattr(socket, "gethostname", lambda: "niko-desktop")
+    monkeypatch.setattr(socket, "create_connection", lambda *args, **kwargs: Connected())
+    assert devtools.probe(None) == {
+        "hostname": "niko-desktop",
+        "toolchain": None,
+        "robot_usb": None,
+        "mux": True,
+        "ros": False,
+    }
+
+
+def test_run_passes_input_to_subprocess(monkeypatch):
+    calls = []
+
+    def fake(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args, 0, b"", b"")
+
+    monkeypatch.setattr(devtools.subprocess, "run", fake)
+    devtools.run(None, ["cat"], input=b"payload")
+    assert calls[0][1]["input"] == b"payload"
+
+
+def test_run_interactive_over_ssh_allocates_a_tty_and_captures_nothing(monkeypatch):
+    calls = []
+
+    def fake(args, **kwargs):
+        calls.append((args, kwargs))
+        return subprocess.CompletedProcess(args, 0, b"", b"")
+
+    monkeypatch.setattr(devtools.subprocess, "run", fake)
+    devtools.run("cm5", ["python3", "-V"], interactive=True)
+    args, kwargs = calls[0]
+    assert args == ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-t", "cm5", "bash -lc 'python3 -V'"]
+    assert (kwargs["stdout"], kwargs["stderr"]) == (None, None)
+
+
 def test_port_holders_lists_processes_with_the_port_open(tmp_path, monkeypatch):
     proc = tmp_path / "proc"
     (proc / "123" / "fd").mkdir(parents=True)
@@ -196,13 +257,23 @@ def test_port_holders_lists_processes_with_the_port_open(tmp_path, monkeypatch):
     assert devtools.port_holders("/dev/ttyUSB0") == ["123 navlink"]
 
 
-def test_gate_refuses_while_balancing_testing_or_driven_by_rc():
-    clear = {"balance_state": 0, "motor_test_active": 0, "rc_valid": 0, "ch5_position": 1}
+def test_gate_passes_when_idle_and_rc_is_not_driving():
+    clear = {"balance_state": 0, "motor_test_active": 0, "rc_valid": 1, "ch5_position": 0}
     assert devtools.gate_ok(clear) is None
-    assert "balance_state=1" in devtools.gate_ok({**clear, "balance_state": 1})
-    assert "motor_test_active=1" in devtools.gate_ok({**clear, "motor_test_active": 1})
-    assert devtools.gate_ok({**clear, "rc_valid": 1, "ch5_position": 1}) is not None
-    assert devtools.gate_ok({k: v for k, v in clear.items() if k != "ch5_position"}) is not None
+
+
+def test_gate_refuses_with_the_reason_for_each_condition():
+    clear = {"balance_state": 0, "motor_test_active": 0, "rc_valid": 0, "ch5_position": 1}
+    assert devtools.gate_ok({**clear, "balance_state": 1}) == "balance_state=1; the balance controller is active"
+    assert devtools.gate_ok({**clear, "balance_state": 2}) == "balance_state=2; the balance controller is active"
+    assert devtools.gate_ok({**clear, "motor_test_active": 1}) == "motor_test_active=1; a motor test is running"
+    assert devtools.gate_ok({**clear, "rc_valid": 1}) == (
+        "rc_valid=1 and ch5_position=1; the transmitter may drive the robot"
+    )
+    assert devtools.gate_ok({k: v for k, v in clear.items() if k != "ch5_position"}) == (
+        "missing signal(s): ch5_position"
+    )
+    assert devtools.gate_ok({**clear, "ch5_position": None}) == "missing signal(s): ch5_position"
 
 
 def test_peer_maps_known_hosts_and_refuses_others(monkeypatch):

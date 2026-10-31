@@ -102,6 +102,7 @@ The USB port is a backup with the same functions:
 
 | Value | `esp_reset_reason_t` | Meaning |
 | --- | --- | --- |
+| 0 | `ESP_RST_UNKNOWN` | Unknown |
 | 1 | `ESP_RST_POWERON` | Power-on |
 | 2 | `ESP_RST_EXT` | External pin |
 | 3 | `ESP_RST_SW` | Software reset |

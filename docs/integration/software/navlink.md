@@ -75,7 +75,7 @@ bal:
             leg_pose_min_deg, leg_pose_max_deg]
 ```
 
-The presets in [scripts/navlink_presets.yaml](../../../scripts/navlink_presets.yaml) are `trace` (13 signals), `ctrl` (10), `bal` (7) and `drive` (28), each at 100 Hz. The [trace capture page](../../robot/software/trace-capture.md#capture-with-navlink) describes what each one is for.
+The presets in [scripts/navlink_presets.yaml](../../../scripts/navlink_presets.yaml) are `trace` (13 signals), `ctrl` (10), `bal` (7) and `drive` (28), each at 100 Hz, and `health` (20), at 1 Hz. The [trace capture page](../../robot/software/trace-capture.md#capture-with-navlink) describes what each one is for.
 
 A preset row is due every 10 ms. The control loop runs at about 710 ticks per second, so each row is taken on the first tick at or after its deadline. `tests/scripts/test_navlink_presets.py` resolves every preset against [signals.def.h](../../../src/ES-02/OllieFOCdrive/signals.def.h). A renamed or removed signal fails that test.
 

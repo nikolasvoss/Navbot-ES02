@@ -11,6 +11,7 @@ import pytest
 
 HOST_TEST_SCRIPT = "run_host_test.sh"
 OUTPUT_TAIL_LINES = 40
+HOST_TEST_TIMEOUT_S = 600
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -55,13 +56,17 @@ class HostTestItem(pytest.Item):
 
     def runtest(self) -> None:
         script = Path(self.path)
-        result = subprocess.run(
-            ["bash", str(script)],
-            cwd=script.parent,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["bash", str(script)],
+                cwd=script.parent,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=HOST_TEST_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired:
+            pytest.fail(f"{script} timed out after {HOST_TEST_TIMEOUT_S} s", pytrace=False)
         if result.returncode != 0:
             output = (result.stdout + result.stderr).splitlines()
             tail = "\n".join(output[-OUTPUT_TAIL_LINES:])
