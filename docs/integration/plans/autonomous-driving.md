@@ -2,9 +2,9 @@
 
 Status: **proposal, not implemented.** Branch `feat/autonomous-driving`, created on 2026-10-31 from `feat/simulation` at `c07ead0`. When a phase is done, its result moves into the `hardware/` and `software/` pages and its section here is deleted. The file goes with the last phase.
 
-The goal is that you pick a goal pose on the saved map in the web hub and the robot drives there by itself. It avoids what the LiDAR sees, and when something it can detect goes wrong, it stops in place and keeps balancing. The transmitter stays on as the emergency stop until you decide otherwise ([D1](#decide-these-first)).
+The goal is that you pick a goal pose on the saved map in the web hub and the robot drives there by itself. It avoids what the LiDAR sees, and when something it can detect goes wrong, it stops in place and keeps balancing. The transmitter stays on as the emergency stop ([D1](#decisions-user-2026-11-01)).
 
-This page lists the required and the useful features, then orders the required ones into phases P0 to P7. Each phase ends in a check on the host, on the Nav2 test bench, or on the robot. Before a phase starts, its task list (files, tests, shared names) is added here in the style of [link-autonomy.md](link-autonomy.md). The start values below are derived, not measured, until P2 replaces them.
+This page lists the required and the useful features, then orders the required ones into phases P0 to P7. Each phase ends in a check on the host, on the Nav2 test bench, or on the robot. Before a phase starts, its task list (files, tests, shared names) is added here in the style of [link-autonomy.md](link-autonomy.md). The speed limits come from D3. The other start values are derived, not measured, until P2 replaces them.
 
 ## What exists today
 
@@ -36,16 +36,14 @@ A balancing robot has no safe "off" while it stands. With the drivers off, the w
 
 Sources: `ControlTick.cpp:83-107`, `BalanceController.cpp:441-447`, [balance controller](../../robot/software/balance-controller.md#losing-the-remote).
 
-## Decide these first
+## Decisions (user, 2026-11-01)
 
-The plan uses the default in each row until you decide otherwise.
-
-| # | Question | Default | Why it matters |
+| # | Question | Decision | Consequence for the plan |
 | --- | --- | --- | --- |
-| D1 | Must the transmitter be on while the robot drives by itself? | Yes, with CH5 in position 1. CH5 to 0 is the emergency stop. Driving with the transmitter off is the later item L1. | The firmware ignores `Command` while the RC is lost. Nothing drives with the transmitter off until the firmware changes. |
-| D2 | Where may it drive? | On the floor of mapped rooms, never on a table. You mark stairs and other drops as keepout zones. | The scan plane is 12 cm high and there is no cliff sensor, so the robot cannot see a drop. |
-| D3 | How fast? | 0.2 m/s and 0.6 rad/s until P2 has measured the robot. | See the start values in [P4](#configure-nav2-and-test-it-without-moving-the-robot-p4). |
-| D4 | Is charging in a dock part of the goal? | No, it is the later item L2. | It needs a dock and charging contacts on the robot. |
+| D1 | Must the transmitter be on while the robot drives by itself? | Yes, with CH5 in position 1. CH5 to 0 is the emergency stop. The user may change this later. | The firmware already ignores `Command` while the RC is lost, so this needs no firmware change. Driving with the transmitter off stays the later item L1. |
+| D2 | Where may it drive? | On the floor of mapped rooms, never on a table. | Stairs and other drops become keepout zones, because the scan plane is 12 cm high and there is no cliff sensor. |
+| D3 | How fast? | As fast as the remote: 0.3 m/s and 1.0 rad/s (`speedCapMps` and `yawRateCapRadPerSec` in `RobotConfig.cpp`). | The scan motion gate drops scans above 0.3 m/s and 0.8 rad/s. [P3](#make-odometry-and-localization-hold-while-driving-p3) retunes it at these speeds. |
+| D4 | Docking and charging? | No, not now and not later. | No dock, no charging contacts, and no docking server in the launch. |
 
 ## Features
 
@@ -79,7 +77,7 @@ These make the robot nicer to use or easier to debug. None of them blocks the go
 | U3 | Automatic relocalization. When AMCL reports `lost`, the supervisor cancels the goal, runs the existing global search, and offers to resume. | Today a lost pose needs a click on **Locate**. | P5 |
 | U4 | Speed zones with the Nav2 speed filter | The robot slows down in narrow passages and at doors. | P5 |
 | U5 | Several named maps, already on the [ros2_pc roadmap](../../ros2_pc/plans/roadmap.md) | One map per room or floor. | P6 |
-| U6 | A battery rule: refuse goals below a voltage, and later drive back to a home pose | The bridge publishes the voltage. The threshold needs a measured discharge curve under load. | P5 |
+| U6 | A battery rule that refuses goals below a voltage | The bridge publishes the voltage. The threshold needs a measured discharge curve under load. | P5 |
 | U7 | The host simulation in the loop: the bridge and the Nav2 controller against `navbot_sim --live` | It tests the drive chain with the firmware's balance path before the robot does. Its numbers count only after the [simulation is validated](../../robot/plans/roadmap.md#validate-the-host-simulation). | P4 |
 | U8 | Drawing keepout and speed zones in the hub | P5 uses an edited map image, which works but needs an image editor. | P6 |
 
@@ -90,10 +88,9 @@ These need new hardware or a new decision.
 | # | Feature | What it needs |
 | --- | --- | --- |
 | L1 | Driving with the transmitter off (D1) | A firmware rule that makes the link the dead man in position 1, for example a heartbeat from the supervisor, and a safety review before any code. |
-| L2 | Docking and charging with `opennav_docking` | A dock, charging contacts, and the charger's behaviour while the robot balances. |
-| L3 | Exploration, where the robot maps an unknown room by itself | Jazzy has no apt package for it (`apt-cache search` on the ros2_pc, 2026-10-31). It needs a source package or an own frontier node. |
-| L4 | Down-facing distance sensors against drops, and a bumper | The LiDAR misses drops and everything below 12 cm, such as cables and door sills. |
-| L5 | People detection with the HMMD radar | The radar publishes a raw range-Doppler map only, and its wiring is not verified. |
+| L2 | Exploration, where the robot maps an unknown room by itself | Jazzy has no apt package for it (`apt-cache search` on the ros2_pc, 2026-10-31). It needs a source package or an own frontier node. |
+| L3 | Down-facing distance sensors against drops, and a bumper | The LiDAR misses drops and everything below 12 cm, such as cables and door sills. |
+| L4 | People detection with the HMMD radar | The radar publishes a raw range-Doppler map only, and its wiring is not verified. |
 
 ## Put the pieces on one branch (P0)
 
@@ -125,7 +122,7 @@ Done when a lab note in `lab/integration/` records each check with its capture, 
 You are at the robot with the transmitter on and CH5 in position 1.
 
 1. Extend `scripts/run_drive_trial.py` with `--steps FILE`. It sends a fixed list of speed and yaw-rate steps with `Link.command` at 20 Hz while it captures, so every trial is repeatable.
-2. Run speed steps of 0.05, 0.1 and 0.2 m/s for 3 s each, each followed by zero.
+2. Run speed steps of 0.05, 0.1, 0.2 and 0.3 m/s for 3 s each, each followed by zero.
 3. Run yaw-rate steps of 0.3, 0.6 and 1.0 rad/s the same way.
 4. Extend `scripts/analyze_drive_trace.py` to report for each step the time to 90 % of the commanded value, the steady error, the stop distance, the rollback after the stop, the peak pitch, and the smallest speed that moves the robot.
 5. Measure the outline seen from above with the wheels, the height, and the mass. Record them in the [robot hardware overview](../../robot/hardware/system-overview.md). The mass also replaces a placeholder in the host simulation.
@@ -142,11 +139,13 @@ You are at the robot with the transmitter on.
 3. Check the `/odom` twist signs while you drive forward, backward and turn left.
 4. Run the open LiDAR yaw offset check in the [integration roadmap](roadmap.md) and the tilt gate check in the [ros2_pc roadmap](../../ros2_pc/plans/roadmap.md). Resolve the scan-plane height in the [LiDAR hardware page](../../ros2_pc/hardware/lds08rr-lidar.md), which says it is unknown, against the measured 0.122 m in `mount.py`.
 5. Run WP5 of the localization plan.
-6. Switch to localization and drive the robot with `teleop_twist_keyboard` at 0.2 m/s through the room for 3 minutes. End on a taped mark.
+6. Switch to localization and drive the robot with `teleop_twist_keyboard` through the room for 3 minutes, at the remote's 0.3 m/s and with turns at 1.0 rad/s (D3). End on a taped mark.
+7. Retune the motion gate from this drive. `motion_gate.py` drops scans above 0.3 m/s and 0.8 rad/s, values it marks as provisional, so at the remote's speeds it drops the scans that AMCL and the costmaps need. Set the limits to the highest speed and yaw rate at which AMCL stays in `tracking`.
 
 Done when:
 
 - The lab note shows AMCL in `tracking` for the whole drive, no pose jump above 0.1 m between two updates, and a final pose within 0.1 m and 5° of the mark.
+- The motion gate limits are set from the drive. If AMCL loses the pose at the remote's speeds, the lab note says at which speed or yaw rate, and Nav2 uses the highest values that passed. This is the only case in which Nav2 drives slower than D3.
 - The WP5 boxes of the localization plan are checked.
 
 ## Configure Nav2 and test it without moving the robot (P4)
@@ -154,7 +153,7 @@ Done when:
 The navigation files go next to `localization.yaml` and `localization_launch.py` in `lds08rr_lidar`, because the LiDAR service already supervises the localization stack from there.
 
 1. Install `ros-jazzy-nav2-loopback-sim` on the ros2_pc and add it to the [ros2_pc setup](../software/ros2-pc-setup.md).
-2. Write `navigation.yaml` and `navigation_launch.py`. The launch includes the stock `nav2_bringup` `navigation_launch.py` with `use_composition:=True` and our parameters. Use the start values below.
+2. Write `navigation.yaml` and `navigation_launch.py`. The launch includes the stock `nav2_bringup` `navigation_launch.py` with `use_composition:=True` and our parameters, and leaves out `docking_server` (D4). If the stock launch cannot leave it out, our launch lists the Nav2 nodes itself. Use the start values below.
 3. Write `bench_launch.py`. It starts the loopback simulator, a `map_server` with the saved map, and the navigation launch with the scan sources remapped to the simulator's `/scan`. Run it with `ROS_DOMAIN_ID=84`, so that nothing reaches the live bridge. The simulator publishes `/clock`, so the bench runs with `use_sim_time`.
 4. Write the course script `navbot_course` as a console script of `lds08rr_lidar` with `nav2_simple_commander`. It reads a YAML list of goal poses, sends them one by one, and prints for each goal whether it was reached, the time, and the final position and heading error. With `--preflight`, it checks the conditions listed in [P7](#drive-autonomously-on-the-robot-p7) and exits with a non-zero code if one fails.
 5. Run a course of five goals on the bench. Measure CPU and RAM of the bench together with the live LiDAR service.
@@ -164,13 +163,13 @@ The navigation files go next to `localization.yaml` and `localization_launch.py`
 | --- | --- | --- |
 | Controller | Regulated pure pursuit with `use_rotate_to_heading` | Few parameters and little CPU. It turns on the spot before it drives, as a two-wheel robot can. |
 | `controller_frequency` | 10 Hz | Above the 4 Hz that the 250 ms `Command` timeout needs, and half the CPU of the 20 Hz default. |
-| Speed | 0.15 m/s desired, 0.2 m/s maximum | Below the firmware cap of 0.3 m/s and the motion gate's 0.3 m/s. |
-| Yaw rate | 0.6 rad/s maximum | Below the motion gate's 0.8 rad/s. A 5 Hz sweep then turns about 7°. |
+| Speed | 0.3 m/s desired and maximum | The remote's top speed (D3), equal to the firmware cap `speedCapMps`. |
+| Yaw rate | 1.0 rad/s maximum, also for turning on the spot | The remote's top yaw rate (D3). A 5 Hz sweep then turns 11.5°. P3 checks that AMCL keeps the pose at this rate. |
 | Acceleration and braking | 0.3 m/s² and 0.5 m/s² | A steady lean of atan(a/g) gives 0.031 rad and 0.051 rad, below the 0.06 rad tilt gate. |
 | Local costmap | 3 m × 3 m rolling window, 0.05 m cells | The map has 0.025 m cells. Coarser cells mean a quarter of the cells to update. |
 | Obstacle source | `/scan_slam` | Floor hits are already removed there. |
 | Footprint | A circle with the radius from P2, 0.10 m until then | The outline is not measured. |
-| Collision monitor | A stop polygon 0.10 m in front of the footprint, and a slowdown polygon to 0.30 m at 50 % speed | At 0.2 m/s, about 0.3 s from scan to wheels is 0.06 m, plus 0.04 m to brake at 0.5 m/s². The 0.3 s is a guess. |
+| Collision monitor | A stop polygon 0.20 m in front of the footprint, and a slowdown polygon to 0.45 m at 50 % speed | At 0.3 m/s, about 0.3 s from scan to wheels is 0.09 m, plus 0.09 m to brake at 0.5 m/s². The 0.3 s is a guess. |
 | Goal tolerance | 0.10 m and 10° | The simulation rolls back after a stop. |
 | Recoveries | Wait, spin, and back up by at most 0.10 m at 0.05 m/s | Slow and short recoveries keep the lean small. |
 
@@ -250,15 +249,15 @@ After P7, the required features are done. The useful features follow in the orde
 
 - **Lean during a hard stop.** The firmware brakes at up to 1.0 m/s², a steady lean of about 0.10 rad. That is above the 0.06 rad tilt gate, so `/scan_slam` drops those scans and the collision monitor has no data for that time. The number is derived from atan(a/g). P2 measures the real lean.
 - **Rollback at the goal.** The simulation rolls back at up to 0.076 m/s after a stop, and there is no robot drive trace with this controller yet. The controller may hunt around the goal. P2 measures the rollback, and the goal tolerance absorbs some of it.
-- **Obstacles the LiDAR cannot see.** These are drops, everything below 12 cm, glass, mirrors and black surfaces. Keepout zones cover the known ones. L4 covers the rest.
-- **RAM.** 1.29 GiB was free with no Nav2, and a Claude Code process alone took 318 MB. If P4 misses the budget, stop agent sessions on the CM5 during drives, or drop the waypoint follower, the route server and the docking server from the launch.
+- **Obstacles the LiDAR cannot see.** These are drops, everything below 12 cm, glass, mirrors and black surfaces. Keepout zones cover the known ones. L3 covers the rest.
+- **RAM.** 1.29 GiB was free with no Nav2, and a Claude Code process alone took 318 MB. If P4 misses the budget, stop agent sessions on the CM5 during drives, or drop the waypoint follower and the route server from the launch.
 - **CPU.** The bridge already takes 28 % of one core at 50 Hz. A late `/odom` shows up as TF extrapolation errors in Nav2. P4 and P7 watch for them.
-- **Scan smear.** The LiDAR is not deskewed and one sweep takes 0.2 s. At 0.6 rad/s, a sweep turns 7°, which AMCL and the costmap see as blur. The yaw-rate limit keeps it small.
+- **Scan smear.** The LiDAR is not deskewed and one sweep takes 0.2 s. At the remote's 1.0 rad/s, a sweep turns 11.5°, which AMCL and the costmap see as blur. P3 measures whether AMCL keeps the pose at that rate.
 
 ## Alternatives not taken
 
 - **Gazebo with a robot model.** It does not model the balancing, the CM5 is too small for it, and the desktop has no ROS. The loopback simulator tests Nav2, and the host simulation tests the balance path (U7).
 - **A `robot_localization` filter for wheels and gyro.** The bridge already takes the heading from the gyro and the distance from the wheels. Nothing else needs fusing.
-- **MPPI as the first controller.** It needs more CPU and more parameters. Regulated pure pursuit is enough at 0.2 m/s in rooms. Try MPPI only if P7 fails on path tracking, and measure its CPU first.
+- **MPPI as the first controller.** It needs more CPU and more parameters. Regulated pure pursuit is enough at 0.3 m/s in rooms. Try MPPI only if P7 fails on path tracking, and measure its CPU first.
 - **RViz on the desktop, or a new web framework.** The desktop has no ROS, and the hub already draws the map.
 - **A new ROS package for navigation.** The localization configuration and launch already live in `lds08rr_lidar`, whose service supervises them. Renaming that package is a separate change.
