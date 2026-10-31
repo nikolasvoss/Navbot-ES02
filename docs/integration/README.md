@@ -15,3 +15,4 @@ The integration system is the connection between the robot (ESP32-S3) and the ro
 
 - [Roadmap](plans/roadmap.md): the robot checks for the link, its logs and signals, and the open dashboard decision.
 - [Link features for autonomous development](plans/link-autonomy.md): build ID, health signals, reboot, live parameters, CH5 link mode and ROS `Command`, link multiplexer, one-shot navlink; the task plan for the implementing agents.
+- [Agent workflow, deploy and definition of done](plans/agent-workflow.md): task folders with automatic cleanup, fixed worktree location, one deploy script for both hosts, device test tiers, reset reason, and the automatic definition of done.
