@@ -206,3 +206,11 @@ def test_localization_process_down_uses_the_process_rules():
 
 def test_slam_row_is_named_for_slam_and_localization():
     assert rows()["slam"]["name"] == "SLAM / localization"
+
+
+def test_navigation_mode_shows_the_localization_row():
+    control = FakeControl(mode="navigation", localization=localization("localized"))
+    row = rows(control=control, slam=FakeSlam("navigation"))["slam"]
+    assert (row["level"], row["short"]) == ("ok", "Localized")
+    lost = rows(control=FakeControl(mode="navigation", localization=localization("lost")))["slam"]
+    assert (lost["level"], lost["short"]) == ("warn", "Lost")

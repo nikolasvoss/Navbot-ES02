@@ -103,7 +103,7 @@ class ServiceMonitor:
             return ServiceHealth("slam", name, "warn", "SLAM is not available on this service", "Unavailable")
         status = self.control.status()
         process = status["process"]
-        localizing = status.get("mode") == "localization"
+        localizing = status.get("mode") in ("localization", "navigation")  # navigation keeps the AMCL launch
         launch = "AMCL localization" if localizing else "slam_toolbox"
         if process["state"] == "running":
             if localizing:

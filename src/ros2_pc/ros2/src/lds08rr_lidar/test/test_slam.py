@@ -467,7 +467,7 @@ def test_set_mode_refuses_localization_without_an_occupancy_map_and_unknown_mode
     events.clear()
 
     assert control.set_mode("localization") == "No occupancy map to localize on; save the map once in mapping mode first"
-    assert control.set_mode("nonsense") == "unknown mode 'nonsense'; use mapping or localization"
+    assert control.set_mode("nonsense") == "unknown mode 'nonsense'; use mapping, localization or navigation"
     assert control.mode == "mapping"
     assert events == []
 
@@ -547,6 +547,310 @@ def test_status_reports_the_mode_and_the_localization_snapshot(tmp_path):
     shown = control.status()
     assert shown["mode"] == "mapping"
     assert shown["localization"] == tracker.snapshot()
+
+
+class FakeTracker:
+    def __init__(self, state="idle"):
+        self.state = state
+
+    def snapshot(self):
+        return {"state": self.state}
+
+    def reset(self):
+        self.state = "idle"
+
+
+class FakeSupervisor:
+    def __init__(self, events, refusal=None):
+        self.events, self.refusal = events, refusal
+
+    def request_goal(self):
+        self.events.append(("request_goal",))
+        return self.refusal
+
+    def goal_ended(self):
+        self.events.append(("goal_ended",))
+
+    def stop(self):
+        self.events.append(("supervisor stop",))
+
+    def resume(self):
+        self.events.append(("resume",))
+        return None
+
+    def snapshot(self):
+        return {"state": "driving", "reason": None, "checks": []}
+
+
+class FakeNav:
+    def __init__(self, events, error=None):
+        self.events, self.error = events, error
+        self.goals = []  # (on_feedback, on_done) per accepted goal
+
+    def send_nav_goal(self, x, y, yaw, on_feedback, on_done):
+        self.events.append(("send goal", x, y, yaw))
+        if self.error is None:
+            self.goals.append((on_feedback, on_done))
+        return self.error
+
+    def cancel_nav_goal(self):
+        self.events.append(("cancel goal",))
+
+    def nav_plan(self):
+        return [[0.1, 0.0]]
+
+
+class RecordingNavProcess:
+    def __init__(self, events):
+        self.events = events
+
+    def start(self):
+        self.events.append(("nav start",))
+
+    def stop(self, timeout=10.0):
+        self.events.append(("nav stop",))
+
+    def status(self):
+        return {"state": "running", "pid": 2, "exit_code": None, "restarts": 0, "error": None}
+
+
+def nav_control(tmp_path, events, map_changes=True, supervisor=None, nav=None, bench=False):
+    store = MapStore(tmp_path)
+    process = RecordingProcess(events)
+    control = SlamControl(
+        store, process, write_serialized_map, write_occupancy,
+        localizer=RecordingLocalizer(events), tracker=FakeTracker(), slam_state=None,
+        mapping_command=lambda restore: ["mapping-launch"],
+        supervisor=FakeSupervisor(events) if supervisor is None else supervisor,
+        nav=FakeNav(events) if nav is None else nav,
+        nav_process=RecordingNavProcess(events),
+        localization_command=(lambda yaml: ["bench-launch"]) if bench else (lambda yaml: ["localization-launch"]),
+        map_changes=map_changes,
+    )
+    process.command = control.command
+    return control, store
+
+
+def localized_navigation(tmp_path, events, **kwargs):
+    """A control that boots into localization on a saved map, localized, with the event log cleared."""
+    control, store = nav_control(tmp_path, events, **kwargs)
+    control.save()
+    control.start()
+    control._tracker.state = "localized"
+    events.clear()
+    return control, store
+
+
+def test_navigation_refusals_of_set_mode(tmp_path):
+    events = []
+    control, store = nav_control(tmp_path, events)
+    assert control.set_mode("nonsense") == "unknown mode 'nonsense'; use mapping, localization or navigation"
+    assert control.set_mode("navigation") == "Switch to localization first, then to navigation"
+    control.save()
+    control.start()
+    control._tracker.state = "searching"
+    assert control.set_mode("navigation") == "Navigation needs a localized pose; wait or press Locate"
+    control._tracker.state = "localized"
+    assert control.set_mode("navigation") is None
+    assert control.mode == "navigation"
+
+
+def test_navigation_is_refused_without_the_supervisor_node_or_nav2(tmp_path):
+    events = []
+    control, _ = mode_control(tmp_path, events, tracker=FakeTracker("localized"))
+    control.save()
+    control.start()
+    assert control.set_mode("navigation") == "Navigation is not available on this service"
+    assert control.mode == "localization"
+
+
+def test_localization_becomes_navigation_without_restarting_the_localizer(tmp_path):
+    events = []
+    control, _ = localized_navigation(tmp_path, events)
+    assert control.set_mode("navigation") is None
+    assert events == [("nav start",)]
+    assert control.command() == ["localization-launch"]
+    assert events == [("nav start",), ("localizer start",)]
+
+
+def test_leaving_navigation_stops_only_nav2(tmp_path):
+    events = []
+    control, _ = localized_navigation(tmp_path, events)
+    control.set_mode("navigation")
+    events.clear()
+    assert control.set_mode("localization") is None
+    assert control.mode == "localization"
+    assert events == [("nav stop",)]
+
+    control.set_mode("navigation")
+    assert control.nav_goal(1.0, 0.0, 0.0) is None
+    events.clear()
+    assert control.set_mode("localization") is None
+    assert events == [("supervisor stop",), ("cancel goal",), ("nav stop",)]
+
+
+def test_navigation_to_mapping_stops_both_launches(tmp_path):
+    events = []
+    control, _ = localized_navigation(tmp_path, events)
+    control.set_mode("navigation")
+    assert control.nav_goal(1.0, 0.0, 0.0) is None
+    events.clear()
+    assert control.set_mode("mapping") is None
+    assert events == [
+        ("supervisor stop",), ("cancel goal",), ("nav stop",),
+        ("process stop",), ("localizer stop",), ("process start", ["mapping-launch"]),
+    ]
+
+
+def test_navigation_reload_falls_back_to_localization(tmp_path):
+    events = []
+    control, _ = localized_navigation(tmp_path, events)
+    control.set_mode("navigation")
+    events.clear()
+    assert control.reload() is None
+    assert control.mode == "localization"
+    assert ("nav stop",) in events
+
+
+def test_goal_ids_and_outcomes_belong_to_their_goal(tmp_path):
+    events = []
+    control, _ = localized_navigation(tmp_path, events)
+    control.set_mode("navigation")
+    assert control.status()["nav"]["goal_id"] == 0
+    assert control.status()["nav"]["goal"] is None
+
+    assert control.nav_goal(1.2, -0.4, 1.571) is None
+    nav = control._nav
+    on_feedback, on_done = nav.goals[0]
+    on_feedback(0.8)
+    shown = control.status()["nav"]
+    assert (shown["goal_id"], shown["goal"], shown["distance_remaining_m"]) == (
+        1, {"x": 1.2, "y": -0.4, "yaw": 1.571}, 0.8,
+    )
+    assert shown["outcome"] is None
+
+    on_done("reached", "")
+    shown = control.status()["nav"]
+    assert (shown["outcome"], shown["error"]) == ("reached", "")
+    assert ("supervisor stop",) not in events and events.count(("goal_ended",)) == 1
+
+    assert control.nav_goal(0.5, 0.5, 0.0) is None
+    assert control.status()["nav"]["goal_id"] == 2
+    assert control.status()["nav"]["outcome"] is None
+
+    old_on_feedback, old_on_done = nav.goals[0]
+    old_on_done("canceled", "")  # Nav2 reports the replaced goal late: it must not touch the new one
+    assert events.count(("goal_ended",)) == 1
+    assert control.status()["nav"]["outcome"] is None
+
+    nav.goals[1][1]("failed", "planner failed")
+    shown = control.status()["nav"]
+    assert (shown["goal_id"], shown["outcome"], shown["error"]) == (2, "failed", "planner failed")
+
+
+def test_goal_refusals_pass_on_the_supervisor_and_nav2_texts(tmp_path):
+    events = []
+    control, _ = localized_navigation(tmp_path, events)
+    assert control.nav_goal(1.0, 0.0, 0.0) == "Goals need navigation mode"
+
+    control.set_mode("navigation")
+    events.clear()
+    assert control.nav_goal(float("nan"), 0.0, 0.0) == "x, y and yaw must be finite numbers"
+    assert control.nav_goal(0.0, 0.0, float("inf")) == "x, y and yaw must be finite numbers"
+    assert events == []
+
+
+def test_supervisor_refusal_is_passed_on_without_sending_a_goal(tmp_path):
+    events = []
+    refusal = "stopped: balance is Stop; press Resume"
+    control, _ = localized_navigation(tmp_path, events, supervisor=FakeSupervisor(events, refusal=refusal))
+    control.set_mode("navigation")
+    events.clear()
+    assert control.nav_goal(1.0, 0.0, 0.0) == refusal
+    assert events == [("request_goal",)]
+    assert control.status()["nav"]["goal_id"] == 0
+
+
+def test_nav2_refusal_ends_the_supervisor_attempt_and_keeps_the_goal_id(tmp_path):
+    events = []
+    control, _ = localized_navigation(tmp_path, events, nav=FakeNav(events, error="Nav2 is not ready"))
+    control.set_mode("navigation")
+    events.clear()
+    assert control.nav_goal(1.0, 0.0, 0.0) == "Nav2 is not ready"
+    assert events == [("request_goal",), ("send goal", 1.0, 0.0, 0.0), ("goal_ended",)]
+    assert control.status()["nav"]["goal_id"] == 0
+
+
+def test_cancel_stop_and_resume_refusals(tmp_path):
+    events = []
+    control, _ = localized_navigation(tmp_path, events)
+    assert control.nav_resume() == "Resume needs navigation mode"
+    assert control.nav_cancel() == "No goal is running"
+
+    control.set_mode("navigation")
+    assert control.nav_cancel() == "No goal is running"
+    assert control.nav_goal(1.0, 0.0, 0.0) is None
+    events.clear()
+    assert control.nav_cancel() is None
+    assert events == [("cancel goal",)]
+
+    events.clear()
+    control.nav_stop()
+    assert events == [("supervisor stop",), ("cancel goal",)]
+    assert control.nav_resume() is None
+    assert ("resume",) in events
+
+
+def test_status_has_the_navigation_block_only_in_navigation_mode(tmp_path):
+    events = []
+    control, _ = localized_navigation(tmp_path, events)
+    assert control.status()["nav"] is None
+    control.set_mode("navigation")
+    shown = control.status()["nav"]
+    assert shown["supervisor"] == {"state": "driving", "reason": None, "checks": []}
+    assert shown["plan"] == [[0.1, 0.0]]
+    assert shown["process"]["state"] == "running"
+    assert shown["goal_id"] == 0 and shown["goal"] is None and shown["outcome"] is None and shown["error"] == ""
+    control.set_mode("localization")
+    assert control.status()["nav"] is None
+
+
+def test_initial_mode_never_returns_navigation(tmp_path):
+    events = []
+    control, _ = nav_control(tmp_path, events)
+    assert control.initial_mode() == "mapping"
+    control.save()
+    assert control.initial_mode() == "localization"
+
+
+def test_keepout_yaml_is_found_only_when_the_file_exists(tmp_path):
+    store = MapStore(tmp_path)
+    assert store.keepout_yaml() is None
+    Path(tmp_path, "keepout.yaml").write_text("image: keepout.pgm\n", encoding="utf-8")
+    assert store.keepout_yaml() == tmp_path / "keepout.yaml"
+
+
+def test_bench_refuses_every_map_change_and_still_navigates(tmp_path):
+    events = []
+    control, store = nav_control(tmp_path, events, map_changes=False, bench=True)
+    write_serialized_map(tmp_path / "map")
+    write_occupancy(tmp_path / "map")
+    control.start()
+    assert control.mode == "localization"
+    control._tracker.state = "localized"
+    events.clear()
+
+    text = "Map changes are not available on the bench"
+    assert control.set_mode("mapping") == text
+    assert control.save_refusal() == text
+    assert control.save() == text
+    assert control.delete() == text
+    assert control.reload() == text
+    assert events == []
+    assert store.has_occupancy()
+
+    assert control.set_mode("navigation") is None
+    assert control.command() == ["bench-launch"]
 
 
 FAKE_ROS2_HEAD = (

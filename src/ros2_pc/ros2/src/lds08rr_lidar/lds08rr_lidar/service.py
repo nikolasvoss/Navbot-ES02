@@ -12,6 +12,7 @@ def build_parser(include_ssh: bool = False):
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--demo", action="store_true", help="show a synthetic scan without hardware")
     source.add_argument("--device", help="serial device, for example /dev/ttyAMA0")
+    source.add_argument("--bench", action="store_true", help="navigation bench: fake robot and loopback Nav2, no map changes")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--host", default="127.0.0.1", help="HTTP bind address; use 0.0.0.0 for LAN access")
     parser.add_argument("--port", type=int, default=8081)
@@ -27,6 +28,8 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if args.baud <= 0:
         parser.error("--baud must be positive")
+    if args.bench and args.ros == "off":
+        parser.error("--bench needs ROS 2")
     return args
 
 
@@ -41,10 +44,11 @@ def page_host(bind_host: str) -> str:
         return "127.0.0.1"
 
 
-def build_slam_control(node, localization):
+def build_slam_control(node, localization, supervisor, bench: bool = False):
     from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 
-    from .localization import GlobalLocalizer
+    from .localization import GlobalLocalizer, localization_command
+    from .navigation import bench_command, navigation_command
     from .slam import BASE_PARAMS, DEFAULT_SLAM_DIR, MapStore, SlamControl, SlamProcess, slam_command
 
     try:
@@ -54,8 +58,9 @@ def build_slam_control(node, localization):
         return None
     store = MapStore(DEFAULT_SLAM_DIR)
     base = BASE_PARAMS.read_text(encoding="utf-8")
-    # The process builds its command on every start and restart, so it asks the control which launch to run.
+    # The processes build their command on every start and restart, so they ask the control which launch to run.
     process = SlamProcess(lambda: control.command(), DEFAULT_SLAM_DIR / "slam.log")
+    nav_process = SlamProcess(lambda: navigation_command(store.keepout_yaml()), DEFAULT_SLAM_DIR / "nav.log")
     control = SlamControl(
         store,
         process,
@@ -64,6 +69,11 @@ def build_slam_control(node, localization):
         tracker=localization,
         slam_state=node.slam,
         mapping_command=lambda restore: slam_command(store.params_file(base, restore)),
+        supervisor=supervisor,
+        nav=node,
+        nav_process=nav_process,
+        localization_command=bench_command if bench else localization_command,
+        map_changes=not bench,
     )
     return control
 
@@ -75,11 +85,12 @@ def run(argv=None) -> int:
     from .localization import LocalizationTracker
     from .slam import DEFAULT_SLAM_DIR
     from .source import SourceConfig
+    from .supervisor import NavSupervisor
     from .web import make_lidar_app
 
     config = SourceConfig(
-        mode="demo" if args.demo else "serial",
-        device=None if args.demo else Path(args.device),
+        mode="demo" if args.demo or args.bench else "serial",
+        device=None if args.demo or args.bench else Path(args.device),
         baud=args.baud,
     )
     runtime = None
@@ -87,7 +98,7 @@ def run(argv=None) -> int:
     control = None
     rclpy = None
     shutdown_exceptions = (KeyboardInterrupt,)
-    ros_requested = args.ros == "on"
+    ros_requested = args.ros == "on" or args.bench
     if args.ros != "off":
         try:
             import rclpy as ros_client
@@ -104,9 +115,10 @@ def run(argv=None) -> int:
             shutdown_exceptions = (KeyboardInterrupt, ExternalShutdownException)
             rclpy.init()
             localization = LocalizationTracker()
-            node = LidarNode(config, localization)
+            supervisor = None if args.demo else NavSupervisor()
+            node = LidarNode(config, localization, supervisor=supervisor, publish_scans=not args.bench)
             runtime = node.runtime
-            control = None if args.demo else build_slam_control(node, localization)
+            control = None if args.demo else build_slam_control(node, localization, supervisor, bench=args.bench)
     if runtime is None:
         from .runtime import LidarRuntime
 
