@@ -1,4 +1,4 @@
-"""Tier A: checks that run unattended, with the transmitter off. Plan: docs/integration/software/agent-workflow.md, T9.
+"""Tier A: checks that run unattended, with the transmitter off. Plan: docs/integration/software/agent-workflow.md.
 
 Against the fake firmware, except the two tests marked robot, which need a real robot's signal list and stream.
 """

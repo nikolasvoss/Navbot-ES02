@@ -324,6 +324,14 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def fail(run: Run, code: int, detail: str, stage: str | None = None, tests: dict[str, str] | None = None) -> None:
+    """Record the stage that was in progress, or the given one, with the error text."""
+    stage = stage or run.stage
+    if stage is not None:
+        run.stages[stage] = record("blocked" if code == EXIT_BLOCKED else "fail", detail, tests)
+    print(detail, file=sys.stderr)
+
+
 def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
     args = parse_args(argv)
     run = Run(args.image)
@@ -332,10 +340,10 @@ def main(argv: list[str] | None = None, root: Path = ROOT) -> int:
         code = EXIT_DONE
     except Stop as stop:
         code = stop.code
-        stage = stop.stage or run.stage
-        if stage is not None:
-            run.stages[stage] = record("blocked" if code == EXIT_BLOCKED else "fail", stop.detail, stop.tests)
-        print(stop.detail, file=sys.stderr)
+        fail(run, code, stop.detail, stop.stage, stop.tests)
+    except (subprocess.TimeoutExpired, RuntimeError) as error:
+        code = EXIT_OTHER
+        fail(run, code, str(error))
     save_evidence(run, root)
     report(args, run, code)
     return code

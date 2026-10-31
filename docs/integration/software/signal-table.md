@@ -68,7 +68,7 @@ A `SetParam` is refused while balance is requested, because every parameter feed
 
 A subscription is a list of entry IDs and a period in µs.
 
-- Up to 4 subscriptions at the same time, on any port, also two on one port.
+- Up to 8 subscriptions at the same time, on any port, also two on one port.
 - The firmware owns the slots. `Subscribe{slot: 0}` asks for a free one, and the `Ack` returns it in `value`. A slot belongs to the port that subscribed it: only that port renews, replaces or unsubscribes it, and any other port gets `slot in use`.
 - Up to 48 entries per subscription, so one row (196 bytes) fits in a frame.
 - The period is set in time, not in ticks, because the tick rate is not fixed (424, 521 and about 710 passes per second were measured as the code changed). A row is taken on the first tick at or after the deadline, scheduled like odometry (`link_schedule.h`). `period_us = 0` means every tick.

@@ -73,7 +73,9 @@ Exit codes: 0 done, 1 other error, 2 uncommitted changes, 3 blocked (no toolchai
 | host | unattended, every change | any host: `python3 -m pytest tests -q` | Python tests and the C++ host tests (`run_host_test.sh` in each area) |
 | A | unattended, transmitter off | link host, by `deploy.py` | 7 tests of the firmware's link, health and parameters (below) |
 | B | guided: the user moves CH5 and places the robot | link host, by the user through `verify.py --guided` | 7 tests of the RC link mode and balance control (below) |
-| C | every task | `verify.py` | Each acceptance item in `state.md` takes the result of its tier A or B test |
+| C | changes under `src/ES-02/` only | `verify.py` | Each acceptance item in `state.md` takes the result of its tier A or B test |
+
+Without a running multiplexer, the gate and the checks use the USB port directly, and opening the CH340 can reset the robot.
 
 Tests that need a robot are marked `robot` and skip without `--robot`. Tests marked `guided` run only with `--guided`.
 

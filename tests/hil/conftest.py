@@ -44,10 +44,19 @@ def link(request, fake):
     link.close()
 
 
+def gate_needed(items, guided: bool) -> bool:
+    """Whether the gate runs. With --guided it is skipped only when every collected test is guided, since the user reads the gate then."""
+    if not guided:
+        return True
+    return not all("guided" in item.keywords for item in items)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def robot_gate(request, link):
     """Before the first test of a robot session: refuse to run unless the robot is safe, as deploy.py does."""
-    if request.config.getoption("--robot") is None or request.config.getoption("--guided"):
+    if request.config.getoption("--robot") is None:
+        return
+    if not gate_needed(request.session.items, request.config.getoption("--guided")):
         return
     values = {}
     for name in GATE_SIGNALS:

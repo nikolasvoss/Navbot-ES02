@@ -309,6 +309,37 @@ def test_diagnostic_image_builds_both_and_flashes_its_own_output(repo, fleet, ca
     ]
 
 
+def test_ship_failure_is_recorded_as_a_failed_stage_not_a_traceback(repo, fleet, capsys, monkeypatch):
+    def ship(host, sha):
+        if host == "cm5":
+            raise RuntimeError("shipping abc to cm5 failed: no space left on device")
+        return fleet.ship(host, sha)
+
+    monkeypatch.setattr(devtools, "ship_tree", ship)
+    code, result = run_main(capsys, repo)
+    assert code == 1
+    assert result["stages"]["firmware_build"]["status"] == "pass"
+    assert result["stages"]["deploy"]["status"] == "fail"
+    assert result["stages"]["deploy"]["detail"] == "shipping abc to cm5 failed: no space left on device"
+    assert commands(fleet, "upload_firmware.py") == []
+
+
+def test_timeout_is_recorded_as_a_failed_stage_not_a_traceback(repo, fleet, capsys, monkeypatch):
+    run_fake = fleet.run
+
+    def run(host, argv, **kwargs):
+        if "build_firmware.py" in " ".join(argv):
+            raise subprocess.TimeoutExpired(argv, 1800)
+        return run_fake(host, argv, **kwargs)
+
+    monkeypatch.setattr(devtools, "run", run)
+    code, result = run_main(capsys, repo)
+    assert code == 1
+    assert result["stages"]["firmware_build"]["status"] == "fail"
+    assert "timed out after 1800 seconds" in result["stages"]["firmware_build"]["detail"]
+    assert "deploy" not in result["stages"]
+
+
 def test_build_only_builds_and_stops(repo, fleet, capsys):
     code, result = run_main(capsys, repo, "--build-only")
     sha8 = fleet.sha[:8]
