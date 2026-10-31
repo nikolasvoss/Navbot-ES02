@@ -190,8 +190,8 @@ Exit codes: 0 done, 1 refused (reason on stderr), 2 usage error.
 
 `sweep` runs `git fetch origin main`, then for each worktree under `MAIN/.claude/worktrees/` and each task folder in `MAIN/work/`:
 
-- Remove the worktree, delete the local branch with `git branch -d`, and delete the task folder when all of these hold: the branch is an ancestor of `origin/main`; the worktree has no uncommitted changes; no process has its working directory inside the worktree; no file `/etc/systemd/system/navbot-*.service` contains the worktree path.
-- Worktrees whose directory name starts with `agent-` (subagent worktrees, branch `worktree-<name>`) are removed when they have no uncommitted changes and another branch contains their HEAD; they have no task folder.
+- Remove the worktree, delete the local branch with `git branch -d`, and delete the task folder when all of these hold: the branch is an ancestor of `origin/main`; the branch head differs from the `baseline` in its `state.md` (a task without commits is never swept, nor one without `state.md`); the worktree has no uncommitted changes; no process has its working directory inside the worktree; no file `/etc/systemd/system/navbot-*.service` contains the worktree path.
+- Worktrees whose directory name starts with `agent-` (subagent worktrees, branch `worktree-<name>`) are removed when the branch has at least one commit (its reflog has more than one entry), no process runs inside, there are no uncommitted changes, and another branch contains their HEAD; they have no task folder.
 - Task folders whose branch no longer exists are deleted.
 - Anything else is skipped with the reason. Sweep never deletes uncommitted work.
 - Files in `work/` that are not task folders are left alone.
