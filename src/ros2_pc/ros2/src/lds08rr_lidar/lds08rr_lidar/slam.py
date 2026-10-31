@@ -7,6 +7,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from array import array
 from collections import deque
@@ -19,6 +20,12 @@ from .localization import localization_command
 MAPPING = "mapping"
 LOCALIZATION = "localization"
 MODES = (MAPPING, LOCALIZATION)
+
+SNAPSHOT_PERIOD_SEC = 60.0
+UNDO_SLOTS = 3
+UNDO_DIR_NAME = "undo"
+SNAPSHOT_MIN_TRAVEL_M = 0.05  # a snapshot is skipped while odometry moved less than this and turned less than the next
+SNAPSHOT_MIN_TURN_RAD = 0.1
 
 MAP_STALE_AFTER_SEC = 10.0  # slam_toolbox publishes /map every 2 s
 POSE_STALE_AFTER_SEC = 10.0
@@ -189,15 +196,187 @@ class MapStore:
         for suffix in (".posegraph", ".yaml", ".data", ".pgm"):
             self._file(suffix).unlink(missing_ok=True)
 
-    def params_file(self, base_yaml: str) -> Path:
+    def params_file(self, base_yaml: str, restore: tuple[Path, dict] | None = None) -> Path:
+        """Params for the next mapping start. restore: (snapshot base, map pose) to start from an undo snapshot."""
         self.directory.mkdir(parents=True, exist_ok=True)
         text = base_yaml if base_yaml.endswith("\n") else base_yaml + "\n"
-        if self.exists():
+        if restore is not None:
+            snapshot_base, pose = restore
+            text += (
+                f'    map_file_name: {json.dumps(str(snapshot_base))}\n'
+                f'    map_start_pose: [{pose["x"]!r}, {pose["y"]!r}, {pose["yaw"]!r}]\n'
+            )
+        elif self.exists():
             # map_start_at_dock: the robot is assumed to start where the saved map began.
             text += f'    map_file_name: {json.dumps(str(self.base))}\n    map_start_at_dock: true\n'
         path = self.directory / "slam_params.yaml"
         path.write_text(text, encoding="utf-8")
         return path
+
+
+def wrap_angle(angle: float) -> float:
+    return math.atan2(math.sin(angle), math.cos(angle))
+
+
+def restored_pose(map_pose: dict, snapshot_odom: dict, odom: dict) -> dict:
+    """Robot pose in the snapshot's map frame: the map pose advanced by the odometry travelled since the snapshot."""
+    yaw0 = snapshot_odom["yaw"]
+    dx, dy = odom["x"] - snapshot_odom["x"], odom["y"] - snapshot_odom["y"]
+    # The travel in the snapshot's body frame: rotate the world offset by -yaw0.
+    forward = math.cos(yaw0) * dx + math.sin(yaw0) * dy
+    left = -math.sin(yaw0) * dx + math.cos(yaw0) * dy
+    cos_map, sin_map = math.cos(map_pose["yaw"]), math.sin(map_pose["yaw"])
+    return {
+        "x": map_pose["x"] + cos_map * forward - sin_map * left,
+        "y": map_pose["y"] + sin_map * forward + cos_map * left,
+        "yaw": wrap_angle(map_pose["yaw"] + wrap_angle(odom["yaw"] - yaw0)),
+    }
+
+
+def _moved_since(previous_odom: dict, odom: dict) -> bool:
+    travel = math.hypot(odom["x"] - previous_odom["x"], odom["y"] - previous_odom["y"])
+    turn = abs(wrap_angle(odom["yaw"] - previous_odom["yaw"]))
+    return travel >= SNAPSHOT_MIN_TRAVEL_M or turn >= SNAPSHOT_MIN_TURN_RAD
+
+
+class UndoRing:
+    """The newest UNDO_SLOTS posegraph snapshots taken while mapping, in <directory>/snap-<n>.*.
+
+    A snapshot is complete when its .json exists; it is written last, so a half-written one is never listed.
+    """
+
+    def __init__(
+        self,
+        directory: Path,
+        serialize: Callable[[str], str | None],
+        slam_state,
+        clock: Callable[[], float] = time.time,
+        period: float = SNAPSHOT_PERIOD_SEC,
+    ) -> None:
+        self.directory = directory
+        self._serialize = serialize
+        self._slam_state = slam_state
+        self._clock = clock
+        self._period = period
+        self._lock = Lock()
+        self._timer: Thread | None = None
+        self._timer_stop: Event | None = None
+
+    def start_timer(self) -> None:
+        if self._timer is not None:
+            return
+        self._timer_stop = Event()
+        self._timer = Thread(target=self._run, args=(self._timer_stop,), name="undo-snapshots", daemon=True)
+        self._timer.start()
+
+    def stop_timer(self) -> None:
+        if self._timer is None:
+            return
+        self._timer_stop.set()
+        self._timer.join()
+        self._timer, self._timer_stop = None, None
+
+    def take(self) -> str | None:
+        """Saves a snapshot unless the map, the pose or the odometry is missing or the robot hardly moved.
+
+        Returns the serialize error text when a snapshot failed; the older snapshots stay in place.
+        """
+        with self._lock:
+            poses = self._current_poses()
+            if poses is None:
+                return None
+            map_pose, odom = poses
+            newest = self._list()[:1]
+            if newest and not _moved_since(newest[0]["odom_pose"], odom):
+                return None
+            index = newest[0]["n"] + 1 if newest else 1
+            tmp = self.directory / "tmp"
+            shutil.rmtree(tmp, ignore_errors=True)
+            tmp.mkdir(parents=True)
+            try:
+                error = self._serialize(str(tmp / "snap"))
+                if error is not None:
+                    return error
+                for suffix in (".posegraph", ".data"):
+                    if not (tmp / f"snap{suffix}").exists():
+                        return f"serialized snapshot missing snap{suffix}"
+                meta = tmp / "meta.json"
+                meta.write_text(
+                    json.dumps({"saved_at": self._clock(), "map_pose": map_pose, "odom_pose": odom}),
+                    encoding="utf-8",
+                )
+                base = self.directory / f"snap-{index}"
+                os.replace(tmp / "snap.posegraph", f"{base}.posegraph")
+                os.replace(tmp / "snap.data", f"{base}.data")
+                os.replace(meta, f"{base}.json")
+            except OSError as exc:
+                return str(exc)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+            for item in self._list()[UNDO_SLOTS:]:
+                self._remove(item["n"])
+            return None
+
+    def get(self, index: int) -> dict | None:
+        """The snapshot at a 1-based index, newest first."""
+        with self._lock:
+            items = self._list()
+            return items[index - 1] if 1 <= index <= len(items) else None
+
+    def describe(self) -> list[dict]:
+        with self._lock:
+            now = self._clock()
+            return [{"index": i, "age_sec": now - item["saved_at"]} for i, item in enumerate(self._list(), start=1)]
+
+    def drop_newer_than(self, n: int) -> None:
+        with self._lock:
+            for item in self._list():
+                if item["n"] > n:
+                    self._remove(item["n"])
+
+    def clear(self) -> None:
+        with self._lock:
+            shutil.rmtree(self.directory, ignore_errors=True)
+
+    def _run(self, stop: Event) -> None:
+        while not stop.wait(self._period):
+            try:
+                error = self.take()
+            except Exception as exc:  # the timer must outlive a failed snapshot
+                error = f"{type(exc).__name__}: {exc}"
+            if error is not None:
+                print(f"undo snapshot failed: {error}", file=sys.stderr, flush=True)
+
+    def _current_poses(self) -> tuple[dict, dict] | None:
+        if self._slam_state is None:
+            return None
+        shown = self._slam_state.snapshot()
+        pose, odom = shown["pose"], shown["odom"]
+        if shown["map"] is None or pose is None or odom is None or not odom["fresh"]:
+            return None
+        return {k: pose[k] for k in ("x", "y", "yaw")}, {k: odom[k] for k in ("x", "y", "yaw")}
+
+    def _list(self) -> list[dict]:
+        items = []
+        for path in self.directory.glob("snap-*.json"):
+            try:
+                n = int(path.stem.removeprefix("snap-"))
+                meta = json.loads(path.read_text(encoding="utf-8"))
+                items.append({
+                    "n": n,
+                    "base": self.directory / f"snap-{n}",
+                    "saved_at": meta["saved_at"],
+                    "map_pose": meta["map_pose"],
+                    "odom_pose": meta["odom_pose"],
+                })
+            except (ValueError, OSError, KeyError, TypeError):
+                continue
+        return sorted(items, key=lambda item: item["n"], reverse=True)
+
+    def _remove(self, n: int) -> None:
+        base = self.directory / f"snap-{n}"
+        for suffix in (".json", ".posegraph", ".data"):  # the .json goes first, so a partial delete is never listed
+            Path(f"{base}{suffix}").unlink(missing_ok=True)
 
 
 class SlamProcess:
@@ -343,7 +522,9 @@ class SlamControl:
         localizer=None,
         tracker=None,
         slam_state=None,
-        mapping_command: Callable[[], list[str]] | None = None,
+        mapping_command: Callable[[tuple[Path, dict] | None], list[str]] | None = None,
+        snapshot_period: float = SNAPSHOT_PERIOD_SEC,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._store = store
         self._process = process
@@ -353,6 +534,8 @@ class SlamControl:
         self._tracker = tracker
         self._slam_state = slam_state
         self._mapping_command = mapping_command
+        self._undo = UndoRing(store.directory / UNDO_DIR_NAME, serialize, slam_state, clock=clock, period=snapshot_period)
+        self._pending_restore: tuple[Path, dict] | None = None  # consumed by the next mapping command()
         self._mode = MAPPING  # start() picks the boot mode
         self._lock = Lock()
 
@@ -369,15 +552,18 @@ class SlamControl:
             if self._localizer is not None:
                 self._localizer.start()
             return localization_command(self._store.occupancy_yaml())
-        return self._mapping_command()
+        restore, self._pending_restore = self._pending_restore, None  # one-shot: a crash restart starts the saved map
+        return self._mapping_command(restore)
 
     def start(self) -> None:
         with self._lock:
+            self._undo.clear()  # leftovers of an earlier run
             self._enter(self.initial_mode())
 
     def stop(self) -> None:
         with self._lock:
             self._halt()
+            self._undo.clear()
 
     def set_mode(self, mode: str) -> str | None:
         with self._lock:
@@ -388,7 +574,26 @@ class SlamControl:
             if mode == LOCALIZATION and not self._store.has_occupancy():
                 return "No occupancy map to localize on; save the map once in mapping mode first"
             self._halt()
+            self._undo.clear()
             self._enter(mode)
+            return None
+
+    def undo(self, index: int) -> str | None:
+        """Restarts mapping from undo snapshot `index` (1 = newest); the map after it is discarded."""
+        with self._lock:
+            if self._mode != MAPPING:
+                return "Undo needs mapping mode"
+            snapshot = self._undo.get(index)
+            if snapshot is None:
+                return f"No undo snapshot {index}"
+            odom = self._current_odom()
+            if odom is None:
+                return "No current odometry; cannot undo"
+            pose = restored_pose(snapshot["map_pose"], snapshot["odom_pose"], odom)
+            self._halt()
+            self._pending_restore = (snapshot["base"], pose)
+            self._undo.drop_newer_than(snapshot["n"])
+            self._enter(MAPPING)
             return None
 
     def locate(self) -> str | None:
@@ -423,6 +628,7 @@ class SlamControl:
                     self._store.commit(tmp)
                 except OSError as exc:
                     return str(exc)
+                self._undo.clear()
                 return None
             except OSError as exc:
                 return str(exc)
@@ -432,6 +638,7 @@ class SlamControl:
     def delete(self) -> None:
         with self._lock:
             self._halt()
+            self._undo.clear()
             try:
                 self._store.delete()
             finally:
@@ -443,6 +650,7 @@ class SlamControl:
             if not self._store.exists():
                 return "No saved map to load"
             self._halt()
+            self._undo.clear()
             self._enter(self._mode)
             return None
 
@@ -453,9 +661,20 @@ class SlamControl:
             "saved_map": {"exists": self._store.exists(), "saved_at": self._store.saved_at()},
             "directory": str(self._store.directory),
             "localization": None if self._tracker is None else self._tracker.snapshot(),
+            "undo": {"snapshots": self._undo.describe() if self._mode == MAPPING else []},
         }
 
+    def _current_odom(self) -> dict | None:
+        if self._slam_state is None:
+            return None
+        odom = self._slam_state.snapshot()["odom"]
+        if odom is None or not odom["fresh"]:
+            return None
+        return {k: odom[k] for k in ("x", "y", "yaw")}
+
     def _halt(self) -> None:
+        self._undo.stop_timer()
+        self._pending_restore = None  # a restore not yet consumed by a start is dropped with its launch
         self._process.stop()
         if self._localizer is not None:
             self._localizer.stop()
@@ -468,6 +687,8 @@ class SlamControl:
         if self._tracker is not None:
             self._tracker.reset()
         self._process.start()
+        if mode == MAPPING:
+            self._undo.start_timer()
 
 
 def slam_command(params_file: Path) -> list[str]:

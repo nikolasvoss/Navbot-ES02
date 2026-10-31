@@ -373,7 +373,7 @@ def mode_control(tmp_path, events, tracker=None, slam_state=None):
     control = SlamControl(
         store, process, write_serialized_map, write_occupancy,
         localizer=RecordingLocalizer(events), tracker=tracker, slam_state=slam_state,
-        mapping_command=lambda: ["mapping-launch"],
+        mapping_command=lambda restore: ["mapping-launch"],
     )
     process.command = control.command
     return control, store
