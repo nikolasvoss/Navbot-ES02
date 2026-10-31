@@ -186,7 +186,7 @@ Files: `src/sim/plant.cpp`, `src/sim/motor.cpp`, `tests/sim_model/run_host_test.
 Implement the plant and motor functions of `sim.h` exactly as in [Plant](#plant-plantcpp) and [Motor](#motor-motorcpp). Tests with default `PlantParams`:
 
 - Linearization: from `θ = 0.001` at rest without torque, one 1 µs step gives `θ''` within 1 % of `A·θ` with `A = mb g h / D`, `D = Jb + mb h² - (mb h)² / M`; a torque sum `u` at `θ = 0` gives `θ'' = -B u` with `B = (1 + mb h / (r M)) / D`, within 1 %.
-- Energy: no torque, no friction, from `θ = 0.3`, `θ' = 0` for 0.2 s of 50 µs steps: kinetic plus potential energy changes by less than 0.1 %.
+- Energy: no torque, no friction, from `θ = 0.3`, `θ' = 0` for 0.1 s of 50 µs steps (contact comes at 0.15 s): kinetic plus potential energy changes by less than 0.1 %.
 - Fall: from `θ = 0.1` without torque it reaches `fallen` within 1 s and stays there.
 - Yaw: equal and opposite torques ±0.01 N m give `ψ'' = (d / (2 r)) · 0.02 / Jψ` and `x'' = 0`.
 - Lifted: torque 0.001 N m on the left wheel gives `φL'' = 0.001 / Iw`; the body stays at 0.
