@@ -25,6 +25,7 @@ class BuildRequest:
     build_path: Path
     build_properties: tuple[str, ...]
     clean: bool
+    revision: str | None
 
 
 def _caller_path(value: str) -> Path:
@@ -44,6 +45,7 @@ def _request(args: argparse.Namespace) -> BuildRequest:
         ),
         build_properties=tuple(args.build_property),
         clean=args.clean,
+        revision=args.revision,
     )
 
 
@@ -64,6 +66,11 @@ def _parser() -> argparse.ArgumentParser:
         help="Arduino CLI build property; may be repeated",
     )
     parser.add_argument("--clean", action="store_true", help="discard cached build artifacts before compiling")
+    parser.add_argument(
+        "--revision",
+        metavar="SHA",
+        help="build ID from this commit SHA, without git; for a source tree without .git",
+    )
     return parser
 
 
@@ -104,22 +111,28 @@ def _git(sketch: Path, *args: str) -> str | None:
     return result.stdout if result.returncode == 0 else None
 
 
-def write_build_id_header(sketch: Path, now: datetime) -> str:
-    """Write <sketch>/build_id.h with the build ID and return the ID."""
-    revision = _git(sketch, "rev-parse", "--short=8", "HEAD")
+def write_build_id_header(sketch: Path, now: datetime, revision: str | None = None) -> str:
+    """Write <sketch>/build_id.h with the build ID and return the ID.
+
+    A given revision (a full or short SHA) is used as is, without git and without the dirty check.
+    """
     dirty = False
     if revision is not None:
-        revision = revision.strip()[:8]
-        # The build script rewrites firmware-build-environment.json after each build; that alone is not a dirty tree.
-        status = _git(
-            sketch,
-            "status",
-            "--porcelain",
-            "--untracked-files=no",
-            "--",
-            ":(top,exclude)firmware-build-environment.json",
-        )
-        dirty = status is None or bool(status.strip())
+        revision = revision[:8]
+    else:
+        revision = _git(sketch, "rev-parse", "--short=8", "HEAD")
+        if revision is not None:
+            revision = revision.strip()[:8]
+            # The build script rewrites firmware-build-environment.json after each build; that alone is not a dirty tree.
+            status = _git(
+                sketch,
+                "status",
+                "--porcelain",
+                "--untracked-files=no",
+                "--",
+                ":(top,exclude)firmware-build-environment.json",
+            )
+            dirty = status is None or bool(status.strip())
     text = build_id(revision, dirty, now)
     (sketch / "build_id.h").write_text(
         "// Written by scripts/build_firmware.py before each build. Not in git.\n"
@@ -131,7 +144,7 @@ def write_build_id_header(sketch: Path, now: datetime) -> str:
 
 def _compile(request: BuildRequest) -> int:
     try:
-        write_build_id_header(request.sketch, datetime.now())
+        write_build_id_header(request.sketch, datetime.now(), request.revision)
     except (OSError, ValueError) as error:
         print(f"build_firmware: could not write build_id.h: {error}", file=sys.stderr)
         return 1
