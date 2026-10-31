@@ -3,6 +3,9 @@
 The robot, ssh and deploy.py never run: devtools.run, devtools.probe, devtools.peer and devtools.ship_tree are replaced.
 """
 
+import argparse
+import contextlib
+import io
 import json
 import subprocess
 import sys
@@ -12,6 +15,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
+import deploy  # noqa: E402
 import devtools  # noqa: E402
 import verify  # noqa: E402
 from devtools import Acceptance, State  # noqa: E402
@@ -75,13 +79,24 @@ def evidence_of(repo: Path) -> dict:
     return json.loads((repo / "work" / "feat-x" / "evidence" / f"{sha}.json").read_text(encoding="utf-8"))
 
 
-class FakeRobotRun:
-    """Stands in for devtools.run: pytest passes, deploy.py answers with the given stages, guided tests read the junit text."""
+def deploy_json(stages: dict, code: int) -> str:
+    """deploy.py's own --json report for these stages, so a renamed key in deploy.py fails these tests."""
+    run = deploy.Run("control")
+    run.stages = dict(stages)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        deploy.report(argparse.Namespace(json=True), run, code)
+    return out.getvalue()
 
-    def __init__(self, deploy_code: int = 0, stages: dict | None = None, junit: str = JUNIT_GUIDED):
+
+class FakeRobotRun:
+    """Stands in for devtools.run: pytest passes, deploy.py answers with the given stages, navlink reports build, guided tests read the junit text."""
+
+    def __init__(self, deploy_code: int = 0, stages: dict | None = None, junit: str = JUNIT_GUIDED, build: str = ""):
         self.deploy_code = deploy_code
         self.stages = DEPLOY_STAGES if stages is None else stages
         self.junit = junit
+        self.build = build
         self.calls: list[list[str]] = []
 
     def __call__(self, host, argv, *, cwd=None, timeout=600, interactive=False, input=None):
@@ -92,7 +107,9 @@ class FakeRobotRun:
         if argv[:3] == ["python3", "-m", "pytest"]:
             return subprocess.CompletedProcess(argv, 0, "1 passed in 0.1s\n", "")
         if argv[:2] == ["python3", "scripts/deploy.py"]:
-            return subprocess.CompletedProcess(argv, self.deploy_code, json.dumps({"stages": self.stages}), "")
+            return subprocess.CompletedProcess(argv, self.deploy_code, deploy_json(self.stages, self.deploy_code), "")
+        if argv[:3] == ["python3", "scripts/navlink.py", "info"]:
+            return subprocess.CompletedProcess(argv, 0, json.dumps({"build": self.build}), "")
         if argv[:1] == ["cat"]:
             return subprocess.CompletedProcess(argv, 0, self.junit, "")
         raise AssertionError(f"unexpected command: {argv}")
@@ -242,15 +259,136 @@ def test_guided_pass_recorded_for_head_lets_the_change_be_done(tmp_path, monkeyp
     assert evidence_of(repo)["verify"]["result"] == "done"
 
 
-def test_guided_run_reads_its_junit_report(tmp_path, monkeypatch):
-    repo, _ = make_repo(tmp_path, monkeypatch, {"src/ES-02/BalanceController.cpp": "x\n"}, ACCEPTANCE_BOTH)
-    fake = FakeRobotRun()
+def use_robot(monkeypatch, fake: FakeRobotRun) -> None:
     monkeypatch.setattr(devtools, "run", fake)
     monkeypatch.setattr(devtools, "peer", lambda: "cm5")
     monkeypatch.setattr(devtools, "probe", lambda host: {"mux": False, "robot_usb": "/dev/ttyUSB0", "ros": False})
     monkeypatch.setattr(devtools, "ship_tree", lambda host, sha: "/tree")
+
+
+def test_guided_run_reads_its_junit_report(tmp_path, monkeypatch):
+    repo, _ = make_repo(tmp_path, monkeypatch, {"src/ES-02/BalanceController.cpp": "x\n"}, ACCEPTANCE_BOTH)
+    sha = git(repo, "rev-parse", "HEAD")
+    fake = FakeRobotRun(build=sha[:8])
+    use_robot(monkeypatch, fake)
     assert verify.main(["--guided"]) == 0
     assert evidence_of(repo)["stages"]["tier_b"]["tests"] == {"tests/hil/test_guided.py::test_spin": "passed"}
+
+
+def test_guided_run_is_blocked_when_the_robot_runs_another_build(tmp_path, monkeypatch, capsys):
+    repo, _ = make_repo(tmp_path, monkeypatch, {"src/ES-02/BalanceController.cpp": "x\n"}, ACCEPTANCE_BOTH)
+    sha = git(repo, "rev-parse", "HEAD")
+    fake = FakeRobotRun(build="deadbeef")
+    use_robot(monkeypatch, fake)
+    assert verify.main(["--guided"]) == 3
+    out = capsys.readouterr().out
+    assert f"| tier_b | blocked | robot runs build deadbeef, HEAD is {sha[:8]}: deploy HEAD before the guided tests |" in out
+    assert not any("--guided" in call for call in fake.calls)
+
+
+def test_dirty_tracked_file_fails_the_result(tmp_path, monkeypatch, capsys):
+    repo, _ = make_repo(tmp_path, monkeypatch, {"src/navbot_link/link.py": "x = 2\n"}, ACCEPTANCE_TIER_A)
+    monkeypatch.setattr(devtools, "run", FakeRobotRun())
+    (repo / "README.md").write_text("changed\n", encoding="utf-8")
+    assert verify.main([]) == 1
+    assert evidence_of(repo)["verify"]["result"] == "failed"
+    assert "Uncommitted changes to tracked files: the result cannot be done." in capsys.readouterr().out
+
+
+def test_uncommitted_firmware_build_environment_json_is_not_dirty(tmp_path, monkeypatch):
+    changed = {"src/navbot_link/link.py": "x = 2\n", "firmware-build-environment.json": "{}\n"}
+    repo, _ = make_repo(tmp_path, monkeypatch, changed, ACCEPTANCE_TIER_A)
+    monkeypatch.setattr(devtools, "run", FakeRobotRun())
+    (repo / "firmware-build-environment.json").write_text('{"rewritten": true}\n', encoding="utf-8")
+    assert verify.main([]) == 0
+    assert evidence_of(repo)["verify"]["result"] == "done"
+
+
+def test_tier_c_is_not_computed_when_it_is_not_required(tmp_path, monkeypatch):
+    repo, _ = make_repo(tmp_path, monkeypatch, {"src/navbot_link/link.py": "x = 2\n"}, ACCEPTANCE_TIER_A)
+    monkeypatch.setattr(devtools, "run", FakeRobotRun())
+    assert verify.main([]) == 0
+    state = devtools.read_state(repo / "work" / "feat-x" / "state.md")
+    assert [item.status for item in state.acceptance] == ["pending"]
+    assert "tier_c" not in evidence_of(repo)["stages"]
+
+
+def test_skipped_tier_b_ends_done_with_its_reason(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(verify, "_today", lambda: "2026-10-31")
+    repo, _ = make_repo(tmp_path, monkeypatch, {"src/ES-02/BalanceController.cpp": "x\n"}, ACCEPTANCE_BOTH)
+    monkeypatch.setattr(devtools, "run", FakeRobotRun())
+    assert verify.main(["--skip", "tier_b", "--reason", "no robot"]) == 0
+    sha = git(repo, "rev-parse", "HEAD")
+    assert capsys.readouterr().out == (
+        f"# verify feat/x at {sha[:8]}: done\n"
+        "\n"
+        "| Stage | Status | Detail |\n"
+        "| --- | --- | --- |\n"
+        "| host | pass | 1 passed in 0.1s |\n"
+        "| firmware_build | pass | control built; diagnostic built |\n"
+        "| deploy | pass | flashed |\n"
+        "| tier_a | pass | 2 passed |\n"
+        "| tier_b | skipped | no robot (2026-10-31) |\n"
+        "| tier_c | pass | 1 acceptance tests passed, 1 skipped |\n"
+        "\n"
+        "Skipped:\n"
+        "- tier_b: no robot (2026-10-31)\n"
+    )
+    assert evidence_of(repo)["verify"]["result"] == "done"
+
+
+def test_skipped_deploy_ends_done_with_its_reason(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(verify, "_today", lambda: "2026-10-31")
+    repo, _ = make_repo(tmp_path, monkeypatch, {"src/navbot_link/link.py": "x = 2\n"}, ACCEPTANCE_TIER_A)
+    monkeypatch.setattr(devtools, "run", FakeRobotRun())
+    assert verify.main(["--skip", "deploy", "--reason", "transmitter off"]) == 0
+    sha = git(repo, "rev-parse", "HEAD")
+    assert capsys.readouterr().out == (
+        f"# verify feat/x at {sha[:8]}: done\n"
+        "\n"
+        "| Stage | Status | Detail |\n"
+        "| --- | --- | --- |\n"
+        "| host | pass | 1 passed in 0.1s |\n"
+        "| deploy | skipped | transmitter off (2026-10-31) |\n"
+        "| tier_a | skipped | deploy skipped: transmitter off (2026-10-31) |\n"
+        "\n"
+        "Skipped:\n"
+        "- deploy: transmitter off (2026-10-31)\n"
+    )
+    assert evidence_of(repo)["verify"]["result"] == "done"
+
+
+def test_ship_failure_is_recorded_as_a_failed_stage(tmp_path, monkeypatch, capsys):
+    repo, _ = make_repo(tmp_path, monkeypatch, {"src/ros2_pc/ros2/src/node.py": "x\n"}, [])
+    monkeypatch.setattr(devtools, "run", FakeRobotRun())
+    monkeypatch.setattr(devtools, "peer", lambda: "cm5")
+    monkeypatch.setattr(devtools, "probe", lambda host: {"mux": False, "robot_usb": None, "ros": True})
+
+    def ship_tree(host, sha):
+        raise RuntimeError("shipping sha to cm5 failed: no space left")
+
+    monkeypatch.setattr(devtools, "ship_tree", ship_tree)
+    assert verify.main([]) == 1
+    assert "| ros2_pc | fail | shipping sha to cm5 failed: no space left |" in capsys.readouterr().out
+    assert evidence_of(repo)["stages"]["ros2_pc"]["status"] == "fail"
+    assert evidence_of(repo)["verify"]["result"] == "failed"
+
+
+def test_deploy_timeout_is_recorded_as_a_failed_deploy(tmp_path, monkeypatch, capsys):
+    repo, _ = make_repo(tmp_path, monkeypatch, {"src/navbot_link/link.py": "x = 2\n"}, ACCEPTANCE_TIER_A)
+    fake = FakeRobotRun()
+
+    def run(host, argv, **kwargs):
+        if argv[:2] == ["python3", "scripts/deploy.py"]:
+            raise subprocess.TimeoutExpired(argv, verify.DEPLOY_TIMEOUT)
+        return fake(host, argv, **kwargs)
+
+    monkeypatch.setattr(devtools, "run", run)
+    assert verify.main([]) == 1
+    out = capsys.readouterr().out
+    assert f"| deploy | fail | deploy.py did not finish within {verify.DEPLOY_TIMEOUT} s |" in out
+    assert "| tier_a | fail | not reached |" in out
+    assert evidence_of(repo)["verify"]["result"] == "failed"
 
 
 def test_failed_deploy_fails_the_change_and_tier_c(tmp_path, monkeypatch, capsys):

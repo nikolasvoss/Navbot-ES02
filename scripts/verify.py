@@ -10,11 +10,13 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from pathlib import Path
 
+import deploy
 import devtools
 
 STAGE_NAMES = ("host", "firmware_build", "deploy", "tier_a", "tier_b", "tier_c", "ros2_pc")
@@ -120,9 +122,12 @@ def _link(probes: list[tuple[str | None, dict]]) -> tuple[str | None, str] | Non
 
 
 def _deploy_run(worktree: Path, extra: list[str]) -> tuple[int, dict | None, str]:
-    proc = devtools.run(
-        None, ["python3", "scripts/deploy.py", *extra, "--json"], cwd=str(worktree), timeout=DEPLOY_TIMEOUT
-    )
+    try:
+        proc = devtools.run(
+            None, ["python3", "scripts/deploy.py", *extra, "--json"], cwd=str(worktree), timeout=DEPLOY_TIMEOUT
+        )
+    except subprocess.TimeoutExpired:
+        return 1, None, f"deploy.py did not finish within {DEPLOY_TIMEOUT} s"
     try:
         data = json.loads(proc.stdout)
     except ValueError:
@@ -156,12 +161,25 @@ def _deploy_stages(worktree: Path) -> dict[str, dict]:
     }
 
 
+def _navlink_args(port: str) -> list[str]:
+    return ["--port", port] + ([] if port.startswith("tcp:") else ["--baud", deploy.USB_BAUD])
+
+
 def _guided(sha: str, probes: list[tuple[str | None, dict]]) -> dict:
     link = _link(probes)
     if link is None:
         return _stage("blocked", "robot not connected")
     host, port = link
     tree = devtools.ship_tree(host, sha)
+    info = devtools.run(host, ["python3", "scripts/navlink.py", "info", "--json", *_navlink_args(port)], cwd=tree)
+    if info.returncode:
+        return _stage("blocked", f"no build ID from the robot: {_last_line(info.stderr) or f'exit {info.returncode}'}")
+    try:
+        build = json.loads(info.stdout).get("build", "")
+    except ValueError:
+        build = ""
+    if not str(build).startswith(sha[:8]):
+        return _stage("blocked", f"robot runs build {build or 'unknown'}, HEAD is {sha[:8]}: deploy HEAD before the guided tests")
     run = devtools.run(
         host,
         ["python3", "-m", "pytest", "tests/hil", "-m", "guided", "--guided", "--robot", port, "-s", "--junitxml", f"{tree}/guided.xml"],
@@ -192,7 +210,11 @@ def _ros2(sha: str, probes: list[tuple[str | None, dict]]) -> dict:
 
 
 def _tier_c(acceptance: list[devtools.Acceptance], results: dict[str, dict]) -> dict:
-    """Pass when every acceptance test passed in its tier's run; sets each item's status in place."""
+    """Pass when every acceptance test passed in its tier's run; sets each evaluated item's status in place.
+
+    An item is skipped when it is skipped itself or when its producing stage (tier_a, or tier_b for guided items)
+    is skipped in results. Items skipped through their stage keep their stored status, so state.md does not change.
+    """
     items = [item for item in acceptance if item.id not in STAGE_NAMES]
     if not items:
         return _stage("fail", "no acceptance tests listed in state.md")
@@ -201,19 +223,40 @@ def _tier_c(acceptance: list[devtools.Acceptance], results: dict[str, dict]) -> 
         return _stage("fail", "deploy failed")
     if "blocked" in upstream:
         return _stage("blocked", "deploy blocked")
+    live = []
     for item in items:
-        if item.status == "skipped":
+        producer = "tier_b" if item.tier == "guided" else "tier_a"
+        if item.status == "skipped" or results.get(producer, {}).get("status") == "skipped":
             continue
-        tests = results.get("tier_b" if item.tier == "guided" else "tier_a", {}).get("tests", {})
+        tests = results.get(producer, {}).get("tests", {})
         item.status = {"passed": "pass", "failed": "fail"}.get(tests.get(item.id), "pending")
-    live = [item for item in items if item.status != "skipped"]
+        live.append(item)
+    skipped = len(items) - len(live)
     failed = [item.id for item in live if item.status == "fail"]
     pending = [item.id for item in live if item.status == "pending"]
     if failed:
         return _stage("fail", f"failed: {', '.join(failed)}")
     if pending:
         return _stage("blocked", f"no result for {', '.join(pending)}")
-    return _stage("pass", f"{len(live)} acceptance tests passed")
+    detail = f"{len(live)} acceptance tests passed" + (f", {skipped} skipped" if skipped else "")
+    return _stage("pass", detail)
+
+
+def _attempt(stage_fn, *args) -> dict:
+    """Run one stage; a timeout or a failed ship ends the stage as fail with the error text."""
+    try:
+        return stage_fn(*args)
+    except (subprocess.TimeoutExpired, RuntimeError) as err:
+        return _stage("fail", str(err))
+
+
+def _dirty(root: Path) -> bool:
+    """Uncommitted changes to tracked files, by deploy.py's own rule: deploy refuses exactly these."""
+    try:
+        deploy.check_clean(root)
+    except deploy.Stop:
+        return True
+    return False
 
 
 def _skip(acceptance: list[devtools.Acceptance], target: str, reason: str) -> None:
@@ -285,25 +328,26 @@ def _verify(args: argparse.Namespace) -> int:
 
     fresh: dict[str, dict] = {}
     if "host" in required:
-        fresh["host"] = _host_tests(worktree)
+        fresh["host"] = _attempt(_host_tests, worktree)
     if runs("firmware_build"):
         fresh["firmware_build"] = _firmware_build(worktree)
     if runs("deploy"):
         fresh.update(_deploy_stages(worktree))
     if runs("ros2_pc"):
-        fresh["ros2_pc"] = _ros2(sha, probes)
+        fresh["ros2_pc"] = _attempt(_ros2, sha, probes)
     if args.guided and "tier_b" not in skipped:
-        fresh["tier_b"] = _guided(sha, probes)
+        fresh["tier_b"] = _attempt(_guided, sha, probes)
     if runs("tier_b") and "tier_b" not in fresh:
         earlier = prior.get("tier_b")
         fresh["tier_b"] = earlier if earlier and earlier["status"] in ("pass", "fail") else _stage("blocked", GUIDED_PENDING)
-    fresh["tier_c"] = _tier_c(state.acceptance, {**prior, **fresh})
     for name, text in skipped.items():
         fresh[name] = _stage("skipped", text)
+    if "tier_c" in required:
+        fresh["tier_c"] = _tier_c(state.acceptance, {**prior, **fresh})
 
     stages = {**prior, **fresh}
     devtools.write_state(state_path, state)
-    dirty = bool(devtools.git(["status", "--porcelain", "--untracked-files=no"]))
+    dirty = _dirty(worktree)
     result = _result({name: stages[name] for name in required}, dirty)
     devtools.update_evidence(task, sha, branch, stages=fresh, verify={"result": result, "at": _now()})
     print(_summary(branch, sha, result, required, stages, state.acceptance, dirty))
