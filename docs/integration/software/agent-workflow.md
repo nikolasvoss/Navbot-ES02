@@ -142,7 +142,7 @@ Permissions allow `task.py`, `deploy.py`, `verify.py`, the read-only `navlink.py
 
 ## Python environment
 
-`tests/requirements.txt` lists `pytest`, `PyYAML`, `protobuf` and `pyserial`. They are installed in the default `python3` of each host; the scripts run `python3`, and there is no virtual environment. The host tests run with `python3 -m pytest tests -q`.
+`tests/requirements.txt` lists `pytest`, `PyYAML`, `protobuf`, `pyserial` and `lds2d[viz]` (the LiDAR service tests need it). They are installed in the default `python3` of each host; the scripts run `python3`, and there is no virtual environment. The host tests run with `python3 -m pytest tests -q`.
 
 ## Robot verification (2026-10-31)
 

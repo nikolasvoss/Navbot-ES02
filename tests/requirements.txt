@@ -2,3 +2,4 @@ pytest
 PyYAML
 protobuf
 pyserial
+lds2d[viz]==0.7.0
