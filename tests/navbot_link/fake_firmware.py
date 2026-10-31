@@ -6,6 +6,7 @@ while a subscription is active and stands still otherwise, so rows and their
 t_us do not depend on PC timing. It is written from the protocol page, not from
 the PC library, and shares only framing and the generated schema with it."""
 
+import math
 import os
 import select
 import struct
@@ -30,6 +31,7 @@ class FakeEntry:
     args: tuple = ()  # (name, min, max) for an action
     limits: tuple | None = None  # (min, max) a PARAM accepts; SetParam outside it is refused
     live_step: float = 0.0  # PARAM only: largest change while balancing; 0 = refused, inf = any change
+    device: object = None  # a function of the FakeFirmware, for a value that is firmware state (boot, reset reason)
 
 
 def speed_loop_table() -> list[FakeEntry]:
@@ -51,6 +53,27 @@ def speed_loop_table() -> list[FakeEntry]:
         FakeEntry("motor_reset", E.ACTION),
         FakeEntry("motor_current", E.ACTION, args=(("left_a", -2.0, 2.0), ("right_a", -2.0, 2.0),
                                                    ("lease_ms", 1.0, 1000.0))),
+    ]
+
+
+LINK_COUNTERS = ("link_tx_drop_uart", "link_tx_drop_usb", "link_rx_bad_uart", "link_rx_bad_usb",
+                 "link_req_dropped", "link_undecodable")
+
+
+def device_table() -> list[FakeEntry]:
+    """speed_loop_table plus the health signals, log_level, speed_cap and reboot that tests/hil reads.
+    Kept apart so the catalog of speed_loop_table, which the link tests count, stays the same."""
+    return speed_loop_table() + [
+        FakeEntry("reset_reason", E.SIGNAL, E.U32, "", device=lambda fw: fw.reset_reason),
+        FakeEntry("uptime_s", E.SIGNAL, E.U32, "s", device=lambda fw: int(time.monotonic() - fw.boot_monotonic)),
+        FakeEntry("heap_free_b", E.SIGNAL, E.U32, "B", 150_000),
+        FakeEntry("heap_min_free_b", E.SIGNAL, E.U32, "B", 120_000),
+        FakeEntry("stack_free_loop_b", E.SIGNAL, E.U32, "B", 2_000),
+        FakeEntry("stack_free_link_b", E.SIGNAL, E.U32, "B", 2_000),
+        *(FakeEntry(name, E.SIGNAL, E.U32, "", 0) for name in LINK_COUNTERS),
+        FakeEntry("log_level", E.PARAM, E.U32, "", 2, limits=(1, 4), live_step=math.inf),
+        FakeEntry("speed_cap", E.PARAM, E.F32, "m/s", 0.3, live_step=0.1),
+        FakeEntry("reboot", E.ACTION),
     ]
 
 
@@ -88,6 +111,8 @@ class FakeFirmware:
     batch_rows: int = 1  # rows per SignalBatch
     balancing: bool = False  # SetParam follows the live-step rule
     link_position: bool = False  # CH5 in the link position: Command is accepted
+    reset_reason: int = 1  # ESP-IDF value: 1 power-on; a `reboot` call sets 3 (software)
+    boot_monotonic: float = field(default_factory=time.monotonic)  # uptime_s counts from here
 
     def __post_init__(self):
         self.received = []  # every decoded PC payload, in order
@@ -156,9 +181,12 @@ class FakeFirmware:
 
     def restart(self) -> None:
         with self._lock:
-            for p in self._ports:
-                p.seq = 0
-            self._subs.clear()
+            self._restart_locked()
+
+    def _restart_locked(self) -> None:
+        for p in self._ports:
+            p.seq = 0
+        self._subs.clear()
 
     def subscribed_slots(self) -> list[int]:
         with self._lock:
@@ -232,6 +260,11 @@ class FakeFirmware:
             ack()
             shown = "".join(f" {arg[0]}={value:g}" for arg, value in zip(entry.args, req.args))
             self._log(f"{entry.name} started{shown}", "action")
+            if entry.name == "reboot":
+                # The Ack went out with the old seq; the next frame starts again at 1, as after a real reboot.
+                self._restart_locked()
+                self.reset_reason = 3
+                self.boot_monotonic = time.monotonic()
 
     def _catalog_entry(self, index: int):
         e = self.entries[index]
@@ -243,7 +276,10 @@ class FakeFirmware:
 
     def _read(self, index: int) -> bytes:
         e = self.entries[index]
-        value = e.value(self.t_us) if callable(e.value) else e.value
+        if e.device is not None:
+            value = e.device(self)
+        else:
+            value = e.value(self.t_us) if callable(e.value) else e.value
         return struct.pack(_FMT[e.type], value)
 
     def _ack(self, seq: int, port: int, error: str = "", value: bytes = b"") -> None:
@@ -259,8 +295,13 @@ class FakeFirmware:
             self._log(text, tag, level)
 
     def _log(self, text: str, tag: str, level: int = pb.Log.INFO) -> None:
+        if level < self._log_threshold():
+            return  # the firmware drops events below log_level
         for port in range(len(self._ports)):
             self._send(pb.Message(log=pb.Log(level=level, text=text, tag=tag)), port)
+
+    def _log_threshold(self) -> int:
+        return next((e.value for e in self.entries if e.name == "log_level"), 0)
 
     def _send(self, msg, port: int) -> None:
         p = self._ports[port]
