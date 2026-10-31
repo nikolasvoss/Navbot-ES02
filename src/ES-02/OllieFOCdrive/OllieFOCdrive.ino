@@ -61,7 +61,9 @@ CalibrationStore calibrationStore;
 // ----- Editable Constants
 // Safe bring-up: read sensors and receiver without energizing wheels or servos.
 // Set to 0 only after the diagnostic readings and power supply are checked.
+#ifndef SENSOR_DIAGNOSTIC_MODE
 #define SENSOR_DIAGNOSTIC_MODE 0
+#endif
 
 #define SBUS_CHANNEL_MAX 1792
 #define SBUS_CHANNEL_MIN 192
@@ -273,6 +275,7 @@ struct SystemHealth {
   uint32_t stackFreeLoopB;
   uint32_t stackFreeLinkB;
 } systemHealth{};
+uint8_t resetReason = 0;  // esp_reset_reason_t of this boot, set first thing in setup()
 
 extern TaskHandle_t loopTaskHandle;  // defined and set by the Arduino core (main.cpp); the health task measures its stack
 constexpr uint32_t kSystemHealthStackBytes = 3072;
@@ -718,6 +721,7 @@ static_assert(sizeof(kBuildId) <= 33, "the build ID has to fit CatalogEntry.buil
  * and sets up the command interface for serial debugging and tuning.
  */
 void setup() {
+  resetReason = static_cast<uint8_t>(esp_reset_reason());
 #if SENSOR_DIAGNOSTIC_MODE
   // SimpleFOC's plain BLDCDriver3PWM enable pins are active high.
   // Hold both drivers disabled before any other peripheral is initialized.
@@ -750,7 +754,7 @@ void setup() {
   biquadFilterInitLPF(&voltageFilterLpf, 20, kDiagnosticLogSampleRateHz);
   diagnosticImuReady = imu::begin(imu::Settings{}, imuCalibration);
   sBus.begin();
-  Logging::message(Logging::Level::Info, "DIAG", "boot reset_reason=%d imu_ok=%d motors=off servos=off", (int)esp_reset_reason(),
+  Logging::message(Logging::Level::Info, "DIAG", "boot reset_reason=%d imu_ok=%d motors=off servos=off", (int)resetReason,
                 diagnosticImuReady ? 1 : 0);
   return;
 #endif

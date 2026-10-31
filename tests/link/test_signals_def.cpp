@@ -45,6 +45,7 @@ int servoTraceAngle[4];
 float batteryInstantRawV, batteryVoltage, movementSpeed, bodyTurn, legPoseDegrees;
 float m1FilteredVelocityRadPerSec, m2FilteredVelocityRadPerSec, controlTimestepSec;
 uint32_t controlStartUs, controlExecutionUs, loopEntryIntervalUs;
+uint8_t resetReason;
 
 // The settings groups and action handlers that signals.def.h names. The sketch defines the real ones.
 Config standInBalance;

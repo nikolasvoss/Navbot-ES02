@@ -96,6 +96,28 @@ The USB port is a backup with the same functions:
 - Opening the CH340 can reset the board ([lab note](../../../lab/robot/2026-09-27-diagnostic-mode-history.md), [lab note](../../../lab/robot/2026-10-25-uart1-ros2-link.md)). Use USB only on a supported or idle robot unless the auto-reset circuit is changed.
 - A port held open by `navlink` blocks flashing; close it first.
 
+## Reset reason
+
+`reset_reason` (`u32`, no unit) is the cause of the current boot, read once at the start of `setup()` from `esp_reset_reason()`. It is a row of the "Link and system health" section, after `uptime_s`. A reboot over the link reads `3` (software). The sensor diagnostic boot line `DIAG boot reset_reason=…` prints the same value.
+
+| Value | `esp_reset_reason_t` | Meaning |
+| --- | --- | --- |
+| 1 | `ESP_RST_POWERON` | Power-on |
+| 2 | `ESP_RST_EXT` | External pin |
+| 3 | `ESP_RST_SW` | Software reset |
+| 4 | `ESP_RST_PANIC` | Exception or panic |
+| 5 | `ESP_RST_INT_WDT` | Interrupt watchdog |
+| 6 | `ESP_RST_TASK_WDT` | Task watchdog |
+| 7 | `ESP_RST_WDT` | Other watchdog |
+| 8 | `ESP_RST_DEEPSLEEP` | Deep sleep wake |
+| 9 | `ESP_RST_BROWNOUT` | Brownout |
+| 10 | `ESP_RST_SDIO` | SDIO |
+| 11 | `ESP_RST_USB` | USB |
+| 12 | `ESP_RST_JTAG` | JTAG |
+| 13 | `ESP_RST_EFUSE` | eFuse error |
+| 14 | `ESP_RST_PWR_GLITCH` | Power glitch |
+| 15 | `ESP_RST_CPU_LOCKUP` | CPU lockup |
+
 ## Limitations
 
 - Calibration stalls the loop and all streams for at least 3 s.
