@@ -4,6 +4,7 @@
 import os
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from urllib.parse import unquote
@@ -13,6 +14,10 @@ RULES = "See AGENTS.md, section 'Where files go'."
 
 ROOT_FILES = {"README.md", "AGENTS.md", "CLAUDE.md", ".gitignore", "firmware-build-environment.json"}
 ROOT_DIRS = {"src", "scripts", "tests", "cad", "docs", "lab"}
+# Git metadata (a file in a worktree), agent state, and ignored build or test output.
+LOCAL_ROOT_ENTRIES = {".git", ".claude", "work", "build", ".pytest_cache"}
+CLAUDE_FILES = {".claude/settings.json"}
+TESTS_ROOT_FILES = {"tests/conftest.py", "tests/requirements.txt"}
 SRC_DIRS = {"ES-02", "ros2_pc", "navbot_link", "libraries"}
 SYSTEMS = {"robot", "ros2_pc", "integration"}
 DOCS_DIRS = {"hardware", "software", "plans", "assets"}
@@ -30,6 +35,11 @@ def repo_files():
         cwd=ROOT, capture_output=True, text=True, check=True,
     ).stdout
     return sorted(p for p in out.split("\0") if p and (ROOT / p).exists())
+
+
+def unexpected_root_entries(root: Path) -> list[str]:
+    allowed = ROOT_FILES | ROOT_DIRS | LOCAL_ROOT_ENTRIES
+    return sorted(p.name for p in root.iterdir() if p.name not in allowed)
 
 
 def markdown_pages(files):
@@ -69,8 +79,25 @@ class RepoLayoutTest(unittest.TestCase):
             top = f.split("/")[0]
             if "/" not in f:
                 self.assertIn(f, ROOT_FILES, f"{f}: no loose files at the repository root. {RULES}")
+            elif top == ".claude":
+                self.assertIn(f, CLAUDE_FILES, f"{f}: only .claude/settings.json is tracked. {RULES}")
             else:
                 self.assertIn(top, ROOT_DIRS, f"{f}: '{top}/' is not an allowed top-level folder. {RULES}")
+
+    def test_root_entries(self):
+        self.assertEqual([], unexpected_root_entries(ROOT), f"unexpected entries at the repository root. {RULES}")
+
+    def test_root_entry_check_flags_extra_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ROOT_FILES:
+                (root / name).touch()
+            for name in ROOT_DIRS | (LOCAL_ROOT_ENTRIES - {".git"}):
+                (root / name).mkdir()
+            (root / ".git").write_text("gitdir: /elsewhere\n", encoding="utf-8")
+            self.assertEqual([], unexpected_root_entries(root))
+            (root / "stray.txt").touch()
+            self.assertEqual(["stray.txt"], unexpected_root_entries(root))
 
     def test_src_targets(self):
         for f in self.files:
@@ -81,7 +108,7 @@ class RepoLayoutTest(unittest.TestCase):
     def test_tests_live_in_tests(self):
         for f in self.files:
             parts = f.split("/")
-            if parts[0] == "tests":
+            if parts[0] == "tests" and f not in TESTS_ROOT_FILES:
                 self.assertGreater(len(parts), 2, f"{f}: put tests in tests/<area>/. {RULES}")
             elif parts[-1].startswith("test_") and not ROS_PACKAGE_TEST.match(f):
                 self.fail(f"{f}: tests belong in tests/<area>/. {RULES}")

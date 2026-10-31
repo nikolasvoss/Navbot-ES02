@@ -11,7 +11,8 @@ src/ES-02/OllieFOCdrive/build_id.h
 # Python cache files
 __pycache__/
 *.py[cod]
-./TASK_STATE.md
-# Local task files (see AGENTS.md, "Where files go")
+
+# Local task files and agent worktrees (see AGENTS.md, "Where files go")
 /work/
-/TASK_STATE.md
+/.claude/worktrees/
+/.claude/settings.local.json
