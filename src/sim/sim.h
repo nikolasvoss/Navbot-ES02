@@ -1,7 +1,7 @@
 #pragma once
 
 // Host simulation of the balancing robot: the firmware's balance path (ControlTick, BalanceController, imu) against a
-// model of the robot. Plan and equations: docs/robot/plans/simulation.md. SI units, angles in radians.
+// model of the robot. Model and usage: docs/robot/software/simulation.md. SI units, angles in radians.
 //
 // Signs: forward, forward lean (pitch) and left turn (yaw) are positive. Motor-local values (SimpleFOC) are
 // WheelBoundary::kLeftMotorSign / kRightMotorSign times the forward value.
