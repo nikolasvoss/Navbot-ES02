@@ -21,6 +21,7 @@ MAPPING = "mapping"
 LOCALIZATION = "localization"
 NAVIGATION = "navigation"
 MODES = (MAPPING, LOCALIZATION, NAVIGATION)
+MAP_CHANGES_REFUSAL = "Map changes are not available on the bench"
 
 SNAPSHOT_PERIOD_SEC = 60.0
 UNDO_SLOTS = 3
@@ -159,7 +160,8 @@ class MapStore:
 
     def keepout_yaml(self) -> Path | None:
         """The keepout mask next to the map, or None when there is none."""
-        raise NotImplementedError
+        path = self.directory / "keepout.yaml"
+        return path if path.exists() else None
 
     def saved_at(self) -> float | None:
         try:
@@ -547,6 +549,13 @@ class SlamControl:
         self._undo = UndoRing(store.directory / UNDO_DIR_NAME, serialize, slam_state, clock=clock, period=snapshot_period)
         self._pending_restore: tuple[Path, dict] | None = None  # consumed by the next mapping command()
         self._mode = MAPPING  # start() picks the boot mode
+        self._supervisor = supervisor
+        self._nav = nav
+        self._nav_process = nav_process
+        self._localization_command = localization_command
+        self._map_changes = map_changes
+        self._goal_count = 0
+        self._goal: dict | None = None  # the newest goal; its Nav2 callbacks write into this dict
         self._lock = Lock()
 
     @property
@@ -558,10 +567,10 @@ class SlamControl:
 
     def command(self) -> list[str]:
         # The supervisor calls this before every spawn, so each AMCL start, also a restart after a crash, searches again.
-        if self._mode == LOCALIZATION:
+        if self._mode in (LOCALIZATION, NAVIGATION):
             if self._localizer is not None:
                 self._localizer.start()
-            return localization_command(self._store.occupancy_yaml())
+            return self._localization_command(self._store.occupancy_yaml())
         restore, self._pending_restore = self._pending_restore, None  # one-shot: a crash restart starts the saved map
         return self._mapping_command(restore)
 
@@ -578,11 +587,19 @@ class SlamControl:
     def set_mode(self, mode: str) -> str | None:
         with self._lock:
             if mode not in MODES:
-                return f"unknown mode {mode!r}; use mapping or localization"
+                return f"unknown mode {mode!r}; use mapping, localization or navigation"
+            if mode == MAPPING and not self._map_changes:
+                return MAP_CHANGES_REFUSAL
             if mode == self._mode:
                 return None
+            if mode == NAVIGATION:
+                return self._enter_navigation()
             if mode == LOCALIZATION and not self._store.has_occupancy():
                 return "No occupancy map to localize on; save the map once in mapping mode first"
+            if mode == LOCALIZATION and self._mode == NAVIGATION:
+                self._leave_navigation()  # the localization launch keeps running
+                self._mode = LOCALIZATION
+                return None
             self._halt()
             self._undo.clear()
             self._enter(mode)
@@ -617,6 +634,8 @@ class SlamControl:
 
     def save_refusal(self) -> str | None:
         """Why save() would refuse right now, or None when it may run."""
+        if not self._map_changes:
+            return MAP_CHANGES_REFUSAL
         if self._mode != MAPPING:
             return "Save needs mapping mode; switch to mapping first"
         return None
@@ -645,37 +664,72 @@ class SlamControl:
             finally:
                 shutil.rmtree(tmp, ignore_errors=True)
 
-    def delete(self) -> None:
+    def delete(self) -> str | None:
         with self._lock:
+            if not self._map_changes:
+                return MAP_CHANGES_REFUSAL
             self._halt()
             self._undo.clear()
             try:
                 self._store.delete()
             finally:
                 self._enter(MAPPING)
+            return None
 
     def reload(self) -> str | None:
-        """Drops the current map and restarts the active launch on the saved one."""
+        """Drops the current map and restarts the active launch on the saved one; navigation falls back to localization."""
         with self._lock:
+            if not self._map_changes:
+                return MAP_CHANGES_REFUSAL
             if not self._store.exists():
                 return "No saved map to load"
+            mode = LOCALIZATION if self._mode == NAVIGATION else self._mode
             self._halt()
             self._undo.clear()
-            self._enter(self._mode)
+            self._enter(mode)
             return None
 
     def nav_goal(self, x: float, y: float, yaw: float) -> str | None:
         """Starts a Nav2 goal in the map frame; None or the refusal."""
-        raise NotImplementedError
+        with self._lock:
+            if self._mode != NAVIGATION:
+                return "Goals need navigation mode"
+            if not all(math.isfinite(value) for value in (x, y, yaw)):
+                return "x, y and yaw must be finite numbers"
+            refusal = self._supervisor.request_goal()
+            if refusal is not None:
+                return refusal
+            goal = {"x": x, "y": y, "yaw": yaw, "distance_remaining_m": None, "outcome": None, "error": ""}
+            error = self._nav.send_nav_goal(
+                x, y, yaw,
+                on_feedback=lambda distance: goal.update(distance_remaining_m=distance),
+                on_done=lambda outcome, text: self._goal_done(goal, outcome, text),
+            )
+            if error is not None:
+                self._supervisor.goal_ended()
+                return error
+            self._goal_count += 1
+            self._goal = goal
+            return None
 
     def nav_cancel(self) -> str | None:
-        raise NotImplementedError
+        with self._lock:
+            if self._goal is None or self._goal["outcome"] is not None:
+                return "No goal is running"
+            self._nav.cancel_nav_goal()
+            return None
 
     def nav_stop(self) -> None:
-        raise NotImplementedError
+        with self._lock:
+            if self._mode == NAVIGATION:
+                self._supervisor.stop()
+                self._nav.cancel_nav_goal()
 
     def nav_resume(self) -> str | None:
-        raise NotImplementedError
+        with self._lock:
+            if self._mode != NAVIGATION:
+                return "Resume needs navigation mode"
+            return self._supervisor.resume()
 
     def status(self) -> dict:
         return {
@@ -685,7 +739,47 @@ class SlamControl:
             "directory": str(self._store.directory),
             "localization": None if self._tracker is None else self._tracker.snapshot(),
             "undo": {"snapshots": self._undo.describe() if self._mode == MAPPING else []},
+            "nav": self._nav_status(),
         }
+
+    def _nav_status(self) -> dict | None:
+        if self._mode != NAVIGATION:
+            return None
+        goal = self._goal or {}
+        return {
+            "supervisor": self._supervisor.snapshot(),
+            "goal_id": self._goal_count,
+            "goal": {key: goal[key] for key in ("x", "y", "yaw")} if goal else None,
+            "distance_remaining_m": goal.get("distance_remaining_m"),
+            "outcome": goal.get("outcome"),
+            "error": goal.get("error", ""),
+            "plan": self._nav.nav_plan(),
+            "process": self._nav_process.status(),
+        }
+
+    def _goal_done(self, goal: dict, outcome: str, error: str) -> None:
+        goal["outcome"], goal["error"] = outcome, error
+        # Nav2 reports a replaced goal too; only the current goal may move the supervisor.
+        if goal is self._goal:
+            self._supervisor.goal_ended()
+
+    def _enter_navigation(self) -> str | None:
+        if self._supervisor is None or self._nav is None or self._nav_process is None:
+            return "Navigation is not available on this service"
+        if self._mode == MAPPING:
+            return "Switch to localization first, then to navigation"
+        if self._tracker is None or self._tracker.snapshot()["state"] != "localized":
+            return "Navigation needs a localized pose; wait or press Locate"
+        self._mode = NAVIGATION
+        self._nav_process.start()
+        return None
+
+    def _leave_navigation(self) -> None:
+        goal, self._goal = self._goal, None
+        if goal is not None and goal["outcome"] is None:
+            self._supervisor.stop()
+            self._nav.cancel_nav_goal()
+        self._nav_process.stop()
 
     def _current_odom(self) -> dict | None:
         if self._slam_state is None:
@@ -698,6 +792,8 @@ class SlamControl:
     def _halt(self) -> None:
         self._undo.stop_timer()
         self._pending_restore = None  # a restore not yet consumed by a start is dropped with its launch
+        if self._mode == NAVIGATION:
+            self._leave_navigation()
         self._process.stop()
         if self._localizer is not None:
             self._localizer.stop()
