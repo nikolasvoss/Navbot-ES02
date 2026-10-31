@@ -23,11 +23,17 @@ class FakeRuntime:
 
 
 class FakeControl:
-    def __init__(self, state="running", exit_code=None, error=None):
+    def __init__(self, state="running", exit_code=None, error=None, mode="mapping", localization=None):
         self.process = {"state": state, "exit_code": exit_code, "error": error}
+        self.mode = mode
+        self.localization = localization
 
     def status(self):
-        return {"process": self.process}
+        return {"process": self.process, "mode": self.mode, "localization": self.localization}
+
+
+def localization(state, error=None, hint=None):
+    return {"state": state, "pose": None, "std": None, "search_age_sec": None, "error": error, "hint": hint}
 
 
 class FakeRos:
@@ -163,3 +169,40 @@ def test_nav_is_one_layout_item_with_a_chip_per_service():
     # The pages are CSS grids with fixed row templates: a second visible top-level item shifts every row.
     assert [tag for tag in parser.top if tag not in ("script", "style")] == ["nav"]
     assert sorted(parser.services) == ["lidar", "radar", "robot_link", "slam"]
+
+
+def test_localization_row_follows_the_tracker_state():
+    def slam_row(state, error=None, hint=None):
+        control = FakeControl(mode="localization", localization=localization(state, error, hint))
+        return rows(control=control, slam=FakeSlam("localization"))["slam"]
+
+    localized = slam_row("localized")
+    assert (localized["level"], localized["short"]) == ("ok", "Localized")
+    searching = slam_row("searching")
+    assert (searching["level"], searching["short"]) == ("warn", "Searching")
+    lost = slam_row("lost", hint="Drive or turn the robot a little")
+    assert (lost["level"], lost["short"]) == ("warn", "Lost")
+    assert "Drive or turn" in lost["message"]
+    failed = slam_row("lost", error="AMCL services did not appear")
+    assert (failed["level"], failed["short"]) == ("error", "Lost")
+    assert "AMCL services did not appear" in failed["message"]
+    assert slam_row("idle")["short"] == "Starting"
+
+
+def test_localization_row_ignores_map_age():
+    result = rows(
+        control=FakeControl(mode="localization", localization=localization("localized")), slam=FakeSlam("stale"),
+    )["slam"]
+    assert (result["level"], result["short"]) == ("ok", "Localized")
+
+
+def test_localization_process_down_uses_the_process_rules():
+    restarting = rows(control=FakeControl("restarting", exit_code=1, mode="localization", localization=localization("idle")))
+    assert restarting["slam"]["level"] == "warn" and restarting["slam"]["short"] == "Restarting"
+    assert "AMCL localization is restarting" in restarting["slam"]["message"]
+    stopped = rows(control=FakeControl("stopped", mode="localization", localization=localization("lost")))
+    assert (stopped["slam"]["level"], stopped["slam"]["short"]) == ("error", "Not running")
+
+
+def test_slam_row_is_named_for_slam_and_localization():
+    assert rows()["slam"]["name"] == "SLAM / localization"

@@ -28,7 +28,8 @@ class FreshScanBuffer:
 
 
 def make_lidar_app(
-    runtime, slam: SlamState | None = None, control=None, radar_web: Path | None = DEFAULT_RADAR_WEB, tilt_gate=None, ros=None,
+    runtime, slam: SlamState | None = None, control=None, radar_web: Path | None = DEFAULT_RADAR_WEB, tilt_gate=None, motion_gate=None,
+    ros=None,
 ):
     from flask import Flask, abort, jsonify, render_template, request, send_from_directory
     from urllib.parse import urlsplit
@@ -62,16 +63,23 @@ def make_lidar_app(
 
     @app.get("/map.json")
     def map_json():
+        status = control.status() if control is not None else None
         return jsonify({
             **slam.snapshot(),
-            "control": control.status() if control is not None else None,
+            "control": status,
+            "mode": None if status is None else status["mode"],
+            "localization": None if status is None else status["localization"],
             "tilt_gate": tilt_gate.snapshot() if tilt_gate is not None else None,
+            "motion_gate": motion_gate.snapshot() if motion_gate is not None else None,
         })
 
     @app.post("/slam/save")
     def slam_save():
         if control is None:
             return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        refusal = control.save_refusal()
+        if refusal is not None:
+            return jsonify(ok=False, error=refusal), 409
         if slam.snapshot()["map"] is None:
             return jsonify(ok=False, error="No map to save yet"), 409
         error = control.save()
@@ -91,10 +99,30 @@ def make_lidar_app(
     def slam_reset():
         if control is None:
             return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        # reload() clears the view itself (SlamControl._enter). Clearing here again could drop the map
+        # that the restarted map server has already published.
         error = control.reload()
         if error is not None:
             return jsonify(ok=False, error=error), 409
-        slam.clear()
+        return jsonify(ok=True)
+
+    @app.post("/slam/mode")
+    def slam_mode():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        body = request.get_json(silent=True)
+        error = control.set_mode(body.get("mode") if isinstance(body, dict) else None)
+        if error is not None:
+            return jsonify(ok=False, error=error), 409
+        return jsonify(ok=True)
+
+    @app.post("/slam/locate")
+    def slam_locate():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        error = control.locate()
+        if error is not None:
+            return jsonify(ok=False, error=error), 409
         return jsonify(ok=True)
 
     @app.get("/radar/")

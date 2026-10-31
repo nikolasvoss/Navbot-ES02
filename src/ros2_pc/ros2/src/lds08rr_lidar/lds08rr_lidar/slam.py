@@ -4,6 +4,7 @@ import base64
 import json
 import math
 import os
+import shutil
 import signal
 import subprocess
 import time
@@ -13,12 +14,20 @@ from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import Callable
 
+from .localization import localization_command
+
+MAPPING = "mapping"
+LOCALIZATION = "localization"
+MODES = (MAPPING, LOCALIZATION)
+
 MAP_STALE_AFTER_SEC = 10.0  # slam_toolbox publishes /map every 2 s
 POSE_STALE_AFTER_SEC = 10.0
 ODOM_STALE_AFTER_SEC = 2.0  # the bridge publishes /odom at about 50 Hz
 ODOM_RATE_WINDOW_SEC = 2.0
 DEFAULT_SLAM_DIR = Path.home() / ".local/share/navbot/slam"
 BASE_PARAMS = Path(__file__).with_name("slam_toolbox.yaml")
+# slam_toolbox writes .posegraph + .data; map_saver_cli writes .pgm + .yaml for the AMCL localizer.
+MAP_SUFFIXES = (".data", ".posegraph", ".pgm", ".yaml")
 
 
 def grid_to_dict(width: int, height: int, resolution: float, origin_x: float, origin_y: float, data) -> dict:
@@ -48,6 +57,7 @@ class SlamState:
         self._odom_times: deque[float] = deque()
         self._odom_path_m = 0.0
         self._correction: dict | None = None
+        self._latched = False
 
     def set_grid(self, grid: dict) -> None:
         with self._lock:
@@ -68,6 +78,11 @@ class SlamState:
             while self._odom_times[0] < now - ODOM_RATE_WINDOW_SEC:
                 self._odom_times.popleft()
 
+    def set_map_latched(self, latched: bool) -> None:
+        """True in localization: the map is fixed, so its age never makes the state "stale"."""
+        with self._lock:
+            self._latched = latched
+
     def set_correction(self, x: float, y: float, yaw: float) -> None:
         """map -> odom transform: how far SLAM has moved the robot away from pure wheel odometry."""
         with self._lock:
@@ -83,12 +98,14 @@ class SlamState:
         with self._lock:
             grid, grid_at, pose, pose_at = self._grid, self._grid_at, self._pose, self._pose_at
             odom, odom_at, correction = self._odom, self._odom_at, self._correction
-            odom_path_m, odom_times = self._odom_path_m, list(self._odom_times)
+            odom_path_m, odom_times, latched = self._odom_path_m, list(self._odom_times), self._latched
         map_age = None if grid_at is None else now - grid_at
         pose_age = None if pose_at is None else now - pose_at
         pose_fresh = pose is not None and pose_age <= POSE_STALE_AFTER_SEC
         if grid is None:
             state = "waiting"
+        elif latched:
+            state = "localization" if pose_fresh else "no_pose"
         elif map_age > MAP_STALE_AFTER_SEC:
             state = "stale"
         elif not pose_fresh:
@@ -114,7 +131,7 @@ class SlamState:
 
 
 class MapStore:
-    """The one saved map: slam_toolbox writes <base>.posegraph and <base>.data."""
+    """The one saved map: <base>.posegraph + <base>.data (slam_toolbox) and <base>.pgm + <base>.yaml (AMCL)."""
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory
@@ -126,37 +143,51 @@ class MapStore:
     def exists(self) -> bool:
         return self._file(".posegraph").exists()
 
+    def has_occupancy(self) -> bool:
+        return self._file(".posegraph").exists() and self._file(".yaml").exists()
+
+    def occupancy_yaml(self) -> Path:
+        return self._file(".yaml")
+
     def saved_at(self) -> float | None:
         try:
             return self._file(".posegraph").stat().st_mtime
         except FileNotFoundError:
             return None
 
-    def commit(self, tmp_base: Path) -> None:
-        tmp_data, tmp_graph = Path(f"{tmp_base}.data"), Path(f"{tmp_base}.posegraph")
-        for path in (tmp_data, tmp_graph):
-            if not path.exists():
-                raise FileNotFoundError(f"serialized map missing: {path}")
-        # Keep the old pair until both new files are in place so a failure never leaves a mismatched pair.
-        pairs = [(tmp_data, self._file(".data")), (tmp_graph, self._file(".posegraph"))]
-        backups = []
+    def commit(self, tmp_dir: Path) -> None:
+        pairs = []
+        for suffix in MAP_SUFFIXES:
+            tmp = tmp_dir / f"map{suffix}"
+            if not tmp.exists():
+                raise FileNotFoundError(f"serialized map missing: {tmp}")
+            pairs.append((tmp, self._file(suffix)))
+        # Keep the old set until all new files are in place so a failure never leaves a mixed set.
+        moved: list[tuple[Path, Path | None]] = []  # (final, backup of the old file or None)
         try:
             for tmp, final in pairs:
+                backup = None
                 if final.exists():
                     backup = Path(f"{final}.old")
                     os.replace(final, backup)
-                    backups.append((backup, final))
+                moved.append((final, backup))
                 os.replace(tmp, final)
         except OSError:
-            for backup, final in backups:
-                os.replace(backup, final)
+            for final, backup in reversed(moved):
+                if backup is None:
+                    final.unlink(missing_ok=True)
+                else:
+                    os.replace(backup, final)
             raise
-        for backup, _ in backups:
-            backup.unlink(missing_ok=True)
+        for _, backup in moved:
+            if backup is not None:
+                backup.unlink(missing_ok=True)
 
     def delete(self) -> None:
-        self._file(".posegraph").unlink(missing_ok=True)
-        self._file(".data").unlink(missing_ok=True)
+        # The two files that define exists() and has_occupancy() go first, so a failure part way
+        # never leaves them present with their data files already gone.
+        for suffix in (".posegraph", ".yaml", ".data", ".pgm"):
+            self._file(suffix).unlink(missing_ok=True)
 
     def params_file(self, base_yaml: str) -> Path:
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -264,56 +295,179 @@ def _signal_group(child: subprocess.Popen, sig: int) -> None:
         pass
 
 
-class SlamControl:
-    """Save, delete and status for the single map; one lock serializes them."""
+def export_occupancy(base: Path, timeout: float = 20.0) -> str | None:
+    """Writes <base>.pgm and <base>.yaml from the live /map; the YAML names the image by its bare file name."""
+    command = [
+        "ros2", "run", "nav2_map_server", "map_saver_cli", "-f", str(base),
+        # slam_toolbox publishes /map every 2 s and delivery of a big map takes up to 3 s; the saver waits only 2 s by default.
+        "--ros-args", "-p", "map_subscribe_transient_local:=true", "-p", "save_map_timeout:=10.0",
+    ]
+    try:
+        child = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            text=True,
+        )
+    except OSError as exc:
+        return f"map export could not start: {exc}"
+    try:
+        output, _ = child.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _signal_group(child, signal.SIGKILL)
+        child.communicate()
+        return "map export timed out"
+    if child.returncode != 0:
+        return f"map export failed with exit code {child.returncode}: {output.strip()[-500:]}"
+    for suffix in (".pgm", ".yaml"):
+        if not Path(f"{base}{suffix}").exists():
+            return f"map export wrote no {base.name}{suffix}"
+    return None
 
-    def __init__(self, store: MapStore, process: SlamProcess, serialize: Callable[[str], str | None]) -> None:
+
+class SlamControl:
+    """Mode, save, delete and status for the single map; one lock serializes them.
+
+    Mapping runs slam_toolbox, localization runs map_server + AMCL on the saved occupancy image.
+    Only one of them runs at a time, because both publish map -> odom.
+    """
+
+    def __init__(
+        self,
+        store: MapStore,
+        process: SlamProcess,
+        serialize: Callable[[str], str | None],
+        export: Callable[[Path], str | None] = export_occupancy,
+        localizer=None,
+        tracker=None,
+        slam_state=None,
+        mapping_command: Callable[[], list[str]] | None = None,
+    ) -> None:
         self._store = store
         self._process = process
         self._serialize = serialize
+        self._export = export
+        self._localizer = localizer
+        self._tracker = tracker
+        self._slam_state = slam_state
+        self._mapping_command = mapping_command
+        self._mode = MAPPING  # start() picks the boot mode
         self._lock = Lock()
 
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    def initial_mode(self) -> str:
+        return LOCALIZATION if self._store.has_occupancy() else MAPPING
+
+    def command(self) -> list[str]:
+        # The supervisor calls this before every spawn, so each AMCL start, also a restart after a crash, searches again.
+        if self._mode == LOCALIZATION:
+            if self._localizer is not None:
+                self._localizer.start()
+            return localization_command(self._store.occupancy_yaml())
+        return self._mapping_command()
+
     def start(self) -> None:
-        self._process.start()
+        with self._lock:
+            self._enter(self.initial_mode())
 
     def stop(self) -> None:
-        self._process.stop()
+        with self._lock:
+            self._halt()
+
+    def set_mode(self, mode: str) -> str | None:
+        with self._lock:
+            if mode not in MODES:
+                return f"unknown mode {mode!r}; use mapping or localization"
+            if mode == self._mode:
+                return None
+            if mode == LOCALIZATION and not self._store.has_occupancy():
+                return "No occupancy map to localize on; save the map once in mapping mode first"
+            self._halt()
+            self._enter(mode)
+            return None
+
+    def locate(self) -> str | None:
+        with self._lock:
+            if self._mode != LOCALIZATION:
+                return "Locate needs localization mode; switch to localization first"
+            if self._localizer is None:
+                return "localization is not configured"
+            self._localizer.start()
+            return None
+
+    def save_refusal(self) -> str | None:
+        """Why save() would refuse right now, or None when it may run."""
+        if self._mode != MAPPING:
+            return "Save needs mapping mode; switch to mapping first"
+        return None
 
     def save(self) -> str | None:
         with self._lock:
+            refusal = self.save_refusal()
+            if refusal is not None:
+                return refusal
             tmp = self._store.directory / f"map.saving.{time.time_ns()}"
-            error = self._serialize(str(tmp))
-            if error is not None:
-                return error
             try:
-                self._store.commit(tmp)
+                tmp.mkdir(parents=True)
+                error = self._serialize(str(tmp / "map"))
+                if error is None:
+                    error = self._export(tmp / "map")
+                if error is not None:
+                    return error
+                try:
+                    self._store.commit(tmp)
+                except OSError as exc:
+                    return str(exc)
+                return None
             except OSError as exc:
                 return str(exc)
-            return None
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
 
     def delete(self) -> None:
         with self._lock:
-            self._process.stop()
+            self._halt()
             try:
                 self._store.delete()
             finally:
-                self._process.start()
+                self._enter(MAPPING)
 
     def reload(self) -> str | None:
-        """Drops the current map and restarts slam_toolbox on the saved one."""
+        """Drops the current map and restarts the active launch on the saved one."""
         with self._lock:
             if not self._store.exists():
                 return "No saved map to load"
-            self._process.stop()
-            self._process.start()
+            self._halt()
+            self._enter(self._mode)
             return None
 
     def status(self) -> dict:
         return {
+            "mode": self._mode,
             "process": self._process.status(),
             "saved_map": {"exists": self._store.exists(), "saved_at": self._store.saved_at()},
             "directory": str(self._store.directory),
+            "localization": None if self._tracker is None else self._tracker.snapshot(),
         }
+
+    def _halt(self) -> None:
+        self._process.stop()
+        if self._localizer is not None:
+            self._localizer.stop()
+
+    def _enter(self, mode: str) -> None:
+        self._mode = mode
+        if self._slam_state is not None:
+            self._slam_state.clear()
+            self._slam_state.set_map_latched(mode == LOCALIZATION)
+        if self._tracker is not None:
+            self._tracker.reset()
+        self._process.start()
 
 
 def slam_command(params_file: Path) -> list[str]:

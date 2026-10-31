@@ -8,8 +8,9 @@ import pytest
 
 pytest.importorskip("flask")
 
+from lds08rr_lidar.localization import LocalizationTracker, localization_command
 from lds08rr_lidar.runtime import LidarRuntime
-from lds08rr_lidar.slam import MapStore, SlamControl, SlamProcess, SlamState, grid_to_dict
+from lds08rr_lidar.slam import MapStore, SlamControl, SlamProcess, SlamState, export_occupancy, grid_to_dict
 from lds08rr_lidar.source import SourceConfig
 from lds08rr_lidar.web import make_lidar_app
 
@@ -53,17 +54,26 @@ def test_map_and_pose_go_stale_independently():
     assert shown["pose_age_sec"] == 11.0
 
 
-def test_map_store_commits_both_files_and_loads_them_on_every_start(tmp_path):
+def write_map_set(directory, content):
+    for suffix in (".data", ".posegraph", ".pgm", ".yaml"):
+        Path(directory, f"map{suffix}").write_text(content, encoding="utf-8")
+
+
+def test_map_store_commits_all_four_files_and_loads_them_on_every_start(tmp_path):
     store = MapStore(tmp_path / "slam")
     base_yaml = "slam_toolbox:\n  ros__parameters:\n    mode: mapping\n"
     assert "map_file_name" not in store.params_file(base_yaml).read_text(encoding="utf-8")
+    assert not store.has_occupancy()
 
-    tmp_base = store.directory / "map.saving"
-    Path(f"{tmp_base}.posegraph").write_text("graph", encoding="utf-8")
-    Path(f"{tmp_base}.data").write_text("data", encoding="utf-8")
-    store.commit(tmp_base)
+    tmp_dir = store.directory / "map.saving"
+    tmp_dir.mkdir()
+    write_map_set(tmp_dir, "new")
+    store.commit(tmp_dir)
     assert store.exists()
+    assert store.has_occupancy()
+    assert store.occupancy_yaml() == tmp_path / "slam" / "map.yaml"
     assert store.saved_at() is not None
+    assert (store.directory / "map.pgm").read_text(encoding="utf-8") == "new"
 
     params = store.params_file(base_yaml).read_text(encoding="utf-8")
     assert params == (
@@ -75,40 +85,89 @@ def test_map_store_commits_both_files_and_loads_them_on_every_start(tmp_path):
     store.delete()
     store.delete()
     assert not store.exists()
+    assert not store.has_occupancy()
     assert store.saved_at() is None
-    assert not (store.directory / "map.data").exists()
+    assert not any((store.directory / f"map{suffix}").exists() for suffix in (".data", ".posegraph", ".pgm", ".yaml"))
 
 
-def test_map_store_refuses_a_partial_serialized_map(tmp_path):
+def test_map_store_delete_drops_the_map_definition_before_the_data_files(tmp_path):
     store = MapStore(tmp_path)
-    tmp_base = tmp_path / "map.saving"
-    Path(f"{tmp_base}.data").write_text("data", encoding="utf-8")
-    with pytest.raises(FileNotFoundError):
-        store.commit(tmp_base)
+    write_map_set(tmp_path, "old")
+    Path(tmp_path, "map.data").unlink()
+    Path(tmp_path, "map.data").mkdir()  # unlink() fails on a directory: a partial delete
+    Path(tmp_path, "map.data", "keep").write_text("x", encoding="utf-8")
+
+    with pytest.raises(OSError):
+        store.delete()
     assert not store.exists()
-    assert Path(f"{tmp_base}.data").exists()
+    assert not store.has_occupancy()
+    assert store.saved_at() is None
 
 
-def test_map_store_keeps_the_old_pair_when_the_commit_fails(tmp_path, monkeypatch):
+def test_map_store_has_no_occupancy_map_without_the_yaml(tmp_path):
     store = MapStore(tmp_path)
-    for suffix in (".data", ".posegraph"):
-        Path(f"{store.base}{suffix}").write_text("old", encoding="utf-8")
-    tmp_base = tmp_path / "map.saving"
-    Path(f"{tmp_base}.data").write_text("new", encoding="utf-8")
-    Path(f"{tmp_base}.posegraph").write_text("new", encoding="utf-8")
+    tmp_dir = tmp_path / "map.saving"
+    tmp_dir.mkdir()
+    write_map_set(tmp_dir, "new")
+    Path(tmp_dir, "map.yaml").unlink()
+    with pytest.raises(FileNotFoundError):
+        store.commit(tmp_dir)
+    assert not store.has_occupancy()
+
+
+def test_map_store_refuses_an_incomplete_serialized_map(tmp_path):
+    store = MapStore(tmp_path)
+    tmp_dir = tmp_path / "map.saving"
+    tmp_dir.mkdir()
+    for suffix in (".data", ".posegraph", ".pgm"):
+        Path(tmp_dir, f"map{suffix}").write_text("new", encoding="utf-8")
+    with pytest.raises(FileNotFoundError):
+        store.commit(tmp_dir)
+    assert not store.exists()
+    assert not store.has_occupancy()
+    assert (tmp_dir / "map.data").exists()
+    assert not (tmp_path / "map.data").exists()
+
+
+def test_map_store_keeps_the_old_set_when_the_commit_fails(tmp_path, monkeypatch):
+    store = MapStore(tmp_path)
+    write_map_set(tmp_path, "old")
+    tmp_dir = tmp_path / "map.saving"
+    tmp_dir.mkdir()
+    write_map_set(tmp_dir, "new")
 
     real_replace = os.replace
     def failing_replace(src, dst):
-        if str(src).endswith("map.saving.posegraph"):
+        if Path(src) == tmp_dir / "map.posegraph":
             raise OSError("disk full")
         real_replace(src, dst)
     monkeypatch.setattr(os, "replace", failing_replace)
     with pytest.raises(OSError):
-        store.commit(tmp_base)
+        store.commit(tmp_dir)
     monkeypatch.undo()
 
-    assert Path(f"{store.base}.data").read_text(encoding="utf-8") == "old"
-    assert Path(f"{store.base}.posegraph").read_text(encoding="utf-8") == "old"
+    for suffix in (".data", ".posegraph", ".pgm", ".yaml"):
+        assert Path(f"{store.base}{suffix}").read_text(encoding="utf-8") == "old"
+    assert not list(tmp_path.glob("*.old"))
+
+
+def test_map_store_removes_new_files_when_the_first_save_fails(tmp_path, monkeypatch):
+    store = MapStore(tmp_path)
+    tmp_dir = tmp_path / "map.saving"
+    tmp_dir.mkdir()
+    write_map_set(tmp_dir, "new")
+
+    real_replace = os.replace
+    def failing_replace(src, dst):
+        if Path(src) == tmp_dir / "map.pgm":
+            raise OSError("disk full")
+        real_replace(src, dst)
+    monkeypatch.setattr(os, "replace", failing_replace)
+    with pytest.raises(OSError):
+        store.commit(tmp_dir)
+    monkeypatch.undo()
+
+    assert not any((tmp_path / f"map{suffix}").exists() for suffix in (".data", ".posegraph", ".pgm"))
 
 
 def test_slam_process_survives_a_command_that_raises(tmp_path):
@@ -158,30 +217,52 @@ class FakeProcess:
         return {"state": "running", "pid": 1, "exit_code": None, "restarts": 0, "error": None}
 
 
-def write_serialized_map(filename):
-    Path(f"{filename}.posegraph").write_text("graph", encoding="utf-8")
-    Path(f"{filename}.data").write_text("data", encoding="utf-8")
+def write_serialized_map(base):
+    Path(f"{base}.posegraph").write_text("graph", encoding="utf-8")
+    Path(f"{base}.data").write_text("data", encoding="utf-8")
+    return None
+
+
+def write_occupancy(base):
+    Path(f"{base}.pgm").write_text("pgm", encoding="utf-8")
+    Path(f"{base}.yaml").write_text(f"image: {Path(base).name}.pgm\n", encoding="utf-8")
     return None
 
 
 def test_slam_control_saves_then_deletes_and_restarts_slam(tmp_path):
     store = MapStore(tmp_path)
     process = FakeProcess()
-    control = SlamControl(store, process, write_serialized_map)
+    control = SlamControl(store, process, write_serialized_map, write_occupancy)
 
     assert control.save() is None
     assert control.status()["saved_map"]["exists"] is True
     assert (tmp_path / "map.posegraph").read_text(encoding="utf-8") == "graph"
-    assert not (tmp_path / "map.saving.posegraph").exists()
+    assert (tmp_path / "map.pgm").read_text(encoding="utf-8") == "pgm"
+    assert (tmp_path / "map.yaml").read_text(encoding="utf-8") == "image: map.pgm\n"
+    assert not list(tmp_path.glob("map.saving.*"))
 
     control.delete()
     assert control.status()["saved_map"]["exists"] is False
+    assert not (tmp_path / "map.yaml").exists()
     assert process.calls == ["stop", "start"]
+
+
+def test_slam_control_exports_the_occupancy_map_from_the_serialized_base(tmp_path):
+    seen = {}
+    def export(base):
+        seen["base"] = base
+        return write_occupancy(base)
+    control = SlamControl(MapStore(tmp_path), FakeProcess(), write_serialized_map, export)
+
+    assert control.save() is None
+    assert seen["base"].name == "map"
+    assert seen["base"].parent.name.startswith("map.saving.")
+    assert not seen["base"].parent.exists()
 
 
 def test_slam_control_reload_restarts_slam_only_with_a_saved_map(tmp_path):
     process = FakeProcess()
-    control = SlamControl(MapStore(tmp_path), process, write_serialized_map)
+    control = SlamControl(MapStore(tmp_path), process, write_serialized_map, write_occupancy)
 
     assert control.reload() == "No saved map to load"
     assert process.calls == []
@@ -192,35 +273,367 @@ def test_slam_control_reload_restarts_slam_only_with_a_saved_map(tmp_path):
     assert control.status()["saved_map"]["exists"] is True
 
 
+def test_reload_clears_the_view_and_the_pose_like_a_mode_switch(tmp_path):
+    events = []
+    slam_state = RecordingSlamState()
+    tracker = LocalizationTracker()
+    control, store = mode_control(tmp_path, events, tracker=tracker, slam_state=slam_state)
+    control.save()
+    control.start()
+    tracker.start_search()
+    events.clear()
+    slam_state.calls.clear()
+
+    assert control.reload() is None
+    assert control.mode == "localization"
+    assert slam_state.calls == [("clear",), ("latched", True)]
+    assert tracker.snapshot()["state"] == "idle"
+    assert events == [
+        ("process stop",),
+        ("localizer stop",),
+        ("localizer start",),
+        ("process start", localization_command(store.occupancy_yaml())),
+    ]
+
+
 def test_slam_control_restarts_slam_when_the_delete_fails(tmp_path):
     class BrokenStore(MapStore):
         def delete(self):
             raise PermissionError("read-only")
 
     process = FakeProcess()
-    control = SlamControl(BrokenStore(tmp_path), process, write_serialized_map)
+    control = SlamControl(BrokenStore(tmp_path), process, write_serialized_map, write_occupancy)
     with pytest.raises(PermissionError):
         control.delete()
     assert process.calls == ["stop", "start"]
 
 
-def test_slam_control_reports_a_failed_save(tmp_path):
-    control = SlamControl(MapStore(tmp_path), FakeProcess(), lambda filename: "boom")
+def test_slam_control_reports_a_failed_serialize(tmp_path):
+    control = SlamControl(MapStore(tmp_path), FakeProcess(), lambda base: "boom", write_occupancy)
     assert control.save() == "boom"
     assert control.status()["saved_map"]["exists"] is False
+    assert not list(tmp_path.glob("map.saving.*"))
+
+
+def test_slam_control_keeps_the_old_map_when_the_export_fails(tmp_path):
+    store = MapStore(tmp_path)
+    assert SlamControl(store, FakeProcess(), write_serialized_map, write_occupancy).save() is None
+
+    control = SlamControl(store, FakeProcess(), write_serialized_map, lambda base: "map export timed out")
+    assert control.save() == "map export timed out"
+    assert (tmp_path / "map.posegraph").read_text(encoding="utf-8") == "graph"
+    assert (tmp_path / "map.pgm").read_text(encoding="utf-8") == "pgm"
+    assert (tmp_path / "map.yaml").read_text(encoding="utf-8") == "image: map.pgm\n"
+    assert not list(tmp_path.glob("map.saving.*"))
+
+
+class RecordingProcess:
+    """Records each start with the command the control builds for it, as the supervisor does."""
+
+    def __init__(self, events):
+        self.events = events
+        self.command = None
+
+    def start(self):
+        command = self.command()
+        self.events.append(("process start", command))
+
+    def stop(self, timeout=10.0):
+        self.events.append(("process stop",))
+
+    def status(self):
+        return {"state": "running", "pid": 1, "exit_code": None, "restarts": 0, "error": None}
+
+
+class RecordingLocalizer:
+    def __init__(self, events):
+        self.events = events
+
+    def start(self):
+        self.events.append(("localizer start",))
+
+    def stop(self):
+        self.events.append(("localizer stop",))
+
+
+class RecordingSlamState:
+    def __init__(self):
+        self.calls = []
+
+    def clear(self):
+        self.calls.append(("clear",))
+
+    def set_map_latched(self, latched):
+        self.calls.append(("latched", latched))
+
+
+def mode_control(tmp_path, events, tracker=None, slam_state=None):
+    store = MapStore(tmp_path)
+    process = RecordingProcess(events)
+    control = SlamControl(
+        store, process, write_serialized_map, write_occupancy,
+        localizer=RecordingLocalizer(events), tracker=tracker, slam_state=slam_state,
+        mapping_command=lambda: ["mapping-launch"],
+    )
+    process.command = control.command
+    return control, store
+
+
+def test_boot_mode_is_localization_only_when_the_occupancy_image_exists(tmp_path):
+    control, _ = mode_control(tmp_path, [])
+    assert control.initial_mode() == "mapping"
+    Path(tmp_path, "map.posegraph").write_text("graph", encoding="utf-8")
+    assert control.initial_mode() == "mapping"
+    Path(tmp_path, "map.yaml").write_text("image: map.pgm\n", encoding="utf-8")
+    assert control.initial_mode() == "localization"
+
+
+def test_start_without_a_map_runs_mapping_and_no_localizer(tmp_path):
+    events = []
+    slam_state = RecordingSlamState()
+    control, _ = mode_control(tmp_path, events, tracker=LocalizationTracker(), slam_state=slam_state)
+    control.start()
+    assert control.mode == "mapping"
+    assert events == [("process start", ["mapping-launch"])]
+    assert slam_state.calls == [("clear",), ("latched", False)]
+
+
+def test_start_boots_into_localization_on_the_saved_occupancy_map(tmp_path):
+    events = []
+    slam_state = RecordingSlamState()
+    tracker = LocalizationTracker()
+    control, store = mode_control(tmp_path, events, tracker=tracker, slam_state=slam_state)
+    assert control.save() is None
+    control.start()
+    assert control.mode == "localization"
+    assert events == [
+        ("localizer start",),
+        ("process start", localization_command(store.occupancy_yaml())),
+    ]
+    assert slam_state.calls == [("clear",), ("latched", True)]
+    assert tracker.snapshot()["state"] == "idle"
+
+
+def test_set_mode_stops_the_running_launch_and_starts_the_other(tmp_path):
+    events = []
+    control, store = mode_control(tmp_path, events)
+    control.save()
+    control.start()
+    events.clear()
+
+    assert control.set_mode("mapping") is None
+    assert control.mode == "mapping"
+    assert events == [
+        ("process stop",),
+        ("localizer stop",),
+        ("process start", ["mapping-launch"]),
+    ]
+
+    events.clear()
+    assert control.set_mode("localization") is None
+    assert control.mode == "localization"
+    assert events == [
+        ("process stop",),
+        ("localizer stop",),
+        ("localizer start",),
+        ("process start", localization_command(store.occupancy_yaml())),
+    ]
+
+    events.clear()
+    assert control.set_mode("localization") is None
+    assert events == []
+
+
+def test_switching_mode_clears_the_view_and_the_pose(tmp_path):
+    slam_state = RecordingSlamState()
+    tracker = LocalizationTracker()
+    control, _ = mode_control(tmp_path, [], tracker=tracker, slam_state=slam_state)
+    control.save()
+    control.start()
+    assert slam_state.calls == [("clear",), ("latched", True)]
+    tracker.start_search()
+    assert tracker.snapshot()["state"] == "searching"
+
+    slam_state.calls.clear()
+    assert control.set_mode("mapping") is None
+    assert slam_state.calls == [("clear",), ("latched", False)]
+    assert tracker.snapshot()["state"] == "idle"
+
+
+def test_set_mode_refuses_localization_without_an_occupancy_map_and_unknown_modes(tmp_path):
+    events = []
+    control, _ = mode_control(tmp_path, events)
+    control.start()
+    events.clear()
+
+    assert control.set_mode("localization") == "No occupancy map to localize on; save the map once in mapping mode first"
+    assert control.set_mode("nonsense") == "unknown mode 'nonsense'; use mapping or localization"
+    assert control.mode == "mapping"
+    assert events == []
+
+
+def test_save_refusal_reports_the_mode_without_saving(tmp_path):
+    events = []
+    control, _ = mode_control(tmp_path, events, tracker=LocalizationTracker())
+    control.save()
+    control.start()
+    assert control.save_refusal() == "Save needs mapping mode; switch to mapping first"
+    assert control.save() == "Save needs mapping mode; switch to mapping first"
+    assert control.set_mode("mapping") is None
+    assert control.save_refusal() is None
+
+
+def test_save_and_locate_are_refused_in_the_wrong_mode(tmp_path):
+    events = []
+    control, store = mode_control(tmp_path, events, tracker=LocalizationTracker())
+    assert control.save() is None
+    control.start()
+    before = store.occupancy_yaml().read_text(encoding="utf-8")
+    events.clear()
+
+    assert control.save() == "Save needs mapping mode; switch to mapping first"
+    assert store.occupancy_yaml().read_text(encoding="utf-8") == before
+    assert events == []
+
+    assert control.locate() is None
+    assert events == [("localizer start",)]
+
+    control.set_mode("mapping")
+    events.clear()
+    assert control.locate() == "Locate needs localization mode; switch to localization first"
+    assert events == []
+    assert control.save() is None
+
+
+def test_every_localization_launch_starts_the_global_search(tmp_path):
+    events = []
+    control, store = mode_control(tmp_path, events)
+    control.save()
+    control.start()
+    events.clear()
+
+    assert control.command() == localization_command(store.occupancy_yaml())
+    assert events == [("localizer start",)]
+
+
+def test_delete_in_localization_ends_in_mapping(tmp_path):
+    events = []
+    control, store = mode_control(tmp_path, events)
+    control.save()
+    control.start()
+    events.clear()
+
+    control.delete()
+    assert not store.exists() and not store.has_occupancy()
+    assert control.mode == "mapping"
+    assert events == [
+        ("process stop",),
+        ("localizer stop",),
+        ("process start", ["mapping-launch"]),
+    ]
+
+
+def test_stop_stops_the_launch_and_the_localizer(tmp_path):
+    events = []
+    control, _ = mode_control(tmp_path, events)
+    control.stop()
+    assert events == [("process stop",), ("localizer stop",)]
+
+
+def test_status_reports_the_mode_and_the_localization_snapshot(tmp_path):
+    tracker = LocalizationTracker()
+    control, _ = mode_control(tmp_path, [], tracker=tracker)
+    control.start()
+    shown = control.status()
+    assert shown["mode"] == "mapping"
+    assert shown["localization"] == tracker.snapshot()
+
+
+FAKE_ROS2_HEAD = (
+    "#!/bin/sh\n"
+    'printf \'%s\\n\' "$@" > "$(dirname "$0")/args.txt"\n'
+    'while [ "$1" != "-f" ]; do shift; done\n'
+    'base="$2"\n'
+)
+
+
+def use_fake_ros2(monkeypatch, tmp_path, body):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    script = bin_dir / "ros2"
+    script.write_text(FAKE_ROS2_HEAD + body, encoding="utf-8")
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    return bin_dir
+
+
+def test_export_occupancy_runs_map_saver_on_the_transient_local_map(tmp_path, monkeypatch):
+    bin_dir = use_fake_ros2(monkeypatch, tmp_path, (
+        'printf \'image: %s.pgm\\n\' "$(basename "$base")" > "$base.yaml"\n'
+        "printf 'P5' > \"$base.pgm\"\n"
+    ))
+    assert export_occupancy(tmp_path / "map") is None
+    assert (tmp_path / "map.pgm").read_bytes() == b"P5"
+    assert (tmp_path / "map.yaml").read_text(encoding="utf-8") == "image: map.pgm\n"
+    assert (bin_dir / "args.txt").read_text(encoding="utf-8").split("\n") == [
+        "run", "nav2_map_server", "map_saver_cli", "-f", str(tmp_path / "map"),
+        "--ros-args", "-p", "map_subscribe_transient_local:=true", "-p", "save_map_timeout:=10.0", "",
+    ]
+
+
+def test_export_occupancy_reports_a_failed_saver_and_a_missing_file(tmp_path, monkeypatch):
+    use_fake_ros2(monkeypatch, tmp_path, "echo 'no map received' >&2\nexit 3\n")
+    error = export_occupancy(tmp_path / "map")
+    assert error.startswith("map export failed with exit code 3")
+    assert "no map received" in error
+
+    use_fake_ros2(monkeypatch, tmp_path, "printf 'P5' > \"$base.pgm\"\n")
+    assert export_occupancy(tmp_path / "map") == "map export wrote no map.yaml"
+
+
+def test_export_occupancy_kills_a_saver_that_hangs(tmp_path, monkeypatch):
+    use_fake_ros2(monkeypatch, tmp_path, "sleep 30\n")
+    started = time.monotonic()
+    assert export_occupancy(tmp_path / "map", timeout=0.5) == "map export timed out"
+    assert time.monotonic() - started < 10
 
 
 class FakeControl:
     def __init__(self, error=None):
         self.error = error
+        self.refusal = None
+        self.saves = 0
         self.deleted = 0
         self.reloaded = 0
         self.reload_error = None
+        self.mode = "mapping"
+        self.localization = {"state": "idle", "pose": None, "std": None, "search_age_sec": None, "error": None, "hint": None}
+        self.mode_error = None
+        self.locate_error = None
+        self.requested_modes = []
+        self.locates = 0
 
     def status(self):
-        return {"process": {"state": "running"}, "saved_map": {"exists": False, "saved_at": None}}
+        return {
+            "process": {"state": "running"}, "saved_map": {"exists": False, "saved_at": None},
+            "mode": self.mode, "localization": self.localization,
+        }
+
+    def set_mode(self, mode):
+        self.requested_modes.append(mode)
+        if self.mode_error is None:
+            self.mode = mode
+        return self.mode_error
+
+    def locate(self):
+        self.locates += 1
+        return self.locate_error
+
+    def save_refusal(self):
+        return self.refusal
 
     def save(self):
+        self.saves += 1
         return self.error
 
     def delete(self):
@@ -239,11 +652,28 @@ def make_client(tmp_path, slam, control):
 def test_slam_actions_are_refused_without_a_running_control(tmp_path):
     client = make_client(tmp_path, SlamState(), None)
     refused = {"ok": False, "error": "SLAM is not running on this service"}
-    for path in ("/slam/save", "/slam/delete", "/slam/reset"):
+    for path in ("/slam/save", "/slam/delete", "/slam/reset", "/slam/mode", "/slam/locate"):
         response = client.post(path)
         assert response.status_code == 409
         assert response.get_json() == refused
     assert client.get("/map.json").get_json()["control"] is None
+
+
+def test_web_save_in_the_wrong_mode_is_a_409_with_the_mode_text(tmp_path):
+    slam = SlamState()
+    control = FakeControl()
+    client = make_client(tmp_path, slam, control)
+    control.refusal = "Save needs mapping mode; switch to mapping first"
+
+    response = client.post("/slam/save")
+    assert response.status_code == 409
+    assert response.get_json() == {"ok": False, "error": "Save needs mapping mode; switch to mapping first"}
+
+    slam.set_grid(grid_to_dict(1, 1, 0.05, 0.0, 0.0, [0]))
+    response = client.post("/slam/save")
+    assert response.status_code == 409
+    assert response.get_json() == {"ok": False, "error": "Save needs mapping mode; switch to mapping first"}
+    assert control.saves == 0
 
 
 def test_web_save_and_delete_drive_the_control(tmp_path):
@@ -295,9 +725,10 @@ def test_web_reset_reloads_the_saved_map_and_clears_the_view(tmp_path):
     assert response.get_json() == {"ok": False, "error": "No saved map to load"}
     assert client.get("/map.json").get_json()["map"] is not None
 
+    # The control clears the view inside reload(); the web layer must not clear again after it.
     control.reload_error = None
     assert client.post("/slam/reset").get_json() == {"ok": True}
-    assert client.get("/map.json").get_json()["map"] is None
+    assert client.get("/map.json").get_json()["map"] is not None
 
 
 def test_odom_accumulates_path_and_goes_stale():
@@ -315,3 +746,83 @@ def test_odom_accumulates_path_and_goes_stale():
     clock.now = 10.0
     shown = slam.snapshot()["odom"]
     assert not shown["fresh"] and shown["rate_hz"] is None
+
+
+def test_latched_map_never_goes_stale_and_reports_localization():
+    clock = FakeClock()
+    slam = SlamState(clock=clock)
+    assert slam.snapshot()["state"] == "waiting"
+    slam.set_grid(grid_to_dict(1, 1, 0.05, 0.0, 0.0, [0]))
+    slam.set_map_latched(True)
+    clock.now = 60.0
+    assert slam.snapshot()["state"] == "no_pose"
+    slam.set_pose(1.0, 2.0, 0.5)
+    shown = slam.snapshot()
+    assert shown["state"] == "localization"
+    assert shown["map_age_sec"] == 60.0
+
+    slam.set_map_latched(False)
+    assert slam.snapshot()["state"] == "stale"
+
+
+def test_web_map_json_passes_mode_and_localization_through(tmp_path):
+    control = FakeControl()
+    client = make_client(tmp_path, SlamState(), control)
+    payload = client.get("/map.json").get_json()
+    assert payload["mode"] == "mapping" and payload["localization"]["state"] == "idle"
+
+    control.mode = "localization"
+    control.localization = {"state": "searching", "pose": None, "std": None, "search_age_sec": 3.0, "error": None, "hint": None}
+    payload = client.get("/map.json").get_json()
+    assert payload["mode"] == "localization"
+    assert payload["localization"]["state"] == "searching" and payload["localization"]["search_age_sec"] == 3.0
+    assert payload["control"]["mode"] == "localization"
+
+
+def test_web_map_json_passes_motion_gate_through(tmp_path):
+    from lds08rr_lidar.motion_gate import MotionGate
+
+    gate = MotionGate()
+    runtime = LidarRuntime(SourceConfig(mode="demo"), driver_factory=lambda *_: None)
+    client = make_lidar_app(runtime, slam=SlamState(), motion_gate=gate, radar_web=tmp_path / "missing").test_client()
+    assert client.get("/map.json").get_json()["motion_gate"]["state"] == "no_odom"
+
+    for index in range(-5, 51):
+        gate.add_odom(index / 50, 0.5, 0.0)
+    assert gate.apply(0.2, 0.2) is False
+    payload = client.get("/map.json").get_json()["motion_gate"]
+    assert payload["state"] == "limiting" and payload["scans_dropped"] == 1
+    assert payload["reason"] == "driving too fast"
+
+
+def test_web_mode_and_locate_drive_the_control(tmp_path):
+    control = FakeControl()
+    client = make_client(tmp_path, SlamState(), control)
+
+    assert client.post("/slam/mode", json={"mode": "localization"}).get_json() == {"ok": True}
+    assert control.requested_modes == ["localization"]
+
+    control.mode_error = "No saved map to localize on"
+    response = client.post("/slam/mode", json={"mode": "mapping"})
+    assert response.status_code == 409
+    assert response.get_json() == {"ok": False, "error": "No saved map to localize on"}
+
+    client.post("/slam/mode")  # no JSON body: the control gets no mode and refuses it, the web layer does not crash
+    assert control.requested_modes == ["localization", "mapping", None]
+
+    control.locate_error = "Locate again needs localization mode"
+    response = client.post("/slam/locate")
+    assert response.status_code == 409
+    assert response.get_json() == {"ok": False, "error": "Locate again needs localization mode"}
+    control.locate_error = None
+    assert client.post("/slam/locate").get_json() == {"ok": True}
+    assert control.locates == 2
+
+
+def test_web_refuses_cross_site_mode_and_locate(tmp_path):
+    control = FakeControl()
+    client = make_client(tmp_path, SlamState(), control)
+    evil = {"Origin": "http://evil.example"}
+    assert client.post("/slam/mode", json={"mode": "localization"}, headers=evil).status_code == 403
+    assert client.post("/slam/locate", headers=evil).status_code == 403
+    assert control.requested_modes == [] and control.locates == 0

@@ -17,3 +17,4 @@ The ros2_pc is the onboard computer that runs ROS 2, with its carrier board and 
 ## Plans
 
 - [Roadmap](plans/roadmap.md)
+- [Localization on the saved map](plans/localization.md)

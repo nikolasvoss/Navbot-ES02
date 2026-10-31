@@ -8,13 +8,15 @@ import rclpy.time
 
 from builtin_interfaces.msg import Time
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
 from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, LaserScan
 from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
 
+from .localization import LocalizationTracker
+from .motion_gate import MotionGate
 from .mount import SENSOR_MOUNT_X_M, SENSOR_MOUNT_Y_M, SENSOR_MOUNT_YAW_RAD
 from .runtime import LidarRuntime
 from .slam import SlamState, grid_to_dict
@@ -77,7 +79,7 @@ def sensor_mount_transform(stamp) -> TransformStamped:
 
 
 class LidarNode(Node):
-    def __init__(self, config: SourceConfig) -> None:
+    def __init__(self, config: SourceConfig, localization: LocalizationTracker) -> None:
         super().__init__("lds08rr_lidar")
         scan_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -89,7 +91,9 @@ class LidarNode(Node):
         # /scan stays raw; slam_toolbox reads the tilt-gated copy.
         self.slam_scan_publisher = self.create_publisher(LaserScan, "/scan_slam", scan_qos)
         self.tilt_gate = TiltGate(config_from_mount())
+        self.motion_gate = MotionGate()
         self._logged_gate_state: str | None = None
+        self._logged_motion_state: str | None = None
         self.create_subscription(Imu, "/imu/data", self.on_imu, qos_profile_sensor_data)
         self.status_publisher = self.create_publisher(DiagnosticArray, "/lidar/status", 10)
         self.runtime = LidarRuntime(config, on_scan=self.publish_scan)
@@ -106,6 +110,14 @@ class LidarNode(Node):
         )
         self.create_subscription(OccupancyGrid, "/map", self.on_map, map_qos)
         self.create_subscription(Odometry, "/odom", self.on_odom, 10)
+        self.localization = localization
+        amcl_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        self.create_subscription(PoseWithCovarianceStamped, "/amcl_pose", self.on_amcl_pose, amcl_qos)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         # odom -> base_link comes from navbot_link_bridge (ESP32 wheel odometry); only the sensor mount is ours.
@@ -113,6 +125,8 @@ class LidarNode(Node):
         self.static_tf.sendTransform(sensor_mount_transform(self.get_clock().now().to_msg()))
         self.create_timer(0.5, self.update_pose)
         self._serialize_client = None
+        self._service_lock = threading.Lock()
+        self._service_clients: dict[str, object] = {}
         self._last_seen: dict[str, float] = {}
 
     def on_map(self, message: OccupancyGrid) -> None:
@@ -136,6 +150,15 @@ class LidarNode(Node):
         self._last_seen["/odom"] = time.monotonic()
         p, twist = message.pose.pose, message.twist.twist
         self.slam.set_odom(p.position.x, p.position.y, yaw_from_quaternion(p.orientation), twist.linear.x, twist.angular.z)
+        stamp = rclpy.time.Time.from_msg(message.header.stamp).nanoseconds / 1e9
+        self.motion_gate.add_odom(stamp, twist.linear.x, twist.angular.z)
+
+    def on_amcl_pose(self, message: PoseWithCovarianceStamped) -> None:
+        p, covariance = message.pose.pose, message.pose.covariance
+        self.localization.add_pose(
+            p.position.x, p.position.y, yaw_from_quaternion(p.orientation),
+            covariance[0], covariance[7], covariance[35],
+        )
 
     def update_pose(self) -> None:
         try:
@@ -151,6 +174,28 @@ class LidarNode(Node):
         yaw = yaw_from_quaternion(q)
         age = (self.get_clock().now() - rclpy.time.Time.from_msg(transform.header.stamp)).nanoseconds / 1e9
         self.slam.set_pose(t.x, t.y, yaw, age_sec=max(age, 0.0))
+
+    def call_service(self, name: str, timeout: float) -> str | None:
+        """Calls a std_srvs/Empty service from a non-ROS thread; None on success, else the error text."""
+        from std_srvs.srv import Empty
+
+        with self._service_lock:
+            client = self._service_clients.get(name)
+            if client is None:
+                client = self.create_client(Empty, name)
+                self._service_clients[name] = client
+        if not client.wait_for_service(timeout_sec=timeout):
+            return "service unavailable"
+        # Called from the localizer thread while the main thread spins the node.
+        finished = threading.Event()
+        future = client.call_async(Empty.Request())
+        future.add_done_callback(lambda _: finished.set())
+        if not finished.wait(timeout):
+            client.remove_pending_request(future)
+            return "call timed out"
+        if future.exception() is not None:
+            return f"call failed: {future.exception()}"
+        return None
 
     def serialize_map(self, filename: str, timeout: float = 15.0) -> str | None:
         try:
@@ -202,6 +247,14 @@ class LidarNode(Node):
     def publish_slam_scan(self, message: LaserScan) -> None:
         start = rclpy.time.Time.from_msg(message.header.stamp).nanoseconds / 1e9
         ranges = self.tilt_gate.apply(message.ranges, message.angle_min, message.angle_increment, start, message.scan_time)
+        keep_for_motion = self.motion_gate.apply(start, message.scan_time)
+        if self.motion_gate.state != self._logged_motion_state:
+            self._logged_motion_state = self.motion_gate.state
+            self.get_logger().info({
+                "no_odom": "motion gate paused: no /odom covers the scan; scans kept",
+                "ok": "motion gate active on /scan_slam",
+                "limiting": "motion gate dropping scans: " + str(self.motion_gate.snapshot()["reason"]),
+            }[self._logged_motion_state])
         if self.tilt_gate.state != self._logged_gate_state:
             self._logged_gate_state = self.tilt_gate.state
             text = {
@@ -210,7 +263,7 @@ class LidarNode(Node):
                 "active": "tilt gating active on /scan_slam",
             }[self._logged_gate_state]
             self.get_logger().info(text)
-        if ranges is None:
+        if ranges is None or not keep_for_motion:
             return
         gated = LaserScan()
         gated.header = message.header

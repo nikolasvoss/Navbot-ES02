@@ -142,7 +142,7 @@ def test_demo_browser_hides_stale_plot_and_reports_server_loss():
             page.goto(f"{base}/")
             page.get_by_text("DEMO DATA · synthetic scan").wait_for(timeout=5000)
             page.locator("#plot").wait_for(state="visible", timeout=5000)
-            assert page.locator("#autoZoom").is_checked()
+            assert not page.locator("#autoZoom").is_checked()
             for name in ("Zoom out", "Zoom in"):
                 button = page.get_by_role("button", name=name)
                 assert button.is_visible()

@@ -98,11 +98,16 @@ class ServiceMonitor:
         )
 
     def _slam(self) -> ServiceHealth:
-        name = "SLAM (slam_toolbox)"
+        name = "SLAM / localization"
         if self.control is None:
             return ServiceHealth("slam", name, "warn", "SLAM is not available on this service", "Unavailable")
-        process = self.control.status()["process"]
+        status = self.control.status()
+        process = status["process"]
+        localizing = status.get("mode") == "localization"
+        launch = "AMCL localization" if localizing else "slam_toolbox"
         if process["state"] == "running":
+            if localizing:
+                return self._localization(status["localization"])
             if self.slam is not None and self.slam.snapshot()["state"] == "stale":
                 return ServiceHealth(
                     "slam", name, "error",
@@ -112,11 +117,24 @@ class ServiceMonitor:
         detail = process["error"] or (
             None if process["exit_code"] is None else f"last exit code {process['exit_code']}"
         )
-        text = f"slam_toolbox is {process['state']}" + (f" ({detail})" if detail else "")
+        text = f"{launch} is {process['state']}" + (f" ({detail})" if detail else "")
         # The supervisor restarts the process by itself, so "restarting" is a warning, not yet a failure.
         if process["state"] == "restarting":
             return ServiceHealth("slam", name, "warn", text, "Restarting")
         return ServiceHealth("slam", name, "error", text, "Not running")
+
+    def _localization(self, localization: dict) -> ServiceHealth:
+        name = "SLAM / localization"
+        state = localization["state"]
+        if state == "localized":
+            return ServiceHealth("slam", name, "ok", "localized on the saved map", "Localized")
+        if state == "searching":
+            return ServiceHealth("slam", name, "warn", "searching for the pose on the saved map", "Searching")
+        if state == "lost":
+            if localization["error"]:
+                return ServiceHealth("slam", name, "error", f"localization failed: {localization['error']}", "Lost")
+            return ServiceHealth("slam", name, "warn", localization["hint"] or "pose lost", "Lost")
+        return ServiceHealth("slam", name, "warn", "localization is starting", "Starting")
 
     def _radar(self) -> ServiceHealth | None:
         if self.ros is None:
