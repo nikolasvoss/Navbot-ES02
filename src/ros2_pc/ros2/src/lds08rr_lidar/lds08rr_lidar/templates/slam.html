@@ -31,6 +31,11 @@
     .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
     button { font: inherit; color: #edf3f7; background: #243442; border: 1px solid #64748b; border-radius: .4rem; padding: .5rem .8rem; }
     button:disabled { opacity: .5; }
+    select { font: inherit; color: #edf3f7; background: #243442; border: 1px solid #64748b; border-radius: .4rem; padding: .45rem .6rem; }
+    select:disabled { opacity: .5; }
+    .undo { align-items: center; }
+    .undo .label { color: #cbd5e1; }
+    .undo .empty { flex-basis: 100%; margin: 0; }
     .modeSwitch { display: inline-flex; align-items: center; gap: .5rem; }
     .modeSwitch input { position: absolute; opacity: 0; width: 0; height: 0; }
     .modeSwitch .track { position: relative; width: 2.8rem; height: 1.5rem; border-radius: 1rem; background: #243442; border: 1px solid #64748b; cursor: pointer; transition: background .15s; }
@@ -121,6 +126,12 @@
         <button id="resetMap" type="button" disabled title="Discard the current map and load the saved one">Reset map</button>
         <button id="deleteMap" type="button" disabled>Delete map and start over</button>
       </div>
+      <div class="actions undo" role="group" aria-label="Undo mapping">
+        <span class="label">Undo mapping</span>
+        <select id="undoSelect" aria-label="Snapshot to go back to" disabled></select>
+        <button id="undoMap" type="button" disabled title="Discard the current map and go back to the selected snapshot">Undo</button>
+        <p id="undoEmpty" class="note empty"></p>
+      </div>
       <p id="actionResult" class="note" role="status"></p>
       <p class="note">With a saved map, the robot localizes on it (Nav2 AMCL on the saved occupancy map) and the saved map does not change. Without one, or after switching to mapping, it maps with <code>slam_toolbox</code>. Mapping runs <code>slam_toolbox</code> on LiDAR scans with the wheel odometry from the NavBot link bridge; without that service no scans are processed. Map and pose come from ROS topics <code>/map</code> and TF <code>map</code> → <code>base_link</code> (the robot, not the sensor). Angle zero and rotation direction of the LiDAR are uncalibrated, so the map may be mirrored or rotated.</p>
     </section>
@@ -153,6 +164,9 @@
       $('locate').disabled = actionRunning || !serverHasControl || !localizing;
       $('switchMode').disabled = actionRunning || !serverHasControl || currentMode === null;
       $('switchMode').checked = localizing;
+      const undoable = currentMode === 'mapping' && $('undoSelect').options.length > 0;
+      $('undoSelect').disabled = actionRunning || !serverHasControl || !undoable;
+      $('undoMap').disabled = actionRunning || !serverHasControl || !undoable;
     }
 
     async function runAction(path, doneText, body) {
@@ -189,6 +203,59 @@
     $('deleteMap').addEventListener('click', () => {
       if (confirm('Delete the saved map and restart mapping from scratch?')) {
         runAction('/slam/delete', 'Map deleted; mapping restarts from scratch.');
+      }
+    });
+
+    // Undo snapshots. The server numbers them newest = 1, so a new snapshot shifts the others' indices.
+    // The selection therefore follows the snapshot's creation time (now - age_sec), not its index.
+    const undoSelect = $('undoSelect');
+    let undoItems = [];        // rendered options: {index, created, label}
+    let undoSelected = null;   // creation time (epoch s) of the selected snapshot, null = newest
+    let undoDeferred = null;   // poll that arrived while the list had focus; applied on blur
+
+    function undoLabels(snaps) {
+      const labels = snaps.map((s) => `${Math.max(1, Math.round(s.age_sec / 60))} min ago`);
+      if (new Set(labels).size === labels.length) return labels;
+      return snaps.map((s) => `${Math.round(s.age_sec)} s ago`);   // two snapshots share a minute: show seconds
+    }
+
+    function applyUndo(snaps, now) {
+      const labels = undoLabels(snaps);
+      undoItems = snaps.map((s, i) => ({ index: s.index, created: now - s.age_sec, label: labels[i] }));
+      undoSelect.replaceChildren(...undoItems.map((item) => new Option(item.label, String(item.index))));
+      let chosen = undoItems[0] || null;
+      if (chosen && undoSelected !== null) {
+        const near = undoItems.reduce((a, b) => (Math.abs(b.created - undoSelected) < Math.abs(a.created - undoSelected) ? b : a));
+        if (Math.abs(near.created - undoSelected) <= 20) chosen = near;   // same snapshot, index moved
+      }
+      undoSelected = chosen ? chosen.created : null;
+      if (chosen) undoSelect.value = String(chosen.index);
+      $('undoEmpty').textContent = undoItems.length === 0 && currentMode === 'mapping'
+        ? 'No snapshots yet (one every minute while the robot moves)' : '';
+      syncButtons();
+    }
+
+    function renderUndo(snaps) {
+      const now = Date.now() / 1000;
+      if (document.activeElement === undoSelect) { undoDeferred = { snaps, now }; return; }   // do not change an open list
+      applyUndo(snaps, now);
+    }
+
+    undoSelect.addEventListener('blur', () => {
+      if (!undoDeferred) return;
+      const { snaps, now } = undoDeferred;
+      undoDeferred = null;
+      applyUndo(snaps, now);   // runs before the Undo click, so the click reads the current selection
+    });
+    undoSelect.addEventListener('change', () => {
+      const item = undoItems.find((i) => String(i.index) === undoSelect.value);
+      undoSelected = item ? item.created : null;
+    });
+    $('undoMap').addEventListener('click', () => {
+      const option = undoSelect.selectedOptions[0];
+      if (!option) return;
+      if (confirm(`Discard the current map and go back to the snapshot from ${option.textContent}? The robot stays where it is: its position is known, but the area around it will be blank until it is scanned again.`)) {
+        runAction('/slam/undo', 'Going back to the snapshot.', { index: Number(option.value) });
       }
     });
 
@@ -484,6 +551,7 @@
         $('savedMap').textContent = saved && saved.exists ? new Date(saved.saved_at * 1000).toLocaleString() : (control ? 'none' : '–');
         serverHasControl = Boolean(control);
         hasSavedMap = Boolean(saved && saved.exists);
+        renderUndo(control && control.undo ? control.undo.snapshots : []);
         syncButtons();
         setMap(m, p);
       } catch (error) {
@@ -491,7 +559,7 @@
         setState('modeBadge', 'Mode –', 'unknown');
         currentMode = null;
         serverHasControl = false;
-        syncButtons();
+        syncButtons();   // the undo list keeps its last state; the buttons are disabled while unreachable
         setMap(null, null);
       }
     }

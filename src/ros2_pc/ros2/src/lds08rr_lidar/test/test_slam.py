@@ -612,12 +612,20 @@ class FakeControl:
         self.locate_error = None
         self.requested_modes = []
         self.locates = 0
+        self.snapshots = []
+        self.undo_error = None
+        self.undone = []
 
     def status(self):
         return {
             "process": {"state": "running"}, "saved_map": {"exists": False, "saved_at": None},
             "mode": self.mode, "localization": self.localization,
+            "undo": {"snapshots": self.snapshots},
         }
+
+    def undo(self, index):
+        self.undone.append(index)
+        return self.undo_error
 
     def set_mode(self, mode):
         self.requested_modes.append(mode)
@@ -652,7 +660,7 @@ def make_client(tmp_path, slam, control):
 def test_slam_actions_are_refused_without_a_running_control(tmp_path):
     client = make_client(tmp_path, SlamState(), None)
     refused = {"ok": False, "error": "SLAM is not running on this service"}
-    for path in ("/slam/save", "/slam/delete", "/slam/reset", "/slam/mode", "/slam/locate"):
+    for path in ("/slam/save", "/slam/delete", "/slam/reset", "/slam/mode", "/slam/locate", "/slam/undo"):
         response = client.post(path)
         assert response.status_code == 409
         assert response.get_json() == refused
@@ -826,3 +834,44 @@ def test_web_refuses_cross_site_mode_and_locate(tmp_path):
     assert client.post("/slam/mode", json={"mode": "localization"}, headers=evil).status_code == 403
     assert client.post("/slam/locate", headers=evil).status_code == 403
     assert control.requested_modes == [] and control.locates == 0
+
+
+def test_web_undo_drives_the_control(tmp_path):
+    control = FakeControl()
+    client = make_client(tmp_path, SlamState(), control)
+
+    assert client.post("/slam/undo", json={"index": 2}).get_json() == {"ok": True}
+    assert control.undone == [2]
+
+    control.undo_error = "No snapshot 2 to go back to"
+    response = client.post("/slam/undo", json={"index": 2})
+    assert response.status_code == 409
+    assert response.get_json() == {"ok": False, "error": "No snapshot 2 to go back to"}
+
+
+def test_web_undo_refuses_a_malformed_body_without_calling_the_control(tmp_path):
+    control = FakeControl()
+    client = make_client(tmp_path, SlamState(), control)
+    for kwargs in ({}, {"json": ["index", 1]}, {"json": {"index": "2"}}, {"json": {"index": True}},
+                   {"json": {"index": 1.5}}, {"json": {"idx": 1}}):
+        response = client.post("/slam/undo", **kwargs)
+        assert response.status_code == 400, kwargs
+        assert response.get_json() == {"ok": False, "error": "Undo needs an integer snapshot index"}
+    assert control.undone == []
+
+
+def test_web_refuses_cross_site_undo(tmp_path):
+    control = FakeControl()
+    client = make_client(tmp_path, SlamState(), control)
+    evil = {"Origin": "http://evil.example"}
+    assert client.post("/slam/undo", json={"index": 1}, headers=evil).status_code == 403
+    assert control.undone == []
+
+
+def test_web_map_json_passes_undo_snapshots_through(tmp_path):
+    control = FakeControl()
+    control.snapshots = [{"index": 1, "age_sec": 63.2}, {"index": 2, "age_sec": 124.9}]
+    client = make_client(tmp_path, SlamState(), control)
+    assert client.get("/map.json").get_json()["control"]["undo"] == {
+        "snapshots": [{"index": 1, "age_sec": 63.2}, {"index": 2, "age_sec": 124.9}],
+    }

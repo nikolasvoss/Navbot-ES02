@@ -116,6 +116,20 @@ def make_lidar_app(
             return jsonify(ok=False, error=error), 409
         return jsonify(ok=True)
 
+    @app.post("/slam/undo")
+    def slam_undo():
+        if control is None:
+            return jsonify(ok=False, error="SLAM is not running on this service"), 409
+        body = request.get_json(silent=True)
+        index = body.get("index") if isinstance(body, dict) else None
+        # type() rather than isinstance(): JSON true/false must not pass as the integers 1/0.
+        if type(index) is not int:
+            return jsonify(ok=False, error="Undo needs an integer snapshot index"), 400
+        error = control.undo(index)
+        if error is not None:
+            return jsonify(ok=False, error=error), 409
+        return jsonify(ok=True)
+
     @app.post("/slam/locate")
     def slam_locate():
         if control is None:
