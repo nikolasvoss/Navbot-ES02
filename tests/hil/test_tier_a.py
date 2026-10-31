@@ -17,8 +17,8 @@ from navbot_link.protocol import NoReply
 
 ROOT = Path(__file__).resolve().parents[2]
 RATE_TOLERANCE = 0.10
-HEAP_MIN_FREE_B = 20_000
-STACK_MIN_FREE_B = 512
+HEAP_MIN_FREE_B = 235_000  # about 80 % of the 294392 B seen idle on 2026-10-31
+STACK_MIN_FREE_B = 2_400  # about 80 % of the 2992 B link task minimum seen idle on 2026-10-31
 LINK_COUNTERS = ("link_tx_drop_uart", "link_tx_drop_usb", "link_rx_bad_uart", "link_rx_bad_usb",
                  "link_req_dropped", "link_undecodable")
 STREAM_S = 10.0
