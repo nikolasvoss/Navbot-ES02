@@ -24,6 +24,7 @@ LINK_COUNTERS = ("link_tx_drop_uart", "link_tx_drop_usb", "link_rx_bad_uart", "l
 STREAM_S = 10.0
 COUNTER_QUIET_S = 5.0
 LOG_QUIET_S = 5.0
+ENDPOINT_TAGS = ("param", "action", "link")
 REBOOT_WAIT_S = 40.0
 
 
@@ -105,7 +106,8 @@ def test_log_level_round_trip(link, fake):
         events = collect(link, LOG_QUIET_S)
     finally:
         link.set("log_level", old)
-    assert [e for e in events if isinstance(e, LogEvent) and e.level == "INFO"] == []
+    # The endpoint's own param, action and link lines go out at every level.
+    assert [e for e in events if isinstance(e, LogEvent) and e.level == "INFO" and e.tag not in ENDPOINT_TAGS] == []
     if fake is not None:
         assert [e.text for e in events if isinstance(e, LogEvent)] == ["warn line"]
 
@@ -123,14 +125,16 @@ def test_reboot(link):
     time.sleep(2)  # uptime_s has risen above zero, so a reboot must lower it
     before = link.get("uptime_s")
     link.call("reboot")
+    # The firmware reboots kRebootDelayMs after the Ack, so the first reads may still see the old uptime.
     deadline = time.monotonic() + REBOOT_WAIT_S
-    while True:
+    after = before
+    while after >= before:
+        if time.monotonic() > deadline:
+            pytest.fail(f"uptime_s did not restart within {REBOOT_WAIT_S} s: {after}")
+        time.sleep(0.5)
         try:
             after = link.get("uptime_s")
-            break
         except NoReply:  # includes RobotRestarted: the first reply after the reboot reveals it
-            if time.monotonic() > deadline:
-                raise
-            time.sleep(0.5)
+            pass
     assert after < before
     assert link.get("reset_reason") == 3
