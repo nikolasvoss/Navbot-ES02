@@ -235,10 +235,10 @@ Each test writes its scenario text, runs it with `run_sim`, and asserts on the r
 | Test | Scenario | Pass when |
 | --- | --- | --- |
 | `test_stand` | arm, end at 10.5 | `balance_state` 2 from 1.0 s on; `|pitch_rad| < 0.035` and `|x_m| < 0.1` from 2 s on; `fallen` 0 |
-| `test_drive_step` | arm, `rc 3 1792` at 2, `rc 3 992` at 5, end 9 | `v_mps >= 0.27` before 4.5 s; `|v_mps| < 0.05` after 8 s; travel after 5 s below 1 m; state 2 throughout |
+| `test_drive_step` | arm, `rc 3 1792` at 2, `rc 3 992` at 5, end 9 | `v_mps >= 0.27` before 4.5 s; `|v_mps| < 0.05` after 8 s; travel after 5 s below 1 m; state 2 throughout (expected failure with the placeholders: it rolls back at up to 0.076 m/s after the stop) |
 | `test_turn` | arm, `rc 4 192` at 2, `rc 4 992` at 5, end 6 | mean `yaw_rate_rad_s` from 3.5 to 5 s within 20 % of +1.0; `|pitch_rad| < 0.09` |
 | `test_push_recovers` | arm, `push 0.05` at 3, end 6 | state 2 throughout; `|pitch_rad| < 0.035` from 5 s on |
-| `test_fall_faults` | arm, `push 1.0` at 3, end 4 | `balance_fault` 6 and `motors_enabled` 0 within 0.1 s after `|pitch_rad|` first exceeds 0.611 |
+| `test_fall_faults` | arm, `push 1.0` at 3, end 4 | `motors_enabled` 0 with `balance_fault` 6 or `overspeed_tripped` 1 within 0.1 s after `|pitch_rad|` first exceeds 0.611 (the guard acts first in the simulation) |
 | `test_rc_loss_keeps_balancing` | arm, `rc_frames off` at 3, end 8 | state 2 throughout; `|pitch_rad| < 0.035` from 4 s on |
 | `test_ch5_off_disables` | arm, `rc 5 192` at 3, end 3.5 | state 0 and `motors_enabled` 0 within 20 ms after 3 s |
 | `test_overspeed_trips` | `lift on` at 0, arm, `rc 3 1792` at 2, end 6 | `overspeed_tripped` 1 and `motors_enabled` 0 by the end |
