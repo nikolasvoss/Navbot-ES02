@@ -51,7 +51,6 @@ Every task uses exactly these names. A task that needs a name not listed here st
 | `slug(branch)` | the branch lowercased, `/` replaced by `-`, every other character outside `[a-z0-9.-]` replaced by `-` |
 | worktree | `MAIN/.claude/worktrees/<slug>/` |
 | task folder | `MAIN/work/<slug>/` with `state.md`, `agents/<name>.md`, `evidence/<sha>.json` (full 40-character SHA) |
-| venv | `~/.venvs/navbot-dev` on each host, installed from `tests/requirements.txt` |
 | shipped tree | `~/.cache/navbot-deploy/<sha>/` on a host: `git archive <sha> -- src scripts tests firmware-build-environment.json`, extracted, then an empty file `.complete` |
 | firmware output | `<shipped tree>/build/flash` (control image), `<shipped tree>/build/flash-diagnostic` (sensor diagnostic image) |
 
@@ -61,7 +60,7 @@ New tracked paths, which T1 allows in the layout rules: `.claude/settings.json`,
 
 `PEERS = {"niko-desktop": "cm5", "cm5": "desktop"}` in `scripts/devtools.py`: this host's name maps to the SSH alias of the other host. Any other hostname is refused with `unknown host <name>; add it to PEERS in scripts/devtools.py`.
 
-`devtools.py probe` prints one JSON object for the host it runs on. It uses only the Python standard library, so it runs with the system `python3` before any venv exists:
+`devtools.py probe` prints one JSON object for the host it runs on. It uses only the Python standard library, and needs nothing installed:
 
 | Key | Value |
 | --- | --- |
@@ -80,7 +79,7 @@ Selection, always local host first:
 
 ### Python environment
 
-`tests/requirements.txt` lists `pytest`, `PyYAML`, `protobuf` and `pyserial`, unpinned. Scripts run their subprocesses with the venv's `bin/python`. The orchestrator creates the desktop venv in step O1; `ensure_venv` creates it on other hosts.
+`tests/requirements.txt` lists `pytest`, `PyYAML`, `protobuf` and `pyserial`, unpinned. They are installed in the default `python3` of each host (user decision, 2026-10-31); every script and subprocess runs `python3`. There is no venv.
 
 ### `scripts/devtools.py` (T0)
 
@@ -117,7 +116,6 @@ def peer() -> str: ...
 def run(host: str | None, argv: list[str], *, cwd: str | None = None, timeout: float = 600,
         interactive: bool = False, input: bytes | None = None) -> subprocess.CompletedProcess[str]: ...
 def ship_tree(host: str | None, sha: str) -> str: ...
-def ensure_venv(host: str | None, tree: str) -> str: ...
 def probe(host: str | None) -> dict: ...
 def gate_ok(values: dict) -> str | None: ...
 ```
@@ -126,7 +124,6 @@ def gate_ok(values: dict) -> str | None: ...
 - `ship_tree`: `git archive` runs locally; the tar bytes are extracted on the host (`tar -x -C <dir>`, passed to `run` as `input` for the peer). It returns the tree's absolute path. If `.complete` exists it does nothing. It keeps the 5 newest shipped trees on that host and deletes older ones.
 - `probe(None)` runs the probe in this process; `probe(peer)` runs `python3 <shipped tree>/scripts/devtools.py probe` there, so the caller ships the tree first.
 - `gate_ok`: takes the values of `balance_state`, `motor_test_active`, `rc_valid` and `ch5_position`. It returns `None` when `balance_state == 0`, `motor_test_active == 0`, and `rc_valid == 0` or `ch5_position == 0`; otherwise it returns a reason that names the values. A missing value is a refusal. `deploy.py` and `tests/hil/conftest.py` both use it.
-- `ensure_venv`: creates the venv when it is missing or when the SHA-256 of `<tree>/tests/requirements.txt` differs from `~/.venvs/navbot-dev/requirements.sha256`, installs the requirements, writes the hash, and returns the venv's Python path.
 - `update_evidence`: replaces only the stages it gets, and sets the top-level `verify` key when given.
 - CLI, used through `run` on the other host: `devtools.py probe`; `devtools.py raw-serial PORT SECONDS` opens the port at 576000 baud with DTR and RTS deasserted before opening (so the robot is not reset), and prints what arrives, decoded with `errors="replace"`; `devtools.py port-holder PORT` prints one `pid name` line per process with the port open (from `/proc/*/fd`).
 
@@ -203,13 +200,13 @@ Exit codes: 0 done, 1 refused (reason on stderr), 2 usage error.
 
 1. Refuse uncommitted changes to tracked files (exit 2). Use the HEAD SHA.
 2. `ship_tree` on the peer, then probe both hosts; select the build host and, unless `--build-only`, the USB and link hosts.
-3. `ship_tree` and `ensure_venv` on the build host. Build with `build_firmware.py --revision <sha>` into `build/flash`; the diagnostic image adds `--build-property compiler.cpp.extra_flags=-DSENSOR_DIAGNOSTIC_MODE=1 --output-dir build/flash-diagnostic`. Compare the rewritten `firmware-build-environment.json` with `git show <sha>:firmware-build-environment.json`; report a difference in `detail`, do not fail. With `--build-only`, stop here.
-4. `ship_tree` and `ensure_venv` on the USB and link hosts; copy the firmware output to the USB host with `rsync -a` when it differs from the build host (one of the two is always local).
+3. `ship_tree` on the build host. Build with `build_firmware.py --revision <sha>` into `build/flash`; the diagnostic image adds `--build-property compiler.cpp.extra_flags=-DSENSOR_DIAGNOSTIC_MODE=1 --output-dir build/flash-diagnostic`. Compare the rewritten `firmware-build-environment.json` with `git show <sha>:firmware-build-environment.json`; report a difference in `detail`, do not fail. With `--build-only`, stop here.
+4. `ship_tree` on the USB and link hosts; copy the firmware output to the USB host with `rsync -a` when it differs from the build host (one of the two is always local).
 5. `devtools.py port-holder <robot_usb>` on the USB host: a holder means exit 9, naming it.
 6. Gate: `navlink.py get balance_state motor_test_active rc_valid ch5_position --json` on the link host, checked with `gate_ok`. A refusal, or a non-zero navlink exit code (robot not answering, firmware without one of the signals), is exit 4 with the reason; nothing is flashed. No override. A robot whose firmware cannot pass the gate is flashed once by the user with `python3 scripts/upload_firmware.py` on the USB host.
 7. Flash: `upload_firmware.py <output dir> --port <robot_usb>` on the USB host.
 8. Boot check on the link host: `navlink.py info --wait 40 --json`; the `build` field must start with `sha[:8]`. Then `navlink.py get reset_reason --json` must give `1` (power-on). On failure, add the output of `devtools.py raw-serial <robot_usb> 10` from the USB host as `raw_usb`.
-9. Control image only: tier A on the link host with `<venv python> -m pytest tests/hil -m "not guided" --robot <link port> -q --junitxml <tree>/hil.xml`, run in the shipped tree; read the XML back for the per-test outcomes.
+9. Control image only: tier A on the link host with `python3 -m pytest tests/hil -m "not guided" --robot <link port> -q --junitxml <tree>/hil.xml`, run in the shipped tree; read the XML back for the per-test outcomes.
 10. Print the JSON result `{"sha", "image", "build_host", "usb_host", "link_host", "stages", "raw_usb", "exit"}` (text summary without `--json`). `stages` has exactly the shape of the evidence `stages`: keys `firmware_build`, `deploy` and `tier_a` (only those reached), each `{"status", "at", "detail"}`, and `tier_a` also `"tests": {<node id>: "passed" | "failed" | "skipped"}`. Exit 3 gives the reached stage `blocked`; exits 4 to 9 give it `fail`. When the current branch has a task folder, write these stages to its evidence.
 
 Exit codes: 0 done, 1 other error, 2 uncommitted changes, 3 blocked (no toolchain, robot not connected), 4 gate refused, 5 build failed, 6 flash failed, 7 boot check failed, 8 tier A failed, 9 port held by another process.
@@ -218,7 +215,7 @@ Exit codes: 0 done, 1 other error, 2 uncommitted changes, 3 blocked (no toolchai
 
 | Changed since the baseline (`git diff --name-only <baseline>...HEAD`) | Required stages |
 | --- | --- |
-| any path | `host`: `<venv python> -m pytest tests -q` in the worktree |
+| any path | `host`: `python3 -m pytest tests -q` in the worktree |
 | `src/ES-02/**` | `firmware_build` (both images, `deploy.py --build-only --image diagnostic`), `deploy` and `tier_a` (`deploy.py --json`), `tier_c`; `tier_b` when any of `BalanceController.*`, `rc_mode.h`, `OverspeedGuard.*`, `WheelBoundary.*`, `link_endpoint.*`, `link_subscriptions.*`, `OllieFOCdrive.ino` changed |
 | `src/navbot_link/**` | `deploy` and `tier_a` |
 | `src/ros2_pc/**` | `ros2_pc`: on the ROS host, in the shipped tree: `source /opt/ros/jazzy/setup.bash && cd src/ros2_pc/ros2 && colcon build && colcon test && colcon test-result --verbose` |
@@ -226,7 +223,7 @@ Exit codes: 0 done, 1 other error, 2 uncommitted changes, 3 blocked (no toolchai
 - `tier_c` passes when every unattended acceptance test passed in the `tier_a` results and every guided one in the `tier_b` results; each acceptance item's `status` in `state.md` is updated. An empty acceptance list fails `tier_c` with `no acceptance tests listed in state.md`; the user can skip `tier_c`.
 - `deploy.py` exit 3 makes `deploy`, `tier_a` and `tier_c` blocked; other non-zero exits make them failed.
 - A required `tier_b` without a passed or skipped result is blocked with `guided tests pending: run python3 scripts/verify.py --guided`.
-- `--guided`: run by the user in a terminal. Runs `<venv python> -m pytest tests/hil -m guided --guided --robot <link port> -s --junitxml <tree>/guided.xml` on the link host with `interactive=True`, then writes `tier_b` and the guided `tier_c` results.
+- `--guided`: run by the user in a terminal. Runs `python3 -m pytest tests/hil -m guided --guided --robot <link port> -s --junitxml <tree>/guided.xml` on the link host with `interactive=True`, then writes `tier_b` and the guided `tier_c` results.
 - `--skip ID --reason TEXT`: `ID` is an acceptance test id or a stage name other than `host`. Adds or updates the acceptance item with `status: skipped` and `skip: "<TEXT> (<date>)"`. `host` is refused (exit 2).
 - Result: `done` when every required stage is `pass` or `skipped` and the tree is clean; `blocked` when a stage is blocked and none failed; otherwise `failed`. Written to `verify` in the evidence; a Markdown summary goes to stdout and lists every skip with its words. Exit codes: 0 done, 1 failed, 2 usage error, 3 blocked.
 
@@ -274,8 +271,7 @@ WORKTREE_PATTERN = re.compile(r"(^|[;&|]\s*)git\s+worktree\s+add\b")
       "Bash(python3 scripts/navlink.py get:*)",
       "Bash(python3 scripts/navlink.py log:*)",
       "Bash(python3 scripts/navlink.py capture:*)",
-      "Bash(~/.venvs/navbot-dev/bin/python -m pytest:*)",
-      "Bash(/home/niko/.venvs/navbot-dev/bin/python -m pytest:*)"
+      "Bash(python3 -m pytest:*)"
     ],
     "deny": ["mcp__serial"]
   }
@@ -319,7 +315,7 @@ The serial MCP is denied because opening the USB port resets the robot.
 4. No legacy: delete what your task replaces. No compatibility shims, no fallbacks.
 5. Match the surrounding code: Python standard library plus PyYAML, `argparse`, type hints and docstrings as in `scripts/navlink.py`; pytest with literal expected values; C++ host tests with a `run_host_test.sh` per folder.
 6. Tests never use the network, a real `ssh`, a serial port or the robot. Pass `run` and `probe` in as parameters or monkeypatch them; test git behavior in temporary repositories under `tmp_path`.
-7. Run tests with `~/.venvs/navbot-dev/bin/python -m pytest`. Run your task's tests and `tests/layout/test_repo_layout.py`, and report the exact pass and fail counts. A failure in a file that another running task owns: run it again later, then report it.
+7. Run tests with `python3 -m pytest`. Run your task's tests and `tests/layout/test_repo_layout.py`, and report the exact pass and fail counts. A failure in a file that another running task owns: run it again later, then report it.
 8. Change an existing file only with Edit, never by rewriting it whole. No `git checkout`, `git stash`, `git reset`, or formatters over whole files.
 9. Report in at most 300 words: files changed, test output, open questions.
 
@@ -349,8 +345,8 @@ T1 runs alone first, because the layout test refuses the new paths of the others
 
 ## Orchestrator
 
-- O1: this plan and its index line are committed (2026-10-31). Create the desktop venv: `python3 -m venv ~/.venvs/navbot-dev && ~/.venvs/navbot-dev/bin/pip install pytest PyYAML protobuf pyserial`. Check that `feat/simulation` has not already added a simulation entry to the robot roadmap; if it has, drop that item from T2. Whoever runs task T8 of [link-autonomy.md](link-autonomy.md) leaves `navlink-quick-start.md` to T3.
-- O2, for each task: run its tests, `~/.venvs/navbot-dev/bin/python -m pytest tests -q` and the layout test; commit its files as `<area>: <what>`. Then start a Sonnet review (`pstack:effort-medium`, `model` `sonnet`) of that commit against this plan, with findings by file and line; send accepted findings to a Haiku fix agent while other tasks keep running.
+- O1: this plan and its index line are committed (2026-10-31). The test dependencies are installed in the default `python3` on both hosts (done 2026-10-31). Check that `feat/simulation` has not already added a simulation entry to the robot roadmap; if it has, drop that item from T2. Whoever runs task T8 of [link-autonomy.md](link-autonomy.md) leaves `navlink-quick-start.md` to T3.
+- O2, for each task: run its tests, `python3 -m pytest tests -q` and the layout test; commit its files as `<area>: <what>`. Then start a Sonnet review (`pstack:effort-medium`, `model` `sonnet`) of that commit against this plan, with findings by file and line; send accepted findings to a Haiku fix agent while other tasks keep running.
 - O3: when T5, T6, T8 and T9 are committed, run robot check 1.
 - O4: when robot check 1 passes, delete the flash MCP: `scripts/flash_mcp.py`, `scripts/flash_mcp_requirements.txt` and their lines in `.git/info/exclude`, `build/flash-mcp-venv`, and the `navbot_flash` entry in `~/.claude.json`, on both hosts.
 - O5: robot check 2; start T14 if it applies.
@@ -364,7 +360,7 @@ T1 runs alone first, because the layout test refuses the new paths of the others
 
 Files: `scripts/devtools.py`, `tests/scripts/test_devtools.py`.
 
-Implement the API, the CLI and `PEERS` exactly as in [Shared names](#shared-names). Tests: `slug` cases (`feat/Link firmware` → `feat-link-firmware`), path functions in a temporary repository with a worktree, `read_state`/`write_state` round trip that keeps `body` unchanged, `update_evidence` replacing only the given stages, `run` building the exact `ssh` argument list (monkeypatch `subprocess.run`), `ship_tree` skipping when `.complete` exists and keeping 5 trees, `ensure_venv` reinstalling only when the hash changes, `probe` with `list_ports` and `socket` monkeypatched, `port-holder` on a fake `/proc` tree.
+Implement the API, the CLI and `PEERS` exactly as in [Shared names](#shared-names). Tests: `slug` cases (`feat/Link firmware` → `feat-link-firmware`), path functions in a temporary repository with a worktree, `read_state`/`write_state` round trip that keeps `body` unchanged, `update_evidence` replacing only the given stages, `run` building the exact `ssh` argument list (monkeypatch `subprocess.run`), `ship_tree` skipping when `.complete` exists and keeping 5 trees, `probe` on a fake `/sys/class/tty` tree with `socket` monkeypatched, `port-holder` on a fake `/proc` tree.
 
 ## T1: layout rules
 
@@ -403,7 +399,7 @@ Files: `tests/conftest.py`, `tests/requirements.txt`.
 
 - `tests/requirements.txt` as in [Shared names](#shared-names).
 - `tests/conftest.py`: the options and markers of [Shared names](#shared-names); collect every `tests/*/run_host_test.sh` as one test item named `<area>/run_host_test.sh` that runs it with `bash` and fails with the last 40 lines of output.
-- Run `~/.venvs/navbot-dev/bin/python -m pytest tests -q` and report every failure with its first error line. Fix nothing outside your files; the orchestrator assigns fixes (`tests/scripts/test_start_lidar.py` failed on 2026-10-25).
+- Run `python3 -m pytest tests -q` and report every failure with its first error line. Fix nothing outside your files; the orchestrator assigns fixes (`tests/scripts/test_start_lidar.py` failed on 2026-10-25).
 
 ## T5: build revision
 
@@ -439,7 +435,7 @@ Files: `tests/hil/conftest.py`, `tests/hil/test_tier_a.py`, `tests/navbot_link/f
 - `tests/hil/conftest.py`: the path setup, `link` fixture and gate of [Shared names](#shared-names); without `--robot` the fixture starts the fake firmware as `tests/navbot_link/` does.
 - The tests, markers and constants of [Shared names](#shared-names).
 - Add to the fake, as `FakeEntry` rows: `reset_reason`, `uptime_s`, `heap_free_b`, `heap_min_free_b`, `stack_free_loop_b`, `stack_free_link_b` and the six `link_*` counters as U32 signals; `log_level` as a U32 PARAM (limits 1 to 4, default 2, `live_step` `inf`); `speed_cap` as an F32 PARAM (default 0.3, `live_step` 0.1); a `reboot` action. Behavior: `_log` drops events below the current `log_level`; `uptime_s` is the whole seconds since a `boot_monotonic` time, not the subscription clock; `reboot` calls `restart()`, sets `reset_reason` to 3 and resets `boot_monotonic`.
-- Tests: `~/.venvs/navbot-dev/bin/python -m pytest tests/hil tests/navbot_link -q`.
+- Tests: `python3 -m pytest tests/hil tests/navbot_link -q`.
 
 ## T10: `scripts/verify.py`
 
