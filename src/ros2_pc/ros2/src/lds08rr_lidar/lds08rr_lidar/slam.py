@@ -19,7 +19,8 @@ from .localization import localization_command
 
 MAPPING = "mapping"
 LOCALIZATION = "localization"
-MODES = (MAPPING, LOCALIZATION)
+NAVIGATION = "navigation"
+MODES = (MAPPING, LOCALIZATION, NAVIGATION)
 
 SNAPSHOT_PERIOD_SEC = 60.0
 UNDO_SLOTS = 3
@@ -155,6 +156,10 @@ class MapStore:
 
     def occupancy_yaml(self) -> Path:
         return self._file(".yaml")
+
+    def keepout_yaml(self) -> Path | None:
+        """The keepout mask next to the map, or None when there is none."""
+        raise NotImplementedError
 
     def saved_at(self) -> float | None:
         try:
@@ -525,6 +530,11 @@ class SlamControl:
         mapping_command: Callable[[tuple[Path, dict] | None], list[str]] | None = None,
         snapshot_period: float = SNAPSHOT_PERIOD_SEC,
         clock: Callable[[], float] = time.time,
+        supervisor=None,
+        nav=None,
+        nav_process: SlamProcess | None = None,
+        localization_command: Callable[[Path], list[str]] = localization_command,
+        map_changes: bool = True,
     ) -> None:
         self._store = store
         self._process = process
@@ -653,6 +663,19 @@ class SlamControl:
             self._undo.clear()
             self._enter(self._mode)
             return None
+
+    def nav_goal(self, x: float, y: float, yaw: float) -> str | None:
+        """Starts a Nav2 goal in the map frame; None or the refusal."""
+        raise NotImplementedError
+
+    def nav_cancel(self) -> str | None:
+        raise NotImplementedError
+
+    def nav_stop(self) -> None:
+        raise NotImplementedError
+
+    def nav_resume(self) -> str | None:
+        raise NotImplementedError
 
     def status(self) -> dict:
         return {

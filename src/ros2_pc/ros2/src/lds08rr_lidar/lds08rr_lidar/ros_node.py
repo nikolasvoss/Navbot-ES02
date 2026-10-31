@@ -79,7 +79,13 @@ def sensor_mount_transform(stamp) -> TransformStamped:
 
 
 class LidarNode(Node):
-    def __init__(self, config: SourceConfig, localization: LocalizationTracker) -> None:
+    def __init__(
+        self,
+        config: SourceConfig,
+        localization: LocalizationTracker,
+        supervisor=None,
+        publish_scans: bool = True,
+    ) -> None:
         super().__init__("lds08rr_lidar")
         scan_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -196,6 +202,20 @@ class LidarNode(Node):
         if future.exception() is not None:
             return f"call failed: {future.exception()}"
         return None
+
+    def nav_server_ready(self) -> bool:
+        raise NotImplementedError
+
+    def send_nav_goal(self, x: float, y: float, yaw: float, on_feedback, on_done) -> str | None:
+        """NavigateToPose in map; on_feedback(distance_remaining), on_done(outcome, error)."""
+        raise NotImplementedError
+
+    def cancel_nav_goal(self) -> None:
+        raise NotImplementedError
+
+    def nav_plan(self) -> list[list[float]]:
+        """At most 200 points of the newest plan, the last pose included."""
+        raise NotImplementedError
 
     def serialize_map(self, filename: str, timeout: float = 15.0) -> str | None:
         try:
