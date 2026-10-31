@@ -13,9 +13,12 @@ BENCH_LAUNCH = Path(__file__).with_name("bench_launch.py")
 
 def navigation_command(keepout_yaml: Path | None) -> list[str]:
     """The ros2 launch command of Nav2; an empty keepout_mask starts no mask servers."""
-    raise NotImplementedError
+    return [
+        "ros2", "launch", str(NAVIGATION_LAUNCH), f"params_file:={NAVIGATION_PARAMS}",
+        f"keepout_mask:={keepout_yaml or ''}",
+    ]
 
 
 def bench_command(map_yaml: Path) -> list[str]:
     """The ros2 launch command of the bench: localization, loopback simulator and fake robot."""
-    raise NotImplementedError
+    return ["ros2", "launch", str(BENCH_LAUNCH), f"map:={map_yaml}", f"params_file:={LOCALIZATION_PARAMS}"]
