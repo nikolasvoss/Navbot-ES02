@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """verify: run the stages a task needs for HEAD, record the result, and print a summary.
 
-The stage table, skips and result rules: docs/integration/plans/agent-workflow.md, "Shared names".
+The stage table, skips and result rules: docs/integration/software/agent-workflow.md, "Shared names".
 Exit codes: 0 done, 1 failed, 2 usage error, 3 blocked.
 """
 

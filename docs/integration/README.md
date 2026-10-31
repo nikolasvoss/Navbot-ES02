@@ -8,12 +8,12 @@ The integration system is the connection between the robot (ESP32-S3) and the ro
 - [ros2_pc setup](software/ros2-pc-setup.md): everything to configure on the ros2_pc outside the checkout: packages, boot overlay, permissions, checks.
 - [NavBot link bridge](software/navbot-link-bridge.md): the ROS 2 node that publishes `/odom`, the `odom` to `base_link` TF, and `/imu/data`; build, run, and open checks.
 - [Development hosts](software/dev-hosts.md): the desktop PC and the ros2_pc, which one has the toolchain and the robot's USB cable, and how `deploy.py` picks them.
+- [Agent workflow](software/agent-workflow.md): task worktrees and folders, the sweep, `deploy.py`, the device test tiers, `verify.py`, skips, hooks and permissions.
 - [navlink quick start](software/navlink-quick-start.md): one page on starting the shell, reading, streaming, setting and recording.
 - [navlink](software/navlink.md): the `navbot_link` library and the `navlink` shell and CSV capture for signals, parameters and actions, with the presets for the balance and drive traces.
 - [Signal table, parameters, actions and link logs](software/signal-table.md): the entries the firmware serves, the settings groups, the action safety rules, the subscription budget and the USB backup port.
 
 ## Plans
 
-- [Roadmap](plans/roadmap.md): the robot checks for the link, its logs and signals, and the open dashboard decision.
+- [Roadmap](plans/roadmap.md): the robot checks for the link, its logs and signals, the agent workflow on the robot, and the open dashboard decision.
 - [Link features for autonomous development](plans/link-autonomy.md): build ID, health signals, reboot, live parameters, CH5 link mode and ROS `Command`, link multiplexer, one-shot navlink; the task plan for the implementing agents.
-- [Agent workflow, deploy and definition of done](plans/agent-workflow.md): task folders with automatic cleanup, fixed worktree location, one deploy script for both hosts, device test tiers, reset reason, and the automatic definition of done.

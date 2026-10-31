@@ -2,7 +2,7 @@
 """task: start, sweep, drop and status of agent task worktrees.
 
 A task is a branch with a worktree in MAIN/.claude/worktrees/<slug>/ and a task folder MAIN/work/<slug>/.
-Paths, state and evidence come from devtools. Plan: docs/integration/plans/agent-workflow.md
+Paths, state and evidence come from devtools. Plan: docs/integration/software/agent-workflow.md
 Exit codes: 0 done, 1 refused (reason on stderr), 2 usage error.
 """
 

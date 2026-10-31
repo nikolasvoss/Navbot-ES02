@@ -1,4 +1,4 @@
-"""Tier B: checks that need the user at the robot. Plan: docs/integration/plans/agent-workflow.md, T11.
+"""Tier B: checks that need the user at the robot. Plan: docs/integration/software/agent-workflow.md, T11.
 
 Run by the user only, through `python3 scripts/verify.py --guided`. Each test prints what the user must do with CH5 or
 the robot, then polls the robot until it shows the result. The tests run in file order and each one starts from the

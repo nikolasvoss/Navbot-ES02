@@ -1,6 +1,6 @@
 # Use the sensor diagnostic mode
 
-The sensor diagnostic mode initializes the IMU and the receiver without initializing motor, servo or balance control. It holds the two motor-driver enable pins low, sets up the NavBot link on both ports, and then runs its own loop (`diagnosticLoop()`), which has no control tick. The source currently sets `SENSOR_DIAGNOSTIC_MODE` to `0`. Set it to `1` and rebuild to enable this mode.
+The sensor diagnostic mode initializes the IMU and the receiver without initializing motor, servo or balance control. It holds the two motor-driver enable pins low, sets up the NavBot link on both ports, and then runs its own loop (`diagnosticLoop()`), which has no control tick. The source defaults `SENSOR_DIAGNOSTIC_MODE` to `0` inside an `#ifndef` guard, so a build property selects this mode. Build and flash it with `python3 scripts/deploy.py --image diagnostic`.
 
 Support the robot mechanically during this check. The legs do not move in diagnostic mode. This mode does not establish safe or stable behavior under motor load.
 
@@ -36,13 +36,13 @@ The mode sends its setup messages, the boot line `DIAG boot reset_reason=… imu
 
 ## Build and upload the diagnostic image
 
-Set `SENSOR_DIAGNOSTIC_MODE` to `1` in `src/ES-02/OllieFOCdrive/OllieFOCdrive.ino`, then build from the repository root:
+Run this from the repository root, on the host that has the Arduino toolchain or the robot's USB cable (see [development hosts](../../integration/software/dev-hosts.md)):
 
 ```bash
-python3 scripts/build_firmware.py
+python3 scripts/deploy.py --image diagnostic
 ```
 
-Upload the resulting `build/flash` image with the configured `navbot_flash` MCP tool. Follow the current project instructions in `AGENTS.md`; close the serial connection before uploading and keep the motor outputs safe. Set the define back to `0` and rebuild when you need the normal motor-control firmware.
+The command builds the committed HEAD into `build/flash-diagnostic` with `-DSENSOR_DIAGNOSTIC_MODE=1`, checks the gate, flashes and checks the boot. Add `--build-only` to build without a robot. Run `python3 scripts/deploy.py` without `--image` to flash the normal motor-control firmware again. The diagnostic image runs no tier A tests; those run on the control image only.
 
 If the ROM reports `DOWNLOAD(USB/UART0)` and waits for download, the ESP32 entered its flash loader. Keep DTR off, then pulse RTS or press RESET/EN. A normal firmware boot reports `SPI_FAST_FLASH_BOOT`. Do not run `sensor_monitor.py`, `navlink` and another serial program on the USB port at the same time.
 

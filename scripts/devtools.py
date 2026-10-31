@@ -2,7 +2,7 @@
 """devtools: paths, task state, evidence, host probe, ssh and serial helpers for the agent workflow.
 
 Standard library only for the probe and the CLI (the probe runs on hosts without extra packages);
-task state uses PyYAML. Plan: docs/integration/plans/agent-workflow.md
+task state uses PyYAML. Plan: docs/integration/software/agent-workflow.md
 """
 
 from __future__ import annotations

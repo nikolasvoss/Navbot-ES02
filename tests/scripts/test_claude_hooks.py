@@ -103,7 +103,7 @@ def test_pre_bash_blocks_worktree_add_after_a_separator(tmp_path):
     "command",
     [
         "python3 scripts/deploy.py --json",
-        "grep esptool docs/integration/plans/agent-workflow.md",
+        "grep esptool docs/integration/software/agent-workflow.md",
         "python3 -m pytest tests/scripts/test_upload_firmware.py -q",
         "git worktree list",
     ],

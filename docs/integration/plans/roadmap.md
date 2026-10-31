@@ -34,6 +34,17 @@ Context: the log frames, the signal table, the parameters and the actions are im
 - [ ] Bridge on the ros2_pc against the robot (so far run only against the fake firmware): `/rosout` shows the robot's `Log` lines, `/navbot/signals` streams a chosen set of signals, and the firmware parameters appear as ROS parameters.
 - [ ] The firmware does not act on ROS `Command` yet. RC/ROS arbitration and a command timeout belong with the ROS control work.
 
+## Agent workflow on the robot
+
+Context: the workflow is implemented and the first robot checks passed on 2026-10-31 ([workflow page](../software/agent-workflow.md#robot-verification-2026-10-31)). Run the items below with the robot supported and the motor outputs safe; the transmitter is off unless an item says otherwise.
+
+- [ ] `python3 scripts/deploy.py` on the ros2_pc, in `~/Navbot-ES02` on this branch, with the robot's USB cable on the ros2_pc: exit 0, build ID of HEAD, `reset_reason` 1 after the flash.
+- [ ] `python3 scripts/deploy.py` on the desktop, with the robot's USB cable on the desktop: exit 0, the same checks.
+- [ ] Transmitter off after a power cycle by the user: `python3 scripts/navlink.py get rc_valid ch5_position --json` gives `rc_valid` 0 and `ch5_position` 0. A non-zero `ch5_position` starts task T14 (RC balance rule). The link reboot case passed on 2026-10-31.
+- [ ] With the user at the robot: `python3 scripts/verify.py --guided` passes (tier B; the robot on the floor before CH5 position 2).
+- [ ] Move the ros2_pc services from `~/Navbot-wt/main` into the fixed worktree location with `git worktree move ~/Navbot-wt/main ~/Navbot-ES02/.claude/worktrees/main`, reinstall the link bridge and LiDAR services from there, restart them, and check `/odom` and `navlink info`.
+- [ ] Confirm the tier A limits with the user: `HEAP_MIN_FREE_B` 235000 and `STACK_MIN_FREE_B` 2400 in `tests/hil/test_tier_a.py`, from the idle baseline of 2026-10-31.
+
 ## Optional: fault-triggered recording (black box)
 
 Status: optional, not planned. Start only after the user's go-ahead. A balance fault (a fall, overspeed, a saturated tilt reference) develops within a few control ticks, and a subscription that streams every tick is limited by the link budget, so the ticks before a fault are usually missing from a capture.

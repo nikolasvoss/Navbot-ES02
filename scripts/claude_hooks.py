@@ -2,7 +2,7 @@
 """claude_hooks: Claude Code hook entry points for the agent workflow.
 
 Each hook reads its JSON payload on stdin. Exit 2 blocks the action and sends the message on stderr.
-SessionStart stdout is added to the agent's context. The hook table and settings: docs/integration/plans/agent-workflow.md, "Shared names".
+SessionStart stdout is added to the agent's context. The hook table and settings: docs/integration/software/agent-workflow.md, "Shared names".
 """
 
 from __future__ import annotations

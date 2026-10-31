@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the committed HEAD, check that the robot is safe, flash it, check the boot and run tier A.
 
-Steps, stages and exit codes: docs/integration/plans/agent-workflow.md, "Command lines and exit codes".
+Steps, stages and exit codes: docs/integration/software/agent-workflow.md, "Command lines and exit codes".
 Hosts, shipped trees and evidence come from scripts/devtools.py, so the same command runs on either host.
 """
 

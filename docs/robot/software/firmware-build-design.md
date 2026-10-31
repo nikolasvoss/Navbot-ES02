@@ -2,11 +2,11 @@
 
 ## Problem
 
-Humans and agents need one command for compiling the NavBot sketch, with options for other Arduino sketches. Flashing remains a separate host operation through the configured `navbot_flash` MCP tool. The repository does not pin Arduino CLI, board core, or library versions.
+Humans and agents need one command for compiling the NavBot sketch, with options for other Arduino sketches. Flashing remains a separate host operation, run by `scripts/deploy.py`. The repository does not pin Arduino CLI, board core, or library versions.
 
 ## Usage
 
-The default command is `python3 scripts/build_firmware.py`. It compiles `src/ES-02/OllieFOCdrive` for the documented ESP32-S3 FQBN into `build/flash`. Callers can supply `--sketch`, `--fqbn`, and `--output-dir`. Repeated `--build-property` values and `--clean` cover common Arduino CLI build options. To flash, call `navbot_flash` MCP `flash_firmware` with the absolute build directory from the active worktree; check serial MCP ports, close the serial MCP connection, and keep balance disabled with motor outputs safe.
+The default command is `python3 scripts/build_firmware.py`. It compiles `src/ES-02/OllieFOCdrive` for the documented ESP32-S3 FQBN into `build/flash`. Callers can supply `--sketch`, `--fqbn`, and `--output-dir`. Repeated `--build-property` values and `--clean` cover common Arduino CLI build options. `--revision SHA` names the build from a commit SHA without git, for a source tree without `.git`; `deploy.py` uses it to build the shipped tree. To flash, use `python3 scripts/deploy.py`, which builds the committed HEAD and checks that the robot is safe before it flashes.
 
 ## Shape
 
@@ -21,6 +21,7 @@ class BuildRequest:
     build_path: Path
     build_properties: tuple[str, ...]
     clean: bool
+    revision: str | None
 ```
 
 The parser supplies repository defaults and resolves caller paths. It derives the Arduino CLI working path as a hidden sibling of the output directory, or accepts `--build-path`. Boundary validation checks the sketch directory, at least one `.ino` file, Arduino CLI availability, and directory creation. The compiler runner builds an argument list and forwards Arduino CLI's output and exit status. It never uploads.
