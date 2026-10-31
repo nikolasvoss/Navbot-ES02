@@ -6,13 +6,16 @@ import time
 
 import rclpy.time
 
+from action_msgs.msg import GoalStatus
 from builtin_interfaces.msg import Time
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import PoseWithCovarianceStamped, TransformStamped
-from nav_msgs.msg import OccupancyGrid, Odometry
+from nav2_msgs.action import NavigateToPose
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from rclpy.action import ActionClient
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.node import Node
-from sensor_msgs.msg import Imu, LaserScan
+from sensor_msgs.msg import BatteryState, Imu, LaserScan
 from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
 
 from .localization import LocalizationTracker
@@ -31,6 +34,9 @@ SENSOR_FRAME = "lds08rr"
 BIN_COUNT = 360
 RANGE_MIN_M = 0.01
 RANGE_MAX_M = 30.0
+
+PLAN_MAX_POINTS = 200
+SUPERVISOR_TICK_SEC = 0.2  # 5 Hz
 
 
 def yaw_from_quaternion(q) -> float:
@@ -78,6 +84,42 @@ def sensor_mount_transform(stamp) -> TransformStamped:
     return transform
 
 
+def firmware_values(statuses) -> dict[str, str] | None:
+    """The KeyValues of the navbot_firmware status in a DiagnosticArray's status list, or None when it is absent."""
+    for status in statuses:
+        if status.name == "navbot_firmware":
+            return {item.key: item.value for item in status.values}
+    return None
+
+
+def reduce_plan(points: list[list[float]], limit: int = PLAN_MAX_POINTS) -> list[list[float]]:
+    """Every k-th pose, then the last pose if the stride missed it, so that at most limit points remain."""
+    if len(points) <= limit:
+        return [list(point) for point in points]
+    step = -(-(len(points) - 1) // (limit - 1))  # ceiling division
+    reduced = [list(point) for point in points[::step]]
+    if (len(points) - 1) % step:
+        reduced.append(list(points[-1]))
+    return reduced
+
+
+def nav_outcome(status: int, error_msg: str) -> tuple[str, str]:
+    """The outcome of a finished NavigateToPose goal from its action status and Nav2's error text."""
+    if status == GoalStatus.STATUS_SUCCEEDED:
+        return "reached", ""
+    if status == GoalStatus.STATUS_CANCELED:
+        return "canceled", ""
+    return "failed", error_msg
+
+
+class _ActiveGoal:
+    """A goal sent to Nav2. handle is set once Nav2 accepts it; a cancel asked before that is sent on acceptance."""
+
+    def __init__(self) -> None:
+        self.handle = None
+        self.cancel_requested = False
+
+
 class LidarNode(Node):
     def __init__(
         self,
@@ -93,9 +135,11 @@ class LidarNode(Node):
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
         )
-        self.scan_publisher = self.create_publisher(LaserScan, "/scan", scan_qos)
-        # /scan stays raw; slam_toolbox reads the tilt-gated copy.
-        self.slam_scan_publisher = self.create_publisher(LaserScan, "/scan_slam", scan_qos)
+        self.publish_scans = publish_scans
+        if publish_scans:
+            self.scan_publisher = self.create_publisher(LaserScan, "/scan", scan_qos)
+            # /scan stays raw; slam_toolbox reads the tilt-gated copy.
+            self.slam_scan_publisher = self.create_publisher(LaserScan, "/scan_slam", scan_qos)
         self.tilt_gate = TiltGate(config_from_mount())
         self.motion_gate = MotionGate()
         self._logged_gate_state: str | None = None
@@ -134,6 +178,36 @@ class LidarNode(Node):
         self._service_lock = threading.Lock()
         self._service_clients: dict[str, object] = {}
         self._last_seen: dict[str, float] = {}
+        self.supervisor = supervisor
+        self._plan: list[list[float]] = []
+        self._nav_goal: _ActiveGoal | None = None
+        self._nav_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
+        if supervisor is not None:
+            self.create_subscription(DiagnosticArray, "/diagnostics", self.on_diagnostics, 10)
+            self.create_subscription(BatteryState, "/battery_state", self.on_battery, 10)
+            self.create_subscription(LaserScan, "/scan_slam", self.on_scan_slam, qos_profile_sensor_data)
+            self.create_subscription(Path, "plan", self.on_plan, 10)
+            self.create_timer(SUPERVISOR_TICK_SEC, self.on_supervisor_tick)
+
+    def on_diagnostics(self, message: DiagnosticArray) -> None:
+        values = firmware_values(message.status)
+        if values is not None:
+            self.supervisor.set_health(values)
+
+    def on_battery(self, message: BatteryState) -> None:
+        self.supervisor.set_voltage(message.voltage)
+
+    def on_scan_slam(self, message: LaserScan) -> None:
+        self.supervisor.scan_seen()
+
+    def on_plan(self, message: Path) -> None:
+        self._plan = reduce_plan([[pose.pose.position.x, pose.pose.position.y] for pose in message.poses])
+
+    def on_supervisor_tick(self) -> None:
+        self.supervisor.set_localization(self.localization.snapshot()["state"])
+        self.supervisor.set_nav_ready(self.nav_server_ready())
+        if self.supervisor.check():
+            self.cancel_nav_goal()
 
     def on_map(self, message: OccupancyGrid) -> None:
         info = message.info
@@ -204,18 +278,67 @@ class LidarNode(Node):
         return None
 
     def nav_server_ready(self) -> bool:
-        raise NotImplementedError
+        return self._nav_client.server_is_ready()
 
     def send_nav_goal(self, x: float, y: float, yaw: float, on_feedback, on_done) -> str | None:
         """NavigateToPose in map; on_feedback(distance_remaining), on_done(outcome, error)."""
-        raise NotImplementedError
+        if not self._nav_client.server_is_ready():
+            return "Nav2 is not ready"
+        goal_msg = NavigateToPose.Goal()
+        goal_msg.pose.header.frame_id = MAP_FRAME
+        goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
+        goal_msg.pose.pose.position.x = x
+        goal_msg.pose.pose.position.y = y
+        goal_msg.pose.pose.orientation.z = math.sin(yaw / 2.0)
+        goal_msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
+
+        # Callbacks run on the ROS thread. A goal that Nav2 replaced reports nothing more.
+        goal = _ActiveGoal()
+        self._nav_goal = goal
+
+        def finish(outcome: str, error: str) -> None:
+            if self._nav_goal is goal:
+                self._nav_goal = None
+                on_done(outcome, error)
+
+        def on_feedback_message(message) -> None:
+            if self._nav_goal is goal:
+                on_feedback(message.feedback.distance_remaining)
+
+        def on_result(future) -> None:
+            if future.exception() is not None:
+                finish("failed", str(future.exception()))
+                return
+            result = future.result()
+            finish(*nav_outcome(result.status, result.result.error_msg))
+
+        def on_goal_response(future) -> None:
+            if future.exception() is not None:
+                finish("failed", str(future.exception()))
+                return
+            handle = future.result()
+            if not handle.accepted:
+                finish("failed", "goal rejected by Nav2")
+                return
+            goal.handle = handle
+            if goal.cancel_requested:
+                handle.cancel_goal_async()
+            handle.get_result_async().add_done_callback(on_result)
+
+        self._nav_client.send_goal_async(goal_msg, feedback_callback=on_feedback_message).add_done_callback(on_goal_response)
+        return None
 
     def cancel_nav_goal(self) -> None:
-        raise NotImplementedError
+        goal = self._nav_goal
+        if goal is None:
+            return
+        goal.cancel_requested = True
+        if goal.handle is not None:
+            goal.handle.cancel_goal_async()
 
     def nav_plan(self) -> list[list[float]]:
         """At most 200 points of the newest plan, the last pose included."""
-        raise NotImplementedError
+        return self._plan
 
     def serialize_map(self, filename: str, timeout: float = 15.0) -> str | None:
         try:
@@ -242,6 +365,8 @@ class LidarNode(Node):
         return None
 
     def publish_scan(self, scan, completed_at: float) -> None:
+        if not self.publish_scans:
+            return
         stamp = self.get_clock().now()
         if scan.scan_freq_hz > 0:
             scan_start = stamp.nanoseconds - int(1e9 / scan.scan_freq_hz)
