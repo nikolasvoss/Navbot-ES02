@@ -122,7 +122,7 @@ def gate_ok(values: dict) -> str | None: ...
 
 - `run`: `host=None` runs `argv` locally without a shell. Otherwise it runs `ssh -o BatchMode=yes -o ConnectTimeout=10 <host> bash -lc <quoted command>`, with `cd <cwd> &&` in front when `cwd` is set. `input` bytes go to stdin. Unless `interactive`, stdout and stderr are captured and decoded as UTF-8 with `errors="replace"`; `interactive` adds `-t` and inherits the terminal. It never raises on a non-zero exit code.
 - `ship_tree`: `git archive` runs locally; the tar bytes are extracted on the host (`tar -x -C <dir>`, passed to `run` as `input` for the peer). It returns the tree's absolute path. If `.complete` exists it does nothing. It keeps the 5 newest shipped trees on that host and deletes older ones.
-- `probe(None)` runs the probe in this process; `probe(peer)` runs `python3 <shipped tree>/scripts/devtools.py probe` there, so the caller ships the tree first.
+- `probe(None)` runs the probe in this process; `probe(peer)` pipes this `devtools.py` to `python3 - probe` on the peer, so no shipped tree is needed for it.
 - `gate_ok`: takes the values of `balance_state`, `motor_test_active`, `rc_valid` and `ch5_position`. It returns `None` when `balance_state == 0`, `motor_test_active == 0`, and `rc_valid == 0` or `ch5_position == 0`; otherwise it returns a reason that names the values. A missing value is a refusal. `deploy.py` and `tests/hil/conftest.py` both use it.
 - `update_evidence`: replaces only the stages it gets, and sets the top-level `verify` key when given.
 - CLI, used through `run` on the other host: `devtools.py probe`; `devtools.py raw-serial PORT SECONDS` opens the port at 576000 baud with DTR and RTS deasserted before opening (so the robot is not reset), and prints what arrives, decoded with `errors="replace"`; `devtools.py port-holder PORT` prints one `pid name` line per process with the port open (from `/proc/*/fd`).
@@ -199,7 +199,7 @@ Exit codes: 0 done, 1 refused (reason on stderr), 2 usage error.
 `scripts/deploy.py [--image control|diagnostic] [--build-only] [--json]`:
 
 1. Refuse uncommitted changes to tracked files (exit 2). Use the HEAD SHA.
-2. `ship_tree` on the peer, then probe both hosts; select the build host and, unless `--build-only`, the USB and link hosts.
+2. Probe both hosts; select the build host and, unless `--build-only`, the USB and link hosts.
 3. `ship_tree` on the build host. Build with `build_firmware.py --revision <sha>` into `build/flash`; the diagnostic image adds `--build-property compiler.cpp.extra_flags=-DSENSOR_DIAGNOSTIC_MODE=1 --output-dir build/flash-diagnostic`. Compare the rewritten `firmware-build-environment.json` with `git show <sha>:firmware-build-environment.json`; report a difference in `detail`, do not fail. With `--build-only`, stop here.
 4. `ship_tree` on the USB and link hosts; copy the firmware output to the USB host with `rsync -a` when it differs from the build host (one of the two is always local).
 5. `devtools.py port-holder <robot_usb>` on the USB host: a holder means exit 9, naming it.
