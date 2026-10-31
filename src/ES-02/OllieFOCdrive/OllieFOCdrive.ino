@@ -2,6 +2,8 @@
 #include <SimpleFOC.h>
 #include <esp_system.h>
 #include <esp_timer.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include <algorithm>
 #include <cctype>
@@ -13,44 +15,46 @@
 #include "BoardConfig.h"
 #include "Calibration.h"
 #include "CalibrationStore.h"
-#include "DebugTelemetry.h"
 #include "FUTABA_SBUS.h"
 #include "Logging.h"
 #include "link_uart.h"
 #include "MathConstants.h"
 #include "MotorDiagnostic.h"
+#include "settings_groups.h"
 #include "OverspeedGuard.h"
+#include "rc_mode.h"
 #include "WheelBoundary.h"
 #include "OllieFOCdrive.h"
-#include "RobotLogCapture.h"
 #include "LegPoseRamp.h"
 #include "ServoControl.h"
-#include "SerialCommandRouter.h"
 #include "filter.h"
 #include "imu.h"
 
-bool motorDiagnosticOwnsOutput = false;
-
-class LoggingCommandStream : public Stream {
+// SimpleFOC's debug output is a Print that receives lines ending in '\n'. Each line goes to the link as a Log frame.
+class SimpleFocLog : public Print {
  public:
-  int available() override { return Serial.available(); }
-  int read() override { return Serial.read(); }
-  int peek() override { return Serial.peek(); }
   size_t write(uint8_t value) override {
-    if (motorDiagnosticOwnsOutput || Logging::profile() != Logging::Profile::Idle) return 1;
-    return Serial.write(value);
+    if (value == '\n') {
+      emitLine();
+    } else if (value != '\r') {
+      if (length_ == sizeof(line_) - 1) emitLine();
+      line_[length_++] = static_cast<char>(value);
+    }
+    return 1;
   }
-  size_t write(const uint8_t *buffer, size_t size) override {
-    if (motorDiagnosticOwnsOutput || Logging::profile() != Logging::Profile::Idle) return size;
-    return Serial.write(buffer, size);
-  }
-  void flush() override {
-    if (!motorDiagnosticOwnsOutput && Logging::profile() == Logging::Profile::Idle) Serial.flush();
-  }
-};
 
-LoggingCommandStream commandStream;
-Commander command = Commander(commandStream);
+ private:
+  void emitLine() {
+    line_[length_] = '\0';
+    Logging::message(Logging::Level::Info, "SimpleFOC", "%s", line_);
+    length_ = 0;
+  }
+
+  char line_[96];
+  size_t length_ = 0;
+};
+SimpleFocLog simpleFocLog;
+
 Calibration calibration;
 CalibrationStore calibrationStore;
 
@@ -64,9 +68,10 @@ CalibrationStore calibrationStore;
 constexpr uint32_t kRcFrameTimeoutMs = 100;
 constexpr float kControlTimestepMinSec = 0.001f;
 
-constexpr unsigned long kSerialBaudRate = 576000;
+constexpr unsigned long kSerialBaudRate = LINK_USB_BAUD;
 constexpr size_t kSerialTxBufferBytes = 1024;
-#define DIAGNOSTIC_LOG_INTERVAL_US 5000  // Diagnostic CSV rows are emitted at 200 Hz.
+constexpr size_t kSerialRxBufferBytes = 512;
+#define DIAGNOSTIC_LOG_INTERVAL_US 5000  // Sample period the diagnostic battery filter is designed for (200 Hz).
 constexpr unsigned int kDiagnosticLogSampleRateHz = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // -------------------------------------
 
@@ -87,17 +92,18 @@ constexpr WheelMotorParams kRightWheelMotor{5.75f, 76.7f};
 // SimpleFOC adds the estimated back-EMF as voltage even at 0 A. If that estimate is larger than the real back-EMF
 // the wheel accelerates by itself, so the rating handed to SimpleFOC is the measured KV times this factor (a larger
 // KV gives a smaller estimate). Measured KV depends on the speed range (79.5 rpm/V over 0.5-2 V, about 108 rpm/V for
-// 0.5-1 V). Bench test of the left wheel with T 0 0 on 2026-10-24: 1.0 ran away from rest, 1.4 let the wheel speed
+// 0.5-1 V). Bench test of the left wheel with motor_current 0 0 on 2026-10-24: 1.0 ran away from rest, 1.4 let the wheel speed
 // up again between 17 and 30 rad/s, 1.8 slowed it down continuously. The right wheel takes the same factor on the
 // operator's decision; it is not tested separately.
 constexpr float kWheelKvSafetyFactor = 1.8f;
 
-// Balance configuration, built once. The balance and yaw gains below are the working values (tilt 8 A/rad, gyro
-// damping 0.4), so the controller commands real wheel current as soon as it arms and runs. The envelope can also
-// command a small braking current above roughly 50 rad/s, because the plan requires outputs inside the envelope.
-// Each value is one of: existing constant (named), plan (decision or stated number), or an uncommissioned placeholder.
-const Config &balanceConfig() {
-  static const Config config = [] {
+// Balance settings group (the PARAM entries of signals.def.h name its fields). Built once at boot; SetParam replaces
+// it through BalanceGroup, and the controller reads it at each tick. The balance and yaw gains below are the working
+// values (tilt 8 A/rad, gyro damping 0.4), so the controller commands real wheel current as soon as it arms and runs.
+// The envelope can also command a small braking current above roughly 50 rad/s, because the plan requires outputs
+// inside the envelope. Each value is one of: existing constant (named), plan (decision or stated number), or an
+// uncommissioned placeholder.
+Config balanceSettings = [] {
     Config c;
     // Arming
     c.armingTimeoutUs = 3000000;                 // uncommissioned: proposed starting value, 3 s
@@ -178,12 +184,9 @@ const Config &balanceConfig() {
     c.storedTrimDeg = 0.0f;                      // deg
     c.fixedPoseReachable = true;                 // plan: fixed pose, all joint angles 0
     return c;
-  }();
-  return config;
-}
+}();
 
 void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params);
-
 
 // Body
 float movementSpeed = 0;                                         // Movement speed
@@ -198,55 +201,16 @@ biquadFilter_t voltageFilterLpf;  // Second-order low-pass filter
 uint16_t voltageAdc = 0;          // Battery voltage ADC data
 float voltageAdcFiltered = 0;     // Battery voltage ADC data
 float batteryVoltage = 0;         // Battery voltage
+float batteryInstantRawV = 0;     // Battery voltage from the unfiltered ADC reading
 
 uint32_t controlGateSequence = 0;
 LinkSchedule linkOdometrySchedule;
-DebugTelemetry::TelemetryState debugTelemetryState{};
-uint32_t diagnosticSequence = 0;
 ServoTrimsDegrees servoTrims{};
 constexpr int kLegPoseDegrees = 20;  // fixed leg pose for all four servos, degrees
 constexpr int kLegSagDegrees = 10;  // assumed leg angle after the robot has sagged, between 0 and kLegPoseDegrees
 constexpr float kLegRampDegPerSec = 30.0f;  // leg pose ramp, 0 to 20 degrees in about 0.7 s
 constexpr float kLegRampMaxDtSec = 0.02f;   // the first tick after boot reports the whole boot time as dt
 float legPoseDegrees = 0.0f;                // commanded leg angle, ramped toward kLegPoseDegrees
-
-bool parseCommandFloat(const char *text, float &value) {
-  char *end = nullptr;
-  value = strtof(text, &end);
-  if (end == text) return false;
-  while (end && isspace(static_cast<unsigned char>(*end))) ++end;
-  return end && *end == '\0' && isfinite(value);
-}
-
-bool parseCommandCutoff(const char *text, uint16_t &value) {
-  char *end = nullptr;
-  const long parsed = strtol(text, &end, 10);
-  while (end && isspace(static_cast<unsigned char>(*end))) ++end;
-  if (end == text || !end || *end != '\0' || parsed < 1 || parsed > UINT16_MAX) return false;
-  value = static_cast<uint16_t>(parsed);
-  return true;
-}
-
-void setImuLowPassCutoff(char *cmd) {
-  uint16_t cutoff = 0;
-  imu::Settings candidate = imu::settings();
-  if (!parseCommandCutoff(cmd, cutoff)) {
-    Logging::message(Logging::Level::Warning, "IMU", "invalid cutoff");
-    return;
-  }
-  candidate.gyroCutoffHz = cutoff;
-  if (!imu::setSettings(candidate)) {
-    Logging::message(Logging::Level::Warning, "IMU", "cutoff outside valid range");
-    return;
-  }
-  Logging::message(Logging::Level::Info, "LPF_CUTOFF_FREQ", "%u", cutoff);
-}
-
-// Servo zero position offsets
-void zeroBiasServo1(char *cmd) { command.scalar(&servoTrims.servo1Degrees, cmd); }
-void zeroBiasServo2(char *cmd) { command.scalar(&servoTrims.servo2Degrees, cmd); }
-void zeroBiasServo3(char *cmd) { command.scalar(&servoTrims.servo3Degrees, cmd); }
-void zeroBiasServo4(char *cmd) { command.scalar(&servoTrims.servo4Degrees, cmd); }
 
 //  Create ServoControl object
 ServoControl servoControl(board::kLegServoPin[0], board::kLegServoPin[1], board::kLegServoPin[2],
@@ -255,18 +219,32 @@ int servoTraceAngle[4] = {0, 0, 0, 0};  // Last angle arguments sent to the four
 
 // Remote control
 FUTABA_SBUS sBus;
-int sbusFrameIntervalMs = 0;
-int pidGainsMode = REMOTE_CONTROL_PID_GAINS_MODE_OFF;  // telemetry: 1 while the CH5 balance enable is on
 // Raw S.BUS values (SBUS_CHANNEL_MIN 192 to SBUS_CHANNEL_MAX 1792, centre 992). Decided and measured 2026-10-22 (plan: RC map).
 constexpr int kRcCenterRaw = (SBUS_CHANNEL_MAX + SBUS_CHANNEL_MIN) / 2;     // 992
 constexpr int kRcHalfRangeRaw = (SBUS_CHANNEL_MAX - SBUS_CHANNEL_MIN) / 2;  // 800
-constexpr int kRcEnableOnRaw = 592;   // CH5: 0 below, 1 and 2 at or above; 3-position switch
 constexpr int kRcSwitchOnRaw = 992;   // CH6 and CH7: 2-position latching switches
 constexpr int kRcKnobMinRaw = 172;    // CH9 trim knob: outside 172 to 1811 the knob is invalid
 constexpr int kRcKnobMaxRaw = 1811;
 int16_t rcChannels[18] = {};          // last S.BUS frame, raw
 bool rcFrameSeen = false;
 uint32_t rcFrameUs = 0;               // micros() when the last frame was decoded
+uint8_t ch5Position = 0;              // CH5 position 0, 1 (link) or 2 (RC), from the last frame (rc_mode.h)
+uint8_t previousCh5Position = 0;      // the position the last fresh RC frame had
+bool rcValid = false;                 // telemetry: the RC frame is fresh and the receiver reports no failsafe
+bool linkBalance = false;             // the link holds balance on, in CH5 position 1
+struct LinkCommand {
+  bool seen;
+  float speedMps;
+  float turnRadPerSec;
+  uint32_t receivedUs;
+};
+LinkCommand linkCommand{};            // the last Command accepted in CH5 position 1
+bool rebootPending = false;
+uint32_t rebootAtMs = 0;
+constexpr uint32_t kRebootDelayMs = 300;  // a reboot waits this long, so the Ack and the action Log leave first
+
+// Milliseconds since the last accepted Command; UINT32_MAX before the first one.
+uint32_t linkCommandAgeMs() { return linkCommand.seen ? (micros() - linkCommand.receivedUs) / 1000U : UINT32_MAX; }
 
 // Balance controller and the sketch inputs it reads
 BalanceController balanceController;
@@ -277,48 +255,42 @@ bool wheelsValid = false;
 uint32_t busReadTimeUs = 0;
 
 bool balanceActive() { return balanceOutput.state != State::Disabled; }
+// Balance is requested by the CH5 switch or is running. Motor tests and calibration steps wait for it.
+bool balanceRequested() { return ch5Position != 0 || balanceActive(); }
 
-//  Create PID controller instance
-float debugLogSelector = 0;   // Selects debug data and the log profile.
-float calibrationSelect = 0;  // Save calibration data 0: Calibration end  1: Calibrate gyroscope  2: Calibrate Euler
-                              // angle  3: Calibrate servo
+// The link's share of a pass, shared by the control tick and the sensor diagnostic loop. Requests that arrived since the
+// last pass take effect at its start; the due signal rows leave at its end.
+void linkPassStart(uint32_t passStartUs) { LinkServiceRequests(passStartUs, balanceRequested()); }
+void linkPassEnd(uint32_t passStartUs) { LinkSampleSignals(passStartUs); }
 
-PIDController yawPidSettings(4, 0, 0, 0, 0);
+// System health, the rows of the "Link and system health" section of signals.def.h. systemHealthTask() refreshes it
+// once a second on core 0, so the control tick does no stack scans. Each field is one aligned uint32_t that only that
+// task writes and the control loop reads unlocked; acceptable on this target.
+struct SystemHealth {
+  uint32_t uptimeS;
+  uint32_t heapFreeB;
+  uint32_t heapMinFreeB;
+  uint32_t stackFreeLoopB;
+  uint32_t stackFreeLinkB;
+} systemHealth{};
 
+extern TaskHandle_t loopTaskHandle;  // defined and set by the Arduino core (main.cpp); the health task measures its stack
+constexpr uint32_t kSystemHealthStackBytes = 3072;
+constexpr UBaseType_t kSystemHealthPriority = 1;
 
-float pidTimestepSec = 0.01;
-
-MyPIDController yawPid(0, 0, 0, 0, 0, pidTimestepSec, 0, 0);
-
-
-void setMahonyKp(char *cmd) {
-  float value = 0.0f;
-  imu::Settings candidate = imu::settings();
-  if (!parseCommandFloat(cmd, value)) return;
-  candidate.mahonyTwoKp = value;
-  if (imu::setSettings(candidate))
-    Logging::message(Logging::Level::Info, "MAHONY_KP", "%.6f", value);
-  else
-    Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Kp");
-}
-void setMahonyKi(char *cmd) {
-  float value = 0.0f;
-  imu::Settings candidate = imu::settings();
-  if (!parseCommandFloat(cmd, value)) return;
-  candidate.mahonyTwoKi = value;
-  if (imu::setSettings(candidate))
-    Logging::message(Logging::Level::Info, "MAHONY_KI", "%.6f", value);
-  else
-    Logging::message(Logging::Level::Warning, "IMU", "invalid Mahony Ki");
-}
-
-void selectDebugLog(char *cmd) {
-  command.scalar(&debugLogSelector, cmd);
-  RobotLogCapture::setProfileForSelector(static_cast<int>(debugLogSelector));
+void systemHealthTask(void*) {
+  for (;;) {
+    const uint32_t nowMs = millis();
+    systemHealth.uptimeS = nowMs / 1000;
+    systemHealth.heapFreeB = esp_get_free_heap_size();
+    systemHealth.heapMinFreeB = esp_get_minimum_free_heap_size();
+    systemHealth.stackFreeLoopB = uxTaskGetStackHighWaterMark(loopTaskHandle);
+    systemHealth.stackFreeLinkB = LinkMinStackFreeBytes();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+  }
 }
 
-// Cb prefix: Commander callback.
-void setYawPid(char *cmd) { command.pid(&yawPidSettings, cmd); }
+float calibrationSelect = 0;  // The calibrate action: 0 ends a step, 1 gyroscope, 2 Euler angle, 3 servo
 
 // Wheel Motors and Drivers
 // m1 is the left wheel and m2 the right wheel; speeds are forward positive (see WheelBoundary.h).
@@ -337,6 +309,7 @@ unsigned long previousControlTimeUs = 0;
 uint32_t controlStartUs = 0;
 uint32_t controlExecutionUs = 0;
 uint32_t previousLoopEntryUs = 0;
+uint32_t loopEntryIntervalUs = 0;  // time between the last two loop() entries
 bool hasPreviousLoopEntry = false;
 
 BLDCMotor motor1 = BLDCMotor(board::kWheelMotorPolePairs);
@@ -354,24 +327,6 @@ TwoWire i2cTwo = TwoWire(1);
 
 MotorDiagnostic::State motorDiagnosticState{};
 bool motorDiagnosticApplied = false;
-
-void selectCalibration(char *cmd) {
-  float requested = calibrationSelect;
-  command.scalar(&requested, cmd);
-  if (static_cast<int>(requested) != 0 && (motorDiagnosticState.active || motorDiagnosticApplied)) {
-    Logging::message(Logging::Level::Warning, "Calibration", "refused: motor diagnostic active");
-    return;
-  }
-  calibrationSelect = requested;
-}
-char *trimDiagnosticCommand(char *cmd) {
-  while (*cmd == ' ' || *cmd == '\t') ++cmd;
-  size_t length = strlen(cmd);
-  while (length > 0 && (cmd[length - 1] == ' ' || cmd[length - 1] == '\t' || cmd[length - 1] == '\r' ||
-                        cmd[length - 1] == '\n'))
-    cmd[--length] = '\0';
-  return cmd;
-}
 
 void zeroMotorOutput(BLDCMotor &motor) {
   motor.target = 0.0f;
@@ -397,8 +352,7 @@ void restoreMotorConfiguration(BLDCMotor &motor, const WheelMotorParams &params)
 }
 
 MotorDiagnostic::Inputs diagnosticInputs() {
-  return {millis(), pidGainsMode != REMOTE_CONTROL_PID_GAINS_MODE_OFF,
-          calibrationSelect != 0.0f, motor1.shaft_velocity, motor2.shaft_velocity};
+  return {millis(), balanceRequested(), calibrationSelect != 0.0f, motor1.shaft_velocity, motor2.shaft_velocity};
 }
 
 void applyMotorDiagnosticRequest() {
@@ -439,7 +393,6 @@ void applyMotorDiagnosticRequest() {
     }
   }
   motorDiagnosticApplied = true;
-  motorDiagnosticOwnsOutput = true;
 }
 
 OverspeedGuard::State wheelOverspeed{};
@@ -457,94 +410,11 @@ void serviceWheelOverspeed() {
                      wheelOverspeed.peakRadPerSec, OverspeedGuard::kLimitRadPerSec);
 }
 
-// Called after a successful diagnostic RESET and by balanceRequest() while CH5 is off. Rearms the guard only while both wheels are below the limit.
+// Called after a successful motor_reset and by balanceRequest() while CH5 is off. Rearms the guard only while both wheels are below the limit.
 // Rearming does not enable the drivers. balanceRequest() reports enable off while the guard is tripped, so CH5 must
 // go off and on again before the controller drives the wheels.
 void resetWheelOverspeed() {
-  if (fabsf(m1VelocityRadPerSec) <= OverspeedGuard::kLimitRadPerSec &&
-      fabsf(m2VelocityRadPerSec) <= OverspeedGuard::kLimitRadPerSec)
-    OverspeedGuard::reset(wheelOverspeed);
-}
-
-// Shared by T and M so a flood of bad lines cannot fill the logger queue.
-bool diagnosticWarningDue() {
-  static bool warned = false;
-  static uint32_t lastWarningMs = 0;
-  const uint32_t nowMs = millis();
-  if (warned && static_cast<uint32_t>(nowMs - lastWarningMs) < 500) return false;
-  warned = true;
-  lastWarningMs = nowMs;
-  return true;
-}
-
-void handleM1MotionCommand(char *cmd) {
-  cmd = trimDiagnosticCommand(cmd);
-  if (strcmp(cmd, "RESET") == 0) {
-    if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs())) {
-      resetWheelOverspeed();
-      Logging::message(Logging::Level::Info, "MOTOR_TEST", "fault reset; outputs remain disabled");
-    } else
-      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "reset refused; balance off and safe speed required");
-    return;
-  }
-  if (strcmp(cmd, "STOP") == 0) {
-    MotorDiagnostic::stop(motorDiagnosticState);
-    return;
-  }
-  MotorDiagnostic::Request request{};
-  if (!MotorDiagnostic::parseCurrentRequest(cmd, request)) {
-    if (diagnosticWarningDue())
-      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "use T <left_A> <right_A> <lease_ms>, T STOP, or T RESET");
-    return;
-  }
-  if (wheelOverspeed.tripped) {
-    if (diagnosticWarningDue())
-      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "request refused; wheel overspeed latched, send RESET");
-    return;
-  }
-  const auto result = MotorDiagnostic::start(motorDiagnosticState, request, diagnosticInputs());
-  if (result == MotorDiagnostic::RequestResult::Accepted) {
-    applyMotorDiagnosticRequest();
-    Logging::message(Logging::Level::Info, "MOTOR_TEST", "current request left=%.3fA right=%.3fA lease=%lums",
-                     request.leftCurrentA, request.rightCurrentA, static_cast<unsigned long>(request.leaseMs));
-  } else if (diagnosticWarningDue()) {
-    Logging::message(Logging::Level::Warning, "MOTOR_TEST", "request refused result=%d", static_cast<int>(result));
-  }
-}
-
-void handleM1Command(char *cmd) {
-  cmd = trimDiagnosticCommand(cmd);
-  if (strcmp(cmd, "RESET") == 0) {
-    if (MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs())) {
-      resetWheelOverspeed();
-      Logging::message(Logging::Level::Info, "MOTOR_TEST", "fault reset; outputs remain disabled");
-    } else
-      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "reset refused; balance off and safe speed required");
-    return;
-  }
-  if (strcmp(cmd, "STOP") == 0) {
-    MotorDiagnostic::stop(motorDiagnosticState);
-    return;
-  }
-  MotorDiagnostic::Request request{};
-  if (!MotorDiagnostic::parseVoltageRequest(cmd, request)) {
-    if (diagnosticWarningDue())
-      Logging::message(Logging::Level::Warning, "MOTOR_ID", "use M <motor_1|2> <voltage_V> <lease_ms>, M STOP, or M RESET");
-    return;
-  }
-  if (wheelOverspeed.tripped) {
-    if (diagnosticWarningDue())
-      Logging::message(Logging::Level::Warning, "MOTOR_TEST", "request refused; wheel overspeed latched, send RESET");
-    return;
-  }
-  const auto result = MotorDiagnostic::start(motorDiagnosticState, request, diagnosticInputs());
-  if (result == MotorDiagnostic::RequestResult::Accepted) {
-    applyMotorDiagnosticRequest();
-    Logging::message(Logging::Level::Info, "MOTOR_ID", "motor=%u requested_q=%.3fV lease=%lums",
-                     request.selectedMotor, request.voltageV, static_cast<unsigned long>(request.leaseMs));
-  } else if (diagnosticWarningDue()) {
-    Logging::message(Logging::Level::Warning, "MOTOR_ID", "request refused result=%d", static_cast<int>(result));
-  }
+  if (OverspeedGuard::WithinLimit(m1VelocityRadPerSec, m2VelocityRadPerSec)) OverspeedGuard::reset(wheelOverspeed);
 }
 
 void serviceMotorDiagnostic() {
@@ -569,7 +439,6 @@ void serviceMotorDiagnostic() {
     restoreMotorConfiguration(motor1, kLeftWheelMotor);
     restoreMotorConfiguration(motor2, kRightWheelMotor);
     motorDiagnosticApplied = false;
-    motorDiagnosticOwnsOutput = false;
     if (request.mode == MotorDiagnostic::Mode::VoltageIdentification)
       Logging::message(Logging::Level::Info, "MOTOR_ID_RESULT",
                        "motor=%u requested_q=%.3fV actual_q=%.3fV shaft_velocity=%.3frad_s result=%s fault=%d",
@@ -588,8 +457,6 @@ void readSbus();
 void readBatteryVoltage(void);
 void diagnosticLoop(void);
 bool diagnosticImuReady = false;
-unsigned long diagnosticLastRcFrameMs = 0;
-bool diagnosticHasRcFrame = false;
 
 void logCalibration(const PersistedCalibrationValues &calibrationValues) {
   Logging::message(Logging::Level::Info, "Calibration", "Roll Zero Bias: %.2f, Pitch Zero Bias: %.2f",
@@ -620,10 +487,10 @@ void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params) {
 
 void initIMU(const imu::CalibrationValues &imuCalibration) {
   if (!imu::begin(imu::Settings{}, imuCalibration)) {
-    Serial.println("IMU initialization failed!");
+    Logging::message(Logging::Level::Error, "IMU", "initialization failed");
     while (1);
   }
-  Serial.println("IMU initialized successfully!");
+  Logging::message(Logging::Level::Info, "IMU", "initialized successfully");
 }
 
 void initRemoteControl() {
@@ -651,23 +518,196 @@ void initDrivers() {
   motor2.linkDriver(&driver2);
 }
 
-const SerialCommandEntry commandEntries[] = {
-    {'T', handleM1MotionCommand, "bounded per-wheel current test or STOP/RESET"},
-    {'M', handleM1Command, "bounded selected-wheel voltage identification or STOP/RESET"},
-    {'A', zeroBiasServo1, "my zeroBias_servo1"},
-    {'B', zeroBiasServo2, "my zeroBias_servo2"},
-    {'C', zeroBiasServo3, "my zeroBias_servo3"},
-    {'D', zeroBiasServo4, "my zeroBias_servo4"},
-    {'Z', setImuLowPassCutoff, "my ImuLPF_CUTOFF_FREQ"},
-    {'Q', setMahonyKp, "my TwoKp"},
-    {'I', setMahonyKi, "my TwoKi"},
-    {'K', selectDebugLog, "my Select"},
-    {'E', selectCalibration, "my CalibrationSelect"},
-    {'Y', setYawPid, "yawPidSettings"},
+// Settings groups: the running struct of each PARAM group and the one apply function that replaces it. A refused value
+// leaves the struct unchanged (settings_groups.h has the rules; imu::setSettings checks the IMU ones).
+struct BalanceGroup {
+  using Struct = Config;
+  static Config current() { return balanceSettings; }
+  static bool apply(const Config &candidate, const char **error) {
+    return ApplyBalanceSettings(balanceSettings, candidate, error);
+  }
 };
 
-SerialCommandRouter serialCommandRouter;
+struct ImuGroup {
+  using Struct = imu::Settings;
+  static imu::Settings current() { return imu::settings(); }
+  static bool apply(const imu::Settings &candidate, const char **error) {
+    if (imu::setSettings(candidate)) return true;
+    *error = "out of range";
+    return false;
+  }
+};
 
+struct ServoTrimGroup {
+  using Struct = ServoTrimsDegrees;
+  static ServoTrimsDegrees current() { return servoTrims; }
+  static bool apply(const ServoTrimsDegrees &candidate, const char **error) {
+    return ApplyServoTrims(servoTrims, candidate, error);
+  }
+};
+
+// The log level, in the proto numbers the link uses: 1 DEBUG, 2 INFO, 3 WARN, 4 ERROR (Logging::Level is one less).
+struct LogSettings {
+  uint32_t minLevel;
+};
+
+struct LogGroup {
+  using Struct = LogSettings;
+  static LogSettings current() { return {static_cast<uint32_t>(Logging::minLevel()) + 1}; }
+  static bool apply(const LogSettings &candidate, const char **error) {
+    if (candidate.minLevel < 1 || candidate.minLevel > 4) {
+      *error = "takes 1 (DEBUG) to 4 (ERROR)";
+      return false;
+    }
+    Logging::setMinLevel(static_cast<Logging::Level>(candidate.minLevel - 1));
+    return true;
+  }
+};
+
+// Actions. The endpoint checks each argument against its ARG bounds before a handler runs. A handler starts the action,
+// or sets *error and returns false. Motor safety lives in MotorDiagnostic; these handlers only add the overspeed latch.
+bool startMotorRequest(const MotorDiagnostic::Request &request, const char **error) {
+  // The diagnostic build initializes no motors or drivers and runs no motor loop, so a motor test must not start.
+  if (SENSOR_DIAGNOSTIC_MODE) {
+    *error = "sensor diagnostic build has no motor control";
+    return false;
+  }
+  if (wheelOverspeed.tripped) {
+    *error = "wheel overspeed latched, send motor_reset";
+    return false;
+  }
+  const MotorDiagnostic::RequestResult result = MotorDiagnostic::start(motorDiagnosticState, request, diagnosticInputs());
+  if (result != MotorDiagnostic::RequestResult::Accepted) {
+    *error = MotorDiagnostic::RequestResultText(result);
+    return false;
+  }
+  applyMotorDiagnosticRequest();
+  return true;
+}
+
+bool startMotorCurrent(const float *args, const char **error) {
+  MotorDiagnostic::Request request{};
+  if (!MotorDiagnostic::MakeCurrentRequest(args[0], args[1], args[2], request)) {
+    *error = "invalid request";
+    return false;
+  }
+  return startMotorRequest(request, error);
+}
+
+bool startMotorVoltage(const float *args, const char **error) {
+  MotorDiagnostic::Request request{};
+  if (!MotorDiagnostic::MakeVoltageRequest(args[0], args[1], args[2], request)) {
+    *error = "invalid request";
+    return false;
+  }
+  return startMotorRequest(request, error);
+}
+
+bool stopMotorTest(const float *, const char **) {
+  MotorDiagnostic::stop(motorDiagnosticState);
+  return true;
+}
+
+bool resetMotorFault(const float *, const char **error) {
+  // Checked before the motor fault is cleared, so a refused reset leaves that fault latched too.
+  if (!OverspeedGuard::MayRearm(wheelOverspeed, m1VelocityRadPerSec, m2VelocityRadPerSec)) {
+    *error = "wheel overspeed latched, a wheel is above 30 rad/s";
+    return false;
+  }
+  if (!MotorDiagnostic::resetFault(motorDiagnosticState, diagnosticInputs())) {
+    *error = "balance off and safe speed required";
+    return false;
+  }
+  resetWheelOverspeed();
+  return true;
+}
+
+bool startCalibration(const float *args, const char **error) {
+  if (SENSOR_DIAGNOSTIC_MODE) {  // no calibration step runs in this build, so the request would be accepted and never run
+    *error = "sensor diagnostic build runs no calibration";
+    return false;
+  }
+  *error = CalibrationStartRefusal(args[0], balanceRequested(), motorDiagnosticState.active || motorDiagnosticApplied);
+  if (*error != nullptr) return false;
+  calibrationSelect = args[0];
+  return true;
+}
+
+// Balance on or off from the link. Only in CH5 position 1, so a switch in another position never starts a robot. Entering
+// position 1 is applied by updateLinkBalance() in the next balanceRequest(); until then the switch position has not
+// been seen, so an on or off here would be undone by that tick. Balance on also waits for any motor test or calibration.
+bool setLinkBalance(const float *args, const char **error) {
+  if (SENSOR_DIAGNOSTIC_MODE) {
+    *error = "sensor diagnostic build has no motor control";
+    return false;
+  }
+  if (ch5Position != 1) {
+    *error = "CH5 not in link position (1)";
+    return false;
+  }
+  if (previousCh5Position != 1) {
+    *error = "CH5 position change pending";
+    return false;
+  }
+  const bool on = args[0] >= 0.5f;
+  if (on) {
+    if (wheelOverspeed.tripped) {
+      *error = "wheel overspeed latched, switch CH5 to 0";
+      return false;
+    }
+    if (motorDiagnosticState.active || motorDiagnosticApplied) {
+      *error = "motor test running";
+      return false;
+    }
+    if (calibrationSelect != 0.0f) {
+      *error = "calibration running";
+      return false;
+    }
+  }
+  linkBalance = on;
+  return true;
+}
+
+// Reboot. Refused while balance is requested, so a reboot never restarts a robot that drives or is about to.
+bool requestReboot(const float *, const char **error) {
+  if (balanceRequested()) {
+    *error = "CH5 must be 0 and balance off";
+    return false;
+  }
+  if (motorDiagnosticState.active || motorDiagnosticApplied) {
+    *error = "motor test running";
+    return false;
+  }
+  if (calibrationSelect != 0.0f) {
+    *error = "calibration running";
+    return false;
+  }
+  rebootPending = true;
+  rebootAtMs = millis() + kRebootDelayMs;
+  return true;
+}
+
+// A Command from the link. The handler refuses in this order and returns the first text that applies (nullptr accepts).
+const char *handleLinkCommand(float speedMps, float turnRadPerSec) {
+  if (SENSOR_DIAGNOSTIC_MODE) return "sensor diagnostic build has no motor control";
+  if (ch5Position != 1) return "CH5 not in link position (1)";
+  if (previousCh5Position != 1) return "CH5 position change pending";
+  if (!std::isfinite(speedMps) || !std::isfinite(turnRadPerSec)) return "speed and turn must be finite numbers";
+  linkCommand = {true, speedMps, turnRadPerSec, micros()};
+  return nullptr;
+}
+
+// The entry table (signals.def.h), expanded after the groups and handlers it names.
+#define SIGNAL_DEF_FILE "signals.def.h"
+#include "signal_table_expand.h"
+// Git revision and build time, written by scripts/build_firmware.py. A build without the script says "unknown".
+#if __has_include("build_id.h")
+#include "build_id.h"
+#else
+#define NAVBOT_BUILD_ID "unknown " __DATE__
+#endif
+constexpr char kBuildId[] = NAVBOT_BUILD_ID;
+static_assert(sizeof(kBuildId) <= 33, "the build ID has to fit CatalogEntry.build");
 
 /**
  * @brief Initializes the robot's hardware and software components.
@@ -688,8 +728,13 @@ void setup() {
 #endif
 
   Serial.setTxBufferSize(kSerialTxBufferBytes);
+  Serial.setRxBufferSize(kSerialRxBufferBytes);
   Serial.begin(kSerialBaudRate);
-  Logging::begin();
+  LinkUsbInit();
+  // Before the first Logging::message: a message queued for UART1 waits for this writer.
+  LinkUartInit(kSignals, kSignalCount, kBuildId);
+  LinkSetCommandHandler(handleLinkCommand);  // only stores the handler once LinkUartInit has run
+  xTaskCreatePinnedToCore(systemHealthTask, "health", kSystemHealthStackBytes, nullptr, kSystemHealthPriority, nullptr, 0);
   const PersistedCalibrationValues loadedCalibration = calibrationStore.load();
   servoTrims = loadedCalibration.servos;
   const imu::CalibrationValues imuCalibration{loadedCalibration.gyro, loadedCalibration.attitude};
@@ -698,16 +743,15 @@ void setup() {
   // TODO is this the right location?
   pinMode(board::kStatusLedPin, OUTPUT);
   digitalWrite(board::kStatusLedPin, LOW);
-  Serial.println("system run.");
+  Logging::message(Logging::Level::Info, "Setup", "system run.");
   delay(500);
 
 #if SENSOR_DIAGNOSTIC_MODE
   biquadFilterInitLPF(&voltageFilterLpf, 20, kDiagnosticLogSampleRateHz);
   diagnosticImuReady = imu::begin(imu::Settings{}, imuCalibration);
   sBus.begin();
-  Serial.printf("DIAG,boot,reset_reason=%d,imu_ok=%d,motors=off,servos=off\n", (int)esp_reset_reason(),
+  Logging::message(Logging::Level::Info, "DIAG", "boot reset_reason=%d imu_ok=%d motors=off servos=off", (int)esp_reset_reason(),
                 diagnosticImuReady ? 1 : 0);
-  Logging::setProfile(Logging::Profile::Diagnostic);
   return;
 #endif
 
@@ -721,8 +765,7 @@ void setup() {
 
   initIMU(imuCalibration);
   initRemoteControl();
-  LinkUartInit();
-  SimpleFOCDebug::enable(&Serial);  // TODO a more centralized way to enable debug sections would be nice
+  SimpleFOCDebug::enable(&simpleFocLog);  // TODO a more centralized way to enable debug sections would be nice
   initPositionSensors();
   initDrivers();
   configureWheelMotor(motor1, kLeftWheelMotor);
@@ -738,21 +781,20 @@ void setup() {
   motor1.target = 0;
   motor2.target = 0;
 
-
-  Serial.println("Motor ready.");
+  Logging::message(Logging::Level::Info, "Setup", "Motor ready.");
 
   _delay(1000);
 }
 
 /**
  * @brief Stores a decoded S.BUS frame with its arrival time. balanceRequest() reads the channels every tick.
- *        The CH5 balance enable also sets the pidGainsMode telemetry field.
+ *        The CH5 position is taken from the same frame.
  */
 void applyRcChannels(const int16_t *ch) {
   for (int i = 0; i < 18; ++i) rcChannels[i] = ch[i];
   rcFrameUs = micros();
   rcFrameSeen = true;
-  pidGainsMode = rcChannels[4] >= kRcEnableOnRaw ? REMOTE_CONTROL_PID_GAINS_MODE_ON : REMOTE_CONTROL_PID_GAINS_MODE_OFF;
+  ch5Position = RcMode::Ch5Position(rcChannels[4]);
 }
 
 /**
@@ -761,13 +803,8 @@ void applyRcChannels(const int16_t *ch) {
  * Decodes the S.BUS signal into `rcChannels`. Freshness and receiver failsafe are judged in balanceRequest().
  */
 void readSbus() {
-  static uint32_t lastFrameMs = millis();
-
   sBus.FeedLine();
   if (sBus.toChannels == 1) {
-    const uint32_t frameMs = millis();
-    sbusFrameIntervalMs = frameMs - lastFrameMs;
-    lastFrameMs = frameMs;
     sBus.toChannels = 0;
     sBus.UpdateChannels();
     sBus.toChannels = 0;
@@ -775,72 +812,6 @@ void readSbus() {
     applyRcChannels(sBus.channels);
   }
 }
-
-DebugTelemetry::PidStatus pidStatus(const MyPIDController &pid) {
-  return {pid.Kp,   pid.Ki,   pid.Kd,   pid.deriv,  pid.integral, pid.iLimit,
-          pid.outP, pid.outI, pid.outD, pid.output, pid.error};
-}
-
-/**
- * @brief Collects the sketch state read by the debug selections for DebugTelemetry.
- */
-DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
-  DebugTelemetry::TelemetryInputs in{};
-  in.selection = (int)debugLogSelector;
-  in.nowMs = millis();
-  in.controlGateSequence = controlGateSequence;
-  in.balanceActive = balanceActive();
-
-  in.imu = imu::latest();
-  in.imuTiming = imu::timingStatistics();
-  in.imuSettings = imu::settings();
-  in.imuCalibration = imu::calibration();
-  in.controlTimestepSec = controlTimestepSec;
-
-  in.m1VelocityRadPerSec = m1VelocityRadPerSec;
-  in.m2VelocityRadPerSec = m2VelocityRadPerSec;
-  in.m1FilteredVelocityRadPerSec = m1FilteredVelocityRadPerSec;
-  in.m2FilteredVelocityRadPerSec = m2FilteredVelocityRadPerSec;
-  in.motor1Target = motor1.target;
-  in.motor2Target = motor2.target;
-  in.motor2CurrentSetpoint = motor2.current_sp;
-  in.motor1CurrentSetpoint = motor1.current_sp;
-  in.motor1VoltageQ = motor1.voltage.q;
-  in.motor2VoltageQ = motor2.voltage.q;
-  in.motor1ShaftVelocity = motor1.shaft_velocity;
-  in.motor2ShaftVelocity = motor2.shaft_velocity;
-  in.sensor1Angle = sensor1.getAngle();
-  in.sensor1MechanicalAngle = sensor1.getMechanicalAngle();
-  in.sensor2Angle = sensor2.getAngle();
-  in.sensor2MechanicalAngle = sensor2.getMechanicalAngle();
-
-  for (int i = 0; i < 18; ++i) in.sbusChannels[i] = sBus.channels[i];
-  in.sbusFrameIntervalMs = sbusFrameIntervalMs;
-
-  in.yawPid = pidStatus(yawPid);
-
-  in.servoTrims = servoTrims;
-  for (int i = 0; i < 4; ++i) in.servoTraceAngle[i] = servoTraceAngle[i];
-
-
-  in.bodyTurn = bodyTurn;
-
-  in.movementSpeed = movementSpeed;
-
-  in.voltageAdc = voltageAdc;
-  in.voltageAdcFiltered = voltageAdcFiltered;
-  in.voltage = batteryVoltage;
-  in.batteryInstantRawV = board::kBatteryVoltsPerAdcCount * voltageAdc;
-  in.batteryInstantFilteredV = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
-  in.controlStartUs = controlStartUs;
-  in.controlExecutionUs = controlExecutionUs;
-  in.maxLoopEntryIntervalUs = debugTelemetryState.maxLoopEntryIntervalUs;
-
-  in.pidGainsMode = pidGainsMode;
-  in.robotTumble = robotTumble;
-  return in;
-}
-
 
 /**
  * @brief Reads and filters the battery voltage.
@@ -851,8 +822,7 @@ DebugTelemetry::TelemetryInputs collectTelemetryInputs(void) {
 void readBatteryVoltage(void) {
   busReadTimeUs = micros();
   voltageAdc = analogRead(board::kBatteryAdcPin);
-  if (debugTelemetryState.voltageAdcMin == 0 || voltageAdc < debugTelemetryState.voltageAdcMin)
-    debugTelemetryState.voltageAdcMin = voltageAdc;
+  batteryInstantRawV = board::kBatteryVoltsPerAdcCount * voltageAdc;
   voltageAdcFiltered = biquadFilterApply(&voltageFilterLpf, voltageAdc);
   batteryVoltage = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
 }
@@ -897,21 +867,57 @@ float rcStickFraction(int16_t raw) {
 }
 
 /**
- * @brief Builds the balance request from the latest S.BUS frame. The frame counts only while it is younger than
- *        kRcFrameTimeoutMs and the receiver reports no failsafe.
+ * @brief Moves link_balance with CH5. Entering position 1 starts it only while the controller drives; leaving position 1
+ *        clears it and the stored Command. Called only while the RC frame is fresh.
+ */
+void updateLinkBalance() {
+  if (ch5Position == previousCh5Position) return;
+  if (ch5Position == 1) {
+    const bool driving = balanceOutput.state == State::Run || balanceOutput.state == State::Commissioning;
+    linkBalance = RcMode::LinkBalanceOnEntry(driving);
+  }
+  if (previousCh5Position == 1) {
+    linkBalance = false;
+    linkCommand = {};
+  }
+  previousCh5Position = ch5Position;
+}
+
+// The RC frame is younger than kRcFrameTimeoutMs.
+bool rcFrameFresh(uint32_t nowUs) {
+  return rcFrameSeen && static_cast<uint32_t>(nowUs - rcFrameUs) <= kRcFrameTimeoutMs * 1000U;
+}
+
+// The RC is a valid source: the frame is fresh and the receiver reports no failsafe. Shared by balanceRequest() and the
+// sensor diagnostic loop.
+bool rcSourceValid(uint32_t nowUs) { return rcFrameFresh(nowUs) && sBus.Failsafe() == FUTABA_SBUS::kSignalOk; }
+
+/**
+ * @brief Builds the balance request from the latest S.BUS frame. The frame counts only while rcSourceValid() holds.
  */
 Request balanceRequest(uint32_t nowUs) {
-  const Config &config = balanceConfig();
-  const bool fresh = rcFrameSeen && static_cast<uint32_t>(nowUs - rcFrameUs) <= kRcFrameTimeoutMs * 1000U;
-  // CH5 off rearms a tripped overspeed guard (once both wheels are below the limit), so no serial command is needed.
-  if (fresh && rcChannels[4] < kRcEnableOnRaw) resetWheelOverspeed();
+  const Config &config = balanceSettings;
+  if (rcFrameFresh(nowUs)) {
+    // CH5 off rearms a tripped overspeed guard (once both wheels are below the limit), so no serial command is needed.
+    if (ch5Position == 0) resetWheelOverspeed();
+    updateLinkBalance();
+  }
   Request request{};
   request.receivedTimeUs = rcFrameUs;
-  request.sourceValid = fresh && sBus.Failsafe() == FUTABA_SBUS::kSignalOk;
-  request.speedMps = config.speedCapMps * rcStickFraction(rcChannels[2]);         // CH3: forward is positive
-  request.yawRateRadPerSec = -config.yawRateCapRadPerSec * rcStickFraction(rcChannels[3]);  // CH4: left is positive
+  request.sourceValid = rcSourceValid(nowUs);
+  rcValid = request.sourceValid;
+  if (ch5Position == 1) {
+    // The link drives. A missing or old Command is zero demand; the controller keeps balancing in place. An old Command
+    // is latched as expired: it is cleared here and stays cleared until a new Command arrives.
+    if (RcMode::CommandExpired(linkCommand.seen, nowUs, linkCommand.receivedUs)) linkCommand = {};
+    request.speedMps = linkCommand.seen ? linkCommand.speedMps : 0.0f;
+    request.yawRateRadPerSec = linkCommand.seen ? linkCommand.turnRadPerSec : 0.0f;
+  } else {
+    request.speedMps = config.speedCapMps * rcStickFraction(rcChannels[2]);         // CH3: forward is positive
+    request.yawRateRadPerSec = -config.yawRateCapRadPerSec * rcStickFraction(rcChannels[3]);  // CH4: left is positive
+  }
   // A guard trip reads as enable off, so the controller goes Disabled. The operator must switch CH5 off and on to rearm.
-  request.enableSwitch = rcChannels[4] >= kRcEnableOnRaw && !wheelOverspeed.tripped;  // CH5
+  request.enableSwitch = RcMode::EnableSwitch(ch5Position, linkBalance) && !wheelOverspeed.tripped;  // CH5
   request.saveSwitch = rcChannels[5] >= kRcSwitchOnRaw;                           // CH6
   request.commissioningSwitch = rcChannels[6] >= kRcSwitchOnRaw;                  // CH7
   request.knobValid = rcChannels[8] >= kRcKnobMinRaw && rcChannels[8] <= kRcKnobMaxRaw;  // CH9
@@ -924,8 +930,8 @@ Request balanceRequest(uint32_t nowUs) {
  */
 void logBalanceChange(const Output &out) {
   if (out.state != balanceOutput.state || out.fault != balanceOutput.fault)
-    Logging::message(Logging::Level::Info, "BALANCE", "state=%d fault=%d commissioningRefused=%d",
-                     static_cast<int>(out.state), static_cast<int>(out.fault), out.diag.commissioningRefused ? 1 : 0);
+    Logging::message(out.state == State::Fault ? Logging::Level::Warning : Logging::Level::Info, "BALANCE",
+                     "%s -> %s (%s)", StateName(balanceOutput.state), StateName(out.state), FaultReasonName(out.fault));
   if (out.saveTrimRequested)  // one-tick pulse
     Logging::message(Logging::Level::Info, "BALANCE", "save requested trim=%.3f deg; storage not wired", out.trimToSaveDeg);
   if (out.diag.saveRefused && !balanceOutput.diag.saveRefused)
@@ -955,49 +961,21 @@ void applyBalanceOutput(const Output &out) {
   setWheelEnabled(motor2, false);
 }
 
+// The sensor diagnostic loop: the IMU, the receiver, the battery and the link. It has no control tick, so the entries
+// of the motors, servos, controller and loop timing read their initial values (see docs/robot/software/sensor-diagnostic-mode.md).
 void diagnosticLoop(void) {
-  static uint32_t lastLogScheduleUs = 0;
   static uint32_t lastTimingReportUs = 0;
   static uint32_t lastTimingAcceptedSamples = 0;
   static bool timingReportStarted = false;
   static unsigned long lastVoltageMs = 0;
   const unsigned long nowMs = millis();
+  const uint32_t passStartUs = micros();
 
-  sBus.FeedLine();
-  if (sBus.toChannels == 1) {
-    sBus.UpdateChannels();
-    sBus.toChannels = 0;
-    diagnosticLastRcFrameMs = nowMs;
-    diagnosticHasRcFrame = true;
-  }
+  linkPassStart(passStartUs);
+  readSbus();
+  rcValid = rcSourceValid(passStartUs);  // telemetry, as balanceRequest() sets it in the control tick
 
-  if (diagnosticImuReady && imu::service()) {
-    const imu::Snapshot &diagnosticImu = imu::latest();
-    const uint32_t imuSampleUs = diagnosticImu.readTimeUs;
-    if ((uint32_t)(imuSampleUs - lastLogScheduleUs) >= DIAGNOSTIC_LOG_INTERVAL_US) {
-      lastLogScheduleUs = imuSampleUs;
-      const long rcAgeMs = diagnosticHasRcFrame ? (long)(nowMs - diagnosticLastRcFrameMs) : -1;
-      const int rcFailsafe = diagnosticHasRcFrame ? sBus.Failsafe() : -1;
-      const float batteryRawV = board::kBatteryVoltsPerAdcCount * voltageAdc;
-      Logging::DiagnosticSample sample{};
-      sample.timestampUs = imuSampleUs;
-      sample.sequence = diagnosticSequence++;
-      sample.gyroX = diagnosticImu.angularVelocityRadPerSec.x;
-      sample.gyroY = diagnosticImu.angularVelocityRadPerSec.y;
-      sample.gyroZ = diagnosticImu.angularVelocityRadPerSec.z;
-      sample.accelX = diagnosticImu.accelerationG.x;
-      sample.accelY = diagnosticImu.accelerationG.y;
-      sample.accelZ = diagnosticImu.accelerationG.z;
-      sample.rollDeg = diagnosticImu.attitudeDegrees.roll;
-      sample.pitchDeg = diagnosticImu.attitudeDegrees.pitch;
-      sample.yawDeg = diagnosticImu.attitudeDegrees.yaw;
-      sample.batteryRawV = batteryRawV;
-      sample.receiverFrameAgeMs = rcAgeMs;
-      sample.receiverFailsafe = rcFailsafe;
-      sample.imuReady = diagnosticImuReady ? 1 : 0;
-      Logging::submit(sample);
-    }
-  }
+  if (diagnosticImuReady) imu::service();
 
   const uint32_t timingNowUs = micros();
   const imu::TimingStatistics timing = imu::timingStatistics();
@@ -1010,8 +988,9 @@ void diagnosticLoop(void) {
     if (elapsedUs >= 1000000U) {
       const uint32_t acceptedSamples = timing.acceptedSamples - lastTimingAcceptedSamples;
       const float acceptedRateHz = static_cast<float>(acceptedSamples) * 1000000.0f / static_cast<float>(elapsedUs);
-      Serial.printf("IMU_TIMING,elapsed_us=%lu,accepted=%lu,rate_hz=%.1f,long_gap_total=%lu,max_interval_us=%lu\n",
-                    static_cast<unsigned long>(elapsedUs), static_cast<unsigned long>(acceptedSamples), acceptedRateHz,
+      // No elapsed_us: the window is one second, and the line must fit the 96 characters of a Log text (81 at worst).
+      Logging::message(Logging::Level::Info, "IMU_TIMING", "accepted=%lu,rate_hz=%.1f,long_gap_total=%lu,max_interval_us=%lu",
+                    static_cast<unsigned long>(acceptedSamples), acceptedRateHz,
                     static_cast<unsigned long>(timing.longGapCount), static_cast<unsigned long>(timing.maxIntervalUs));
       lastTimingReportUs = timingNowUs;
       lastTimingAcceptedSamples = timing.acceptedSamples;
@@ -1022,7 +1001,10 @@ void diagnosticLoop(void) {
     lastVoltageMs = nowMs;
     readBatteryVoltage();
   }
+
+  linkPassEnd(passStartUs);
 }
+
 void updateMotorsAndCommands() {
   // iterative function setting the outer loop target
   if (motorDiagnosticState.active) readSbus();
@@ -1035,11 +1017,8 @@ void updateMotorsAndCommands() {
   motor1.loopFOC();
   motor2.loopFOC();
 
-  // user communication
-  serialCommandRouter.run(commandStream, command, commandEntries);
-  // Apply STOP, mode conflicts, and lease checks immediately after dispatch.
-  // This also prevents a newly selected blocking calibration from running while leased.
-  // Skipped on the normal path: no diagnostic is active or still applied to the motors.
+  // This pass uses the S.BUS frame read above, so a CH5 switch or an expired lease ends a motor test here rather than
+  // in the next loop pass. Skipped on the normal path: no diagnostic is active or still applied to the motors.
   if (motorDiagnosticState.active || motorDiagnosticApplied) {
     readSbus();
     serviceMotorDiagnostic();
@@ -1145,6 +1124,7 @@ void runControlTick(bool imuUpdated) {
   controlStartUs = micros();
   controlGateSequence++;
 
+  linkPassStart(controlStartUs);  // before anything is read
   readBatteryVoltage();  // Battery
 
   updateStatusLed();
@@ -1162,7 +1142,7 @@ void runControlTick(bool imuUpdated) {
   const Measurements measurements = balanceMeasurements();
   const uint32_t balanceNowUs = micros();
   const Request request = balanceRequest(balanceNowUs);
-  const Output out = balanceController.update(measurements, request, balanceConfig(), balanceNowUs);
+  const Output out = balanceController.update(measurements, request, balanceSettings, balanceNowUs);
   logBalanceChange(out);
   balanceOutput = out;
   robotTumble = out.fault == FaultReason::Fall ? ROBOT_TUMBLING : ROBOT_NOT_TUMBLING;
@@ -1177,10 +1157,9 @@ void runControlTick(bool imuUpdated) {
                                      fminf(controlTimestepSec, kLegRampMaxDtSec));
   for (int &angle : servoTraceAngle) angle = static_cast<int>(lroundf(legPoseDegrees));
   writeLegServos();
-  RobotLogCapture::observeServoAngles(servoTraceAngle);
 
   controlExecutionUs = static_cast<uint32_t>(micros() - controlStartUs);
-  DebugTelemetry::submit(collectTelemetryInputs(), debugTelemetryState);  // Serial port data printing
+  linkPassEnd(controlStartUs);
 
   previousControlTimeUs = loopTimeUs;
 }
@@ -1189,23 +1168,29 @@ void runControlTick(bool imuUpdated) {
  * @brief The main execution loop of the program.
  *
  * This function runs repeatedly after `setup()` is complete:
- * 1. `updateMotorsAndCommands`: SimpleFOC `move()` and `loopFOC()` for both wheels, then Commander input.
+ * 1. `updateMotorsAndCommands`: SimpleFOC `move()` and `loopFOC()` for both wheels.
  * 2. `readInputs`: IMU sample and S.BUS commands.
  * 3. `runControlTick`, once at least 1 ms has passed since the previous tick: battery reading,
  *    status LED, calibration, wheel velocities, the balance controller and wheel outputs,
  *    the fixed servo pose, and telemetry.
  */
 void loop() {
+  // A reboot requested over the link. Checked before the diagnostic branch, so both images restart.
+  if (rebootPending && static_cast<int32_t>(millis() - rebootAtMs) >= 0) {
+    // Balance or motor activity during the delay cancels the reboot: the checks of requestReboot() apply again.
+    if (balanceRequested() || motorDiagnosticState.active || motorDiagnosticApplied || calibrationSelect != 0.0f) {
+      rebootPending = false;
+      Logging::message(Logging::Level::Warning, "REBOOT", "reboot cancelled: balance or motor activity");
+    } else {
+      ESP.restart();
+    }
+  }
 #if SENSOR_DIAGNOSTIC_MODE
   diagnosticLoop();
   return;
 #endif
   loopTimeUs = micros();
-  if (hasPreviousLoopEntry) {
-    const uint32_t intervalUs = static_cast<uint32_t>(loopTimeUs - previousLoopEntryUs);
-    if (intervalUs > debugTelemetryState.maxLoopEntryIntervalUs)
-      debugTelemetryState.maxLoopEntryIntervalUs = intervalUs;
-  }
+  if (hasPreviousLoopEntry) loopEntryIntervalUs = static_cast<uint32_t>(loopTimeUs - previousLoopEntryUs);
   previousLoopEntryUs = loopTimeUs;
   hasPreviousLoopEntry = true;
 

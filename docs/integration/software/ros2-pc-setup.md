@@ -32,30 +32,30 @@ The ros2_pc side is on GPIO8 (TX, J8 pin 24) and GPIO9 (RX, J8 pin 21), see the 
    Check that the overlay exists on the installed image before rebooting: `dtoverlay -h uart3-pi5`.
 2. Reboot.
 3. Check the pin functions: `pinctrl get 8-9` must show the UART3 TX and RX functions on GPIO8 and GPIO9.
-4. Find the device path. Do not infer it from the UART number: list `/dev/ttyAMA*`, and compare with `dmesg | grep -i tty`. `/dev/ttyAMA3` is confirmed on the current image (2026-10-26). Note the path, since it is the bridge's `port` parameter.
-5. Make sure no serial console, getty or other service uses the port, and that the bridge is the only reader. UART0 (`/dev/ttyAMA0`) belongs to the LiDAR and UART2 to the HMMD radar; do not reuse them.
+4. Find the device path. Do not infer it from the UART number: list `/dev/ttyAMA*`, and compare with `dmesg | grep -i tty`. `/dev/ttyAMA3` is confirmed on the current image (2026-10-26). Note the path, since it is the link multiplexer's `--port`.
+5. Make sure no serial console, getty or other service uses the port, and that the link multiplexer is the only reader. UART0 (`/dev/ttyAMA0`) belongs to the LiDAR and UART2 to the HMMD radar; do not reuse them.
 
 Wiring and levels are physical and cannot be set in software: cross TX and RX, join the grounds, and keep both ends at 3.3 V logic. The robot side is GPIO20 (RX) and GPIO19 (TX), opposite to the PCB net names RX1/TX1. Verify the pins and the voltage on the boards before connecting.
 
 ## 4. Serial permissions
 
-The user that runs the bridge needs access to the port:
+The user that runs the multiplexer needs access to the port:
 
 ```bash
 sudo usermod -aG dialout "$USER"
 ```
 
-Log in again afterwards. The [bridge unit](../../../src/ros2_pc/systemd/navbot-link-bridge.service.in) sets `SupplementaryGroups=dialout`, as the [LiDAR unit](../../../src/ros2_pc/systemd/navbot-lidar.service.in) does, so the service itself does not depend on this group.
+Log in again afterwards. The [multiplexer unit](../../../src/ros2_pc/systemd/navbot-link-mux.service.in) sets `SupplementaryGroups=dialout`, as the [LiDAR unit](../../../src/ros2_pc/systemd/navbot-lidar.service.in) does, so the service itself does not depend on this group.
 
 ## 5. Build and run
 
-Build the bridge as described in the [bridge page](navbot-link-bridge.md). Start it by hand there with the device path from step 3 and the measured wheel radius and track width, or install the service (`python3 scripts/install_link_bridge_service.py`), which starts it at boot with `/dev/ttyAMA3`, a 0.01915 m wheel radius and a 0.113 m track width.
+Build the bridge as described in the [bridge page](navbot-link-bridge.md). Start the multiplexer by hand with the device path from step 3 (`python3 -m navbot_link.mux --port <path> --baud 2000000 --listen 127.0.0.1:7650`), then the bridge with the measured wheel radius and track width. Or install the services (`python3 scripts/install_link_bridge_service.py`), which start the multiplexer on `/dev/ttyAMA3` and the bridge at boot, with a 0.01915 m wheel radius and a 0.113 m track width.
 
 ## 6. Checks
 
 With the robot powered, balance disabled and motor outputs safe:
 
-1. The bridge logs `opened <port> at 2000000 baud`. `cannot open` means a wrong path or missing group.
+1. The multiplexer opens the port at 2000000 baud. A failing open (wrong path or missing group) shows in `journalctl -u navbot-link-mux`.
 2. `ros2 topic hz /odom` and `ros2 topic hz /imu/data` show about 50 Hz (see the [protocol rules](ros2-uart-protocol.md#rules)).
 3. The bridge reports no `bad_frames`, `decode_errors` or `lost_frames` growth. A burst at start is normal while it resynchronises.
 4. Roll the robot forward by hand: `/odom` twist must be positive.

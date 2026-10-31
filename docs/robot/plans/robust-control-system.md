@@ -21,7 +21,7 @@ The current source has several paths that affect the same physical motion:
 | --- | --- | --- |
 | Speed PI changes `bodyX`, which changes the leg IK targets. Balance PID independently changes wheel velocity targets. | Driving changes both body geometry and wheel action. Servo lag, payload position, and balance tuning interact. | `runPostureController()` and `writeLegServos()` in the [sketch](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino). |
 | A braking-only wheel-speed correction is added alongside balance and yaw. | Wheel-speed feedback has two actuator paths. | `runPostureController()`. |
-| The balance PID sends tilt error to wheel velocity with P 5, I 200, D 0.11, and a stored-integral limit of 0.1 in the selected preset. | In a velocity cascade the tilt integral supplies the restoring stiffness (see [below](#why-not-a-velocity-command-balance-law)). The 0.1 limit caps that term at 20 wheel rad/s, beyond which the loop behaves as P+D only, which is unstable in the simple model. Stiffness, drift correction, and windup share one clamped state. | Sketch presets and `runPostureController()`; [PID implementation](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.h). |
+| The balance PID sends tilt error to wheel velocity with P 5, I 200, D 0.11, and a stored-integral limit of 0.1 in the selected preset. | In a velocity cascade the tilt integral supplies the restoring stiffness (see [below](#why-not-a-velocity-command-balance-law)). The 0.1 limit caps that term at 20 wheel rad/s, beyond which the loop behaves as P+D only, which is unstable in the simple model. Stiffness, drift correction, and windup share one clamped state. | Sketch presets and `runPostureController()`; the former `MyPIDController`. |
 | Wheel targets are clipped individually after mixing. | Steering can consume balance headroom; clipping changes the intended common/differential mix. | End of `runPostureController()`. |
 | Control runs after an elapsed-time threshold of 1 ms. IMU reads are data-ready gated, with coefficients designed for nominal 1 kHz. | Sensor ODR, accepted-read rate, control rate, and filter design rate need separate verification. | [IMU implementation](../../../src/ES-02/OllieFOCdrive/imu.cpp), [IMU settings](../../../src/ES-02/OllieFOCdrive/imu.h), sketch `loop()`. |
 | Wheel-speed differentiation uses measured time only with the diagnostic-defaults define enabled. | Gain comparisons across build settings can have different measurement scales. | `updateWheelVelocities()`. |
@@ -300,7 +300,7 @@ Decided by the user on 2026-10-22:
 | Touchscreen | Removed completely, including the driver files; see package 3. |
 | Actuator fault action | Coast. In the tick that detects the fault, set both targets to 0 A, then call `motor1.disable()` and `motor2.disable()`, which pull the driver enable pins low (the same pins `SENSOR_DIAGNOSTIC_MODE` holds low at boot). Keep servo power and the fixed pose. Only a deliberate rearm (enable-switch off-to-on edge through Arming) calls `motor.enable()`. A 0 A command alone is not off: with `KV_rating` set, estimated-current mode still outputs the back-EMF voltage. Braking would not help a falling robot: with 22 ohm windings, shorted-phase braking torque is negligible, and disabled drivers keep a fallen robot's wheels from spinning on stale commands. Verified in stage 3 (see below). |
 | RC switches | Measured on 2026-10-22 (positions as reported by `remote_status.py`, which picks the nearest of 192, 992, 1792): CH5 is a 3-position switch (0/1/2), CH6 and CH7 are latching 2-position switches (0/1). Decode a 3-position switch with the bands raw < 592 → 0, 592-1392 → 1, > 1392 → 2, and a 2-position switch with raw < 992 → 0, else 1. CH5: position 0 disables balance; 1 and 2 both enable it, as today, so that the middle position passed while flipping does not disarm. Arming needs a change from 0 to 1 or 2. CH6: the save trigger is the 0-to-1 edge only; to save again, flip back to 0 and then to 1. CH7: 0 = RUN path, 1 = standstill commissioning. A position already set at boot or at state entry never counts as an edge. |
-| `COMMUNICATION_OBJECT` modes | Removed. The `COMMUNICATION_OBJECT` define with its `TWO_WHEEL_BALANCE`, `SIMPLEFOC_STUDIO`, and `CONTROL_DUAL_MOTORS` values, and the SimpleFOC `useMonitoring()` and `monitor()` calls, are gone from the firmware. Commander `T` (`handleM1MotionCommand`) and `M` (`handleM1Command`) remain as the bounded diagnostics: per-wheel current test and selected-wheel voltage identification, each accepted only with balance disabled. `SENSOR_DIAGNOSTIC_MODE` stays as the safe bring-up build. |
+| `COMMUNICATION_OBJECT` modes | Removed. The `COMMUNICATION_OBJECT` define with its `TWO_WHEEL_BALANCE`, `SIMPLEFOC_STUDIO`, and `CONTROL_DUAL_MOTORS` values, and the SimpleFOC `useMonitoring()` and `monitor()` calls, are gone from the firmware. The bounded diagnostics remain as link actions: `motor_current` (per-wheel current test) and `motor_voltage` (selected-wheel voltage identification), with `motor_stop` and `motor_reset`, each accepted only with balance disabled. `SENSOR_DIAGNOSTIC_MODE` stays as the safe bring-up build. |
 
 RC map (1-based channel names as in the existing comments; array index is one lower):
 
@@ -317,25 +317,25 @@ RC map (1-based channel names as in the existing comments; array index is one lo
 | CH9 `ch[8]` | `topBallX` | trim knob (decided), commissioning state only, with pickup |
 | CH10 `ch[9]` | `topBallY` | unused |
 
-Servo assembly and servo calibration currently depend on CH6 through `writeServos()`. After the remap, reach them only through the serial `E` command (`calibrationSelect`) with balance disabled.
+Servo assembly and servo calibration currently depend on CH6 through `writeServos()`. After the remap, reach them only through the `calibrate` action (step 3, servo; `calibrationSelect`) with balance disabled.
 
 ### Package 1: measurement support, controller unchanged
 
-Status: implemented and accepted on 2026-10-22 on an unloaded robot (supported on the main body, wheels clear, legs hanging free). The telemetry, bounded `T`/`M` diagnostics, and host trace tools are in place, and the commissioning record in [motor commissioning](../software/motor-commissioning.md) holds the measured phase resistance (11.5 Ω phase to phase), `KV_rating` (about 77 to 80 rpm/V over 0.5 to 2 V), usable voltage ceiling (about 4.2 V, battery dependent), wheel signs (positive q rolls both wheels backward), and loop timing (about 521 passes per second). Not covered: loaded or standing runs, a fixed-pose check under load, and the 1 kHz loop rate, which the plan assumed and the robot does not reach.
+Status: implemented and accepted on 2026-10-22 on an unloaded robot (supported on the main body, wheels clear, legs hanging free). The telemetry, bounded `motor_current`/`motor_voltage` diagnostics, and host trace tools are in place, and the commissioning record in [motor commissioning](../software/motor-commissioning.md) holds the measured phase resistance (11.5 Ω phase to phase), `KV_rating` (about 77 to 80 rpm/V over 0.5 to 2 V), usable voltage ceiling (about 4.2 V, battery dependent), wheel signs (positive q rolls both wheels backward), and loop timing (about 521 passes per second). Not covered: loaded or standing runs, a fixed-pose check under load, and the 1 kHz loop rate, which the plan assumed and the robot does not reach.
 
 Purpose: collect stage 1-3 data without changing the balance behavior.
 
-1. Telemetry additions to the existing `DebugTelemetry` selections and `Logging::DriveSample` in [LogSamples.h](../../../src/ES-02/OllieFOCdrive/LogSamples.h); no new protocol:
+1. Telemetry additions as entries of the signal table in [signals.def.h](../../../src/ES-02/OllieFOCdrive/signals.def.h); no new protocol (the `K` selectors this item once extended are gone, see the [signal table](../../integration/software/signal-table.md)):
    - IMU `sequence`, `readTimeUs`, `dtSec` from `imu::Snapshot`, and the `TimingStatistics` counters (`acceptedSamples`, `longGapCount`, `maxIntervalUs`);
    - control tick start time and execution time in µs, and the maximum `loop()` period since the last row;
    - per motor: `target`, `current_sp`, `voltage.q`, `shaft_velocity`; today only `motor2.current_sp` is exported (`motor2CurrentSetpoint`);
    - raw and filtered bus voltage, both already present.
-2. Update the field list in [capture_balance_trace.py](../../../scripts/capture_balance_trace.py), the parsers in [summarize_balance_trace.py](../../../scripts/summarize_balance_trace.py) and [analyze_drive_trace.py](../../../scripts/analyze_drive_trace.py), and their tests in `tests/scripts/` and `tests/telemetry/` (including `golden_stream.txt`).
+2. A new signal is one `SIGNAL` line in `signals.def.h`. Add it to a preset in [navlink_presets.yaml](../../../scripts/navlink_presets.yaml) when a capture needs it; [analyze_drive_trace.py](../../../scripts/analyze_drive_trace.py) names the drive columns it requires.
 3. Motor identification, per motor, wheels clear, balance off:
    - phase resistance: run SimpleFOC `characteriseMotor()` once in a diagnostic build, or measure phase-to-phase resistance with a meter. Record which value and convention you used; SimpleFOC uses `phase_resistance` directly in `voltage.q = current * phase_resistance + bemf`;
    - `KV_rating`: apply a fixed small `voltage.q` in voltage torque mode, wait for steady no-load speed, and repeat at three voltages. Fit speed against voltage. SimpleFOC's back-EMF estimate is `velocity / (KV_rating * √3) / RPM_TO_RADS` (`BLDCMotor::estimateBEMF`), so fit KV in that convention;
    - maximum usable `voltage.q`: increase the voltage command until the measured speed stops rising. This sets `voltage_limit`.
-4. A bounded current test command for stage 3: per-wheel ampere target, capped by a compile-time test limit, accepted only with balance disabled, expiring after a lease (Package 1 allows up to 5 s) unless renewed, with the overspeed fault active. It stays as the only direct motor command. Commander `T` and `M` are the bounded diagnostics that implement it.
+4. A bounded current test command for stage 3: per-wheel ampere target, capped by a compile-time test limit, accepted only with balance disabled, expiring after a lease (Package 1 allows up to 5 s) unless renewed, with the overspeed fault active. It stays as the only direct motor command. The `motor_current` action implements it.
 5. A motor identification command that runs `characteriseMotor()` or the KV voltage steps on one selected motor, accepted only with balance disabled, and logging the results. Keep the command table within the size fixed in commit `ba1a36b`.
 
 Done when: a supported capture shows IMU cadence, control execution time, per-motor `voltage.q`, and measured R, KV, and voltage ceiling for both motors are recorded in the commissioning record.
@@ -354,15 +354,9 @@ Done when: with wheels clear, the package 1 current command produces the expecte
 
 ### Package 3: remove the replaced control paths
 
-Status: implemented on 2026-10-22 as one commit per table row. The build and every host test pass. Not flashed: the unloaded run with balance disabled and the fixed pose on hardware are not yet confirmed. Only the `MyPIDController` row remains, until package 4.
+Status: implemented on 2026-10-22 as one commit per removed path. The build and every host test pass. Not flashed: the unloaded run with balance disabled and the fixed pose on hardware are not yet confirmed. `MyPIDController` and `tests/pid/` followed on 2026-10-27, after the unused yaw PID, their last user, was deleted.
 
-Delete in the same change, with their callers, Commander entries, telemetry fields, and tests:
-
-| Remove | Where |
-| --- | --- |
-| `MyPIDController` in [OllieFOCdrive.h](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.h) and `tests/pid/` | only if no user remains after package 4 |
-
-`runPostureController()` and `computeBodyPose()` disappear. The fixed pose writes `servoTraceAngle[i] = -servoTrimN` through `writeLegServos()` each tick, as decided above. `LegKinematics` then has no runtime caller; delete it and `tests/kinematics/` in the same change unless the IK fallback pose is needed. Servo calibration (`calibrationSelect` 3 through Commander `E`) keeps working with balance disabled.
+`runPostureController()` and `computeBodyPose()` disappear. The fixed pose writes `servoTraceAngle[i] = -servoTrimN` through `writeLegServos()` each tick, as decided above. `LegKinematics` then has no runtime caller; delete it and `tests/kinematics/` in the same change unless the IK fallback pose is needed. Servo calibration (the `calibrate` action with step 3) keeps working with balance disabled.
 
 `DIAGNOSTIC_LIVE_TUNING_DEFAULTS` loses its remaining uses (`readSbus()` speed doubling, wheel-speed timing, presets). Remove the define with them.
 
@@ -441,7 +435,7 @@ Remove the yaw PID integral, and keep `yawP` only. No integral exists in the mod
 
 1. `loop()` keeps `updateMotorsAndCommands()` (`move()`, `loopFOC()`) on every pass.
 2. Run the controller when `imu::service()` reports a new sample, decimated to the balance rate. Remove the `kControlTimestepMinSec` gate as the controller trigger.
-3. Move `DebugTelemetry::submit()` to after the controller and motor target update, so that rows describe the same tick. It must never block; on a full queue it drops rows and counts them, as the existing sender counters already report.
+3. Sample the signal rows after the controller and the motor target update, so that they describe the same tick (`LinkSampleSignals` at the end of `runControlTick()`). Sampling never blocks; on a full queue it drops rows and counts them.
 4. Leave `readBatteryVoltage()` in the tick, record its time for envelope freshness, and recheck the 50 Hz bus-voltage biquad delay against the envelope age limit.
 5. Align IMU biquad coefficients with the measured accepted-sample rate from package 1.
 6. With BLE removed, core 0 no longer runs `cpu0Task`. Recheck loop timing after the removal, since the BLE stack's own tasks also disappear.
@@ -469,11 +463,11 @@ Add `tests/balance_control/` with a `run_host_test.sh` following the existing pa
 - source timeout: speed ramps to zero at the braking cap, yaw goes to zero, balance continues;
 - `micros()` wraparound across freshness and `dt` checks.
 
-Existing suites to rerun: `tests/imu`, `tests/filter`, `tests/kinematics`, `tests/calibration`, `tests/calibration_store`, `tests/telemetry`, `tests/serial_commands`, `tests/scripts`, and `tests/pid` if it still exists.
+Existing suites to rerun: `tests/imu`, `tests/filter`, `tests/kinematics`, `tests/calibration`, `tests/calibration_store`, and `tests/scripts`.
 
 ### Package 8: documentation after implementation
 
-- Rewrite [control-flow.md](../software/control-flow.md) to describe the implemented chain, states, RC map, and Commander letters.
+- Rewrite [control-flow.md](../software/control-flow.md) to describe the implemented chain, states, RC map, and the navlink parameter and action names.
 - Update [rc-channel-map.md](../software/rc-channel-map.md) to the new map, including the CH9 trim scaling.
 - Remove BLE and touchscreen behavior from [trace-capture.md](../software/trace-capture.md), [sensor-diagnostic-mode.md](../software/sensor-diagnostic-mode.md), and the robot [system overview](../hardware/system-overview.md) and [electronics reference](../hardware/electronics-reference.md). Mark the [touchscreen stand](../hardware/touchscreenstand.md) as not used by the firmware, or delete the page if the hardware is removed from the robot.
 - Move the measured motor parameters to the robot hardware docs, and the commissioning procedure to `docs/robot/software/`.

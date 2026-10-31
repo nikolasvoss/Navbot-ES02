@@ -1,6 +1,6 @@
 # NavBot link bridge
 
-The `navbot_link_bridge` package reads the ESP32 link ([protocol](ros2-uart-protocol.md)) from a serial port. It publishes `nav_msgs/Odometry` on `/odom`, the `odom` to `base_link` TF (unless `publish_tf` is false), and `sensor_msgs/Imu` on `/imu/data`. On 19 October 2026 the bridge was built on the ros2_pc and fed firmware-format frames through a pseudo-terminal: `/odom` arrived at 50 Hz with the expected pose, and the TF and `/imu/data` were published. It has not run against the robot. The ros2_pc side of the link uses GPIO8/GPIO9 ([J8 allocation](../../ros2_pc/hardware/system-overview.md#j8-pin-allocation)) and is wired; `/dev/ttyAMA3` carried the robot's frames on 2026-10-26.
+The `navbot_link_bridge` package reads the ESP32 link ([protocol](ros2-uart-protocol.md)) through the link multiplexer. It publishes `nav_msgs/Odometry` on `/odom`, the `odom` to `base_link` TF (unless `publish_tf` is false), `sensor_msgs/Imu` on `/imu/data`, `diagnostic_msgs/DiagnosticArray` on `/diagnostics` and `sensor_msgs/BatteryState` on `/battery_state`. It takes `geometry_msgs/Twist` on `/cmd_vel` and sends it to the robot as a drive command. On 19 October 2026 the bridge was built on the ros2_pc and fed firmware-format frames through a pseudo-terminal: `/odom` arrived at 50 Hz with the expected pose, and the TF and `/imu/data` were published. It has not run against the robot. The ros2_pc side of the link uses GPIO8/GPIO9 ([J8 allocation](../../ros2_pc/hardware/system-overview.md#j8-pin-allocation)) and is wired; `/dev/ttyAMA3` carried the robot's frames on 2026-10-26.
 
 Configure the ros2_pc first with the [setup page](ros2-pc-setup.md): packages, the boot overlay for the link UART, and serial permissions.
 
@@ -13,17 +13,78 @@ colcon --log-base src/ros2_pc/ros2/log build --base-paths src/ros2_pc/ros2/src -
 source src/ros2_pc/ros2/install/setup.bash
 ```
 
-Run it with the serial port and the measured wheel geometry. `port`, `wheel_radius_m` and `wheel_separation_m` have no usable default, and the node refuses to start without `port`. Odometry needs both radius and separation above zero.
+Run it with the measured wheel geometry. `port` defaults to `tcp:127.0.0.1:7650`, the [link multiplexer](ros2-uart-protocol.md#link-multiplexer-on-the-ros2_pc), which owns the serial port. `wheel_radius_m` and `wheel_separation_m` have no usable default. Odometry needs both radius and separation above zero.
 
 ```bash
-ros2 run navbot_link_bridge navbot_link_bridge --ros-args -p port:=/dev/ttyAMA3 -p wheel_radius_m:=0.01915 -p wheel_separation_m:=0.113
+ros2 run navbot_link_bridge navbot_link_bridge --ros-args -p wheel_radius_m:=0.01915 -p wheel_separation_m:=0.113
 ```
 
-`port` is the serial device on the ros2_pc that carries the ESP32 link, here `/dev/ttyAMA3` (GPIO8/GPIO9 on J8), not the LiDAR's `/dev/ttyAMA0` or the radar's UART2. Check the name before use, as described in the [setup page](ros2-pc-setup.md).
+The multiplexer opens the serial device on the ros2_pc that carries the ESP32 link, here `/dev/ttyAMA3` (GPIO8/GPIO9 on J8), not the LiDAR's `/dev/ttyAMA0` or the radar's UART2. Check the name before use, as described in the [setup page](ros2-pc-setup.md). The bridge can also open the serial port itself with `-p port:=/dev/ttyAMA3`, but then the multiplexer must not run.
 
-To start the bridge at boot like the LiDAR service, run `python3 scripts/install_link_bridge_service.py` as the service user, without sudo. It needs the build above and writes `navbot-link-bridge.service` with `/dev/ttyAMA3`, `wheel_radius_m:=0.01915` and `wheel_separation_m:=0.113`; edit the constants in the script to change them. Pass `--heading-source gyro --gyro-yaw-sign <1|-1>` to install it with gyro heading (see below). The `/slam` tab depends on this service.
+To start the link at boot like the LiDAR service, run `python3 scripts/install_link_bridge_service.py` as the service user, without sudo. It needs the build above. It writes two units: `navbot-link-mux.service`, which owns `/dev/ttyAMA3` (`--port` changes it), and `navbot-link-bridge.service`, which starts after the multiplexer and connects to `tcp:127.0.0.1:7650`. It enables both and restarts the multiplexer, then the bridge. The wheel radius and separation are the constants in the script; edit them to change them. Pass `--heading-source gyro --gyro-yaw-sign <1|-1>` to install it with gyro heading (see below). The `/slam` tab depends on this service.
 
-Optional parameters: `baud` (2000000), `odom_frame` (`odom`), `base_frame` (`base_link`), `imu_frame` (`imu_link`), `publish_tf` (`true`). The node reopens the port every second after an error, so a power-cycled robot reconnects.
+The bridge reads the link through the shared [navbot_link](navlink.md#library) `Link`, which also carries the catalog, parameter and subscription messages (next sections). `navlink` connects to the same multiplexer, so both run together.
+
+Optional parameters: `baud` (2000000, used only for a serial port), `odom_frame` (`odom`), `base_frame` (`base_link`), `imu_frame` (`imu_link`), `publish_tf` (`true`). The node reopens the port every second after an error, so a power-cycled robot reconnects; the pose is kept and the odometry baseline is taken again.
+
+## Robot log, signals and firmware parameters
+
+Status: **written and tested only against the in-memory fake firmware** (`tests/navbot_link/fake_firmware.py`), plus a pseudo-terminal run of the node. The catalog messages ([navlink](navlink.md)) have not run on the robot yet, so none of this has.
+
+**Robot log.** Every `Log` frame goes to `/rosout` as `rcl_interfaces/msg/Log`. The `name` is the `Log` tag (`robot` when the tag is empty) and `msg` is the text, with ` (code N)` appended when the code is not 0. The level maps `DEBUG` 10, `INFO` 20, `WARN` 30, `ERROR` 40, `FATAL` 50; a level the bridge does not know is shown as `INFO`. The bridge publishes these messages itself, because rcl sends a logger's lines to `/rosout` only for node loggers. The text does not reach the console or journal of the bridge process. The `/rosout` publisher uses the rcl profile (reliable, transient local, depth 1000) with a 10 s lifespan, so a subscriber that starts later gets the lines of the last 10 s only. `msg.stamp` is the ROS time at which the bridge forwarded the line, not the robot's time.
+
+**Signals.** Two parameters control the stream:
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `signals` | `[]` | Catalog names of signals or parameters to stream. An empty list stops the stream. |
+| `signals_rate_hz` | `10.0` | Row rate. `0.0` streams every control tick. Negative values are refused. |
+
+```bash
+ros2 param set /navbot_link_bridge signals "['speed_target', 'speed_measured']"
+ros2 param set /navbot_link_bridge signals_rate_hz 100.0
+ros2 topic echo /navbot/signals
+```
+
+`/navbot/signals` is a `std_msgs/Float64MultiArray`, one message per robot row. `data` is `[t_us, value0, value1, ...]`. `layout.dim` has one entry whose `label` is the column header `t_us,name0,name1,...`, the same header as the [navlink](navlink.md#capture) CSV, with `size` and `stride` equal to `len(data)`. `t_us` is the robot's `micros()` at the sampled tick (wraps at 2^32); bool values are 0.0 or 1.0, and `i32`, `u32` and `f32` values are exact in a double. The bridge does not convert robot time into ROS time. A message has no header stamp.
+
+The message type is a plain `Float64MultiArray`, not a custom message, because the rows differ per subscription and a custom message would need a CMake interface package next to this `ament_python` package.
+
+A change of `signals` or `signals_rate_hz` subscribes the new list first and releases the old slot after; the robot's budget check can refuse it, and the set then fails with the robot's error text while the old stream keeps running. `Link` renews the 5 s lease every 2 s. After a robot restart or a refused renewal the bridge subscribes again from the current parameters.
+
+**Firmware parameters.** Each `PARAM` entry of the catalog becomes a ROS parameter with the catalog name and the value read from the robot. The ROS parameter is dynamically typed, and the bridge applies the type rules below itself. `ACTION` entries are not exposed, and signals that are not parameters are only streamed.
+
+| Robot type | Accepted in ROS | Stored as |
+| --- | --- | --- |
+| `f32` | a float, or an integer, which is taken as a float | double |
+| `i32`, `u32` | an integer | integer |
+| `bool` | a bool | bool |
+
+A value of another type is refused before the robot is asked, with a reason such as `speed_kp takes a number, got 'fast'`. A value the robot refuses (range, cross-field check) fails the set with the robot's error text, for example `set_param refused: speed_kp must be within [0, 0.5]`, and the ROS value stays as it was. Notes:
+
+- The ROS value is a copy: it is what ROS last set or read at connect. A change made through `navlink` or the other port does not update it, and a restart of the robot rebuilds all firmware parameters from the robot.
+- A value given at startup (`-p speed_kp:=0.1` or a parameters file) is sent to the robot once the catalog is read. An integer for an `f32` parameter (`-p speed_kp:=1`) is sent and stored as `1.0`. If the robot or the type rule refuses it, the bridge logs `startup value of speed_kp not applied: <reason>` and keeps the robot's value.
+- A `set_parameters_atomically` request (the rclpy call, or the `set_parameters_atomically` service) that sets several firmware parameters, or a parameter and the signal stream, is all or nothing. Before the first write the bridge reads the current robot values of that request. If the robot refuses a value, the bridge writes the earlier values back and the result carries the refusal text. If a write-back fails too, the reason names the parameter (`; could not restore speed_ki: ...`). `ros2 param set` sends one name per request and keeps its one-by-one results.
+- ROS stores the value the robot reports in its `Ack`, not the requested one. A robot that clamps a value, or `f32` rounding (`0.1` becomes `0.10000000149011612`), shows in `ros2 param get`. The bridge corrects the stored value before the set call returns.
+- A name rclpy refuses (an empty name) is skipped with a warning such as `firmware parameter '' not exposed: Invalid parameter name:`; the other parameters and the signal stream still start. A firmware parameter named like a bridge parameter (`port`, `baud`, `signals`, ...) is not exposed, with a warning.
+
+**Waiting for the robot.** A `ros2 param set` waits for the robot's answer (about 1.5 s when the robot does not answer), and so does its caller. That wait is in a service thread. Odometry, TF, IMU and `/rosout` keep their rate: the node runs on a `MultiThreadedExecutor`, and the poll timer has a callback group of its own. The catalog reads, parameter exchanges and subscription changes run in one worker thread, in order, so a second set waits for the first.
+
+**A failed catalog read.** The bridge reads the catalog at connect and again after a robot restart, in the worker thread, so odometry, TF, IMU and `/rosout` start at once. A read that gets no reply within about 1.5 s, or a refusal, is a link fault: the bridge logs one warning per connection (`catalog read failed (no reply to get_catalog); ...`) and continues without firmware parameters and signals. It does not retry on its own; the next read comes with a reconnect or a robot restart. A restart whose catalog read fails removes the firmware parameters of the previous read. Setting `signals` is refused with `the robot sent no catalog`. If the link fails before the robot answers, the bridge does not report a missing answer; it reports the link failure (`link failed: <reason>; reopening`).
+
+## Drive and health topics
+
+**`/cmd_vel`** (`geometry_msgs/Twist`): each message becomes a link `Command` with `linear.x` (m/s, forward positive) and `angular.z` (rad/s, positive to the left) while a link is attached. Nothing repeats a command: when the messages stop, the robot stops by its own 250 ms command timeout. The robot takes a command only with CH5 in position 1 (see the [protocol](ros2-uart-protocol.md#command)). A refusal comes back from the robot and is logged as a warning at most every 5 s, with the robot's reason. The subscription has depth 1 and its own callback group, so a parameter set does not delay it.
+
+**`/diagnostics`** (`diagnostic_msgs/DiagnosticArray`): one status named `navbot_firmware` per health row, at 1 Hz, from a subscription to the [health signals](signal-table.md#health-balance-state-and-link-signals). Its `hardware_id` is the firmware build ID. Its level is `ERROR` when `balance_fault` is not 0 or `overspeed_tripped` is set, `WARN` when a `link_*` counter rose since the previous row, and `OK` otherwise. Its message is the balance state name, with `: <fault name>` when there is a fault. Each health signal is one key-value pair, with the state and the fault shown by name.
+
+**`/battery_state`** (`sensor_msgs/BatteryState`): `voltage` is `voltage_filtered_v`, `present` is true, and the stamp is the arrival time. The robot reports no other battery value, so current, charge, capacity, temperature and percentage are NaN (unknown), and the power supply status is `UNKNOWN`.
+
+A health name the firmware does not have (an older build) logs one error (`health topics not started: ...`) and publishes no health topics; the bridge keeps running. The bridge, the signal stream and the parameters are unaffected.
+
+## Time stamps
+
+`/odom`, the TF and `/imu/data` carry the robot's sample time mapped to ROS time, not the time the bridge read the frame. `RobotClock` (`bridge.py`) unwraps the 32-bit `t_us` and adds an offset that follows the lowest `ROS time - t_us` seen, moved up by 0.1 % of the excess on later samples to follow clock drift. A stamp is never later than the time the bridge received the sample, and stamps of one run strictly increase, also for a backlog that the bridge reads in one go. The offset starts again at a reconnect and at a robot restart. `/rosout` lines carry the ROS time at which the bridge forwarded them.
 
 ## Heading source
 
@@ -33,7 +94,7 @@ Optional parameters: `baud` (2000000), `odom_frame` (`odom`), `base_frame` (`bas
 - `gyro`: yaw change comes from the IMU gyro z rate; distance still comes from the wheels. Requires `gyro_yaw_sign` (`1` or `-1`), which maps the IMU `gz` to ROS +yaw (counter-clockwise seen from above, REP-103). The node has no default for it and refuses to start without it, like `port`. Unknown `heading_source` values also stop the node.
 
 ```bash
-ros2 run navbot_link_bridge navbot_link_bridge --ros-args -p port:=/dev/ttyAMA3 -p wheel_radius_m:=0.01915 -p wheel_separation_m:=0.113 -p heading_source:=gyro -p gyro_yaw_sign:=1
+ros2 run navbot_link_bridge navbot_link_bridge --ros-args -p wheel_radius_m:=0.01915 -p wheel_separation_m:=0.113 -p heading_source:=gyro -p gyro_yaw_sign:=1
 ```
 
 How gyro heading works (`odometry.py`):
@@ -60,10 +121,19 @@ Unverified, before relying on the output:
 - The wheel diameter is 38.3 mm and the hand-measured track width 113 mm ([robot hardware overview](../../robot/hardware/system-overview.md#key-findings-and-consequences)). The bridge has no defaults and does not guess them: pass `-p wheel_radius_m:=0.01915 -p wheel_separation_m:=0.113`. The turn test shows that their ratio is 13.5 % off for yaw (see above). The radius alone, which sets the `/odom` distance, is not checked; push the robot straight along a tape measure and compare `/odom` x.
 - The signs of the `/odom` twist are not checked on the robot.
 - The IMU frame `imu_link` has no `base_link` to `imu_link` TF yet.
-- Stamps are the ROS receive time, not the robot's sample time. The robot's IMU read time (`Imu.t_us`) is decoded but not published, because nothing converts robot time into ROS time. Covariances are zero.
+- Covariances are zero.
 
-Test the framing, decoding and odometry logic without ROS. The tests need `pytest` and `protobuf`.
+Test the decoding, odometry, log, signal and parameter logic without ROS. The tests need `pytest` and `protobuf`. The framing and `Link` live in the shared [navbot_link](../../../src/navbot_link/) package, which `setup.py` installs next to the bridge; its tests are in `tests/navbot_link`, and the bridge tests reuse its fake firmware.
 
 ```bash
-PYTHONPATH=src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test
+PYTHONPATH=src:src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test
 ```
+
+`test_node.py` runs the node against the fake firmware. It checks `/rosout` (lines and their stamp), `/navbot/signals`, `/cmd_vel` and its refusal warning, `/diagnostics` and `/battery_state`, the type rules, atomic sets, parameter results, reconnect and restart behavior, the warnings, and that odometry keeps its cadence while the catalog read is silent or a parameter set goes unanswered. It is skipped unless ROS 2 is importable. With the system install, and the ROS pytest plugins switched off because they fail to load under the system pytest:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=$PYTHONPATH:src:src/ros2_pc/ros2/src/navbot_link_bridge python3 -m pytest -q src/ros2_pc/ros2/src/navbot_link_bridge/test
+```
+
+Node tests need an isolated ROS 2 graph. The real bridge runs on this machine and publishes `/odom` and `/imu/data`; a test node in the same domain would receive them and publish into the same topics. `test/conftest.py` therefore sets `ROS_DOMAIN_ID=77` and `ROS_LOCALHOST_ONLY=1` before `rclpy.init()`, and `test_tests_run_in_their_own_ros_graph` fails if another bridge's publisher is visible. Every node test you add runs under these settings. When you run a node test by hand, do not unset them and do not run it in domain 0.

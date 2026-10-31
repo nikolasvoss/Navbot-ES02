@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include "ICM42688.h"
+#include "Logging.h"
 #include "imu.h"
 
 #include <array>
@@ -8,6 +9,9 @@
 #include <cstdint>
 
 HostSerial Serial;
+namespace Logging {
+void message(Level, const char*, const char*, ...) {}
+}
 namespace {
 std::array<uint8_t, 128> registers{};
 uint8_t address = 0;

@@ -1,19 +1,31 @@
 #!/usr/bin/env python3
-"""Show the safe diagnostic stream without holding the ESP32-S3 in reset.
+"""Show the robot's log messages from the USB port without holding the ESP32-S3 in reset.
 
 Usage: python3 scripts/sensor_monitor.py [--port /dev/ttyUSB0] [--seconds 10]
-Requires pyserial. Press Ctrl-C to stop an unlimited capture.
+Reads through the navbot_link library. Works with the normal and the sensor diagnostic image; it only prints the
+Log frames and sends no requests. Press Ctrl-C to stop an unlimited capture. Only one program may hold the port.
 """
 
 import argparse
+import queue
 import sys
 import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
 
 try:
-    import serial
     from serial.tools import list_ports
 except ImportError:
     sys.exit("pyserial is required: python3 -m pip install pyserial")
+
+from navbot_link.capture import describe  # noqa: E402
+from navbot_link.framing import Text  # noqa: E402
+from navbot_link.link import Disconnected, FramesLost, Link, LogEvent  # noqa: E402
+from navbot_link.protocol import LinkError  # noqa: E402
+
+USB_BAUD = 576_000
 
 
 def find_port():
@@ -28,18 +40,19 @@ def find_port():
 
 
 def monitor(port, seconds):
-    # On this board an asserted RTS holds EN low. Deassert it before opening;
-    # opening the port can still cause a brief reset, but must not hold reset.
-    connection = serial.Serial(baudrate=576000, timeout=0.2)
-    connection.port = port
-    connection.dtr = False
-    connection.rts = False
     deadline = time.monotonic() + seconds if seconds else None
-    with connection:
+    with Link(port, USB_BAUD) as link:
         while deadline is None or time.monotonic() < deadline:
-            line = connection.readline()
-            if line:
-                print(line.decode("ascii", errors="replace").rstrip(), flush=True)
+            try:
+                event = link.events.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            if isinstance(event, (LogEvent, FramesLost)):
+                print(describe(event), flush=True)
+            elif isinstance(event, Text):
+                print(event.text.rstrip("\r\n"), flush=True)
+            elif isinstance(event, Disconnected):
+                raise LinkError(f"port closed: {event.reason}")
 
 
 def main():
@@ -53,7 +66,7 @@ def main():
         monitor(args.port or find_port(), args.seconds)
     except KeyboardInterrupt:
         return 0
-    except (OSError, serial.SerialException, RuntimeError) as error:
+    except (OSError, LinkError, RuntimeError) as error:
         print(f"sensor_monitor: {error}", file=sys.stderr)
         return 1
     return 0

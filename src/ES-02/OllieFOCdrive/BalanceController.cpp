@@ -74,6 +74,37 @@ bool armingConditionsMet(const Measurements &measurements, const Request &reques
          std::fabs(measurements.rightWheelRadPerSec) <= config.armingWheelSpeedRadPerSec;
 }
 
+}  // namespace
+
+const char *StateName(State state) {
+  switch (state) {
+    case State::Disabled: return "Disabled";
+    case State::Arming: return "Arming";
+    case State::Run: return "Run";
+    case State::Commissioning: return "Commissioning";
+    case State::Fault: return "Fault";
+  }
+  return "?";
+}
+
+const char *FaultReasonName(FaultReason reason) {
+  switch (reason) {
+    case FaultReason::None: return "None";
+    case FaultReason::StaleImu: return "StaleImu";
+    case FaultReason::StaleWheels: return "StaleWheels";
+    case FaultReason::StaleBus: return "StaleBus";
+    case FaultReason::InvalidInput: return "InvalidInput";
+    case FaultReason::BadDt: return "BadDt";
+    case FaultReason::Fall: return "Fall";
+    case FaultReason::Overspeed: return "Overspeed";
+    case FaultReason::InvalidEnvelope: return "InvalidEnvelope";
+    case FaultReason::InvalidConfig: return "InvalidConfig";
+    case FaultReason::AuthorityExhausted: return "AuthorityExhausted";
+    case FaultReason::TiltSaturated: return "TiltSaturated";
+  }
+  return "?";
+}
+
 // Demand caps must be usable: a zero brake cap would hold the last speed when the request times out,
 // and a negative or NaN rate would move speed the wrong way. A zero slew rate would freeze the tilt
 // reference, and a zero wheel radius or loop period would divide by zero or never run the loop.
@@ -105,6 +136,8 @@ bool configValid(const Config &config) {
          std::isfinite(config.yawPAPerRadPerSec) && std::isfinite(config.reserveLowA) &&
          config.reserveLowA > 0.0f;
 }
+
+namespace {
 
 float nanToZero(float value) { return std::isnan(value) ? 0.0f : value; }
 

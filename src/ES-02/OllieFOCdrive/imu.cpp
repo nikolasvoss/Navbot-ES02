@@ -195,14 +195,13 @@ void setCalibration(const CalibrationValues &calibration) {
 }
 
 void calibrateGyroBiasBlocking() {
-  if (Logging::profile() == Logging::Profile::Idle) {
-    Serial.println("Calibrating gyroscope. Keep the device still...");
-  }
+  Logging::message(Logging::Level::Info, "IMU", "Calibrating gyroscope. Keep the device still...");
 
   int32_t gyroXSum = 0;
   int32_t gyroYSum = 0;
   int32_t gyroZSum = 0;
   int validSamples = 0;
+  bool movedReported = false;
   while (validSamples < kGyroCalibrationSamples) {
     ICM42688RawSample raw{};
     if (!readIMUDataIfReady(raw)) {
@@ -216,15 +215,13 @@ void calibrateGyroBiasBlocking() {
       gyroYSum += raw.gyroscopeY;
       gyroZSum += raw.gyroscopeZ;
       ++validSamples;
+      movedReported = false;
     } else {
-      if (Logging::profile() == Logging::Profile::Idle) {
-        Serial.print(" | x: ");
-        Serial.print(raw.gyroscopeX);
-        Serial.print(" y: ");
-        Serial.print(raw.gyroscopeY);
-        Serial.print(" Z: ");
-        Serial.print(raw.gyroscopeZ);
-        Serial.println("Device moved during calibration. Restarting...");
+      if (!movedReported) {
+        movedReported = true;
+        Logging::message(Logging::Level::Info, "IMU", "x=%d y=%d z=%d Device moved during calibration. Restarting...",
+                         static_cast<int>(raw.gyroscopeX), static_cast<int>(raw.gyroscopeY),
+                         static_cast<int>(raw.gyroscopeZ));
       }
       gyroXSum = 0;
       gyroYSum = 0;
@@ -239,9 +236,7 @@ void calibrateGyroBiasBlocking() {
                                   static_cast<float>(gyroZSum) / kGyroCalibrationSamples};
   state.hasPreviousRead = false;
 
-  if (Logging::profile() == Logging::Profile::Idle) {
-    Serial.println("Gyroscope calibration completed.");
-  }
+  Logging::message(Logging::Level::Info, "IMU", "Gyroscope calibration completed.");
 }
 
 }  // namespace imu

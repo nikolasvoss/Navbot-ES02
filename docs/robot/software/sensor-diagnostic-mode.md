@@ -1,58 +1,40 @@
 # Use the sensor diagnostic mode
 
-The sensor diagnostic mode reads the IMU, battery ADC, and SBUS receiver without initializing motor or servo control. It holds the two motor-driver enable pins low and returns from normal setup before initializing FOC, servos, or balance control. The source currently sets `SENSOR_DIAGNOSTIC_MODE` to `0`. Set it to `1` and rebuild to enable this procedure.
+The sensor diagnostic mode initializes the IMU and the receiver without initializing motor, servo or balance control. It holds the two motor-driver enable pins low, sets up the NavBot link on both ports, and then runs its own loop (`diagnosticLoop()`), which has no control tick. The source currently sets `SENSOR_DIAGNOSTIC_MODE` to `0`. Set it to `1` and rebuild to enable this mode.
 
 Support the robot mechanically during this check. The legs do not move in diagnostic mode. This mode does not establish safe or stable behavior under motor load.
 
-## Read the serial stream
+## The link
 
-The diagnostic firmware sends 17 numeric CSV fields at 576000 baud over the existing CH340 UART. A typed sample enters the project-local `Logging` module after each fresh software SPI IMU read, nominally every 10 ms (100 Hz), and one bounded sender writes queued rows. The row contains the pre-read `time_us`, a monotonic `sequence`, the existing sensor/receiver values, and cumulative queue-drop and UART-write-failure counters. `time_us` marks the start of the SPI read, not PC receipt time. The sensor remains configured at its existing 1 kHz output rate; the software reads the latest sample at nominal 100 Hz, so this does not mean a new conversion is produced only every 10 ms. Close SerialPlot or another serial monitor before opening the port because the port allows one client at a time.
+The diagnostic image is a link build like the normal one. It serves the same catalog (the [signal table](../../integration/software/signal-table.md)) on UART1 and on the USB port, so [navlink](../../integration/software/navlink.md) and `python3 scripts/sensor_monitor.py` work with it the same way. Each port sends its `Log` frames, and the requests on each port are answered. Only one program may hold the USB port at a time.
 
-For plain text output, run:
+The image sends no `WheelOdometry` or `Imu` frames, because those come from the control tick, and it runs no control tick.
 
-```bash
-python3 scripts/sensor_monitor.py
-```
+### Which signals are live
 
-The monitor leaves DTR and RTS deasserted. In SerialPlot, select the current `/dev/ttyUSB*` port, set DTR and RTS off, and choose ASCII, comma delimiter, and 17 channels. The first channel is `time_us`, followed by `sequence`; the remaining fields are gyro XYZ (rad/s), acceleration XYZ (g), roll/pitch/yaw (degrees), raw battery voltage, receiver age/failsafe, IMU-ready, queue drops, and UART-write failures. Port names can change, so identify the connected device before use.
+The catalog is the same table as the normal image. In this image the loop updates the following; every other signal reads its initial value, which is 0:
 
-A motor-disabled capture at 576000 baud on 2026-10-07 used the pre-logger 25-field diagnostic image. It contained 250 complete rows with `imu_ok=1`. The 249 timestamp intervals had a 10.000 ms median and ranged from 9.966 to 10.040 ms; none exceeded 15 ms. That capture predates the current typed logger and does not verify the current 17-field stream's UART integrity.
+| Live | Source |
+| --- | --- |
+| `ch5_position`, `rc_valid` | the CH5 switch and the RC state, from each S.BUS frame |
+| `voltage_min_raw_v`, `voltage_filtered_v`, `battery_raw_instant_v` | the battery, read every 10 ms (not every control tick) |
+| `roll_deg`, `pitch_deg`, `gyro_z_rad_s`, and all `imu_*` signals | the IMU, when it initialized |
+| `link_tx_drop_*`, `link_rx_bad_*`, `link_req_dropped`, `link_undecodable` | the link counters |
+| `uptime_s`, `heap_*`, `stack_free_*` | the system health, refreshed once a second |
+| every parameter | its value, readable; `mahony_kp`, `mahony_ki` and `gyro_cutoff_hz` change the IMU filters. The balance and servo-trim values are stored, but nothing in this image reads them. `log_level` filters the text lines as in the other image |
+| `motor_stop`, `motor_reset` | accepted; they change no output |
 
-The same stationary capture showed filtered-to-unfiltered standard-deviation ratios of 0.641 for gyro X and 0.733 for acceleration Z. Raw battery readings ranged from 7.250077 to 7.307390 V, while filtered readings ranged from 7.262542 to 7.293375 V. These values show smoothing of the stationary signals. They do not verify a 20 Hz cutoff because no controlled vibration or frequency sweep was applied. The host regression test exercises the production filter functions for the 20 Hz and 100 Hz case.
+Read as 0 in this image: `ch3_target`, `body_turn_command`, `servo1_cmd_deg` to `servo4_cmd_deg`, `leg_pose_min_deg`, `leg_pose_max_deg`, the `motor1_*` and `motor2_*` signals, `control_start_us`, `control_execution_us`, `tick_dt_s` and `loop_interval_max_us`. The balance and link-control signals stay at their start values: `balance_state`, `balance_fault`, `overspeed_tripped`, `motor_test_active` and `link_balance` are 0, and `cmd_age_ms` is `4294967295` until a `Command` arrives (which this image refuses).
 
-Historical hardware capture at 921600 baud on 2026-10-07 did not pass: across 95.54 seconds of device timestamps, 7,824 valid 17-field rows arrived (81.89 rows/s) out of about 100.01 producer records/s inferred from sequence IDs. There were 1,714 malformed numeric lines, 1,731 missing sequence IDs, and zero reported firmware queue drops or UART-write failures. The host receive path was losing or corrupting bytes; the test did not isolate the CH340, cable, host driver, or MCP. A later capture at 576000 baud confirmed the older 25-field diagnostic stream's timing. Neither capture verifies the current typed logger. Run a UART integrity capture with the current format before treating that path as accepted.
+The actions `motor_current`, `motor_voltage`, `calibrate` and `balance` are refused with a reason in the `Ack`, because this image runs no motor loop and no calibration step. Starting a motor test would enable the drivers. `reboot` is accepted when CH5 is at 0, and restarts this image too.
 
-The software IMU read rate is nominally 100 Hz. The diagnostic LPF cutoff is 20 Hz at a nominal 100 Hz software sample rate (10,000 µs period), giving a 50 Hz Nyquist limit. Raw gyro and acceleration fields bypass that LPF, so content above 50 Hz can alias; the 20 Hz filter does not protect those raw fields. Actual timing is determined by software scheduling and must be checked from `time_us` intervals. The first serial lines contain boot and setup text before the CSV rows. The `DIAG,boot` line reports the reset reason and IMU status. The voltage field uses direct ADC conversion and does not have the filtered value's startup delay.
+### Subscriptions in this image
 
-## Capture raw and filtered gyro data in normal mode
+Rows are taken once per pass of `diagnosticLoop()`. The pass rate is not measured, and the subscription budget assumes the control tick's 710 Hz. Subscribe with a period of 1 ms or more; a period of 0 means every pass and may exceed the budget the port was checked against.
 
-Use normal firmware with `SENSOR_DIAGNOSTIC_MODE=0`. Connect SerialPlot to the CH340 port at the normal firmware's 576000 baud. Set DTR and RTS off, select ASCII input with comma delimiters, and configure seven channels.
+## What the mode reports
 
-In SerialPlot's Commands tab, send `K46` followed by a newline. Each numeric CSV row contains:
-
-```text
-timestamp_us,gyro_x,gyro_y,gyro_z,gyro_x_filtered,gyro_y_filtered,gyro_z_filtered
-```
-
-The timestamp is the completed IMU sample time in microseconds. The six gyro values are in rad/s. K46 uses the selected-debug logger's current 10 ms pacing limit, for up to 100 samples/s and a 50 Hz Nyquist limit. Save a SerialPlot snapshot as CSV, then compare raw and filtered gyro X with:
-
-```bash
-python3 scripts/plot_channel_fft.py gyro.csv --channels 2 5
-```
-
-Channel 1 is the timestamp, channels 2–4 are raw gyro X/Y/Z, and channels 5–7 are filtered gyro X/Y/Z. The 32-bit microsecond timestamp wraps after about 71.6 minutes, so keep a capture shorter than that.
-
-Send `K0` to stop the stream. The selector resets when the board restarts.
-
-## Plot an RC channel while the robot runs
-
-Use the normal firmware with `SENSOR_DIAGNOSTIC_MODE=0`. Connect SerialPlot to the CH340 port at 576000 baud (`kSerialBaudRate`). Set DTR and RTS off, then choose ASCII input, comma delimiters, and two channels.
-
-In SerialPlot's Commands tab, send `K60` for receiver channel 1, `K61` for channel 2, and so on through `K75` for channel 16. End each command with a newline. The firmware sends uptime in seconds and the selected channel's latest raw SBUS value at 20 Hz. Send `K0` to stop. Use SerialPlot's snapshot feature to save the plotted data as CSV.
-
-The logger stays off until you send a `K60`–`K75` command. It does not stop or change normal motor and servo control. Keep the robot in its normal safe operating setup while it runs. The command selection resets when the board restarts.
-
-If the ROM reports `DOWNLOAD(USB/UART0)` and waits for download, the ESP32 entered its flash loader. Keep DTR off, then pulse RTS or press RESET/EN. A normal firmware boot reports `SPI_FAST_FLASH_BOOT`. Do not run `sensor_monitor.py` and SerialPlot at the same time.
+The mode sends its setup messages, the boot line `DIAG boot reset_reason=… imu_ok=… motors=off servos=off`, and a once-per-second `IMU_TIMING` line as `Log` frames on both link ports. Read them with `python3 scripts/sensor_monitor.py`, which leaves DTR and RTS deasserted, or with `navlink shell` on the ros2_pc.
 
 ## Build and upload the diagnostic image
 
@@ -63,5 +45,7 @@ python3 scripts/build_firmware.py
 ```
 
 Upload the resulting `build/flash` image with the configured `navbot_flash` MCP tool. Follow the current project instructions in `AGENTS.md`; close the serial connection before uploading and keep the motor outputs safe. Set the define back to `0` and rebuild when you need the normal motor-control firmware.
+
+If the ROM reports `DOWNLOAD(USB/UART0)` and waits for download, the ESP32 entered its flash loader. Keep DTR off, then pulse RTS or press RESET/EN. A normal firmware boot reports `SPI_FAST_FLASH_BOOT`. Do not run `sensor_monitor.py`, `navlink` and another serial program on the USB port at the same time.
 
 Sensor readings establish that the sensors and receiver respond with motor control disabled. They do not establish that the robot is safe or stable under motor load.

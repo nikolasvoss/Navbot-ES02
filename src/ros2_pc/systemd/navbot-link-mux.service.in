@@ -1,0 +1,16 @@
+[Unit]
+Description=Navbot ESP32 link multiplexer (owns the robot port, shares it on 127.0.0.1:7650)
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=@USER@
+SupplementaryGroups=dialout
+Environment=PYTHONPATH=@REPO@/src
+ExecStart=/usr/bin/python3 -m navbot_link.mux --port @PORT@ --baud @BAUD@ --listen 127.0.0.1:7650
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

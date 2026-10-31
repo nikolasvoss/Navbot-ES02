@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 
 #include "../../src/ES-02/OllieFOCdrive/MotorDiagnostic.h"
@@ -24,30 +25,32 @@ MotorDiagnostic::Request currentRequest(float left = 0.02f, float right = -0.02f
 
 int main() {
   using namespace MotorDiagnostic;
+  // The motor_current action: the endpoint has checked the argument bounds; these checks are the module's own.
   Request parsed{};
-  assert(parseCurrentRequest(" 0.02 -0.02 2000\r\n", parsed));
-  assert(parsed.leftCurrentA == 0.02f && parsed.rightCurrentA == -0.02f && parsed.leaseMs == 2000);
-  assert(!parseCurrentRequest("", parsed));
-  assert(!parseCurrentRequest("0.1 0.1", parsed));
-  assert(!parseCurrentRequest("0.1 0.1 500 extra", parsed));
-  assert(!parseCurrentRequest("0.1 0.1x 500", parsed));
-  assert(!parseCurrentRequest("nan 0 500", parsed));
-  assert(!parseCurrentRequest("inf 0 500", parsed));
-  assert(!parseCurrentRequest("0.36 0 500", parsed));
-  assert(parseCurrentRequest("0 0 5000", parsed) && parsed.leaseMs == 5000);
-  assert(!parseCurrentRequest("0 0 5001", parsed));
-  assert(!parseCurrentRequest("0 0 500.5", parsed));
-  assert(parseVoltageRequest("2 -0.5 1250", parsed));
-  assert(parsed.selectedMotor == 2 && parsed.voltageV == -0.5f && parsed.leaseMs == 1250);
-  assert(parseVoltageRequest("1 2.0 5000", parsed));
-  assert(parsed.voltageV == 2.0f && parsed.leaseMs == 5000);
-  assert(parseVoltageRequest("2 -2.0 5000", parsed));
-  assert(parsed.voltageV == -2.0f);
-  assert(!parseVoltageRequest("0 0.1 500", parsed));
-  assert(!parseVoltageRequest("1 2.01 500", parsed));
-  assert(!parseVoltageRequest("1 0.1 5001", parsed));
-  assert(!parseVoltageRequest("1 nan 500", parsed));
-  assert(!parseVoltageRequest("1 0.1 500 1", parsed));
+  assert(MakeCurrentRequest(0.02f, -0.02f, 2000.0f, parsed));
+  assert(parsed.mode == Mode::CurrentTest && parsed.leftCurrentA == 0.02f && parsed.rightCurrentA == -0.02f);
+  assert(parsed.leaseMs == 2000 && parsed.selectedMotor == kBothMotors && parsed.voltageV == 0.0f);
+  assert(!MakeCurrentRequest(0.1f, 0.1f, 500.5f, parsed));  // the lease is a whole number of ms
+  assert(!MakeCurrentRequest(0.1f, 0.1f, 0.0f, parsed));
+  assert(!MakeCurrentRequest(0.1f, 0.1f, 5001.0f, parsed));
+  assert(!MakeCurrentRequest(0.36f, 0.0f, 500.0f, parsed));  // above kMaximumCurrentA
+  assert(!MakeCurrentRequest(std::nanf(""), 0.0f, 500.0f, parsed));
+  assert(MakeCurrentRequest(0.0f, 0.0f, 5000.0f, parsed) && parsed.leaseMs == 5000);
+  // The motor_voltage action: motor 1 or 2, voltage up to kMaximumVoltageV, whole-number lease.
+  assert(MakeVoltageRequest(2.0f, -0.5f, 1250.0f, parsed));
+  assert(parsed.mode == Mode::VoltageIdentification && parsed.selectedMotor == 2 && parsed.voltageV == -0.5f);
+  assert(parsed.leaseMs == 1250 && parsed.leftCurrentA == 0.0f && parsed.rightCurrentA == 0.0f);
+  assert(MakeVoltageRequest(1.0f, 2.0f, 5000.0f, parsed) && parsed.voltageV == 2.0f && parsed.leaseMs == 5000);
+  assert(MakeVoltageRequest(2.0f, -2.0f, 5000.0f, parsed) && parsed.voltageV == -2.0f);
+  assert(!MakeVoltageRequest(0.0f, 0.1f, 500.0f, parsed));  // motor 1 or 2
+  assert(!MakeVoltageRequest(1.5f, 0.1f, 500.0f, parsed));
+  assert(!MakeVoltageRequest(1.0f, 2.01f, 500.0f, parsed));
+  assert(!MakeVoltageRequest(1.0f, 0.1f, 5001.0f, parsed));
+  assert(!MakeVoltageRequest(1.0f, std::nanf(""), 500.0f, parsed));
+  assert(!MakeVoltageRequest(1.0f, 0.1f, 1000.9f, parsed));
+  assert(std::strcmp(RequestResultText(RequestResult::Accepted), "accepted") == 0);
+  assert(std::strcmp(RequestResultText(RequestResult::Invalid), "invalid request") == 0);
+  assert(std::strcmp(RequestResultText(RequestResult::FaultLatched), "fault latched, send motor_reset") == 0);
 
   State state{};
   Request request = currentRequest();
@@ -62,9 +65,17 @@ int main() {
   assert(resetFault(state, safeInputs(13)));
   assert(!state.active && state.fault == Fault::None);
 
+  // A motor action is refused while balance or calibration runs, and the Ack says so; nothing latches.
   Inputs calibration = safeInputs();
   calibration.calibrationActive = true;
   assert(start(state, request, calibration) == RequestResult::Unsafe);
+  assert(!state.active && state.fault == Fault::None);
+  Inputs balancing = safeInputs(20);
+  balancing.balanceEnabled = true;
+  assert(start(state, request, balancing) == RequestResult::Unsafe);
+  assert(std::strcmp(RequestResultText(RequestResult::Unsafe),
+                     "balance or calibration active, or a wheel is too fast") == 0);
+  assert(!state.active && state.fault == Fault::None);
   assert(start(state, request, safeInputs()) == RequestResult::Accepted);
   assert(update(state, calibration) == Fault::CalibrationActive);
   assert(resetFault(state, safeInputs()));
@@ -76,7 +87,7 @@ int main() {
   assert(resetFault(state, safeInputs(2101)));
 
   Request voltage{};
-  assert(parseVoltageRequest("1 0.4 1000", voltage));
+  assert(MakeVoltageRequest(1.0f, 0.4f, 1000.0f, voltage));
   const float overLimit = kMaximumSpeedRadPerSec + 0.01f;
 
   // Overspeed latches once an over-limit condition has lasted kOverspeedDebounceMs (50 ms).
@@ -200,7 +211,7 @@ int main() {
   // A mode switch while active replaces the request and restarts the lease.
   assert(start(state, currentRequest(0.01f, 0.01f, 1000), safeInputs(5000)) == RequestResult::Accepted);
   Request voltageSwitch{};
-  assert(parseVoltageRequest("1 0.3 800", voltageSwitch));
+  assert(MakeVoltageRequest(1.0f, 0.3f, 800.0f, voltageSwitch));
   assert(start(state, voltageSwitch, safeInputs(5200)) == RequestResult::Accepted);
   assert(state.active && state.startedAtMs == 5200);
   assert(state.request.mode == Mode::VoltageIdentification && state.request.selectedMotor == 1);

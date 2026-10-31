@@ -1,6 +1,7 @@
 [Unit]
 Description=Navbot ESP32 link bridge (odometry, TF and IMU)
-After=network.target
+After=network.target navbot-link-mux.service
+Requires=navbot-link-mux.service
 StartLimitIntervalSec=0
 
 [Service]

@@ -1,0 +1,11 @@
+# synthetic navlink fixture for tests/scripts; not robot data
+# uneven rows around the 1000 ms stop window
+t_us,ch5_position,voltage_min_raw_v,ch3_target,motor1_velocity_f,motor2_velocity_f,roll_deg,motor1_target,motor2_target,imu_sequence,imu_read_time_us,imu_dt_s,imu_accepted_samples,imu_long_gap_count,imu_max_interval_us,control_execution_us,loop_interval_max_us,motor1_current_sp,motor2_current_sp,motor1_voltage_q,motor2_voltage_q,battery_raw_instant_v
+1000000,2,7.9,5,1,1,0.2,0,0,0,13,0.001,0,0,1200,300,1000,0,0,0,0,7.9
+1100000,2,7.9,5,1,1,0.2,0,0,10,10013,0.001,10,0,1200,300,1000,0,0,0,0,7.9
+1200000,2,7.9,5,1,1,0.2,0,0,20,20013,0.001,20,0,1200,300,1000,0,0,0,0,7.9
+1300000,2,7.9,0,-1,-1,0.2,0,0,30,30013,0.001,30,0,1200,300,1000,0,0,0,0,7.9
+1700000,2,7.9,0,-2,-2,0.2,0,0,40,40013,0.001,40,0,1200,300,1000,0,0,0,0,7.9
+2300000,2,7.9,0,-3,-3,0.2,0,0,50,50013,0.001,50,0,1200,300,1000,0,0,0,0,7.9
+2301000,2,7.9,0,-8,-8,0.2,0,0,60,60013,0.001,60,0,1200,300,1000,0,0,0,0,7.9
+3000000,2,7.9,0,-9,-9,0.2,0,0,70,70013,0.001,70,0,1200,300,1000,0,0,0,0,7.9

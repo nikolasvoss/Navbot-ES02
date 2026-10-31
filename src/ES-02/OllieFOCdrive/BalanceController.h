@@ -50,6 +50,10 @@ enum class FaultReason : uint8_t {
   TiltSaturated,
 };
 
+// The enum names as text for logs: "Run", "Fall", ...
+const char *StateName(State state);
+const char *FaultReasonName(FaultReason reason);
+
 struct Diagnostics {
   float c = 0.0f;
   float d = 0.0f;
@@ -198,6 +202,10 @@ struct Allocation {
   float rightA = 0.0f;
   float reserve = 0.0f;
 };
+
+// Whether the configuration is usable, including the cross-field rules (trim envelope within the tilt reference limit).
+// update() latches InvalidConfig on an invalid Config, so a settings change is checked here before it is applied.
+bool configValid(const Config &config);
 
 class BalanceController {
  public:

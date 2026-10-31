@@ -20,8 +20,7 @@ std::deque<ICM42688RawSample> scriptedSamples;
 bool streamSample = false;
 }
 namespace Logging {
-Profile profile() { return Profile::Idle; }
-Result message(Level, const char*, const char*, ...) { return Result::Accepted; }
+void message(Level, const char*, const char*, ...) {}
 }
 
 uint32_t micros() { return nowUs; }

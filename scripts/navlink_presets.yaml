@@ -1,0 +1,43 @@
+# Signal lists for `navlink capture --preset <name>` and `sub @<name>` in the
+# shell. rate_hz 0 streams every control tick. A preset that names a signal the
+# connected firmware does not have fails with "unknown signal <name>".
+# tests/scripts/test_navlink_presets.py checks every preset against the firmware's signals.def.h.
+#
+# 100 Hz is a row on every 7th control tick at the 710 ticks per second of 2026-10.
+# The leg pose window (leg_pose_min_deg, leg_pose_max_deg) gives the servo range: the four servos take the same pose.
+
+trace:
+  rate_hz: 100
+  signals: [ch5_position, voltage_min_raw_v, voltage_filtered_v, roll_deg, pitch_deg,
+            servo1_cmd_deg, servo2_cmd_deg, servo3_cmd_deg, servo4_cmd_deg,
+            leg_pose_min_deg, leg_pose_max_deg, motor1_target, motor2_target]
+
+ctrl:
+  rate_hz: 100
+  signals: [ch5_position, voltage_min_raw_v, voltage_filtered_v, roll_deg, gyro_z_rad_s,
+            body_turn_command, motor1_target, motor2_target,
+            leg_pose_min_deg, leg_pose_max_deg]
+
+bal:
+  rate_hz: 100
+  signals: [ch5_position, voltage_min_raw_v, roll_deg, motor1_target, motor2_target,
+            leg_pose_min_deg, leg_pose_max_deg]
+
+health:
+  rate_hz: 1
+  signals: [balance_state, balance_fault, overspeed_tripped, motor_test_active, rc_valid, ch5_position,
+            voltage_filtered_v, voltage_min_raw_v, loop_interval_max_us,
+            link_tx_drop_uart, link_tx_drop_usb, link_rx_bad_uart, link_rx_bad_usb,
+            link_req_dropped, link_undecodable,
+            uptime_s, heap_free_b, heap_min_free_b, stack_free_loop_b, stack_free_link_b]
+
+drive:
+  rate_hz: 100
+  signals: [ch5_position, voltage_min_raw_v, voltage_filtered_v,
+            imu_sequence, imu_read_time_us, imu_dt_s, imu_accepted_samples,
+            imu_long_gap_count, imu_max_interval_us,
+            control_start_us, control_execution_us, loop_interval_max_us,
+            ch3_target, motor1_velocity_f, motor2_velocity_f, tick_dt_s, roll_deg,
+            motor1_target, motor2_target, motor1_current_sp, motor2_current_sp,
+            motor1_voltage_q, motor2_voltage_q, motor1_shaft_velocity, motor2_shaft_velocity,
+            battery_raw_instant_v, leg_pose_min_deg, leg_pose_max_deg]

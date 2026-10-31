@@ -1,5 +1,7 @@
 #include "ServoControl.h"
 
+#include "ServoLimits.h"
+
 // Constructor, initialize servo pins
 ServoControl::ServoControl(int servo1Pin, int servo2Pin, int servo3Pin, int servo4Pin)
     : servo1Pin(servo1Pin), servo2Pin(servo2Pin), servo3Pin(servo3Pin), servo4Pin(servo4Pin) {}
@@ -41,16 +43,16 @@ int ServoControl::calculateServoPwmDutyCycle(int direction, int angle) {
     angle = -angle;
   }
 
-  // Ensure angle is within valid range of -90 to 90 degrees
-  if (angle < -90) {
-    angle = -90;
+  // Ensure angle is within valid range of -kServoAngleLimitDeg to kServoAngleLimitDeg degrees
+  if (angle < -kServoAngleLimitDeg) {
+    angle = -kServoAngleLimitDeg;
   }
-  if (angle > 90) {
-    angle = 90;
+  if (angle > kServoAngleLimitDeg) {
+    angle = kServoAngleLimitDeg;
   }
 
-  // Map angle from -90 to 90 degrees to 0 to 180 degrees
-  angle = map(angle, -90, 90, 0, 180);
+  // Map the angle range to 0 to 180 degrees
+  angle = map(angle, -kServoAngleLimitDeg, kServoAngleLimitDeg, 0, 180);
 
   // Ensure mapped angle is within valid range of 0 to 180 degrees
   if (angle < 0) {

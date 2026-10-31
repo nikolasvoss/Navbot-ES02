@@ -17,10 +17,10 @@ flowchart LR
     RC[SBUS remote control<br/>CH3 drive · CH4 turn<br/>CH5 enable] --> CMD[Setpoints and operating mode]
     IMU[ICM-42688P<br/>acceleration + angular rate] --> MAH[Filter + Mahony<br/>tilt correctedRollDegrees / correctedPitchDegrees]
     ENC[2 × AS5600<br/>wheel angle] --> VEL[Wheel speed estimate]
-    CMD --> CTRL[Two-wheel control]
-    MAH --> CTRL
-    VEL --> CTRL
-    CTRL -->|2 current targets, A| FOC[2 × SimpleFOC<br/>torque mode + FOC]
+    CMD --> TWC[Two-wheel control]
+    MAH --> TWC
+    VEL --> TWC
+    TWC -->|2 current targets, A| FOC[2 × SimpleFOC<br/>torque mode + FOC]
     ENC --> FOC
     FOC --> DRV[2 × MP6536<br/>wheel motors]
     SERVO[4 × servo PWM<br/>fixed standing pose]
@@ -52,7 +52,7 @@ The behavior is coupled through the mechanics: a servo movement changes the posi
 | **CH1, CH2** | Unused (body roll, leg height, and pitch were removed). |
 | **CH3** | Speed request, forward stick positive, scaled to plus and minus 0.3 m/s. Ignored in Commissioning. |
 | **CH4** | Yaw-rate request, left stick positive, scaled to plus and minus 1.0 rad/s. |
-| **CH5** | Enable. Raw below 592 is off; 592 or above is on. Only the change from off to on starts Arming; off takes every state to Disabled and clears a fault. |
+| **CH5** | Enable, three positions. Raw below 592 is off (0). 592 to 1401 is link mode (1): balance follows the link's `balance` action, and the link drives with `Command`. 1402 and above is RC balance (2). In position 2, only the change from off to on starts Arming; off takes every state to Disabled and clears a fault. |
 | **CH6** | Save request for the trim (raw 992 or above), only in Commissioning. |
 | **CH7** | Commissioning (raw 992 or above). |
 | **CH8, CH10** | Unused. |
@@ -84,7 +84,7 @@ This recording confirms the diagnostic telemetry clock and stationary smoothing.
 
 ## Current parameters: start values and CH5 modes
 
-No balance gains are active. The yaw gain starts at `YP4`, `YI0`, `YD0`, `YL0`, and later serial changes remain valid until restart. Package 4 defines the new gain set.
+No balance gains are active. Package 4 defines the new gain set.
 
 ## Enable and protection in the code
 
@@ -104,10 +104,9 @@ No balance gains are active. The yaw gain starts at `YP4`, `YI0`, `YD0`, `YL0`, 
 | Wheel targets and fixed servo pose | `OllieFOCdrive.ino`: `runControlTick()` |
 | Remote control and modes | `OllieFOCdrive.ino`: `readSbus()` |
 | IMU fusion and posture offsets | `imu.cpp`: `imu::service()`; `MahonyFilter.cpp` |
-| PID calculation rule | `OllieFOCdrive.h`: `MyPIDController::compute()` |
 | Calibration and storage | `Calibration.cpp`, `CalibrationStore.cpp`; call in `OllieFOCdrive.ino`: `loop()` |
-| Servo output | `ServoControl.cpp`; trims in `zeroBias.servo1` through `zeroBias.servo4` |
-| K58 drive trace with controller parts | [README](trace-capture.md#capture-a-balance-shutdown), `scripts/capture_balance_trace.py` |
+| Servo output | `ServoControl.cpp`; trims in `servoTrims`, set through the parameters `servo1_trim` to `servo4_trim` ([navlink](../../integration/software/navlink.md)) |
+| Drive trace with controller parts | [trace capture](trace-capture.md#analyse-a-drive-trial), `navlink capture --preset drive` |
 
 ### Not yet resolved
 

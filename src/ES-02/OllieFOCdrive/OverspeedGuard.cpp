@@ -45,4 +45,12 @@ bool update(State &state, uint32_t nowMs, float leftRadPerSec, float rightRadPer
 
 void reset(State &state) { state = State{}; }
 
+bool WithinLimit(float leftRadPerSec, float rightRadPerSec) {
+  return std::fabs(leftRadPerSec) <= kLimitRadPerSec && std::fabs(rightRadPerSec) <= kLimitRadPerSec;
+}
+
+bool MayRearm(const State &state, float leftRadPerSec, float rightRadPerSec) {
+  return !state.tripped || WithinLimit(leftRadPerSec, rightRadPerSec);
+}
+
 }  // namespace OverspeedGuard

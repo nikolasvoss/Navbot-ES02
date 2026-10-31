@@ -54,7 +54,11 @@ void stop(State &state);
 bool resetFault(State &state, const Inputs &inputs);
 Fault update(State &state, const Inputs &inputs);
 bool elapsed(uint32_t nowMs, uint32_t startMs, uint32_t durationMs);
-bool parseCurrentRequest(const char *text, Request &request);
-bool parseVoltageRequest(const char *text, Request &request);
+// The motor_current action's arguments as a request. The lease must be a whole number of milliseconds.
+bool MakeCurrentRequest(float leftA, float rightA, float leaseMs, Request &request);
+// The motor_voltage action's arguments as a request: motor 1 or 2, a voltage and a whole-number lease.
+bool MakeVoltageRequest(float motor, float voltageV, float leaseMs, Request &request);
+// Why start() refused a request, as the Ack of the action shows it.
+const char *RequestResultText(RequestResult result);
 
 }  // namespace MotorDiagnostic

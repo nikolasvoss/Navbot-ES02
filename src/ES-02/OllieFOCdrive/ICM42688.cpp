@@ -5,6 +5,8 @@
 
 #include <cstdint>
 
+#include "Logging.h"
+
 namespace {
 SPIClass *const hspi = new SPIClass(HSPI);
 
@@ -117,7 +119,7 @@ bool initICM42688(uint16_t sampleRateHz) {
   // Compare if read device ID matches preset value
   if (whoAmI != WHO_AM_I) {
     // If not matching, print error message and return false
-    Serial.println("ICM42688 device ID check failed!");
+    Logging::message(Logging::Level::Error, "IMU", "ICM42688 device ID check failed");
     return false;
   }
 

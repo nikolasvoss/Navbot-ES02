@@ -1,0 +1,8 @@
+# synthetic navlink fixture for tests/scripts; not robot data
+# t_us -5 and 4294967296 are outside 0..2^32-1
+t_us,x
+1000000,1
+-5,2
+4294967296,3
+2000000,4
+3000000,5

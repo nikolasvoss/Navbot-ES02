@@ -1,0 +1,84 @@
+"""`t_us` handling in navlink captures: wrap at 2^32, robot restart, corrupt values, header problems."""
+
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+from analyze_drive_trace import analyze  # noqa: E402
+from summarize_balance_trace import read_trace, summarize  # noqa: E402
+
+FIXTURES = ROOT / "tests" / "scripts" / "fixtures"
+
+
+def test_restart_mid_capture_continues_the_timeline_without_a_phantom_wrap():
+    trace = read_trace(FIXTURES / "navlink-restart.csv")
+    assert [row["time_ms"] for _, row in trace.rows] == [2998000.0, 2999000.0, 3000000.0, 3000005.0, 3001000.0]
+    assert trace.malformed == 0
+
+
+def test_restart_is_reported_in_the_summary():
+    report = "\n".join(summarize(FIXTURES / "navlink-restart.csv"))
+    assert "- Zeitspanne der gültigen Datensätze: **3.00 s**; Medianabstand zwischen gültigen Datensätzen: **997.5 ms**" in report
+    assert ("- Warnung: `t_us` fiel 1-mal auf einen kleinen Wert zurück (Roboter-Neustart); "
+            "die Zeitachse läuft danach weiter, die Ausfallzeit fehlt in der Zeitspanne") in report
+
+
+def test_one_corrupt_t_us_is_malformed_and_leaves_span_and_median_unchanged():
+    report = "\n".join(summarize(FIXTURES / "navlink-corrupt-t-us.csv"))
+    assert "gültige Datensätze: **5**; beschädigte/ungültige Datensätze: **1**" in report
+    assert "- Zeitspanne der gültigen Datensätze: **5.00 s**; Medianabstand zwischen gültigen Datensätzen: **1000.0 ms**" in report
+    assert "Warnung" not in report
+
+
+def test_real_wrap_is_still_unwrapped(tmp_path):
+    log = tmp_path / "wrap.csv"
+    log.write_text("t_us,x\n4294960000,1\n4294966000,2\n4000,3\n10000,4\n", encoding="utf-8")
+    assert [row["time_ms"] for _, row in read_trace(log).rows] == [4294960.0, 4294966.0, 4294971.296, 4294977.296]
+
+
+def test_drive_analysis_shares_the_restart_handling():
+    result = analyze(FIXTURES / "drive-navlink-restart.csv")
+    assert result["duration_s"] == 4.0
+    assert result["median_interval_ms"] == 1000.0
+
+
+def test_median_interval_of_a_sub_1hz_navlink_capture_is_not_dropped():
+    result = analyze(FIXTURES / "drive-navlink-sub-1hz.csv")
+    assert result["duration_s"] == 10.0
+    assert result["median_interval_ms"] == 2000.0
+
+
+def test_drive_analysis_carries_the_reader_warnings():
+    assert analyze(FIXTURES / "drive-navlink-restart.csv")["warnings"] == [
+        "`t_us` fiel 1-mal auf einen kleinen Wert zurück (Roboter-Neustart); "
+        "die Zeitachse läuft danach weiter, die Ausfallzeit fehlt in der Zeitspanne"]
+
+
+def test_a_second_column_header_stops_parsing_and_warns():
+    trace = read_trace(FIXTURES / "navlink-repeated-header.csv")
+    assert [row["time_ms"] for _, row in trace.rows] == [1000.0, 2000.0]
+    assert trace.malformed == 0
+    report = "\n".join(summarize(FIXTURES / "navlink-repeated-header.csv"))
+    assert "- Warnung: Zweiter Spaltenkopf `t_us,` in der Datei; spätere Zeilen wurden nicht ausgewertet" in report
+
+
+def test_t_us_outside_the_uint32_range_is_malformed():
+    trace = read_trace(FIXTURES / "navlink-t-us-out-of-range.csv")
+    assert [row["time_ms"] for _, row in trace.rows] == [1000.0, 2000.0, 3000.0]
+    assert trace.malformed == 2
+
+
+def test_a_time_ms_column_is_an_error_in_both_tools():
+    fixture = FIXTURES / "navlink-time-ms-column.csv"
+    expected = f"{fixture}: Spalte `time_ms` ist in navlink-Captures nicht erlaubt (sie wird aus `t_us` berechnet)"
+    with pytest.raises(ValueError) as error:
+        read_trace(fixture)
+    assert str(error.value) == expected
+    for tool in ("summarize_balance_trace.py", "analyze_drive_trace.py"):
+        result = subprocess.run([sys.executable, str(ROOT / "scripts" / tool), str(fixture)],
+                                capture_output=True, text=True, check=False)
+        assert (result.returncode, result.stderr) == (1, f"{tool[:-3]}: {expected}\n")

@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <limits>
 
@@ -113,6 +114,22 @@ int main() {
     update(s, 11000, 65.0f, 0.0f);
     assert(!update(s, 11001, 1.0f, 1.0f));
     assert(s.peakRadPerSec == 0.0f && !s.pending);
+  }
+
+  // motor_reset re-arms a tripped guard only with both wheels at or below 30 rad/s. Between 30 and 60 rad/s the motor
+  // fault reset is accepted (MotorDiagnostic::kMaximumSpeedRadPerSec), so the guard's own check is what refuses.
+  {
+    State tripped{};
+    update(tripped, 12000, 35.0f, 0.0f);
+    assert(update(tripped, 12050, 35.0f, 0.0f));  // 50 ms above 30 trips
+    assert(!MayRearm(tripped, 35.0f, 0.0f));
+    assert(!MayRearm(tripped, 0.0f, -30.5f));
+    assert(!MayRearm(tripped, std::nanf(""), 0.0f));
+    assert(MayRearm(tripped, 30.0f, -30.0f));
+    assert(MayRearm(tripped, 0.0f, 0.0f));
+    State untripped{};
+    assert(MayRearm(untripped, 35.0f, 0.0f));  // nothing latched: a motor fault reset alone is fine
+    assert(WithinLimit(-30.0f, 30.0f) && !WithinLimit(31.0f, 0.0f) && !WithinLimit(0.0f, std::nanf("")));
   }
 
   std::puts("overspeed guard passed");

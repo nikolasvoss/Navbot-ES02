@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Check DRIVE captures and compare repeatable drive/stop measurements.
+"""Check drive captures and compare repeatable drive/stop measurements.
 
-This reads saved logs only. It never opens a serial port or changes the robot.
+Reads navlink CSVs taken with the `drive` preset (see REQUIRED; `time_ms` comes from `t_us`). This reads saved logs
+only. It never opens a serial port or changes the robot.
 """
 
 import argparse
@@ -14,18 +15,21 @@ from summarize_balance_trace import imu_sample_rate, read_trace
 
 
 REQUIRED = {
-    "time_ms", "ch5_mode", "ch3_target", "motor1_velocity_f",
-    "motor2_velocity_f", "roll_ok", "motor1_target", "motor2_target",
+    "time_ms", "ch5_position", "ch3_target", "motor1_velocity_f",
+    "motor2_velocity_f", "roll_deg", "motor1_target", "motor2_target",
     "voltage_min_raw_v", "imu_sequence", "imu_dt_s", "imu_accepted_samples",
     "imu_long_gap_count", "imu_max_interval_us", "control_execution_us",
-    "max_loop_entry_interval_us", "motor1_current_sp", "motor2_current_sp",
+    "loop_interval_max_us", "motor1_current_sp", "motor2_current_sp",
     "motor1_voltage_q", "motor2_voltage_q", "battery_raw_instant_v",
+    "imu_read_time_us",
 }
 MIN_ROWS = 20
 MAX_BAD_FRACTION = 0.02
 NEUTRAL_THRESHOLD = 1.0
 STOP_WINDOW_MS = 1000
 UINT32_MODULO = 2 ** 32
+# ch5_position: 1 is link mode, where CH3 has no effect; 2 is RC balance, the only position this analysis reads.
+RC_BALANCE = 2
 
 
 def rounded(value, places=3):
@@ -33,24 +37,21 @@ def rounded(value, places=3):
 
 
 def direction(row):
-    if row["ch5_mode"] < 1 or abs(row["ch3_target"]) < NEUTRAL_THRESHOLD:
+    if row["ch5_position"] != RC_BALANCE or abs(row["ch3_target"]) < NEUTRAL_THRESHOLD:
         return 0
     return 1 if row["ch3_target"] > 0 else -1
 
 
 def analyze(path):
-    kind, header, records, malformed = read_trace(path)
-    if kind != "DRIVE" or not header:
-        raise ValueError(f"{path}: kein DRIVE-Header")
+    _, header, records, malformed, notes = read_trace(path)
     missing = sorted(REQUIRED - set(header))
     if missing:
         raise ValueError(f"{path}: fehlende DRIVE-Spalten: {', '.join(missing)}")
-    rows = [row for record_kind, row in records if record_kind == "DRIVE"]
+    rows = [row for _, row in records]
     if not rows:
         raise ValueError(f"{path}: keine vollständigen DRIVE-Zeilen")
-    active = [row for row in rows if row["ch5_mode"] >= 1]
-    intervals = [b["time_ms"] - a["time_ms"] for a, b in zip(rows, rows[1:])
-                 if 0 < b["time_ms"] - a["time_ms"] < 1000]
+    active = [row for row in rows if row["ch5_position"] == RC_BALANCE]
+    intervals = [b["time_ms"] - a["time_ms"] for a, b in zip(rows, rows[1:]) if b["time_ms"] > a["time_ms"]]
     first_active = active[0] if active else None
 
     # A release counts only after at least two consecutive command samples.
@@ -62,12 +63,12 @@ def analyze(path):
         current = direction(row)
         if current:
             command_run = command_run + [row] if current == previous_direction else [row]
-        elif previous_direction and len(command_run) >= 2 and row["ch5_mode"] >= 1:
+        elif previous_direction and len(command_run) >= 2 and row["ch5_position"] == RC_BALANCE:
             window = []
             start_ms = row["time_ms"]
             for candidate in rows[index:]:
                 if (candidate["time_ms"] - start_ms > STOP_WINDOW_MS
-                        or direction(candidate) or candidate["ch5_mode"] < 1):
+                        or direction(candidate) or candidate["ch5_position"] != RC_BALANCE):
                     break
                 window.append(candidate)
             if window:
@@ -106,7 +107,7 @@ def analyze(path):
         "duration_s": rounded((rows[-1]["time_ms"] - rows[0]["time_ms"]) / 1000, 2),
         "median_interval_ms": rounded(statistics.median(intervals), 1) if intervals else None,
         "active_rows": len(active),
-        "activation_roll_deg": rounded(first_active["roll_ok"]) if first_active else None,
+        "activation_roll_deg": rounded(first_active["roll_deg"]) if first_active else None,
         "command_rows": sum(bool(direction(row)) for row in rows),
         "releases": releases,
         "opposite_speed_peak": max((item["opposite_speed_peak"] for item in releases), default=None),
@@ -120,16 +121,18 @@ def analyze(path):
         "imu_long_gap_fraction": rounded(imu_long_gaps / imu_accepted, 4) if imu_accepted > 0 else None,
         "imu_max_interval_us": int(rows[-1]["imu_max_interval_us"]),
         "control_execution_us_peak": int(max(row["control_execution_us"] for row in rows)),
-        "loop_entry_interval_us_peak": int(max(row["max_loop_entry_interval_us"] for row in rows)),
+        "loop_entry_interval_us_peak": int(max(row["loop_interval_max_us"] for row in rows)),
         "motor_current_sp_abs_peak": rounded(max(abs(row[name]) for row in rows
                                                  for name in ("motor1_current_sp", "motor2_current_sp"))),
         "motor_voltage_q_abs_peak": rounded(max(abs(row[name]) for row in rows
                                                 for name in ("motor1_voltage_q", "motor2_voltage_q"))),
         "battery_raw_instant_min_v": rounded(min(row["battery_raw_instant_v"] for row in rows)),
     }
+    if notes.get("warnings"):
+        result["warnings"] = notes["warnings"]
     result["stop_available"] = bool(result["capture_ok"] and releases
                                     and first_active is not None
-                                    and abs(first_active["roll_ok"]) <= 10)
+                                    and abs(first_active["roll_deg"]) <= 10)
     return result
 
 
@@ -158,15 +161,16 @@ def markdown(results):
         if not run["capture_ok"]:
             issues.append(f"Tracequalität unzureich ({run['valid_rows']} gültig, {run['malformed_rows']} defekt)")
         if not run["active_rows"]:
-            issues.append("CH5 nie aktiv")
+            issues.append("CH5 nie auf RC-Balance (2)")
         if not run["command_rows"]:
-            issues.append("CH3 blieb neutral")
+            issues.append("CH3 blieb in RC-Balance neutral")
         if run["command_rows"] and not run["releases"]:
-            issues.append("kein vollständiger CH3→neutral-Stopp")
+            issues.append("kein vollständiger CH3→neutral-Stopp in RC-Balance")
         if run["activation_roll_deg"] is not None and abs(run["activation_roll_deg"]) > 10:
             issues.append("Startneigung über 10°; Vergleich durch Anlauf gestört")
         if not issues:
             issues.append("Stoppereignis vorhanden; für einen Vergleich Impulsstärke und -dauer beachten")
+        issues.extend(f"Warnung: {warning}" for warning in run.get("warnings", []))
         lines.append(f"- `{run['file']}`: " + "; ".join(issues) + ".")
     lines.extend(["", "## Zeit- und Motorgrößen", "",
                   "| Log | IMU-Rate | IMU-Intervall Mittel | IMU-Lücken (Anteil) | IMU-Intervall max. (seit Start) "
@@ -204,7 +208,7 @@ def markdown(results):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("logs", nargs="+", type=Path, help="ein oder mehrere K58-DRIVE-Logs")
+    parser.add_argument("logs", nargs="+", type=Path, help="eine oder mehrere navlink-CSVs des drive-Presets")
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     parser.add_argument("--output", type=Path, help="Bericht speichern statt auf stdout ausgeben")
     parser.add_argument("--require-stop", action="store_true",

@@ -9,13 +9,20 @@ message Message {
   uint32 t_ms = 2;        // sender millis(), monotonic
   oneof body {
     Imu imu = 10;
-    Battery battery = 11;
-    Status status = 12;
     Log log = 13;         // errors, warnings, info
     WheelOdometry odom = 14;
+    CatalogEntry catalog_entry = 15;
+    SignalBatch signal_batch = 16;
     Command command = 20; // PC -> robot
-    Ack ack = 21;
+    Ack ack = 21;         // robot -> PC, reply to every PC -> robot request
+    GetCatalog get_catalog = 22;
+    Subscribe subscribe = 23;
+    Unsubscribe unsubscribe = 24;
+    GetParam get_param = 25;
+    SetParam set_param = 26;
+    Call call = 27;
   }
+  reserved 11, 12;     // Battery and Status, removed
 }
 
 // Sensor data. SI units; the field name carries the unit where it is not SI.
@@ -34,31 +41,86 @@ message WheelOdometry {
   double right_angle_rad = 3;
 }
 
-message Battery {
-  float voltage_v = 1;
-}
-
-message Status {
-  enum Mode { MODE_UNSPECIFIED = 0; IDLE = 1; DIAGNOSTIC = 2; BALANCE = 3; FALLEN = 4; }
-  Mode mode = 1;
-  bool motors_enabled = 2;
-  uint32 dropped_frames = 3; // TX frames the robot dropped (queue full)
-}
-
 message Log {
   enum Level { LEVEL_UNSPECIFIED = 0; DEBUG = 1; INFO = 2; WARN = 3; ERROR = 4; FATAL = 5; }
   Level level = 1;
   uint32 code = 2;   // stable numeric error code, documented in the spec
   string text = 3;   // short, <= 96 bytes
+  string tag = 4;    // source, such as "param" or "imu"
 }
 
+// Drive request, PC -> robot. Accepted only while CH5 is in the link position.
 message Command {
-  uint32 id = 1;         // echoed in Ack
-  float speed_mps = 2;
-  float turn_rad_s = 3;
+  reserved 1;
+  float speed_mps = 2;   // m/s, forward positive
+  float turn_rad_s = 3;  // rad/s, positive to the left (counter-clockwise, REP 103)
 }
 
+// command_id echoes the request's Message.seq.
 message Ack {
   uint32 command_id = 1;
   bool accepted = 2;
+  string error = 3;
+  bytes value = 4;   // GetParam, SetParam: the value now in effect.
+                     // Subscribe: the slot, u32 little-endian.
+}
+
+// Entry table: signals, parameters and actions. Wire IDs are table indices
+// and change with the firmware build; the PC resolves names per connection.
+message GetCatalog {
+  uint32 index = 1;
+}
+
+message CatalogEntry {
+  enum Kind { KIND_UNSPECIFIED = 0; SIGNAL = 1; SIGNAL_MIN = 2; SIGNAL_MAX = 3; PARAM = 4; ACTION = 5; }
+  enum Type { TYPE_UNSPECIFIED = 0; F32 = 1; I32 = 2; U32 = 3; BOOL = 4; }
+  message Arg {
+    string name = 1;
+    float min = 2;
+    float max = 3;
+  }
+  uint32 index = 1;
+  uint32 count = 2;      // number of entries in the table
+  string name = 3;
+  string unit = 4;
+  Kind kind = 5;
+  Type type = 6;         // unset for ACTION
+  repeated Arg args = 7; // ACTION only
+  string build = 8;      // firmware build ID; set in the reply to index 0
+  float live_step = 9;   // PARAM only: largest change one SetParam may make while balance is requested; 0 = refused while balancing, inf = any
+}
+
+// slot 0 asks the robot for a free slot; the Ack carries it in value. A
+// nonzero slot renews the 5 s lease or replaces the entry list of a slot the
+// requesting port owns; another port's slot is refused with "slot in use".
+message Subscribe {
+  uint32 slot = 1;
+  repeated uint32 ids = 2;
+  uint32 period_us = 3;  // 0 = every control tick
+}
+
+// Accepted for a free slot; another port's slot is refused with "slot in use".
+message Unsubscribe {
+  uint32 slot = 1;
+}
+
+// rows: one or more rows of [t_us u32][value 4 B per subscribed id],
+// little-endian, values typed by the catalog.
+message SignalBatch {
+  uint32 slot = 1;
+  bytes rows = 2;
+}
+
+message GetParam {
+  uint32 id = 1;
+}
+
+message SetParam {
+  uint32 id = 1;
+  bytes value = 2;   // 4 bytes little-endian, typed by the catalog
+}
+
+message Call {
+  uint32 id = 1;
+  repeated float args = 2;  // in catalog order
 }
