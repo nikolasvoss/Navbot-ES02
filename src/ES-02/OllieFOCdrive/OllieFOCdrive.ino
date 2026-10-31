@@ -106,7 +106,7 @@ constexpr float kWheelKvSafetyFactor = 1.8f;
 Config balanceSettings = [] {
     Config c;
     // Arming
-    c.armingTimeoutUs = 3000000;                 // uncommissioned: proposed starting value, 3 s
+    c.armingTimeoutUs = 0;                       // no timeout: Arming waits until the start conditions hold or the switch goes off
     c.armingTiltWindowRad = 0.0872665f;          // uncommissioned: proposed starting value, rad (5 deg)
     c.armingTiltRateRadPerSec = 0.1f;            // uncommissioned: proposed starting value, rad/s
     c.armingRequestSpeedMps = 0.05f;             // uncommissioned: proposed starting value, m/s
@@ -122,6 +122,7 @@ Config balanceSettings = [] {
     // Fall: the 35 deg tumble threshold of the former fall detector (existing constant)
     c.fallAngleRad = 35.0f * kDegreesToRadiansF;  // existing tumble threshold, rad
     c.fallDurationUs = 20000;                    // upstream: 20 control cycles at the nominal 1 kHz gate, 20 ms
+    c.fallRecoveryDelayUs = 500000;              // uncommissioned: proposed starting value, 0.5 s inside the arming window
 
     // Overspeed: the existing OverspeedGuard limit and debounce
     c.wheelOverspeedRadPerSec = OverspeedGuard::kLimitRadPerSec;   // existing constant, rad/s
