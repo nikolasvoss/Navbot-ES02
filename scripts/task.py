@@ -18,15 +18,25 @@ from collections.abc import Callable
 from pathlib import Path
 
 import devtools
+import yaml
 
 SYSTEMD_DIR = Path("/etc/systemd/system")
 WORKTREES = Path(".claude") / "worktrees"
 TASKS = Path("work")
 STATE_BODY = "\n## Contract\n\n## Plan\n\n## Decisions\n\n## Progress\n\n## Next step\n"
+STATE_ERRORS = (OSError, ValueError, KeyError, TypeError, AttributeError, yaml.YAMLError)
 
 
 class Refused(Exception):
     """A command that cannot run now. The message goes to stderr and the exit code is 1."""
+
+
+def _state_or_none(path: Path) -> devtools.State | None:
+    """The parsed state.md, or None when the file cannot be read or is malformed."""
+    try:
+        return devtools.read_state(path)
+    except STATE_ERRORS:
+        return None
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -94,25 +104,45 @@ def _unit_naming(worktree: Path, systemd_dir: Path) -> str | None:
     return None
 
 
-def _task_blocker(main: Path, worktree: Path, branch: str | None, systemd_dir: Path, busy: Callable[[Path], bool]) -> str | None:
-    """The reason a task worktree must stay, or None when it may be removed."""
-    if branch is None:
-        return "detached HEAD"
-    if not _merged(main, branch):
-        return "not merged into origin/main"
-    state = devtools.task_dir(branch, main) / "state.md"
-    if not state.is_file():
-        return "no task state"
-    if _git_out(main, "rev-parse", f"refs/heads/{branch}") == devtools.read_state(state).baseline:
-        return "no commits since the baseline"
-    if _dirty(worktree):
-        return "uncommitted changes"
+def _in_use(worktree: Path, systemd_dir: Path, busy: Callable[[Path], bool]) -> str | None:
+    """The reason a worktree is in use by a process or a navbot unit, or None."""
     if busy(worktree):
         return "a process runs in the worktree"
     unit = _unit_naming(worktree, systemd_dir)
     if unit:
         return f"a systemd unit names the worktree: {unit}"
     return None
+
+
+def _task_blocker(main: Path, worktree: Path, branch: str | None, systemd_dir: Path, busy: Callable[[Path], bool]) -> str | None:
+    """The reason a task worktree must stay, or None when it may be removed."""
+    if branch is None:
+        return "detached HEAD"
+    if not _merged(main, branch):
+        return "not merged into origin/main"
+    state_path = devtools.task_dir(branch, main) / "state.md"
+    if not state_path.is_file():
+        return "no task state"
+    state = _state_or_none(state_path)
+    if state is None:
+        return "unreadable state.md"
+    if _git_out(main, "rev-parse", f"refs/heads/{branch}") == state.baseline:
+        return "no commits since the baseline"
+    if _dirty(worktree):
+        return "uncommitted changes"
+    return _in_use(worktree, systemd_dir, busy)
+
+
+def _claimed_by_other(main: Path, branch: str) -> None:
+    """Refuse when the task folder of this branch's slug belongs to another branch or cannot be read."""
+    path = devtools.task_dir(branch, main) / "state.md"
+    if not path.is_file():
+        return
+    state = _state_or_none(path)
+    if state is None:
+        raise Refused(f"unreadable {path}; fix or remove it first")
+    if state.branch != branch:
+        raise Refused(f"work/{devtools.slug(branch)} belongs to {state.branch}; {branch} has the same slug")
 
 
 def _agent_blocker(main: Path, worktree: Path, branch: str | None, busy: Callable[[Path], bool]) -> str | None:
@@ -170,10 +200,13 @@ def sweep(
     for task in sorted(tasks_root.iterdir()) if tasks_root.is_dir() else []:
         if not (task / "state.md").is_file():
             continue
-        branch = devtools.read_state(task / "state.md").branch
-        if _has_branch(main, branch):
+        state = _state_or_none(task / "state.md")
+        if state is None:
+            lines.append(f"skipped {task.name}: unreadable state.md")
             continue
-        lines.append(f"{verb} task folder {task.name}: branch {branch} no longer exists")
+        if _has_branch(main, state.branch):
+            continue
+        lines.append(f"{verb} task folder {task.name}: branch {state.branch} no longer exists")
         if not dry_run:
             shutil.rmtree(task)
     return lines
@@ -188,6 +221,7 @@ def start(main: Path, branch: str, from_ref: str | None = None) -> dict:
     worktree = devtools.worktree_dir(branch, main)
     task = devtools.task_dir(branch, main)
     state_path = task / "state.md"
+    _claimed_by_other(main, branch)
     if worktree.exists() and state_path.exists():
         return _started(branch, worktree, task)
     if _has_branch(main, branch):
@@ -215,18 +249,28 @@ def start(main: Path, branch: str, from_ref: str | None = None) -> dict:
     return _started(branch, worktree, task)
 
 
-def drop(main: Path, branch: str) -> bool:
-    """Remove the worktree (refused with uncommitted changes) and the task folder; keep the branch.
+def drop(
+    main: Path,
+    branch: str,
+    *,
+    systemd_dir: Path = SYSTEMD_DIR,
+    busy: Callable[[Path], bool] = process_inside,
+) -> bool:
+    """Remove the worktree (refused with uncommitted changes or a process or unit using it) and the task folder; keep the branch.
 
     Returns False when the branch had neither a worktree nor a task folder.
     """
     worktree = devtools.worktree_dir(branch, main)
     task = devtools.task_dir(branch, main)
+    _claimed_by_other(main, branch)
     if not worktree.exists() and not task.exists():
         return False
     if worktree.exists():
         if _dirty(worktree):
             raise Refused(f"uncommitted changes in {worktree}; commit or discard them first")
+        reason = _in_use(worktree, systemd_dir, busy)
+        if reason:
+            raise Refused(f"cannot drop {branch}: {reason}")
         _git_out(main, "worktree", "remove", str(worktree))
     _remove_tree(task)
     return True
@@ -278,7 +322,7 @@ def main(
             for line in sweep(main_dir, dry_run=args.dry_run, systemd_dir=systemd_dir, busy=busy):
                 print(line)
         elif args.command == "drop":
-            removed = drop(main_dir, args.branch)
+            removed = drop(main_dir, args.branch, systemd_dir=systemd_dir, busy=busy)
             print(f"dropped {args.branch}" if removed else f"nothing to drop for {args.branch}")
         else:
             print(json.dumps(status(here, main_dir)))

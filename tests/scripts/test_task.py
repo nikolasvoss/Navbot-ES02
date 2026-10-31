@@ -253,6 +253,63 @@ def test_sweep_keeps_a_new_task_without_commits(repo, systemd, capsys):
     assert (repo / "work/feat-fresh/state.md").is_file()
 
 
+def test_sweep_skips_a_task_folder_with_an_unreadable_state_and_keeps_sweeping(repo, systemd, capsys):
+    begin(capsys, repo, systemd, "feat/done")
+    commit(repo / ".claude/worktrees/feat-done", "done.txt")
+    merge_to_main(repo, "feat/done")
+    broken = repo / "work/feat-broken"
+    broken.mkdir(parents=True)
+    (broken / "state.md").write_text("not a state file\n", encoding="utf-8")
+    code, out, err = run_task(capsys, ["sweep"], repo, systemd)
+    assert (code, out, err) == (0, "removed feat/done\nskipped feat-broken: unreadable state.md\n", "")
+    assert broken.exists()
+    assert not (repo / "work/feat-done").exists()
+
+
+def test_start_refuses_a_branch_whose_slug_belongs_to_another_branch(repo, systemd, capsys):
+    begin(capsys, repo, systemd, "feat/x")
+    code, out, err = run_task(capsys, ["start", "feat-x"], repo, systemd)
+    assert (code, out, err) == (
+        1,
+        "",
+        "work/feat-x belongs to feat/x; feat-x has the same slug\n",
+    )
+    assert not branch_exists(repo, "feat-x")
+
+
+def test_drop_refuses_a_branch_whose_slug_belongs_to_another_branch(repo, systemd, capsys):
+    begin(capsys, repo, systemd, "feat/x")
+    worktree = repo / ".claude/worktrees/feat-x"
+    code, out, err = run_task(capsys, ["drop", "feat-x"], repo, systemd)
+    assert (code, out, err) == (1, "", "work/feat-x belongs to feat/x; feat-x has the same slug\n")
+    assert worktree.exists()
+    assert (repo / "work/feat-x").exists()
+
+
+def test_drop_refuses_a_worktree_with_a_process_inside(repo, systemd, capsys):
+    begin(capsys, repo, systemd, "feat/busy-drop")
+    worktree = repo / ".claude/worktrees/feat-busy-drop"
+    code, out, err = run_task(
+        capsys, ["drop", "feat/busy-drop"], repo, systemd, busy=lambda path: path.name == "feat-busy-drop"
+    )
+    assert (code, out, err) == (1, "", "cannot drop feat/busy-drop: a process runs in the worktree\n")
+    assert worktree.exists()
+    assert (repo / "work/feat-busy-drop").exists()
+
+
+def test_drop_refuses_a_worktree_named_by_a_systemd_unit(repo, systemd, capsys):
+    begin(capsys, repo, systemd, "feat/unit-drop")
+    worktree = repo / ".claude/worktrees/feat-unit-drop"
+    (systemd / "navbot-bridge.service").write_text(f"[Service]\nExecStart=python3 {worktree}/scripts/bridge.py\n")
+    code, out, err = run_task(capsys, ["drop", "feat/unit-drop"], repo, systemd)
+    assert (code, out, err) == (
+        1,
+        "",
+        "cannot drop feat/unit-drop: a systemd unit names the worktree: navbot-bridge.service\n",
+    )
+    assert worktree.exists()
+
+
 def test_sweep_removes_task_folders_whose_branch_is_gone_and_keeps_other_folders(repo, systemd, capsys):
     orphan = repo / "work/feat-gone"
     orphan.mkdir(parents=True)

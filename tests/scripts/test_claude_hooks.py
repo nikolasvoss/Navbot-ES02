@@ -69,6 +69,24 @@ def task_worktree(repo):
     return repo / ".claude" / "worktrees" / "feat-x"
 
 
+def test_settings_deny_the_serial_and_flash_mcp_tools():
+    permissions = json.loads(SETTINGS.read_text(encoding="utf-8"))["permissions"]
+    assert permissions == {
+        "allow": [
+            "Bash(python3 scripts/task.py:*)",
+            "Bash(python3 scripts/deploy.py:*)",
+            "Bash(python3 scripts/verify.py:*)",
+            "Bash(python3 scripts/navlink.py info:*)",
+            "Bash(python3 scripts/navlink.py list:*)",
+            "Bash(python3 scripts/navlink.py get:*)",
+            "Bash(python3 scripts/navlink.py log:*)",
+            "Bash(python3 scripts/navlink.py capture:*)",
+            "Bash(python3 -m pytest:*)",
+        ],
+        "deny": ["mcp__serial", "mcp__navbot_flash"],
+    }
+
+
 def test_settings_register_the_four_hooks():
     hooks = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]
     commands = {event: [h["command"] for entry in entries for h in entry["hooks"]] for event, entries in hooks.items()}
@@ -85,13 +103,51 @@ def test_settings_register_the_four_hooks():
     [
         "python3 scripts/upload_firmware.py /abs/build/flash --port /dev/ttyUSB0",
         "cd x && python3 scripts/upload_firmware.py build/flash",
+        "sudo python3 scripts/upload_firmware.py build/flash",
+        "timeout 120 python3.12 scripts/upload_firmware.py build/flash",
+        "env FOO=1 python3 scripts/upload_firmware.py build/flash",
+        "bash -c 'python3 scripts/upload_firmware.py build/flash'",
         "esptool.py --port /dev/ttyUSB0 write_flash 0x0 firmware.bin",
+        "python3 -m esptool --port /dev/ttyUSB0 write_flash 0x0 firmware.bin",
+        "esptool --port /dev/ttyUSB0 write-flash 0x0 firmware.bin",
+        "esptool.py --port /dev/ttyUSB0 erase_flash",
+        "esptool.py --port /dev/ttyUSB0 erase-flash",
+        "esptool.py erase_region 0x0 0x1000",
+        "esptool.py erase-region 0x0 0x1000",
+        "esptool.py run",
+        "sudo timeout 60 esptool.py --port /dev/ttyUSB0 write_flash 0x0 firmware.bin",
         "arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:esp32",
+        "arduino-cli compile --upload -p /dev/ttyUSB0 sketch",
+        "sudo timeout 60 arduino-cli --config-file cli.yaml upload -p /dev/ttyUSB0",
     ],
 )
 def test_pre_bash_blocks_direct_flashing(tmp_path, command):
     result = hook("pre-bash", {"tool_input": {"command": command}}, tmp_path)
     assert (result.returncode, result.stdout, result.stderr) == (2, "", FLASH_MESSAGE)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "grep upload_firmware.py docs/robot/software/usb-serial-flashing.md",
+        "cat scripts/upload_firmware.py",
+        "rg esptool docs",
+        "less scripts/upload_firmware.py",
+        "python3 -m pytest tests/scripts/test_upload_firmware.py -q",
+        "git commit -m 'docs: esptool notes'",
+        "python3 -m esptool chip_id",
+        "esptool.py --port /dev/ttyUSB0 flash_id",
+        "esptool.py --port /dev/ttyUSB0 chip-id",
+        "esptool.py read_mac",
+        "esptool.py version",
+        "esptool.py --help",
+        "esptool.py merge_bin -o out.bin",
+        "arduino-cli board list",
+    ],
+)
+def test_pre_bash_allows_reading_flash_tools(tmp_path, command):
+    result = hook("pre-bash", {"tool_input": {"command": command}}, tmp_path)
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
 
 
 def test_pre_bash_blocks_worktree_add_after_a_separator(tmp_path):
@@ -191,9 +247,29 @@ def test_stop_allows_a_task_whose_head_has_a_verify_result(task_worktree, repo):
 
 def test_stop_allows_a_task_with_uncommitted_changes(task_worktree):
     commit(task_worktree, "a.txt")
-    (task_worktree / "b.txt").write_text("draft\n", encoding="utf-8")
+    (task_worktree / "a.txt").write_text("edited\n", encoding="utf-8")
     result = hook("stop", {"cwd": str(task_worktree), "stop_hook_active": False}, task_worktree)
     assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+
+
+def test_stop_blocks_a_task_whose_only_change_is_an_untracked_file(task_worktree):
+    commit(task_worktree, "a.txt")
+    (task_worktree / "b.txt").write_text("draft\n", encoding="utf-8")
+    result = hook("stop", {"cwd": str(task_worktree), "stop_hook_active": False}, task_worktree)
+    assert (result.returncode, result.stdout, result.stderr) == (2, "", STOP_MESSAGE)
+
+
+def test_session_start_exits_0_and_prints_the_error_when_sweep_fails(repo, monkeypatch, capsys):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import claude_hooks
+
+    def broken_sweep(main, **kwargs):
+        raise RuntimeError("sweep broke")
+
+    monkeypatch.setattr(claude_hooks.task, "sweep", broken_sweep)
+    code = claude_hooks.session_start({"source": "startup", "cwd": str(repo)})
+    captured = capsys.readouterr()
+    assert (code, captured.out, captured.err) == (0, "", "sweep broke\n")
 
 
 def test_stop_allows_a_task_whose_head_is_still_the_baseline(task_worktree):

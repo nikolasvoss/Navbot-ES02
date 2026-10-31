@@ -18,7 +18,13 @@ import devtools
 import task
 
 STATE_CHARS = 8000
-FLASH_PATTERN = re.compile(r"(^|[;&|]\s*)(\S*python3?\s+\S*upload_firmware\.py|\S*esptool\S*(\s|$)|arduino-cli\s+upload)")
+# Flashing: upload_firmware.py under any python, esptool subcommands that write or reset, and arduino-cli upload.
+# Read-only esptool subcommands (chip_id, flash_id, read_mac, version, --help) stay allowed.
+FLASH_PATTERN = re.compile(
+    r"\bpython[\d.]*\s[^;&|]*?(?<!\w)upload_firmware\.py"
+    r"|\besptool(?:\.py)?\b[^;&|]*?\s(?:write_flash|write-flash|erase_flash|erase-flash|erase_region|erase-region|run)(?=[\s'\"]|$)"
+    r"|\barduino-cli\b[^;&|]*?\s(?:upload|--upload)(?=[\s'\"]|$)"
+)
 WORKTREE_PATTERN = re.compile(r"(^|[;&|]\s*)git\s+worktree\s+add\b")
 FLASH_MESSAGE = "Flash only with python3 scripts/deploy.py; it checks that the robot is safe first."
 WORKTREE_MESSAGE = "Create worktrees with python3 scripts/task.py start <branch>."
@@ -35,7 +41,7 @@ def session_start(payload: dict) -> int:
     if payload.get("source") == "startup":
         try:
             lines = task.sweep(devtools.main_checkout(cwd))
-        except task.Refused as error:
+        except Exception as error:  # the session must start even when the sweep fails
             print(error, file=sys.stderr)
             return 0
         # Active tasks are skipped at every start; only what was removed is news.
@@ -91,7 +97,7 @@ def stop(payload: dict) -> int:
     head = devtools.git(["rev-parse", "HEAD"], cwd)
     if head == state.baseline:
         return 0
-    if devtools.git(["status", "--porcelain"], cwd):
+    if devtools.git(["status", "--porcelain", "--untracked-files=no"], cwd):
         return 0
     if (devtools.read_evidence(task_dir, head) or {}).get("verify"):
         return 0
