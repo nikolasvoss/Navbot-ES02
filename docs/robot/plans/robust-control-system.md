@@ -26,7 +26,7 @@ The current source has several paths that affect the same physical motion:
 | Control runs after an elapsed-time threshold of 1 ms. IMU reads are data-ready gated, with coefficients designed for nominal 1 kHz. | Sensor ODR, accepted-read rate, control rate, and filter design rate need separate verification. | [IMU implementation](../../../src/ES-02/OllieFOCdrive/imu.cpp), [IMU settings](../../../src/ES-02/OllieFOCdrive/imu.h), sketch `loop()`. |
 | Wheel-speed differentiation uses measured time only with the diagnostic-defaults define enabled. | Gain comparisons across build settings can have different measurement scales. | `updateWheelVelocities()`. |
 
-The [control-flow explanation](../software/control-flow.md) contains older details. In the inspected source, the wheel motion mode is `velocity`, the torque mode is `estimated_current`, phase resistance is configured as 22 ohms, and IMU low-pass defaults are 25 Hz. The older page describes voltage torque mode and earlier IMU behavior. The source establishes configuration; the flashed image and live values still need reconciliation before experiments.
+The [signal flow](../software/balance-controller.md#signal-flow) describes the implemented chain. In the inspected source, the wheel motion mode is `torque`, the torque mode is `estimated_current`, phase resistance is configured as 5.75 ohms per phase (not verified), and IMU low-pass defaults are 25 Hz. The source establishes configuration; the flashed image and live values still need reconciliation before experiments.
 
 ## Recommended control chain
 
@@ -467,7 +467,7 @@ Existing suites to rerun: `tests/imu`, `tests/filter`, `tests/kinematics`, `test
 
 ### Package 8: documentation after implementation
 
-- Rewrite [control-flow.md](../software/control-flow.md) to describe the implemented chain, states, RC map, and the navlink parameter and action names.
+- Rewrite the [signal flow](../software/balance-controller.md#signal-flow) to describe the implemented chain, states, RC map, and the navlink parameter and action names.
 - Update [rc-channel-map.md](../software/rc-channel-map.md) to the new map, including the CH9 trim scaling.
 - Remove BLE and touchscreen behavior from [trace-capture.md](../software/trace-capture.md), [sensor-diagnostic-mode.md](../software/sensor-diagnostic-mode.md), and the robot [system overview](../hardware/system-overview.md) and [electronics reference](../hardware/electronics-reference.md). Mark the [touchscreen stand](../hardware/touchscreenstand.md) as not used by the firmware, or delete the page if the hardware is removed from the robot.
 - Move the measured motor parameters to the robot hardware docs, and the commissioning procedure to `docs/robot/software/`.
