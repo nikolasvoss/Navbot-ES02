@@ -15,3 +15,4 @@ The integration system is the connection between the robot (ESP32-S3) and the ro
 
 - [Roadmap](plans/roadmap.md): the robot checks for the link, its logs and signals, and the open dashboard decision.
 - [Link features for autonomous development](plans/link-autonomy.md): build ID, health signals, reboot, live parameters, CH5 link mode and ROS `Command`, link multiplexer, one-shot navlink; the task plan for the implementing agents.
+- [Fully autonomous driving](plans/autonomous-driving.md): the required and useful features for Nav2 driving on the saved map, the decisions for the user, and the phases from the first link drive to the first autonomous course.
