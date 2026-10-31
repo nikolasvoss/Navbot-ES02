@@ -231,7 +231,7 @@ Exit codes: 0 done, 1 other error, 2 uncommitted changes, 3 blocked (no toolchai
 
 | Hook | Behavior |
 | --- | --- |
-| `session-start` | `source` `startup`: runs `task.py sweep` and prints its lines only when something was removed or skipped. `compact` or `resume`: prints the current branch's `state.md` (at most 8000 characters) after the line `Task state (work/<slug>/state.md):` |
+| `session-start` | `source` `startup`: runs `task.py sweep` and prints only its `removed` lines; skipped active tasks are not news. `compact` or `resume`: prints the current branch's `state.md` (at most 8000 characters) after the line `Task state (work/<slug>/state.md):` |
 | `worktree-create` | reads `name`. Names starting with `agent-`: `git worktree add -b worktree-<name> MAIN/.claude/worktrees/<name> HEAD`, no task folder. Other names: runs `task.py start <name>` and takes `worktree` from its JSON. Prints only the absolute worktree path |
 | `pre-bash` | reads `tool_input.command`. Exit 2 with `Flash only with python3 scripts/deploy.py; it checks that the robot is safe first.` when it matches `FLASH_PATTERN` below; exit 2 with `Create worktrees with python3 scripts/task.py start <branch>.` when it matches `WORKTREE_PATTERN`; otherwise exit 0. Reading or testing these files (`grep esptool`, `pytest tests/scripts/test_upload_firmware.py`) is not blocked |
 | `stop` | exit 0 when `stop_hook_active` is true. Exit 2 with `Run python3 scripts/verify.py, or say why the task is blocked.` when the current branch's `state.md` has status `implementing`, the worktree has no uncommitted changes, HEAD differs from the baseline, and the evidence for HEAD has no `verify` result; otherwise exit 0 |
