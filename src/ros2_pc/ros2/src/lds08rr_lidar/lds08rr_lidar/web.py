@@ -98,7 +98,9 @@ def make_lidar_app(
     def slam_delete():
         if control is None:
             return jsonify(ok=False, error="SLAM is not running on this service"), 409
-        control.delete()
+        error = control.delete()
+        if error:
+            return jsonify(ok=False, error=error), 409
         slam.clear()
         return jsonify(ok=True)
 
