@@ -16,6 +16,7 @@ setup(
         ("share/" + package_name, ["package.xml"]),
     ],
     install_requires=["setuptools", "pyserial", "protobuf"],
+    tests_require=["pytest"],
     zip_safe=True,
     entry_points={"console_scripts": ["navbot_link_bridge = navbot_link_bridge.node:main"]},
 )

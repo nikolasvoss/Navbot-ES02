@@ -12,6 +12,7 @@ setup(
         ("share/" + package_name, ["package.xml"]),
     ],
     install_requires=["setuptools", "pyserial"],
+    tests_require=["pytest"],
     zip_safe=True,
     license="Unspecified",
     entry_points={

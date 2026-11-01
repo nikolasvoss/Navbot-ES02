@@ -13,6 +13,7 @@ setup(
     ],
     install_requires=["setuptools", "pyserial", "lds2d[viz]==0.7.0"],
     package_data={package_name: ["templates/*.html", "*.yaml"]},
+    tests_require=["pytest"],
     zip_safe=True,
     entry_points={"console_scripts": ["lds08rr_lidar = lds08rr_lidar.service:main"]},
 )
