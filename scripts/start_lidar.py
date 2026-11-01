@@ -58,7 +58,12 @@ def main(argv=None) -> int:
     values = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser(include_ssh=True)
     options = parser.parse_args(values)
-    service_args = ["--demo"] if options.demo else ["--device", options.device]
+    if options.demo:
+        service_args = ["--demo"]
+    elif options.bench:
+        service_args = ["--bench"]
+    else:
+        service_args = ["--device", options.device]
     service_args.extend([
         "--baud", str(options.baud), "--host", options.host,
         "--port", str(options.port), "--ros", options.ros,
