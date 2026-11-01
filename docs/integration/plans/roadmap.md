@@ -50,6 +50,16 @@ Context: the CH5 link position, `balance` and `reboot` from the link, the drive 
 - [x] With the user: `/cmd_vel` at 0.1 m/s (sent with `ros2 topic pub`); stop publishing and the robot stops within the timeout. ([lab note](../../../lab/integration/2026-10-31-link-autonomy-motor-checks.md))
 - [x] With the user: CH5 from 1 to 0 ends balance; 0 to 2 in one move starts balance only at 2; 2 to 0 in one move ends it. Record the results in a lab note. ([lab note](../../../lab/integration/2026-10-31-link-autonomy-motor-checks.md))
 
+## Nav2 simulation bench
+
+Set aside by the user on 2026-11-01; the autonomous driving checks run on the robot instead ([plan](autonomous-driving.md), P7). The idea: a hub mode that runs Nav2 against `nav2_loopback_sim` on the saved map, with a fake robot on `/diagnostics` and `/battery_state`, so goals, recoveries, keepout zones, the supervisor's stop reasons and the hub page can be tested without moving the robot.
+
+A first version (`--bench`, `bench_launch.py`, `bench_robot.py`) ran on the ros2_pc and was removed again. Its last state is commit `7c4f3d7` on `feat/autonomous-driving`. What the runs showed is in the [lab note](../../../lab/integration/2026-11-01-nav2-bench-attempt.md). Before rebuilding it:
+
+- Start AMCL from the bench robot's known start pose, without the hub's global search.
+- Pick course goals at least 0.45 m from walls and in places where walls are within the 4 m LiDAR range.
+- Run it on a host with spare CPU, or measure the Nav2 controller rate first: on the CM5 next to the live services it dropped to 5 to 6 Hz.
+
 ## Optional: fault-triggered recording (black box)
 
 Status: optional, not planned. Start only after the user's go-ahead. A balance fault (a fall, overspeed, a saturated tilt reference) develops within a few control ticks, and a subscription that streams every tick is limited by the link budget, so the ticks before a fault are usually missing from a capture.

@@ -1,10 +1,10 @@
 # Plan: fully autonomous driving
 
-Status: **in implementation.** Branch `feat/autonomous-driving`, created on 2026-10-31 from `feat/simulation` at `c07ead0`, with `main` merged in on 2026-11-01 after the agent workflow and the simulation landed there. The code of T0 to T7 is merged; the bench and robot phases are open. When a phase is done, its result moves into the `hardware/` and `software/` pages and its section here is deleted. The file goes with the last phase.
+Status: **in implementation.** Branch `feat/autonomous-driving`, created on 2026-10-31 from `feat/simulation` at `c07ead0`, with `main` merged in on 2026-11-01 after the agent workflow and the simulation landed there. The code of T0 to T7 is merged; the robot phases are open. The Nav2 simulation bench was removed on 2026-11-01 and moved to the [integration roadmap](roadmap.md#nav2-simulation-bench) (user decision). When a phase is done, its result moves into the `hardware/` and `software/` pages and its section here is deleted. The file goes with the last phase.
 
 The goal is that you pick a goal pose on the saved map in the web hub and the robot drives there by itself. It avoids what the LiDAR sees, and when something it can detect goes wrong, it stops in place and keeps balancing. The transmitter stays on as the emergency stop ([D1](#decisions-user-2026-11-01)).
 
-This page lists the required and the useful features, then orders the required ones into phases P0 to P7. Each phase ends in a check on the host, on the Nav2 test bench, or on the robot. Parallel Haiku agents write the code, as described in [Implement the code with parallel agents](#implement-the-code-with-parallel-agents). The speed limits come from D3. The other start values are derived, not measured, until P2 replaces them.
+This page lists the required and the useful features, then orders the required ones into phases P0 to P7. Each phase ends in a check on the host or on the robot. Parallel Haiku agents write the code, as described in [Implement the code with parallel agents](#implement-the-code-with-parallel-agents). The speed limits come from D3. The other start values are derived, not measured, until P2 replaces them.
 
 ## What exists today
 
@@ -15,7 +15,7 @@ This page lists the required and the useful features, then orders the required o
 | Odometry | Forward sign and left/right mapping are checked. The wheel yaw reads 13.5 % high. The gyro read 1080.4° for three turns, but the bridge's gyro heading has run only on simulated samples. Wheel radius and twist signs are not checked. | [turn test](../../../lab/integration/2026-10-26-odometry-turn-test.md), [integration roadmap](roadmap.md) |
 | SLAM | `slam_toolbox` maps from `/scan_slam`, which drops tilted scans and floor hits. One map is saved. Mapping with the robot's wheel odometry is not verified. | [LiDAR software](../../ros2_pc/software/lds08rr-lidar.md), [ros2_pc roadmap](../../ros2_pc/plans/roadmap.md) |
 | Localization | AMCL on the saved map, a global search (**Locate**), a switch between mapping and localization, and the mapping undo in the web hub. `/scan_slam` also drops scans above 0.8 rad/s or 0.3 m/s. Merged into this branch from `feat/localization`, `feat/undo-backend` and `feat/undo-ui` on 2026-11-01. Not verified on the robot. | `feat/localization:docs/ros2_pc/plans/localization.md`, `src/ros2_pc/ros2/src/lds08rr_lidar/lds08rr_lidar/motion_gate.py` |
-| Nav2 | Navigation2 1.3.13 for Jazzy is installed on the ros2_pc. That includes the regulated pure pursuit, MPPI and graceful controllers, the velocity smoother, the collision monitor, the waypoint follower, docking and the simple commander. Nothing configures or starts it. `ros-jazzy-nav2-loopback-sim` is in apt but not installed. | `dpkg -l` and `apt-cache policy` on the ros2_pc, 2026-10-31 |
+| Nav2 | Navigation2 1.3.13 for Jazzy is installed on the ros2_pc. That includes the regulated pure pursuit, MPPI and graceful controllers, the velocity smoother, the collision monitor, the waypoint follower, docking and the simple commander. Nothing configures or starts it.  | `dpkg -l` and `apt-cache policy` on the ros2_pc, 2026-10-31 |
 | ros2_pc load | CM5 with 4 cores and 1.9 GiB RAM. With the LiDAR service, SLAM, the bridge and the multiplexer running, 1.29 GiB was available. The bridge used 28 % of one core, and a Claude Code process used 318 MB. | `free -m` and `ps` on the ros2_pc, 2026-10-31 |
 | LiDAR | 5 Hz, 1° bins, range capped at 4 m in SLAM and AMCL because a mirror made a phantom room. The scan plane is 0.122 m above the floor. | [LiDAR observations](../../../lab/ros2_pc/2026-10-13-lds08rr-observations.md), `mount.py` |
 | Robot limits | Speed cap 0.3 m/s, acceleration 0.5 m/s², braking 1.0 m/s², yaw rate 1.0 rad/s, all uncommissioned. The yaw demand is clamped but not ramped. The wheels are 38.3 mm in diameter. The robot has no bumper, cliff or distance sensor. Footprint, height and mass are not measured. | `RobotConfig.cpp:49-54`, `BalanceController.cpp:180-186`, [robot overview](../../robot/hardware/system-overview.md) |
@@ -60,7 +60,7 @@ These make the goal work. The last column names the phase that builds each one.
 | R5 | Odometry that Nav2 can use: gyro heading on the robot, the wheel radius checked against a tape, and the `/odom` twist signs | The wheel yaw reads 13.5 % high, and AMCL and the controller both build on `odom`. | P3 |
 | R6 | AMCL keeps the pose while the robot drives | Nav2 plans in `map`. A pose jump steers the robot at a wall. | P3 |
 | R7 | A Nav2 configuration for this robot: planner, controller, velocity smoother, costmaps from `/scan_slam`, recoveries, and composition into one process | The nodes are stock. Only the parameters and the launch are ours. | P4 |
-| R8 | A Nav2 test bench with no robot motion, built on `nav2_loopback_sim` and the saved map | Goals, recoveries, keepout zones and the hub can be tested without moving the robot. | P4 |
+| R8 | Moved to the [integration roadmap](roadmap.md#nav2-simulation-bench) on 2026-11-01: a Nav2 simulation bench | The checks it would have run happen on the robot in P7. | none |
 | R9 | A course script with a preflight check | It turns "works" into numbers (goals reached, final error, stops), and it refuses to start when a precondition fails. | P4, P7 |
 | R10 | A CPU and RAM budget for the whole stack on the CM5 | 1.29 GiB is free today, and the Nav2 launch adds ten nodes. | P4, P7 |
 | R11 | A safety chain: the collision monitor in front of the bridge, a keepout mask, and an autonomy supervisor that cancels the goal when the robot cannot follow it | The controller does not know about RC loss, balance faults or a lost pose. | P5 |
@@ -94,11 +94,11 @@ These need new hardware or a new decision.
 
 ## Put the pieces on one branch (P0)
 
-Step 1 is done (2026-11-01). Step 2 waits for the ros2_pc, and steps 3 and 4 wait for the robot phases.
+Steps 1 to 3 are done (2026-11-01). Step 4 waits for the robot phases.
 
 1. Merged `feat/localization`, `feat/undo-backend` and `feat/undo-ui` into this branch, then `main` with the agent workflow and the simulation. `main` had already done task T8 of the link autonomy plan.
-2. Install `ros-jazzy-nav2-loopback-sim` on the ros2_pc (P4 step 1).
-3. Before the first robot phase, flash the firmware of `main` with `python3 scripts/deploy.py`, with the transmitter off. The deploy also runs tier A.
+2. Navigation2 is installed on the ros2_pc and listed in the [ros2_pc setup](../software/ros2-pc-setup.md).
+3. Flashed the firmware of `main` with `python3 scripts/deploy.py` on 2026-11-01. Every stage passed, including tier A.
 4. Before P3, install `navbot-lidar.service` on the ros2_pc from this branch, so that the robot runs the localization and navigation code. Check for an unsaved map first ([rule 3](#rules-for-every-agent)).
 
 ## Prove the link drive path on the robot (P1)
@@ -147,10 +147,8 @@ Done when:
 
 The navigation files go next to `localization.yaml` and `localization_launch.py` in `lds08rr_lidar`, because the LiDAR service already supervises the localization stack from there. T2 writes the configuration and the launches, and T7 writes the course script.
 
-1. Install `ros-jazzy-nav2-loopback-sim` on the ros2_pc and add it to the [ros2_pc setup](../software/ros2-pc-setup.md).
-2. Start the bench hub on the ros2_pc from the task worktree with `ROS_DOMAIN_ID=84` and `--bench --port 8082`, so that nothing reaches the live bridge. In place of AMCL's real scans and the robot, it runs `bench_launch.py`. That launch runs the localization stack on the saved map, the loopback simulator, which moves `base_link` from `/cmd_vel` and publishes `/scan_slam` from the map, and a fake robot that reports a healthy robot on `/diagnostics` and `/battery_state`.
-3. Run a course of five goals on the bench with `scripts/nav_course.py --hub http://127.0.0.1:8082`. Measure CPU and RAM of the bench together with the live LiDAR service.
-4. Check which clock stamps `/odom` and `/scan`. The bridge maps the robot's `t_us` onto the ros2_pc clock. Nav2 needs both topics on the same clock, within its `transform_tolerance`.
+1. Probe `navigation_launch.py` on the ros2_pc with `ROS_DOMAIN_ID=84`. On 2026-11-01, all seven Nav2 nodes configured and used about 106 MB.
+2. Check which clock stamps `/odom` and `/scan`. The bridge maps the robot's `t_us` onto the ros2_pc clock. Nav2 needs both topics on the same clock, within its `transform_tolerance`.
 
 | Parameter | Start value | Reason |
 | --- | --- | --- |
@@ -168,8 +166,8 @@ The navigation files go next to `localization.yaml` and `localization_launch.py`
 
 Done when:
 
-- The bench reaches 5 of 5 goals and never enters a keepout zone drawn on a copy of the map.
-- The lab note records CPU and RAM. At least 300 MB stays available.
+- The launch probe configures every Nav2 node.
+- The clock check of step 2 is recorded. The course, the keepout zone, and CPU and RAM are checked on the robot in P7.
 
 ## Add the safety chain (P5)
 
@@ -185,8 +183,7 @@ The firmware is the fast stop. It already stops the motion at once on RC loss, C
 Done when:
 
 - The host tests pass.
-- On the bench, each stop reason, faked on `/diagnostics` or by stopping a process, cancels the goal within 1.5 s. `/diagnostics` arrives at 1 Hz.
-- The bench course routes around the keepout zone.
+- Each stop reason and the keepout zone are checked on the robot in P7, step 2.
 
 ## Add the navigation mode to the web hub (P6)
 
@@ -195,9 +192,8 @@ Done when:
 3. **Cancel goal** ends the goal. **Stop** ends it and puts the supervisor in `stopped`. **Resume** leaves `stopped`.
 4. `/map.json` gains `control.nav` with the supervisor state, its checks, the goal, the planned path cut down to at most 200 points, and the outcome.
 5. The goal action client lives in the ROS node, next to the existing service calls (T4).
-6. With `--bench`, the hub runs without the LiDAR and with `bench_launch.py` in place of the localization launch (T6). It refuses mapping and every map change, so that a bench can never change the saved map.
 
-Done when on the bench a goal set in the hub moves the simulated robot there and the hub shows its path. **Cancel goal** and **Stop** end the goal. A goal outside the map or inside a keepout zone ends as `failed` with Nav2's error text.
+Done when on the robot (P7) a goal set in the hub moves the robot there and the hub shows its path. **Cancel goal** and **Stop** end the goal. A goal outside the map or inside a keepout zone ends as `failed` with Nav2's error text.
 
 ## Drive autonomously on the robot (P7)
 
@@ -252,7 +248,7 @@ The work runs under the agent workflow from P0. The lead works in the task workt
 | 0 | P0, then T0 shared interfaces (lead) | the user's go, after the workflow and simulation merge |
 | 1 | T1 drive steps, T2 Nav2 configuration and launches, T3 supervisor, T4 ROS node, T5 hub endpoints and page, T6 modes and service, T7 course script | T0 committed |
 | 2 | Merge, `python3 scripts/verify.py`, fix rounds (lead, fresh Haiku agents) | every wave 1 task merged |
-| 3 | Bench runs of P4, P5 and P6 on the ros2_pc, docs (lead) | wave 2 `done` |
+| 3 | Docs (lead) | wave 2 `done` |
 
 The robot phases run beside the waves with the user. P1 and P3 can start after P0. P2 needs T1. P7 needs wave 3.
 
@@ -265,7 +261,7 @@ The robot phases run beside the waves with the user. P1 and P3 can start after P
 - `NAVIGATION = "navigation"` and `MODES = (MAPPING, LOCALIZATION, NAVIGATION)`.
 - `set_mode(NAVIGATION)` from `LOCALIZATION` starts the Nav2 process and keeps the localization process running. From `NAVIGATION`, `set_mode(LOCALIZATION)` cancels the goal and stops the Nav2 process only. `set_mode(MAPPING)` from `NAVIGATION` does that first, then switches as today.
 - `initial_mode()` never returns `NAVIGATION`.
-- `SlamControl.__init__` gains the keyword arguments `supervisor=None`, `nav=None` (the ROS node), `nav_process: SlamProcess | None = None`, `localization_command: Callable[[Path], list[str]] = localization_command`, and `map_changes: bool = True`.
+- `SlamControl.__init__` gains the keyword arguments `supervisor=None`, `nav=None` (the ROS node), `nav_process: SlamProcess | None = None`, and `localization_command: Callable[[Path], list[str]] = localization_command`.
 - `MapStore.keepout_yaml() -> Path | None` returns `directory / "keepout.yaml"` when the file exists.
 
 Refusals, exact texts:
@@ -276,7 +272,6 @@ Refusals, exact texts:
 | `set_mode(NAVIGATION)` | no supervisor, node or Nav2 process | `Navigation is not available on this service` |
 | `set_mode(NAVIGATION)` | mode is `MAPPING` | `Switch to localization first, then to navigation` |
 | `set_mode(NAVIGATION)` | localization state is not `localized` | `Navigation needs a localized pose; wait or press Locate` |
-| `set_mode(MAPPING)`, `save`, `delete`, `reset` | `map_changes` is false | `Map changes are not available on the bench` |
 | `nav_goal` | mode is not `NAVIGATION` | `Goals need navigation mode` |
 | `nav_goal` | x, y or yaw is not a finite number | `x, y and yaw must be finite numbers` |
 | `nav_cancel` | no goal runs | `No goal is running` |
@@ -379,13 +374,10 @@ Every route answers `{"ok": false, "error": "SLAM is not running on this service
 
 #### Launches and files
 
-- `navigation.py` holds `NAVIGATION_LAUNCH`, `NAVIGATION_PARAMS` and `BENCH_LAUNCH` (paths next to the module), `navigation_command(keepout_yaml: Path | None) -> list[str]`, and `bench_command(map_yaml: Path) -> list[str]`.
+- `navigation.py` holds `NAVIGATION_LAUNCH` and `NAVIGATION_PARAMS` (paths next to the module) and `navigation_command(keepout_yaml: Path | None) -> list[str]`.
 - `navigation_command(k)` returns `["ros2", "launch", str(NAVIGATION_LAUNCH), f"params_file:={NAVIGATION_PARAMS}"]`, plus `f"keepout_mask:={k}"` when `k` is not None. `ros2 launch` rejects an empty `keepout_mask:=` (found on the ros2_pc, 2026-11-01).
-- `bench_command(m)` returns `["ros2", "launch", str(BENCH_LAUNCH), f"map:={m}", f"params_file:={LOCALIZATION_PARAMS}"]`.
 - `navigation_launch.py` takes the arguments `params_file`, `keepout_mask` (empty means no mask servers) and `use_sim_time` (default `false`).
-- `bench_launch.py` takes `map`, `params_file`, `x`, `y` and `yaw` (the start pose, default 0).
-- `bench_robot.py` is the fake robot of the bench. It is a ROS node run as `python3 -m lds08rr_lidar.bench_robot`. It publishes one `/initialpose` at the start pose once AMCL and the loopback simulator subscribe. Then it publishes, at 1 Hz until it is stopped, a `navbot_firmware` status with `balance_state` `Run`, `ch5_position` `1` and `rc_valid` `1`, and a `/battery_state` of 7.6 V.
-- `package.xml` gains the exec dependencies `nav2_msgs`, `action_msgs`, `std_srvs`, `launch`, `launch_ros`, `rclcpp_components`, `nav2_bringup`, `nav2_map_server`, `nav2_loopback_sim`, `nav2_collision_monitor` and `nav2_velocity_smoother` (T0).
+- `package.xml` gains the exec dependencies `nav2_msgs`, `action_msgs`, `std_srvs`, `launch`, `launch_ros`, `rclcpp_components`, `nav2_bringup`, `nav2_map_server`, `nav2_collision_monitor` and `nav2_velocity_smoother` (T0).
 
 ### Rules for implementing agents
 
@@ -419,7 +411,7 @@ Tests: `python3 -m pytest -q tests/scripts/test_drive_steps.py tests/scripts/tes
 
 ### T2: Nav2 configuration and launches (P4, P5)
 
-Files: `PKG/navigation.py` (bodies), `PKG/navigation.yaml` (new), `PKG/navigation_launch.py` (new), `PKG/bench_launch.py` (new), `PKG/bench_robot.py` (new), `TEST/test_navigation.py` (new).
+Files: `PKG/navigation.py` (bodies), `PKG/navigation.yaml` (new), `PKG/navigation_launch.py` (new), `TEST/test_navigation.py` (new).
 
 1. `navigation.yaml`: start from the Jazzy defaults in [nav2_params.yaml](https://raw.githubusercontent.com/ros-navigation/navigation2/jazzy/nav2_bringup/params/nav2_params.yaml). Keep only the nodes this launch starts. Set the values of the [P4 table](#configure-nav2-and-test-it-without-moving-the-robot-p4) and these:
    - Frames `map`, `odom` and `base_link`, and `robot_radius` 0.10 in both costmaps.
@@ -434,9 +426,7 @@ Files: `PKG/navigation.py` (bodies), `PKG/navigation.yaml` (new), `PKG/navigatio
 2. `navigation_launch.py`: model it on the Jazzy [navigation_launch.py](https://raw.githubusercontent.com/ros-navigation/navigation2/jazzy/nav2_bringup/launch/navigation_launch.py), composed only. Start a `ComposableNodeContainer` `nav2_container` (`rclcpp_components`, `component_container_isolated`). Load `controller_server`, `smoother_server`, `planner_server`, `behavior_server`, `velocity_smoother`, `collision_monitor` and `bt_navigator` into it, with the stock plugin names and the stock `cmd_vel` to `cmd_vel_nav` remappings. Add `lifecycle_manager_navigation` with these node names. Leave out the route server, the waypoint follower and the docking server.
    - With a `keepout_mask`, also load `filter_mask_server` (`nav2_map_server::MapServer`, topic `/keepout_filter_mask`) and `costmap_filter_info_server` (type 0, mask topic `/keepout_filter_mask`), with their own `lifecycle_manager_costmap_filters`.
    - Like `localization_launch.py`, shut the whole launch down when any process exits.
-3. `bench_launch.py` includes `localization_launch.py` with `map` and `params_file`. It also starts `nav2_loopback_sim`'s `loopback_simulator` with `base_frame_id` `base_link`, `scan_frame_id` `base_link`, `publish_map_odom_tf` false, `publish_clock` false, `scan_publish_dur` 0.2, `scan_range_max` 4.0, `scan_angle_increment` 0.017453 and the remapping `scan` to `/scan_slam`. Finally it starts `bench_robot.py` with the start pose.
-4. `bench_robot.py` as in [Shared names](#launches-and-files).
-5. Tests: the YAML values of step 1 as literals, which nodes the YAML holds (no `docking_server`, no `route_server`, no `waypoint_follower`), and `navigation_command` and `bench_command` as literal lists. With `importorskip("launch")`, also test that `generate_launch_description()` of both launches builds, and which node names it holds with and without a mask.
+3. Tests: the YAML values of step 1 as literals, which nodes the YAML holds (no `docking_server`, no `route_server`, no `waypoint_follower`), and `navigation_command` as a literal list. With `importorskip("launch")`, also test that `generate_launch_description()` builds, and which node names it holds with and without a mask.
 
 Tests: `PYTHONPATH=src/ros2_pc/ros2/src/lds08rr_lidar python3 -m pytest -q src/ros2_pc/ros2/src/lds08rr_lidar/test/test_navigation.py`.
 
@@ -500,14 +490,12 @@ Files: `PKG/slam.py`, `PKG/health.py`, `PKG/service.py`, `TEST/test_slam.py`, `T
 2. `health.py`: `_slam()` treats `navigation` like `localization`.
 3. `service.py`:
    - With `--device`, build a `NavSupervisor` and pass it to `LidarNode`. Build the Nav2 process as `SlamProcess(lambda: navigation_command(store.keepout_yaml()), DEFAULT_SLAM_DIR / "nav.log")` and pass the supervisor, the node and the process to `SlamControl`.
-   - Add `--bench`, exclusive with `--demo` and `--device`. It uses the demo source for the LiDAR page only, `LidarNode(..., publish_scans=False)`, `localization_command=bench_command`, and `map_changes=False`.
 4. Tests with the existing fakes plus a fake supervisor and a fake node. Cover:
    - every refusal text of [Modes](#modes-slampy);
    - localization to navigation without a restart of the localization process;
    - navigation to localization stopping only the Nav2 process;
    - navigation to mapping stopping both;
    - `goal_id` and `outcome` across two goals;
-   - the bench refusing map changes;
    - `initial_mode()` never returning navigation.
 
 Tests: `PYTHONPATH=src/ros2_pc/ros2/src/lds08rr_lidar python3 -m pytest -q src/ros2_pc/ros2/src/lds08rr_lidar/test/test_slam.py src/ros2_pc/ros2/src/lds08rr_lidar/test/test_health.py`.
@@ -531,13 +519,12 @@ Tests: `python3 -m pytest -q tests/scripts/test_nav_course.py`.
 
 1. Merge the wave 1 branches and run `python3 -m pytest tests -q`, the package tests, and `python3 tests/layout/test_repo_layout.py`.
 2. Run `python3 scripts/verify.py` until it reports `done`. Send each failure, with its output, to a fresh Haiku fix agent.
-3. Run the bench checks of P4, P5 and P6 on the ros2_pc, following [rules 2 and 3](#rules-for-every-agent).
-4. Write the docs. Add a software page for the navigation mode and the bench to `docs/ros2_pc/software/`, update the [LiDAR software page](../../ros2_pc/software/lds08rr-lidar.md) and the [ros2_pc setup](../software/ros2-pc-setup.md), and add the pages to their indexes. Move what is done out of this plan.
+3. Write the docs. Add a software page for the navigation mode to `docs/ros2_pc/software/`, update the [LiDAR software page](../../ros2_pc/software/lds08rr-lidar.md) and the [ros2_pc setup](../software/ros2-pc-setup.md), and add the pages to their indexes. Move what is done out of this plan.
 
 ## Rules for every agent
 
 1. Start no motion on the robot unless the user is at the robot with the transmitter on. Unattended flashing and reboots are allowed.
-2. On the ros2_pc, run every bench and every probe with `ROS_DOMAIN_ID=84`. Start it with `setsid`, record its process group, and stop only that group. Never use `pkill -f` with a ROS binary name, because the live service runs the same binaries.
+2. On the ros2_pc, run every probe with `ROS_DOMAIN_ID=84`. Start it with `setsid`, record its process group, and stop only that group. Never use `pkill -f` with a ROS binary name, because the live service runs the same binaries.
 3. Before you restart `navbot-lidar.service`, check `curl localhost:8081/map.json` for an unsaved map. If there is one, ask the user first.
 4. Stop the robot with zero velocity or by cancelling the goal. Never send `balance on=0` to stop it.
 5. Use the stock Nav2 nodes and plugins. Write new code only for the supervisor, the hub, the course script and the launches.
@@ -548,12 +535,13 @@ Tests: `python3 -m pytest -q tests/scripts/test_nav_course.py`.
 - **Rollback at the goal.** The simulation rolls back at up to 0.076 m/s after a stop, and there is no robot drive trace with this controller yet. The controller may hunt around the goal. P2 measures the rollback, and the goal tolerance absorbs some of it.
 - **Obstacles the LiDAR cannot see.** These are drops, everything below 12 cm, glass, mirrors and black surfaces. Keepout zones cover the known ones. L3 covers the rest.
 - **RAM.** 1.29 GiB was free with no Nav2, and a Claude Code process alone took 318 MB. The navigation launch already leaves out the route server, the waypoint follower and the docking server. If P4 still misses the budget, stop agent sessions on the CM5 during drives.
-- **CPU.** The bridge already takes 28 % of one core at 50 Hz. A late `/odom` shows up as TF extrapolation errors in Nav2. P4 and P7 watch for them.
+- **Goals near walls.** The collision monitor's `stop_ahead` polygon reaches 0.30 m ahead. A goal closer than that to a wall in the drive direction stops the robot short, and Nav2 fails with `Failed to make progress` ([bench attempt](../../../lab/integration/2026-11-01-nav2-bench-attempt.md)).
+- **CPU.** The bridge already takes 28 % of one core at 50 Hz. A late `/odom` shows up as TF extrapolation errors in Nav2. On the 2026-11-01 bench, the controller ran at 5 to 6 Hz instead of 10 Hz under load. P7 watches for both.
 - **Scan smear.** The LiDAR is not deskewed and one sweep takes 0.2 s. At the remote's 1.0 rad/s, a sweep turns 11.5°, which AMCL and the costmap see as blur. P3 measures whether AMCL keeps the pose at that rate.
 
 ## Alternatives not taken
 
-- **Gazebo with a robot model.** It does not model the balancing, the CM5 is too small for it, and the desktop has no ROS. The loopback simulator tests Nav2, and the host simulation tests the balance path (U7).
+- **Gazebo with a robot model.** It does not model the balancing, the CM5 is too small for it, and the desktop has no ROS. A Nav2 simulation bench is on the [integration roadmap](roadmap.md#nav2-simulation-bench), and the host simulation tests the balance path (U7).
 - **A `robot_localization` filter for wheels and gyro.** The bridge already takes the heading from the gyro and the distance from the wheels. Nothing else needs fusing.
 - **MPPI as the first controller.** It needs more CPU and more parameters. Regulated pure pursuit is enough at 0.3 m/s in rooms. Try MPPI only if P7 fails on path tracking, and measure its CPU first.
 - **RViz on the desktop, or a new web framework.** The desktop has no ROS, and the hub already draws the map.
