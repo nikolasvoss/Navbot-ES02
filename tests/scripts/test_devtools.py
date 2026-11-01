@@ -1,5 +1,7 @@
-"""devtools: paths, task state, evidence, ssh argv, shipped trees, host probe, port holders, gate."""
+"""devtools: paths, task state, evidence, ssh argv, shipped trees, host probe, port holders, gate, sim gate."""
 
+import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -282,3 +284,114 @@ def test_peer_maps_known_hosts_and_refuses_others(monkeypatch):
     monkeypatch.setattr(socket, "gethostname", lambda: "laptop")
     with pytest.raises(ValueError, match="unknown host laptop; add it to PEERS in scripts/devtools.py"):
         devtools.peer()
+
+
+def test_is_sim_input_accepts_the_simulator_sources_and_rejects_the_rest():
+    assert devtools.is_sim_input("src/sim/plant.cpp")
+    assert devtools.is_sim_input("src/ES-02/OllieFOCdrive/ControlTick.cpp")
+    assert devtools.is_sim_input("src/ES-02/OllieFOCdrive/src/navbot_link/pb.h")
+    assert not devtools.is_sim_input("src/ES-02/OllieFOCdrive/OllieFOCdrive.ino")
+    assert not devtools.is_sim_input("docs/robot/software/simulation.md")
+    assert not devtools.is_sim_input("src/sim2/x.cpp")
+    assert not devtools.is_sim_input("scripts/verify.py")
+
+
+def test_sim_key_ignores_commits_outside_the_inputs_and_follows_input_content(repo):
+    (repo / "src" / "sim").mkdir()
+    (repo / "src" / "sim" / "a.cpp").write_text("int a;\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "sim")
+    key = devtools.sim_key(git(repo, "rev-parse", "HEAD"), cwd=repo)
+
+    (repo / "README.md").write_text("changed\n")
+    git(repo, "commit", "-qam", "readme")
+    assert devtools.sim_key(git(repo, "rev-parse", "HEAD"), cwd=repo) == key
+
+    (repo / "src" / "sim" / "a.cpp").write_text("int b;\n")
+    git(repo, "commit", "-qam", "sim change")
+    changed = devtools.sim_key(git(repo, "rev-parse", "HEAD"), cwd=repo)
+    assert changed != key
+    assert len(changed) == 64
+
+
+def test_sim_check_runs_once_per_input_key_and_records_only_passes(repo, tmp_path, monkeypatch):
+    monkeypatch.setattr(devtools, "SIM_CACHE", tmp_path / "cache")
+    (repo / "src" / "sim").mkdir()
+    (repo / "src" / "sim" / "a.cpp").write_text("int a;\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "sim")
+    passing = git(repo, "rev-parse", "HEAD")
+
+    calls = []
+    outcome = {"code": 0, "out": "3 passed in 0.10s\n"}
+
+    def fake(host, argv, **kwargs):
+        calls.append((host, argv, kwargs))
+        return subprocess.CompletedProcess(argv, outcome["code"], outcome["out"], "")
+
+    monkeypatch.setattr(devtools, "run", fake)
+    assert devtools.sim_check(repo, passing) == (True, "3 passed in 0.10s")
+    assert calls == [
+        (None, ["python3", "-m", "pytest", "tests/simulation", "-q"], {"cwd": str(repo), "timeout": 900})
+    ]
+    assert (tmp_path / "cache" / devtools.sim_key(passing, cwd=repo)).exists()
+
+    passed, detail = devtools.sim_check(repo, passing)
+    assert passed is True
+    assert detail.startswith("inputs unchanged")
+    assert len(calls) == 1
+
+    (repo / "src" / "sim" / "a.cpp").write_text("int b;\n")
+    git(repo, "commit", "-qam", "break")
+    failing = git(repo, "rev-parse", "HEAD")
+    outcome.update(code=1, out="F\n1 failed in 0.20s\n")
+    assert devtools.sim_check(repo, failing) == (False, "1 failed in 0.20s")
+    assert not (tmp_path / "cache" / devtools.sim_key(failing, cwd=repo)).exists()
+
+    outcome.update(code=0, out="3 passed in 0.10s\n")
+    assert devtools.sim_check(repo, failing) == (True, "3 passed in 0.10s")
+    assert len(calls) == 3
+
+
+def test_sim_check_refuses_a_checkout_that_is_not_the_committed_sha(repo, tmp_path, monkeypatch):
+    monkeypatch.setattr(devtools, "SIM_CACHE", tmp_path / "cache")
+    (repo / "src" / "sim").mkdir()
+    (repo / "src" / "sim" / "a.cpp").write_text("int a;\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "sim")
+    head = git(repo, "rev-parse", "HEAD")
+    calls = []
+    monkeypatch.setattr(devtools, "run", lambda *args, **kwargs: calls.append(args))
+
+    (repo / "src" / "sim" / "a.cpp").write_text("int fixed;\n")
+    assert devtools.sim_check(repo, head) == (False, "uncommitted changes to simulator inputs: src/sim/a.cpp")
+    git(repo, "checkout", "-q", "--", "src/sim/a.cpp")
+    (repo / "tests" / "simulation").mkdir(parents=True)
+    (repo / "tests" / "simulation" / "test_new.py").write_text("")
+    assert devtools.sim_check(repo, head) == (False, "uncommitted changes to simulator inputs: tests/simulation/test_new.py")
+    assert devtools.sim_check(repo, "0" * 40) == (False, f"{repo} is not at 00000000")
+    assert calls == []
+    assert not (tmp_path / "cache").exists()
+
+
+def test_sim_inputs_cover_every_source_build_sh_compiles():
+    if shutil.which("c++") is None:
+        pytest.skip("c++ is not on PATH")
+    build = (ROOT / "src" / "sim" / "build.sh").read_text(encoding="utf-8")
+    sketch = "src/ES-02/OllieFOCdrive"
+    sources = [p.relative_to(ROOT).as_posix() for p in (ROOT / "src" / "sim").glob("*.cpp")]
+    sources += [f"{sketch}/{name}" for name in re.findall(r'"\$sketch_dir/([^"]+\.cpp)"', build)]
+    nanopb = re.search(r"for source in ([^;]+);", build).group(1).split()
+    sources += [f"{sketch}/src/navbot_link/{name}.c" for name in nanopb]
+
+    deps = set()
+    for source in sources:
+        flags = ["-MM", "-Isrc/sim", f"-I{sketch}", source]
+        argv = ["cc", *flags] if source.endswith(".c") else ["c++", "-std=c++17", *flags]
+        out = subprocess.run(argv, cwd=ROOT, check=True, capture_output=True, text=True).stdout
+        tokens = out.replace("\\", " ").split()[1:]  # the first token is "target:"
+        deps.update((ROOT / token).resolve().relative_to(ROOT).as_posix() for token in tokens)
+
+    missing = sorted(dep for dep in deps if not devtools.is_sim_input(dep))
+    assert missing == []
+    assert devtools.is_sim_input("src/sim/build.sh")

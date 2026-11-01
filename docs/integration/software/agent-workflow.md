@@ -54,23 +54,31 @@ Anything else stays, with the reason printed. A task without commits, a detached
 | Step | What it does |
 | --- | --- |
 | 1 | Refuses uncommitted changes to tracked files (exit 2), except `firmware-build-environment.json`, which the build rewrites. Builds HEAD. |
-| 2 | Checks both hosts and selects the build, USB and link hosts. |
-| 3 | Copies HEAD with `git archive` to `~/.cache/navbot-deploy/<sha>/` on the build host (the 5 newest copies are kept) and builds it with `build_firmware.py --revision <sha>`. The diagnostic image adds `-DSENSOR_DIAGNOSTIC_MODE=1` and builds into `build/flash-diagnostic`. A difference in the rewritten `firmware-build-environment.json` is reported, not failed. `--build-only` stops here, without a robot. |
-| 4 | Copies the build to the USB host when it is not the build host. |
-| 5 | Checks that no other process holds the robot's USB port (exit 9). |
-| 6 | Gate: reads `balance_state`, `motor_test_active`, `rc_valid` and `ch5_position` on the link host. It passes when `balance_state` and `motor_test_active` are 0 and either `rc_valid` or `ch5_position` is 0. A refusal, or a read that fails, stops before flashing (exit 4). There is no override. |
-| 7 | Flashes with `upload_firmware.py` on the USB host. |
-| 8 | Boot check: `navlink.py info --wait 40 --json` must report a build ID starting with the first 8 characters of HEAD, and `reset_reason` must be 1 (power-on). On failure, the output of the USB port is added as `raw_usb`. |
-| 9 | Control image only: tier A on the link host, in the shipped tree. |
-| 10 | Prints the result (text, or JSON with `--json`) and writes the stages to the task's evidence when the branch has a task folder. |
+| 2 | Simulation gate, skipped with `--build-only`: runs `pytest tests/simulation` in the checkout unless the current content of the simulator's inputs already passed on this host (below). A failure stops before anything is built (exit 10). There is no override. |
+| 3 | Checks both hosts and selects the build, USB and link hosts. |
+| 4 | Copies HEAD with `git archive` to `~/.cache/navbot-deploy/<sha>/` on the build host (the 5 newest copies are kept) and builds it with `build_firmware.py --revision <sha>`. The diagnostic image adds `-DSENSOR_DIAGNOSTIC_MODE=1` and builds into `build/flash-diagnostic`. A difference in the rewritten `firmware-build-environment.json` is reported, not failed. `--build-only` stops here, without a robot. |
+| 5 | Copies the build to the USB host when it is not the build host. |
+| 6 | Checks that no other process holds the robot's USB port (exit 9). |
+| 7 | Gate: reads `balance_state`, `motor_test_active`, `rc_valid` and `ch5_position` on the link host. It passes when `balance_state` and `motor_test_active` are 0 and either `rc_valid` or `ch5_position` is 0. A refusal, or a read that fails, stops before flashing (exit 4). There is no override. |
+| 8 | Flashes with `upload_firmware.py` on the USB host. |
+| 9 | Boot check: `navlink.py info --wait 40 --json` must report a build ID starting with the first 8 characters of HEAD, and `reset_reason` must be 1 (power-on). On failure, the output of the USB port is added as `raw_usb`. |
+| 10 | Control image only: tier A on the link host, in the shipped tree. |
+| 11 | Prints the result (text, or JSON with `--json`) and writes the stages to the task's evidence when the branch has a task folder. |
 
-Exit codes: 0 done, 1 other error, 2 uncommitted changes, 3 blocked (no toolchain, robot not connected), 4 gate refused, 5 build failed, 6 flash failed, 7 boot check failed, 8 tier A failed, 9 port held by another process.
+Exit codes: 0 done, 1 other error, 2 uncommitted changes, 3 blocked (no toolchain, robot not connected), 4 gate refused, 5 build failed, 6 flash failed, 7 boot check failed, 8 tier A failed, 9 port held by another process, 10 simulation failed.
+
+### Simulation gate
+
+`SIM_INPUTS` in `scripts/devtools.py` lists every file the simulation tests depend on: `src/sim/`, `tests/simulation/`, `tests/conftest.py`, the PC link library `src/navbot_link/` and `scripts/signals_catalog.py` (the live tests), nanopb, and the sketch files that `src/sim/build.sh` compiles with every header they include (`ControlTick`, `RobotConfig`, `BalanceController`, `imu`, `signals.def.h` and others; not `OllieFOCdrive.ino`). A test in `tests/scripts/test_devtools.py` asks the compiler for the include tree of every source `build.sh` compiles and fails when a dependency is missing from the list.
+
+The key is the SHA-256 of `git ls-tree -r <sha> -- <SIM_INPUTS>`, so it depends only on the content of those files. A pass writes `~/.cache/navbot-sim/passed/<key>`; a known key skips the run with `inputs unchanged, passed before`. A failure records nothing. The run takes about 10 s. The tests run in the checkout, so the check fails when the checkout is not at the SHA or has an uncommitted or untracked change to an input. A host without `c++` is blocked (`deploy.py` exit 3).
 
 ## Device tests
 
 | Tier | Runs | Where | Content |
 | --- | --- | --- | --- |
-| host | unattended, every change | any host: `python3 -m pytest tests -q` | Python tests and the C++ host tests (`run_host_test.sh` in each area) |
+| host | unattended, every change | any host: `python3 -m pytest tests -q --ignore tests/simulation` | Python tests and the C++ host tests (`run_host_test.sh` in each area) |
+| sim | unattended, when a simulator input changed | `verify.py` and `deploy.py`, through the simulation gate | `tests/simulation`: the firmware's balance path in the host simulation |
 | A | unattended, transmitter off | link host, by `deploy.py` | 7 tests of the firmware's link, health and parameters (below) |
 | B | guided: the user moves CH5 and places the robot | link host, by the user through `verify.py --guided` | 7 tests of the RC link mode and balance control (below) |
 | C | changes under `src/ES-02/` only | `verify.py` | Each acceptance item in `state.md` takes the result of its tier A or B test |
@@ -112,11 +120,12 @@ Tier B (`tests/hil/test_tier_b.py`), in file order. Each test prints the step fo
 | Changed path | Stages |
 | --- | --- |
 | any path | `host` |
+| a simulator input (`SIM_INPUTS`) | `sim` |
 | `src/ES-02/**` | `firmware_build` (both images), `deploy`, `tier_a`, `tier_c`; also `tier_b` when a balance, RC, overspeed, wheel-boundary, link endpoint, subscription or sketch file changed |
 | `src/navbot_link/**` | `deploy`, `tier_a` |
 | `src/ros2_pc/**` | `ros2_pc`: `colcon build`, `colcon test` and `colcon test-result` on the ROS host |
 
-Stage names: `host`, `firmware_build`, `deploy`, `tier_a`, `tier_b`, `tier_c`, `ros2_pc`.
+Stage names: `host`, `sim`, `firmware_build`, `deploy`, `tier_a`, `tier_b`, `tier_c`, `ros2_pc`.
 
 - `tier_c` passes when every acceptance item passes in its tier's results. It fails with no acceptance items in `state.md`.
 - A required `tier_b` without a result is blocked: `guided tests pending: run python3 scripts/verify.py --guided`. The user runs `--guided` in a terminal.

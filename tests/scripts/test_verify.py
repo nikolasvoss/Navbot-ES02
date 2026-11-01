@@ -42,6 +42,12 @@ DEPLOY_STAGES = {
 }
 
 
+@pytest.fixture(autouse=True)
+def sim_check_passes(monkeypatch):
+    """The real devtools.sim_check would run tests/simulation; every test here gets a passing stand-in unless it sets its own."""
+    monkeypatch.setattr(devtools, "sim_check", lambda root, sha: (True, "3 passed"))
+
+
 def git(repo: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-c", "user.name=test", "-c", "user.email=test@example.com", *args],
@@ -118,8 +124,14 @@ class FakeRobotRun:
 def test_required_stages_follow_the_changed_paths():
     assert verify.required_stages(["README.md"]) == ["host"]
     assert verify.required_stages(["src/ES-02/OllieFOCdrive/x.cpp"]) == ["host", "firmware_build", "deploy", "tier_a", "tier_c"]
-    assert verify.required_stages(["src/navbot_link/link.py"]) == ["host", "deploy", "tier_a"]
+    assert verify.required_stages(["src/navbot_link/link.py"]) == ["host", "sim", "deploy", "tier_a"]
     assert verify.required_stages(["src/ros2_pc/ros2/src/node.py"]) == ["host", "ros2_pc"]
+
+
+def test_sim_is_required_when_a_changed_path_is_a_simulator_input():
+    assert verify.required_stages(["src/ES-02/OllieFOCdrive/ControlTick.cpp"]) == ["host", "sim", "firmware_build", "deploy", "tier_a", "tier_c"]
+    assert verify.required_stages(["src/sim/plant.cpp"]) == ["host", "sim"]
+    assert verify.required_stages(["docs/x.md"]) == ["host"]
 
 
 @pytest.mark.parametrize("path", ["src/ES-02/BalanceController.cpp", "src/ES-02/lib/rc_mode.h", "src/ES-02/OllieFOCdrive/OllieFOCdrive.ino"])
@@ -223,6 +235,44 @@ def test_summary_text_is_literal():
         "Skipped:\n"
         "- tier_b: no robot (2026-10-31)"
     )
+
+
+def test_host_stage_leaves_the_simulation_to_the_sim_stage(tmp_path, monkeypatch):
+    make_repo(tmp_path, monkeypatch, {"src/navbot_link/link.py": "x = 2\n"}, [])
+    fake = FakeRobotRun()
+    monkeypatch.setattr(devtools, "run", fake)
+    assert verify.main([]) == 0
+    assert ["python3", "-m", "pytest", "tests", "-q", "--ignore", "tests/simulation"] in fake.calls
+
+
+def test_sim_without_a_compiler_is_blocked(tmp_path, monkeypatch, capsys):
+    make_repo(tmp_path, monkeypatch, {"src/sim/plant.cpp": "x\n"}, [])
+    monkeypatch.setattr(devtools, "run", FakeRobotRun())
+    monkeypatch.setattr(verify.shutil, "which", lambda name: None)
+    assert verify.main([]) == 3
+    assert "| sim | blocked | no C++ compiler for the simulation on this host |" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("passed", "detail", "status", "code", "result"),
+    [(False, "1 failed", "fail", 1, "failed"), (True, "3 passed", "pass", 0, "done")],
+)
+def test_sim_input_change_runs_the_sim_check_for_head(tmp_path, monkeypatch, capsys, passed, detail, status, code, result):
+    repo, _ = make_repo(tmp_path, monkeypatch, {"src/sim/plant.cpp": "x\n"}, [])
+    monkeypatch.setattr(devtools, "run", FakeRobotRun())
+    seen = []
+
+    def sim_check(root, sha):
+        seen.append(sha)
+        return passed, detail
+
+    monkeypatch.setattr(devtools, "sim_check", sim_check)
+    assert verify.main([]) == code
+    sha = git(repo, "rev-parse", "HEAD")
+    assert seen == [sha]
+    assert f"| sim | {status} | {detail} |" in capsys.readouterr().out
+    assert evidence_of(repo)["stages"]["sim"]["status"] == status
+    assert evidence_of(repo)["verify"]["result"] == result
 
 
 def test_navlink_change_is_done_and_recorded_for_head(tmp_path, monkeypatch, capsys):
@@ -349,6 +399,7 @@ def test_skipped_deploy_ends_done_with_its_reason(tmp_path, monkeypatch, capsys)
         "| Stage | Status | Detail |\n"
         "| --- | --- | --- |\n"
         "| host | pass | 1 passed in 0.1s |\n"
+        "| sim | pass | 3 passed |\n"
         "| deploy | skipped | transmitter off (2026-10-31) |\n"
         "| tier_a | skipped | deploy skipped: transmitter off (2026-10-31) |\n"
         "\n"

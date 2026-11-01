@@ -19,6 +19,7 @@ The robot is the ESP32-S3 controller board and everything attached to it: wheel 
 - [Sensor diagnostic mode](software/sensor-diagnostic-mode.md): motor-free sensor streaming.
 - [USB, serial, and flashing](software/usb-serial-flashing.md): verified connection facts and flashing.
 - [Firmware build design](software/firmware-build-design.md): the build command and its options.
+- [Host simulation](software/simulation.md): `navbot_sim`, the firmware's balance path against a model of the robot; scenarios, CSV, live link, model and tests.
 
 ## Plans
 

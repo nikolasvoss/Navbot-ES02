@@ -15,17 +15,15 @@
 #include "BoardConfig.h"
 #include "Calibration.h"
 #include "CalibrationStore.h"
+#include "ControlTick.h"
 #include "FUTABA_SBUS.h"
 #include "Logging.h"
 #include "link_uart.h"
-#include "MathConstants.h"
 #include "MotorDiagnostic.h"
 #include "settings_groups.h"
 #include "OverspeedGuard.h"
-#include "rc_mode.h"
+#include "RobotConfig.h"
 #include "WheelBoundary.h"
-#include "OllieFOCdrive.h"
-#include "LegPoseRamp.h"
 #include "ServoControl.h"
 #include "filter.h"
 #include "imu.h"
@@ -65,11 +63,6 @@ CalibrationStore calibrationStore;
 #define SENSOR_DIAGNOSTIC_MODE 0
 #endif
 
-#define SBUS_CHANNEL_MAX 1792
-#define SBUS_CHANNEL_MIN 192
-constexpr uint32_t kRcFrameTimeoutMs = 100;
-constexpr float kControlTimestepMinSec = 0.001f;
-
 constexpr unsigned long kSerialBaudRate = LINK_USB_BAUD;
 constexpr size_t kSerialTxBufferBytes = 1024;
 constexpr size_t kSerialRxBufferBytes = 512;
@@ -77,188 +70,33 @@ constexpr size_t kSerialRxBufferBytes = 512;
 constexpr unsigned int kDiagnosticLogSampleRateHz = 1000000U / DIAGNOSTIC_LOG_INTERVAL_US;
 // -------------------------------------
 
-// Wheel motor constants, measured 2026-10-22 (docs/robot/software/motor-commissioning.md).
-// SimpleFOC uses phase_resistance as the per-phase (line-to-neutral) value in voltage.q = I * R + bemf.
-// The meter reads 11.5 ohm phase to phase on both wheels; 5.75 ohm assumes a star winding, not yet verified.
-struct WheelMotorParams {
-  float phaseResistanceOhm;
-  float kvRatingRpmPerV;  // SimpleFOC convention: V_bemf = velocity / (KV * sqrt(3) * RPM_TO_RADS)
-};
-
-constexpr float kWheelSupplyVoltageV = 8.4;
-constexpr float kWheelVoltageLimitV = 4.2;  // usable q ceiling at about 7.3 V bus; the modulation limit is bus / sqrt(3)
-constexpr float kWheelVelocityFilterTfSec = 0.001;
-constexpr WheelMotorParams kLeftWheelMotor{5.75f, 79.5f};
-constexpr WheelMotorParams kRightWheelMotor{5.75f, 76.7f};
-
-// SimpleFOC adds the estimated back-EMF as voltage even at 0 A. If that estimate is larger than the real back-EMF
-// the wheel accelerates by itself, so the rating handed to SimpleFOC is the measured KV times this factor (a larger
-// KV gives a smaller estimate). Measured KV depends on the speed range (79.5 rpm/V over 0.5-2 V, about 108 rpm/V for
-// 0.5-1 V). Bench test of the left wheel with motor_current 0 0 on 2026-10-24: 1.0 ran away from rest, 1.4 let the wheel speed
-// up again between 17 and 30 rad/s, 1.8 slowed it down continuously. The right wheel takes the same factor on the
-// operator's decision; it is not tested separately.
-constexpr float kWheelKvSafetyFactor = 1.8f;
-
-// Balance settings group (the PARAM entries of signals.def.h name its fields). Built once at boot; SetParam replaces
-// it through BalanceGroup, and the controller reads it at each tick. The balance and yaw gains below are the working
-// values (tilt 8 A/rad, gyro damping 0.4), so the controller commands real wheel current as soon as it arms and runs.
-// The envelope can also command a small braking current above roughly 50 rad/s, because the plan requires outputs
-// inside the envelope. Each value is one of: existing constant (named), plan (decision or stated number), or an
-// uncommissioned placeholder.
-Config balanceSettings = [] {
-    Config c;
-    // Arming
-    c.armingTimeoutUs = 3000000;                 // uncommissioned: proposed starting value, 3 s
-    c.armingTiltWindowRad = 0.0872665f;          // uncommissioned: proposed starting value, rad (5 deg)
-    c.armingTiltRateRadPerSec = 0.1f;            // uncommissioned: proposed starting value, rad/s
-    c.armingRequestSpeedMps = 0.05f;             // uncommissioned: proposed starting value, m/s
-    c.armingRequestYawRadPerSec = 0.05f;         // uncommissioned: proposed starting value, rad/s
-    c.armingWheelSpeedRadPerSec = 2.0f;          // uncommissioned: proposed starting value, rad/s per wheel
-
-    // Measurement freshness and loop gap
-    c.imuMaxAgeUs = 20000;                       // uncommissioned: proposed starting value, 20 ms
-    c.wheelMaxAgeUs = 20000;                     // uncommissioned: proposed starting value, 20 ms
-    c.busMaxAgeUs = 100000;                      // uncommissioned: proposed starting value, 100 ms
-    c.dtMaxUs = 20000;                           // uncommissioned: proposed starting value, 20 ms
-
-    // Fall: the 35 deg tumble threshold of the former fall detector (existing constant)
-    c.fallAngleRad = 35.0f * kDegreesToRadiansF;  // existing tumble threshold, rad
-    c.fallDurationUs = 20000;                    // upstream: 20 control cycles at the nominal 1 kHz gate, 20 ms
-
-    // Overspeed: the existing OverspeedGuard limit and debounce
-    c.wheelOverspeedRadPerSec = OverspeedGuard::kLimitRadPerSec;   // existing constant, rad/s
-    c.overspeedDurationUs = OverspeedGuard::kDebounceMs * 1000U;   // existing constant, us
-
-    // Effort envelope. One KV is used for both wheels: 76.7 (right) and 79.5 (left) measured, about 3.6 percent apart,
-    // so the envelope error is small. The lower value is used.
-    c.phaseResistanceOhm = kLeftWheelMotor.phaseResistanceOhm;     // existing constant, ohm per phase (5.75 not verified)
-    // Same rating as handed to SimpleFOC, so the envelope matches the voltage the drive really outputs. 
-    c.kvRating = std::min(kLeftWheelMotor.kvRatingRpmPerV, kRightWheelMotor.kvRatingRpmPerV) * kWheelKvSafetyFactor;  // rpm/V
-    c.voltageLimitV = kWheelVoltageLimitV;                         // existing constant, V
-    c.currentLimitA = kWheelVoltageLimitV / c.phaseResistanceOhm;  // as configureWheelMotor(), A
-    c.sagMarginV = 0.5f;                         // uncommissioned: proposed starting value, V
-    c.modulationFactor = 0.57735027f;            // plan: SpaceVectorPWM usable amplitude is bus / sqrt(3)
-    // Motor speed = sign * forward speed. Forward is negative motor-local on both wheels (WheelBoundary.h).
-    c.leftWheelSign = static_cast<int>(WheelBoundary::kLeftMotorSign);
-    c.rightWheelSign = static_cast<int>(WheelBoundary::kRightMotorSign);
-    c.busMinV = 6.0f;                            // uncommissioned: proposed starting value, V
-    c.busMaxV = 9.0f;                            // uncommissioned: proposed starting value, V
-
-    // Demand shaping
-    c.speedCapMps = 0.3f;                        // uncommissioned: proposed starting value, m/s
-    c.accelCapMps2 = 0.5f;                       // uncommissioned: proposed starting value, m/s^2
-    c.brakeCapMps2 = 1.0f;                       // uncommissioned: proposed starting value, m/s^2
-    c.yawRateCapRadPerSec = 1.0f;                // uncommissioned: doubled after the stick test 2026-10-24, rad/s
-    c.requestMaxAgeUs = kRcFrameTimeoutMs * 1000U;  // existing constant (RC frame timeout), us
-    c.demandScaleCapStart = 0.5f;                // uncommissioned: proposed starting value, dimensionless
-
-    // Speed loop (gains zero, integral off)
-    c.wheelRadiusM = 0.019f;                     // measured 2026-10-24: diameter 38.3 mm, 38 mm used, m
-    c.speedLoopPeriodUs = 20000;                 // plan: provisional 50 Hz speed loop, us
-    c.speedKpRadPerMps = 0.25f;                  // uncommissioned: tilt rad per m/s (0.2 m/s error asks 0.05 rad)
-    c.speedKiRadPerMpsS = 0.08f;                 // uncommissioned: tilt rad per m (0.1 m/s error for 1 s adds 0.008 rad)
-    c.speedIntegralEnabled = true;               // uncommissioned: on, learns the lean that cancels an off-centre centre of mass
-    c.tiltRefLimitRad = 0.0872665f;              // uncommissioned: proposed starting value, rad (5 deg)
-    c.tiltRefSlewRadPerSec = 0.5f;               // uncommissioned: proposed starting value, rad/s
-    c.tiltClipDurationUs = 500000;               // uncommissioned: proposed starting value, 0.5 s
-
-    // Trim and standstill commissioning
-    c.trimEnvelopeRad = 0.0523599f;              // uncommissioned: proposed starting value, rad (3 deg)
-    c.trimSlewRadPerSec = 0.05f;                 // uncommissioned: proposed starting value, rad/s
-    c.knobPickupBandRad = 0.01f;                 // uncommissioned: proposed starting value, rad
-    c.standstillWheelSpeedTolMps = 0.02f;        // plan: average standstill wheel speed below 0.02 m/s
-    c.standstillTiltErrorTolRad = 0.01f;         // uncommissioned: proposed starting value, rad
-    c.transferToleranceRad = 0.001f;             // uncommissioned: proposed starting value, rad
-    c.saveRequestSpeedTolMps = 0.02f;            // uncommissioned: proposed starting value, m/s
-    c.saveRequestYawTolRadPerSec = 0.05f;        // uncommissioned: proposed starting value, rad/s
-
-    // Balance and yaw law
-    c.tiltPAPerRad = 8.0f;                       // uncommissioned: A/rad (5 deg lean asks 0.70 A)
-    c.gyroDampingAPerRadPerSec = 0.4f;           // uncommissioned: A/(rad/s) (1 rad/s asks 0.4 A)
-    c.yawPAPerRadPerSec = 0.6f;                  // uncommissioned: A/(rad/s) (1 rad/s yaw error asks 0.6 A per side)
-
-    // Reserve and authority
-    c.reserveLowA = 0.2f;                        // uncommissioned: proposed starting value, A
-    c.authorityDurationUs = 2000000;             // uncommissioned: proposed starting value, 2 s
-
-    // Sketch-supplied inputs: first commissioning, trim taken as validated at zero (user decision 2026-10-22)
-    c.trimValidated = true;
-    c.storedTrimDeg = 0.0f;                      // deg
-    c.fixedPoseReachable = true;                 // plan: fixed pose, all joint angles 0
-    return c;
-}();
+// The state of the balance path: the RC frame, the link Command, the balance controller, the wheel and battery readings,
+// the overspeed guard and the leg pose. The control tick and the host simulation both use it (ControlTick.h).
+ControlTick::State control;
+Config balanceSettings = defaultBalanceConfig();
 
 void configureWheelMotor(BLDCMotor &motor, const WheelMotorParams &params);
-
-// Body
-float movementSpeed = 0;                                         // Movement speed
-float bodyTurn = 0;                                              // Turning
-int robotTumble = ROBOT_NOT_TUMBLING;  // Fall-detection state, see docs/robot/ROBOT_ROADMAP.md
 
 int statusLedOn = 1;
 int statusLedTicks = 0;
 int statusLedPeriodTicks = 100;
-// Battery Voltage Measurement
-biquadFilter_t voltageFilterLpf;  // Second-order low-pass filter
-uint16_t voltageAdc = 0;          // Battery voltage ADC data
-float voltageAdcFiltered = 0;     // Battery voltage ADC data
-float batteryVoltage = 0;         // Battery voltage
-float batteryInstantRawV = 0;     // Battery voltage from the unfiltered ADC reading
 
 uint32_t controlGateSequence = 0;
 LinkSchedule linkOdometrySchedule;
 ServoTrimsDegrees servoTrims{};
-constexpr int kLegPoseDegrees = 20;  // fixed leg pose for all four servos, degrees
-constexpr int kLegSagDegrees = 10;  // assumed leg angle after the robot has sagged, between 0 and kLegPoseDegrees
-constexpr float kLegRampDegPerSec = 30.0f;  // leg pose ramp, 0 to 20 degrees in about 0.7 s
-constexpr float kLegRampMaxDtSec = 0.02f;   // the first tick after boot reports the whole boot time as dt
-float legPoseDegrees = 0.0f;                // commanded leg angle, ramped toward kLegPoseDegrees
 
 //  Create ServoControl object
 ServoControl servoControl(board::kLegServoPin[0], board::kLegServoPin[1], board::kLegServoPin[2],
                           board::kLegServoPin[3]);
-int servoTraceAngle[4] = {0, 0, 0, 0};  // Last angle arguments sent to the four servos
 
 // Remote control
 FUTABA_SBUS sBus;
-// Raw S.BUS values (SBUS_CHANNEL_MIN 192 to SBUS_CHANNEL_MAX 1792, centre 992). Decided and measured 2026-10-22 (plan: RC map).
-constexpr int kRcCenterRaw = (SBUS_CHANNEL_MAX + SBUS_CHANNEL_MIN) / 2;     // 992
-constexpr int kRcHalfRangeRaw = (SBUS_CHANNEL_MAX - SBUS_CHANNEL_MIN) / 2;  // 800
-constexpr int kRcSwitchOnRaw = 992;   // CH6 and CH7: 2-position latching switches
-constexpr int kRcKnobMinRaw = 172;    // CH9 trim knob: outside 172 to 1811 the knob is invalid
-constexpr int kRcKnobMaxRaw = 1811;
-int16_t rcChannels[18] = {};          // last S.BUS frame, raw
-bool rcFrameSeen = false;
-uint32_t rcFrameUs = 0;               // micros() when the last frame was decoded
-uint8_t ch5Position = 0;              // CH5 position 0, 1 (link) or 2 (RC), from the last frame (rc_mode.h)
-uint8_t previousCh5Position = 0;      // the position the last fresh RC frame had
-bool rcValid = false;                 // telemetry: the RC frame is fresh and the receiver reports no failsafe
-bool linkBalance = false;             // the link holds balance on, in CH5 position 1
-struct LinkCommand {
-  bool seen;
-  float speedMps;
-  float turnRadPerSec;
-  uint32_t receivedUs;
-};
-LinkCommand linkCommand{};            // the last Command accepted in CH5 position 1
 bool rebootPending = false;
 uint32_t rebootAtMs = 0;
 constexpr uint32_t kRebootDelayMs = 300;  // a reboot waits this long, so the Ack and the action Log leave first
 
-// Milliseconds since the last accepted Command; UINT32_MAX before the first one.
-uint32_t linkCommandAgeMs() { return linkCommand.seen ? (micros() - linkCommand.receivedUs) / 1000U : UINT32_MAX; }
-
-// Balance controller and the sketch inputs it reads
-BalanceController balanceController;
-Output balanceOutput{};               // result of the last update()
-// Balance measurement timestamps and validity, set by the acquisition functions
-uint32_t wheelReadTimeUs = 0;
-bool wheelsValid = false;
-uint32_t busReadTimeUs = 0;
-
-bool balanceActive() { return balanceOutput.state != State::Disabled; }
 // Balance is requested by the CH5 switch or is running. Motor tests and calibration steps wait for it.
-bool balanceRequested() { return ch5Position != 0 || balanceActive(); }
+bool balanceRequested() { return ControlTick::balanceRequested(control); }
 
 // The link's share of a pass, shared by the control tick and the sensor diagnostic loop. Requests that arrived since the
 // last pass take effect at its start; the due signal rows leave at its end.
@@ -296,13 +134,11 @@ void systemHealthTask(void*) {
 float calibrationSelect = 0;  // The calibrate action: 0 ends a step, 1 gyroscope, 2 Euler angle, 3 servo
 
 // Wheel Motors and Drivers
-// m1 is the left wheel and m2 the right wheel; speeds are forward positive (see WheelBoundary.h).
-WheelBoundary::WheelSpeedEstimator wheelSpeedEstimator;
-float m1VelocityRadPerSec = 0;
+// m1 is the left wheel and m2 the right wheel; speeds are forward positive (see WheelBoundary.h). The raw speeds are in
+// control; the filtered ones are kept here.
 float m1FilteredVelocityRadPerSec = 0;
 LowPassFilter m1VelocityFilter = LowPassFilter(0.01);  // Tf = 10ms
 
-float m2VelocityRadPerSec = 0;
 float m2FilteredVelocityRadPerSec = 0;
 LowPassFilter m2VelocityFilter = LowPassFilter(0.01);  // Tf = 10ms
 
@@ -398,26 +234,13 @@ void applyMotorDiagnosticRequest() {
   motorDiagnosticApplied = true;
 }
 
-OverspeedGuard::State wheelOverspeed{};
-
 // Coast fault: 0 A and both drivers off. It repeats every tick while tripped, so no other path can re-enable them.
 void serviceWheelOverspeed() {
-  const bool wasTripped = wheelOverspeed.tripped;
-  if (!OverspeedGuard::update(wheelOverspeed, millis(), m1VelocityRadPerSec, m2VelocityRadPerSec)) return;
+  if (!ControlTick::serviceOverspeed(control, millis())) return;
   motor1.target = 0.0f;
   motor2.target = 0.0f;
   setWheelEnabled(motor1, false);
   setWheelEnabled(motor2, false);
-  if (!wasTripped)
-    Logging::message(Logging::Level::Warning, "WHEEL_OVERSPEED", "peak=%.1frad_s limit=%.1frad_s; both drivers disabled",
-                     wheelOverspeed.peakRadPerSec, OverspeedGuard::kLimitRadPerSec);
-}
-
-// Called after a successful motor_reset and by balanceRequest() while CH5 is off. Rearms the guard only while both wheels are below the limit.
-// Rearming does not enable the drivers. balanceRequest() reports enable off while the guard is tripped, so CH5 must
-// go off and on again before the controller drives the wheels.
-void resetWheelOverspeed() {
-  if (OverspeedGuard::WithinLimit(m1VelocityRadPerSec, m2VelocityRadPerSec)) OverspeedGuard::reset(wheelOverspeed);
 }
 
 void serviceMotorDiagnostic() {
@@ -575,7 +398,7 @@ bool startMotorRequest(const MotorDiagnostic::Request &request, const char **err
     *error = "sensor diagnostic build has no motor control";
     return false;
   }
-  if (wheelOverspeed.tripped) {
+  if (control.wheelOverspeed.tripped) {
     *error = "wheel overspeed latched, send motor_reset";
     return false;
   }
@@ -613,7 +436,7 @@ bool stopMotorTest(const float *, const char **) {
 
 bool resetMotorFault(const float *, const char **error) {
   // Checked before the motor fault is cleared, so a refused reset leaves that fault latched too.
-  if (!OverspeedGuard::MayRearm(wheelOverspeed, m1VelocityRadPerSec, m2VelocityRadPerSec)) {
+  if (!OverspeedGuard::MayRearm(control.wheelOverspeed, control.m1VelocityRadPerSec, control.m2VelocityRadPerSec)) {
     *error = "wheel overspeed latched, a wheel is above 30 rad/s";
     return false;
   }
@@ -621,7 +444,7 @@ bool resetMotorFault(const float *, const char **error) {
     *error = "balance off and safe speed required";
     return false;
   }
-  resetWheelOverspeed();
+  ControlTick::resetOverspeed(control);
   return true;
 }
 
@@ -637,38 +460,16 @@ bool startCalibration(const float *args, const char **error) {
 }
 
 // Balance on or off from the link. Only in CH5 position 1, so a switch in another position never starts a robot. Entering
-// position 1 is applied by updateLinkBalance() in the next balanceRequest(); until then the switch position has not
+// position 1 is applied by the next control tick (ControlTick::runBalance); until then the switch position has not
 // been seen, so an on or off here would be undone by that tick. Balance on also waits for any motor test or calibration.
 bool setLinkBalance(const float *args, const char **error) {
   if (SENSOR_DIAGNOSTIC_MODE) {
     *error = "sensor diagnostic build has no motor control";
     return false;
   }
-  if (ch5Position != 1) {
-    *error = "CH5 not in link position (1)";
-    return false;
-  }
-  if (previousCh5Position != 1) {
-    *error = "CH5 position change pending";
-    return false;
-  }
-  const bool on = args[0] >= 0.5f;
-  if (on) {
-    if (wheelOverspeed.tripped) {
-      *error = "wheel overspeed latched, switch CH5 to 0";
-      return false;
-    }
-    if (motorDiagnosticState.active || motorDiagnosticApplied) {
-      *error = "motor test running";
-      return false;
-    }
-    if (calibrationSelect != 0.0f) {
-      *error = "calibration running";
-      return false;
-    }
-  }
-  linkBalance = on;
-  return true;
+  *error = ControlTick::setLinkBalance(control, args[0] >= 0.5f, motorDiagnosticState.active || motorDiagnosticApplied,
+                                       calibrationSelect != 0.0f);
+  return *error == nullptr;
 }
 
 // Reboot. Refused while balance is requested, so a reboot never restarts a robot that drives or is about to.
@@ -693,11 +494,7 @@ bool requestReboot(const float *, const char **error) {
 // A Command from the link. The handler refuses in this order and returns the first text that applies (nullptr accepts).
 const char *handleLinkCommand(float speedMps, float turnRadPerSec) {
   if (SENSOR_DIAGNOSTIC_MODE) return "sensor diagnostic build has no motor control";
-  if (ch5Position != 1) return "CH5 not in link position (1)";
-  if (previousCh5Position != 1) return "CH5 position change pending";
-  if (!std::isfinite(speedMps) || !std::isfinite(turnRadPerSec)) return "speed and turn must be finite numbers";
-  linkCommand = {true, speedMps, turnRadPerSec, micros()};
-  return nullptr;
+  return ControlTick::acceptLinkCommand(control, speedMps, turnRadPerSec, micros());
 }
 
 // The entry table (signals.def.h), expanded after the groups and handlers it names.
@@ -751,7 +548,7 @@ void setup() {
   delay(500);
 
 #if SENSOR_DIAGNOSTIC_MODE
-  biquadFilterInitLPF(&voltageFilterLpf, 20, kDiagnosticLogSampleRateHz);
+  biquadFilterInitLPF(&control.voltageFilterLpf, 20, kDiagnosticLogSampleRateHz);
   diagnosticImuReady = imu::begin(imu::Settings{}, imuCalibration);
   sBus.begin();
   Logging::message(Logging::Level::Info, "DIAG", "boot reset_reason=%d imu_ok=%d motors=off servos=off", (int)resetReason,
@@ -759,12 +556,12 @@ void setup() {
   return;
 #endif
 
-  biquadFilterInitLPF(&voltageFilterLpf, 50, 1000);  // TODO replace numbers with names
+  biquadFilterInitLPF(&control.voltageFilterLpf, 50, 1000);  // TODO replace numbers with names
 
   //  Initialize servo
   // The unpowered legs sag to somewhere between 0 and kLegPoseDegrees. Attach at the middle of that range so the first
   // move is small, hold it during the motor calibration. runControlTick() ramps the legs up to kLegPoseDegrees.
-  legPoseDegrees = kLegSagDegrees;
+  control.legPoseDegrees = kLegSagDegrees;
   servoControl.initialize(kLegSagDegrees);
 
   initIMU(imuCalibration);
@@ -791,20 +588,9 @@ void setup() {
 }
 
 /**
- * @brief Stores a decoded S.BUS frame with its arrival time. balanceRequest() reads the channels every tick.
- *        The CH5 position is taken from the same frame.
- */
-void applyRcChannels(const int16_t *ch) {
-  for (int i = 0; i < 18; ++i) rcChannels[i] = ch[i];
-  rcFrameUs = micros();
-  rcFrameSeen = true;
-  ch5Position = RcMode::Ch5Position(rcChannels[4]);
-}
-
-/**
  * @brief Reads and processes data from the FUTABA S.BUS remote controller.
  *
- * Decodes the S.BUS signal into `rcChannels`. Freshness and receiver failsafe are judged in balanceRequest().
+ * Decodes the S.BUS signal into the RC state of `control`. Freshness and receiver failsafe are judged by the control tick.
  */
 void readSbus() {
   sBus.FeedLine();
@@ -813,156 +599,50 @@ void readSbus() {
     sBus.UpdateChannels();
     sBus.toChannels = 0;
 
-    applyRcChannels(sBus.channels);
+    ControlTick::applyRcFrame(control, sBus.channels, micros());
   }
 }
 
 /**
- * @brief Reads and filters the battery voltage.
- *
- * Reads the analog value from the voltage divider, applies a low-pass filter
- * to get a stable reading, and converts it to the actual voltage.
+ * @brief Reads the battery voltage from the voltage divider and passes it to the control tick, which filters it.
  */
 void readBatteryVoltage(void) {
-  busReadTimeUs = micros();
-  voltageAdc = analogRead(board::kBatteryAdcPin);
-  batteryInstantRawV = board::kBatteryVoltsPerAdcCount * voltageAdc;
-  voltageAdcFiltered = biquadFilterApply(&voltageFilterLpf, voltageAdc);
-  batteryVoltage = board::kBatteryVoltsPerAdcCount * voltageAdcFiltered;
-}
-
-// Balance measurements, built at the hardware boundary. Sign and axis checked on the supported robot 2026-10-24:
-// leaning forward lowers correctedRollDegrees and drives gyro x below 0, so both are negated to make a forward lean
-// positive (positive gains then push the wheels forward). Turning left raises gyro z, which is the positive yaw rate.
-constexpr float kTiltSign = -1.0f;
-constexpr float kTiltRateSign = -1.0f;
-constexpr float kYawRateSign = 1.0f;
-
-/**
- * @brief Builds the controller measurements from the latest IMU sample, wheel speeds and bus voltage.
- *        Timestamps are the acquisition times; the caller takes nowUs after this call.
- */
-Measurements balanceMeasurements() {
-  const imu::Snapshot &imuSnapshot = imu::latest();
-  Measurements m{};
-  m.imuSequence = imuSnapshot.sequence;
-  m.imuReadTimeUs = imuSnapshot.readTimeUs;
-  m.imuValid = imuSnapshot.valid;
-  m.tiltRad = kTiltSign * imuSnapshot.correctedRollDegrees * kDegreesToRadiansF;
-  m.tiltRateRadPerSec = kTiltRateSign * imuSnapshot.angularVelocityRadPerSec.x;
-  m.yawRateRadPerSec = kYawRateSign * imuSnapshot.angularVelocityRadPerSec.z;
-  m.wheelReadTimeUs = wheelReadTimeUs;
-  m.wheelsValid = wheelsValid;
-  m.leftWheelRadPerSec = m1VelocityRadPerSec;
-  m.rightWheelRadPerSec = m2VelocityRadPerSec;
-  m.busReadTimeUs = busReadTimeUs;
-  m.busVoltageV = batteryVoltage;
-  // Approximation: near the usable voltage ceiling, or at the current limit of the last command.
-  m.voltageClipped = fabsf(motor1.voltage.q) >= motor1.voltage_limit - 0.01f ||
-                     fabsf(motor2.voltage.q) >= motor2.voltage_limit - 0.01f;
-  m.currentClipped = fabsf(motor1.target) >= motor1.current_limit || fabsf(motor2.target) >= motor2.current_limit;
-  return m;
-}
-
-// Stick position in -1..1 from a raw S.BUS value, centred on kRcCenterRaw.
-float rcStickFraction(int16_t raw) {
-  const float fraction = static_cast<float>(raw - kRcCenterRaw) / kRcHalfRangeRaw;
-  return std::max(-1.0f, std::min(1.0f, fraction));
+  const uint32_t readTimeUs = micros();
+  ControlTick::readBattery(control, static_cast<uint16_t>(analogRead(board::kBatteryAdcPin)), readTimeUs);
 }
 
 /**
- * @brief Moves link_balance with CH5. Entering position 1 starts it only while the controller drives; leaving position 1
- *        clears it and the stored Command. Called only while the RC frame is fresh.
+ * @brief Applies the wheel command of the balance tick (ControlTick::runBalance). Drive enables both wheels before it sets
+ *        the targets. Disable zeroes both targets, then disables the wheels that are still enabled. Keep leaves the
+ *        outputs to the motor diagnostic.
  */
-void updateLinkBalance() {
-  if (ch5Position == previousCh5Position) return;
-  if (ch5Position == 1) {
-    const bool driving = balanceOutput.state == State::Run || balanceOutput.state == State::Commissioning;
-    linkBalance = RcMode::LinkBalanceOnEntry(driving);
+void applyBalanceOutput(const ControlTick::WheelCommand &command) {
+  switch (command.action) {
+    case ControlTick::WheelAction::Keep:
+      return;
+    case ControlTick::WheelAction::Disable:
+      motor1.target = 0.0f;
+      motor2.target = 0.0f;
+      setWheelEnabled(motor1, false);
+      setWheelEnabled(motor2, false);
+      return;
+    case ControlTick::WheelAction::Drive:
+      setWheelEnabled(motor1, true);
+      setWheelEnabled(motor2, true);
+      motor1.target = command.motor1Target;
+      motor2.target = command.motor2Target;
+      return;
   }
-  if (previousCh5Position == 1) {
-    linkBalance = false;
-    linkCommand = {};
-  }
-  previousCh5Position = ch5Position;
 }
 
-// The RC frame is younger than kRcFrameTimeoutMs.
-bool rcFrameFresh(uint32_t nowUs) {
-  return rcFrameSeen && static_cast<uint32_t>(nowUs - rcFrameUs) <= kRcFrameTimeoutMs * 1000U;
+ControlTick::MotorFeedback motorFeedback(const BLDCMotor &motor) {
+  return {motor.voltage.q, motor.voltage_limit, motor.target, motor.current_limit};
 }
 
-// The RC is a valid source: the frame is fresh and the receiver reports no failsafe. Shared by balanceRequest() and the
-// sensor diagnostic loop.
-bool rcSourceValid(uint32_t nowUs) { return rcFrameFresh(nowUs) && sBus.Failsafe() == FUTABA_SBUS::kSignalOk; }
-
-/**
- * @brief Builds the balance request from the latest S.BUS frame. The frame counts only while rcSourceValid() holds.
- */
-Request balanceRequest(uint32_t nowUs) {
-  const Config &config = balanceSettings;
-  if (rcFrameFresh(nowUs)) {
-    // CH5 off rearms a tripped overspeed guard (once both wheels are below the limit), so no serial command is needed.
-    if (ch5Position == 0) resetWheelOverspeed();
-    updateLinkBalance();
-  }
-  Request request{};
-  request.receivedTimeUs = rcFrameUs;
-  request.sourceValid = rcSourceValid(nowUs);
-  rcValid = request.sourceValid;
-  if (ch5Position == 1) {
-    // The link drives. A missing or old Command is zero demand; the controller keeps balancing in place. An old Command
-    // is latched as expired: it is cleared here and stays cleared until a new Command arrives.
-    if (RcMode::CommandExpired(linkCommand.seen, nowUs, linkCommand.receivedUs)) linkCommand = {};
-    request.speedMps = linkCommand.seen ? linkCommand.speedMps : 0.0f;
-    request.yawRateRadPerSec = linkCommand.seen ? linkCommand.turnRadPerSec : 0.0f;
-  } else {
-    request.speedMps = config.speedCapMps * rcStickFraction(rcChannels[2]);         // CH3: forward is positive
-    request.yawRateRadPerSec = -config.yawRateCapRadPerSec * rcStickFraction(rcChannels[3]);  // CH4: left is positive
-  }
-  // A guard trip reads as enable off, so the controller goes Disabled. The operator must switch CH5 off and on to rearm.
-  request.enableSwitch = RcMode::EnableSwitch(ch5Position, linkBalance) && !wheelOverspeed.tripped;  // CH5
-  request.saveSwitch = rcChannels[5] >= kRcSwitchOnRaw;                           // CH6
-  request.commissioningSwitch = rcChannels[6] >= kRcSwitchOnRaw;                  // CH7
-  request.knobValid = rcChannels[8] >= kRcKnobMinRaw && rcChannels[8] <= kRcKnobMaxRaw;  // CH9
-  request.knobTrimDeg = rcStickFraction(rcChannels[8]) * config.trimEnvelopeRad * kRadiansToDegreesF;
-  return request;
-}
-
-/**
- * @brief Logs state and fault changes, save pulses, and refusal edges. Never logs per tick.
- */
-void logBalanceChange(const Output &out) {
-  if (out.state != balanceOutput.state || out.fault != balanceOutput.fault)
-    Logging::message(out.state == State::Fault ? Logging::Level::Warning : Logging::Level::Info, "BALANCE",
-                     "%s -> %s (%s)", StateName(balanceOutput.state), StateName(out.state), FaultReasonName(out.fault));
-  if (out.saveTrimRequested)  // one-tick pulse
-    Logging::message(Logging::Level::Info, "BALANCE", "save requested trim=%.3f deg; storage not wired", out.trimToSaveDeg);
-  if (out.diag.saveRefused && !balanceOutput.diag.saveRefused)
-    Logging::message(Logging::Level::Info, "BALANCE", "save refused; no pulse");
-  if (out.diag.commissioningRefused && !balanceOutput.diag.commissioningRefused)
-    Logging::message(Logging::Level::Info, "BALANCE", "commissioning transfer refused");
-}
-
-/**
- * @brief Applies the controller output to the wheels. Drive needs driveEnabled and a clear overspeed guard.
- *        Otherwise both wheels get 0 A and are disabled; setWheelEnabled() acts only on a wheel that is still enabled.
- *        The motor diagnostic owns the outputs while it is active or applied.
- */
-void applyBalanceOutput(const Output &out) {
-  if (motorDiagnosticState.active || motorDiagnosticApplied) return;
-  if (out.driveEnabled && !wheelOverspeed.tripped) {
-    setWheelEnabled(motor1, true);
-    setWheelEnabled(motor2, true);
-    const WheelBoundary::MotorValues targets = WheelBoundary::toMotorTargets(out.leftA, out.rightA);
-    motor1.target = targets.motor1;
-    motor2.target = targets.motor2;
-    return;
-  }
-  motor1.target = 0.0f;
-  motor2.target = 0.0f;
-  setWheelEnabled(motor1, false);
-  setWheelEnabled(motor2, false);
+// The RC is a valid source: the frame is fresh and the receiver reports no failsafe. The control tick applies the same
+// rule (ControlTick::runBalance); the sensor diagnostic loop sets control.rcValid with it.
+bool rcSourceValid(uint32_t nowUs) {
+  return ControlTick::rcFrameFresh(control, nowUs) && sBus.Failsafe() == FUTABA_SBUS::kSignalOk;
 }
 
 // The sensor diagnostic loop: the IMU, the receiver, the battery and the link. It has no control tick, so the entries
@@ -977,7 +657,7 @@ void diagnosticLoop(void) {
 
   linkPassStart(passStartUs);
   readSbus();
-  rcValid = rcSourceValid(passStartUs);  // telemetry, as balanceRequest() sets it in the control tick
+  control.rcValid = rcSourceValid(passStartUs);  // telemetry, as the control tick sets it
 
   if (diagnosticImuReady) imu::service();
 
@@ -1052,11 +732,11 @@ void updateStatusLed() {
   }
 
   static uint32_t lastLowBatteryWarningMs = millis();
-  if (batteryVoltage <= board::kLowBatteryVolts) {
+  if (control.batteryVoltage <= board::kLowBatteryVolts) {
     statusLedPeriodTicks = 20;
     if (static_cast<uint32_t>(millis() - lastLowBatteryWarningMs) >= 1000) {
       lastLowBatteryWarningMs = millis();
-      Logging::message(Logging::Level::Warning, "Voltage", "%.5f", batteryVoltage);
+      Logging::message(Logging::Level::Warning, "Voltage", "%.5f", control.batteryVoltage);
     }
   } else {
     statusLedPeriodTicks = 100;
@@ -1067,7 +747,7 @@ void runCalibrationStep(bool imuUpdated) {
   imu::CalibrationValues activeCalibration = imu::calibration();
   const imu::Snapshot &acceptedImu = imu::latest();
   CalibrationResult calibrationResult{CalibrationCompletion::None, false, {false, false, false, false}};
-  if (static_cast<int>(calibrationSelect) == 1 && balanceActive()) {
+  if (static_cast<int>(calibrationSelect) == 1 && control.balanceOutput.state != State::Disabled) {
     calibrationSelect = 0;
     Logging::message(Logging::Level::Warning, "Calibration", "gyro calibration refused: balance active");
   }
@@ -1109,19 +789,14 @@ void runCalibrationStep(bool imuUpdated) {
 void updateWheelVelocities() {
   // shaftAngle() applies each sensor_direction, so the angles share the sign of positive voltage.q.
   const uint32_t readTimeUs = micros();
-  WheelBoundary::WheelValues rawForward;
-  if (!wheelSpeedEstimator.update(motor1.shaftAngle(), motor2.shaftAngle(), readTimeUs, rawForward)) return;
-  wheelReadTimeUs = readTimeUs;
-  wheelsValid = true;
-  m1VelocityRadPerSec = rawForward.left;
-  m2VelocityRadPerSec = rawForward.right;
-  m1FilteredVelocityRadPerSec = m1VelocityFilter(m1VelocityRadPerSec);
-  m2FilteredVelocityRadPerSec = m2VelocityFilter(m2VelocityRadPerSec);
+  if (!ControlTick::updateWheels(control, motor1.shaftAngle(), motor2.shaftAngle(), readTimeUs)) return;
+  m1FilteredVelocityRadPerSec = m1VelocityFilter(control.m1VelocityRadPerSec);
+  m2FilteredVelocityRadPerSec = m2VelocityFilter(control.m2VelocityRadPerSec);
 }
 
 void writeLegServos() {
-  servoControl.setServosAngle(1, servoTraceAngle[0], -1, servoTraceAngle[1], -1, servoTraceAngle[2], 1,
-                              servoTraceAngle[3], 1);
+  servoControl.setServosAngle(1, control.servoTraceAngle[0], -1, control.servoTraceAngle[1], -1,
+                              control.servoTraceAngle[2], 1, control.servoTraceAngle[3], 1);
 }
 
 void runControlTick(bool imuUpdated) {
@@ -1136,30 +811,23 @@ void runControlTick(bool imuUpdated) {
   runCalibrationStep(imuUpdated);
   updateWheelVelocities();
   serviceWheelOverspeed();
-  if (wheelsValid && LinkScheduleDue(linkOdometrySchedule, controlStartUs, LINK_ODOMETRY_PERIOD_US)) {
+  if (control.wheelsValid && LinkScheduleDue(linkOdometrySchedule, controlStartUs, LINK_ODOMETRY_PERIOD_US)) {
     // Forward-positive wheel angles: the same sign as the wheel speeds, applied only through the wheel boundary.
-    LinkPublishOdometry(wheelReadTimeUs, WheelBoundary::kLeftMotorSign * motor1.shaftAngle(),
+    LinkPublishOdometry(control.wheelReadTimeUs, WheelBoundary::kLeftMotorSign * motor1.shaftAngle(),
                         WheelBoundary::kRightMotorSign * motor2.shaftAngle(), imu::latest());
   }
 
-  // Measurements are built before nowUs, so none of their timestamps is later than nowUs.
-  const Measurements measurements = balanceMeasurements();
-  const uint32_t balanceNowUs = micros();
-  const Request request = balanceRequest(balanceNowUs);
-  const Output out = balanceController.update(measurements, request, balanceSettings, balanceNowUs);
-  logBalanceChange(out);
-  balanceOutput = out;
-  robotTumble = out.fault == FaultReason::Fall ? ROBOT_TUMBLING : ROBOT_NOT_TUMBLING;
-  movementSpeed = request.sourceValid ? request.speedMps : 0.0f;  // telemetry only
-  bodyTurn = request.sourceValid ? request.yawRateRadPerSec : 0.0f;
-  applyBalanceOutput(out);
+  // The balance controller reads the measurements, the RC state and the motor feedback, then returns the wheel command.
+  const bool motorTestOwnsOutputs = motorDiagnosticState.active || motorDiagnosticApplied;
+  const ControlTick::WheelCommand command =
+      ControlTick::runBalance(control, balanceSettings, imu::latest(), motorFeedback(motor1), motorFeedback(motor2),
+                              sBus.Failsafe() == FUTABA_SBUS::kSignalOk, motorTestOwnsOutputs, micros());
+  applyBalanceOutput(command);
 
   // Fixed standing pose: every servo at kLegPoseDegrees, found on the robot 2026-10-24 (body higher than at 0). The
   // servo trims do not apply. No IK runs.
   // The commanded angle ramps up from the boot pose so the servos do not jump at full speed.
-  legPoseDegrees = stepLegPoseToward(legPoseDegrees, kLegPoseDegrees, kLegRampDegPerSec,
-                                     fminf(controlTimestepSec, kLegRampMaxDtSec));
-  for (int &angle : servoTraceAngle) angle = static_cast<int>(lroundf(legPoseDegrees));
+  ControlTick::stepLegs(control, controlTimestepSec);
   writeLegServos();
 
   controlExecutionUs = static_cast<uint32_t>(micros() - controlStartUs);

@@ -12,7 +12,7 @@ The folder list below is closed. Never create a top-level folder, and never crea
 | --- | --- | --- |
 | Repository root | `README.md` (intro, quick start, links into docs), `AGENTS.md`, `CLAUDE.md`, `.gitignore`, `firmware-build-environment.json` (written by the build script) | Other files |
 | `.claude/` | `settings.json` (tracked); `worktrees/` and `settings.local.json` (ignored) | Other files |
-| `src/<target>/` | Code and files built for or installed on that target: `ES-02/` (robot firmware), `ros2_pc/`, `navbot_link/` (shared by both), `libraries/` (vendored archives) | Docs, tests |
+| `src/<target>/` | Code and files built for or installed on that target: `ES-02/` (robot firmware), `ros2_pc/`, `navbot_link/` (shared by both), `sim/` (host simulation of the robot), `libraries/` (vendored archives) | Docs, tests |
 | `scripts/` | Host tools | Tests, test fixtures, docs |
 | `tests/<area>/` | Tests, fixtures, and stubs of one area. `tests/scripts/` tests the host tools. ROS 2 package tests stay in their package. `tests/conftest.py` and `tests/requirements.txt` serve every area. | Tools |
 | `cad/<system>/` | Files opened in a CAD or EDA tool, a slicer, or a geometry generator. Flat; a part made of several files gets one folder named after the part. | Markdown |

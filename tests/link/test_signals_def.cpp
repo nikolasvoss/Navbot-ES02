@@ -6,10 +6,19 @@
 
 #include "BalanceController.h"
 #include "Calibration.h"
+#include "ControlTick.h"
+#include "Logging.h"
 #include "MotorDiagnostic.h"
-#include "OverspeedGuard.h"
 #include "imu.h"
 #include "settings_groups.h"
+
+// The clock the sketch reads; the entries of the balance path pass it to ControlTick.
+uint32_t micros() { return 0; }
+
+// ControlTick logs the state changes; the text goes to the link in the sketch, and nothing is checked here.
+namespace Logging {
+void message(Level, const char*, const char*, ...) {}
+}  // namespace Logging
 
 namespace imu {
 const Snapshot& latest() {
@@ -33,16 +42,7 @@ struct StandInMotor {  // the fields of the SimpleFOC motor that the entries rea
   DqVoltage voltage;
 };
 StandInMotor motor1, motor2;
-uint8_t ch5Position;
-bool rcValid, linkBalance;
-struct StandInLinkCommand {
-  bool seen;
-  float speedMps, turnRadPerSec;
-  uint32_t receivedUs;
-} linkCommand;
-uint32_t linkCommandAgeMs() { return 0; }
-int servoTraceAngle[4];
-float batteryInstantRawV, batteryVoltage, movementSpeed, bodyTurn, legPoseDegrees;
+ControlTick::State control;
 float m1FilteredVelocityRadPerSec, m2FilteredVelocityRadPerSec, controlTimestepSec;
 uint32_t controlStartUs, controlExecutionUs, loopEntryIntervalUs;
 uint8_t resetReason;
@@ -79,10 +79,8 @@ bool stopMotorTest(const float*, const char**) { return true; }
 bool resetMotorFault(const float*, const char**) { return true; }
 bool startCalibration(const float*, const char**) { return true; }
 
-// The balance, overspeed and motor test state, the link counters and the system health are the sketch's; these are
-// stand-ins with the same fields. LogSettings and LogGroup follow the sketch's rule for log_level.
-Output balanceOutput;
-OverspeedGuard::State wheelOverspeed;
+// The motor test state, the link counters and the system health are the sketch's; these are stand-ins with the same
+// fields. LogSettings and LogGroup follow the sketch's rule for log_level.
 MotorDiagnostic::State motorDiagnosticState;
 struct LinkCounters {
   uint32_t txDropUart, txDropUsb, rxBadUart, rxBadUsb, reqDropped, undecodable;

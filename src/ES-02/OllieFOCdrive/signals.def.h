@@ -15,19 +15,19 @@
 // times with different macro definitions.
 
 // Receiver and battery
-SIGNAL    (ch5_position,          "",      ch5Position)
-SIGNAL    (rc_valid,              "",      rcValid)
-SIGNAL_MIN(voltage_min_raw_v,     "V",     batteryInstantRawV)
-SIGNAL    (voltage_filtered_v,    "V",     batteryVoltage)
-SIGNAL    (battery_raw_instant_v, "V",     batteryInstantRawV)
-SIGNAL    (ch3_target,            "m/s",   movementSpeed)
-SIGNAL    (body_turn_command,     "rad/s", bodyTurn)
+SIGNAL    (ch5_position,          "",      control.ch5Position)
+SIGNAL    (rc_valid,              "",      control.rcValid)
+SIGNAL_MIN(voltage_min_raw_v,     "V",     control.batteryInstantRawV)
+SIGNAL    (voltage_filtered_v,    "V",     control.batteryVoltage)
+SIGNAL    (battery_raw_instant_v, "V",     control.batteryInstantRawV)
+SIGNAL    (ch3_target,            "m/s",   control.movementSpeed)
+SIGNAL    (body_turn_command,     "rad/s", control.bodyTurn)
 
 // Link control: the balance enable and Command of CH5 position 1. cmd_age_ms is UINT32_MAX before the first Command.
-SIGNAL    (link_balance,          "",      linkBalance)
-SIGNAL    (cmd_speed_mps,         "m/s",   linkCommand.speedMps)
-SIGNAL    (cmd_turn_rad_s,        "rad/s", linkCommand.turnRadPerSec)
-SIGNAL    (cmd_age_ms,            "ms",    linkCommandAgeMs())
+SIGNAL    (link_balance,          "",      control.linkBalance)
+SIGNAL    (cmd_speed_mps,         "m/s",   control.linkCommand.speedMps)
+SIGNAL    (cmd_turn_rad_s,        "rad/s", control.linkCommand.turnRadPerSec)
+SIGNAL    (cmd_age_ms,            "ms",    ControlTick::linkCommandAgeMs(control, micros()))
 
 // Attitude and gyro
 SIGNAL    (roll_deg,              "deg",   imu::latest().correctedRollDegrees)
@@ -35,12 +35,12 @@ SIGNAL    (pitch_deg,             "deg",   imu::latest().correctedPitchDegrees)
 SIGNAL    (gyro_z_rad_s,          "rad/s", imu::latest().angularVelocityRadPerSec.z)
 
 // Legs: the four servos get the same angle, so the leg_pose window is the servo range of each row
-SIGNAL    (servo1_cmd_deg,        "deg",   servoTraceAngle[0])
-SIGNAL    (servo2_cmd_deg,        "deg",   servoTraceAngle[1])
-SIGNAL    (servo3_cmd_deg,        "deg",   servoTraceAngle[2])
-SIGNAL    (servo4_cmd_deg,        "deg",   servoTraceAngle[3])
-SIGNAL_MIN(leg_pose_min_deg,      "deg",   legPoseDegrees)
-SIGNAL_MAX(leg_pose_max_deg,      "deg",   legPoseDegrees)
+SIGNAL    (servo1_cmd_deg,        "deg",   control.servoTraceAngle[0])
+SIGNAL    (servo2_cmd_deg,        "deg",   control.servoTraceAngle[1])
+SIGNAL    (servo3_cmd_deg,        "deg",   control.servoTraceAngle[2])
+SIGNAL    (servo4_cmd_deg,        "deg",   control.servoTraceAngle[3])
+SIGNAL_MIN(leg_pose_min_deg,      "deg",   control.legPoseDegrees)
+SIGNAL_MAX(leg_pose_max_deg,      "deg",   control.legPoseDegrees)
 
 // Wheel motors: motor1 is the left wheel, motor2 the right (motor-local sign, see WheelBoundary.h)
 SIGNAL    (motor1_target,         "A",     motor1.target)
@@ -70,9 +70,9 @@ SIGNAL_MAX(loop_interval_max_us,  "us",    loopEntryIntervalUs)
 
 // Balance state. balance_state: 0 Disabled, 1 Arming, 2 Run, 3 Commissioning, 4 Fault. balance_fault: the FaultReason
 // order of BalanceController.h (0 None to 11 TiltSaturated).
-SIGNAL    (balance_state,         "",      balanceOutput.state)
-SIGNAL    (balance_fault,         "",      balanceOutput.fault)
-SIGNAL    (overspeed_tripped,     "",      wheelOverspeed.tripped)
+SIGNAL    (balance_state,         "",      control.balanceOutput.state)
+SIGNAL    (balance_fault,         "",      control.balanceOutput.fault)
+SIGNAL    (overspeed_tripped,     "",      control.wheelOverspeed.tripped)
 SIGNAL    (motor_test_active,     "",      motorDiagnosticState.active)
 
 // Link and system health. The link counters count from boot; the health values are refreshed once a second.

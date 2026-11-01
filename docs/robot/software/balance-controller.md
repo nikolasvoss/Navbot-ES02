@@ -1,6 +1,6 @@
 # Balance controller: states, switches, and safety rules
 
-As of 2026-10-24 · firmware commit `776684b` · code in [BalanceController.h](../../../src/ES-02/OllieFOCdrive/BalanceController.h) and [BalanceController.cpp](../../../src/ES-02/OllieFOCdrive/BalanceController.cpp), glue in [OllieFOCdrive.ino](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino).
+As of 2026-10-24 · firmware commit `776684b` · code in [BalanceController.h](../../../src/ES-02/OllieFOCdrive/BalanceController.h) and [BalanceController.cpp](../../../src/ES-02/OllieFOCdrive/BalanceController.cpp), the balance path of the control tick in [ControlTick.cpp](../../../src/ES-02/OllieFOCdrive/ControlTick.cpp), boot settings in [RobotConfig.cpp](../../../src/ES-02/OllieFOCdrive/RobotConfig.cpp), hardware in [OllieFOCdrive.ino](../../../src/ES-02/OllieFOCdrive/OllieFOCdrive.ino). The same balance path runs in the [host simulation](simulation.md).
 
 ## What it does today
 
@@ -46,14 +46,14 @@ Where to look in the code:
 
 | Question | Location |
 | --- | --- |
-| Gains and limits | `OllieFOCdrive.ino`: `balanceSettings` |
+| Gains and limits | `RobotConfig.cpp`: `defaultBalanceConfig()`; the running copy is `balanceSettings` in `OllieFOCdrive.ino` |
 | Loop order and control tick | `OllieFOCdrive.ino`: `loop()`, `runControlTick()` |
-| Remote frame and request | `OllieFOCdrive.ino`: `readSbus()`, `balanceRequest()` |
-| Measurements for the controller | `OllieFOCdrive.ino`: `balanceMeasurements()` |
+| Remote frame and request | `OllieFOCdrive.ino`: `readSbus()`; `ControlTick.cpp`: `applyRcFrame()`, `buildRequest()` |
+| Measurements for the controller | `ControlTick.cpp`: `buildMeasurements()` |
 | State machine and current allocation | `BalanceController.cpp`: `update()`, `checkRunning()`, `computeEffort()` |
-| Wheel outputs | `OllieFOCdrive.ino`: `applyBalanceOutput()`; `WheelBoundary.cpp`: `toMotorTargets()` |
+| Wheel outputs | `ControlTick.cpp`: `runBalance()` decides; `OllieFOCdrive.ino`: `applyBalanceOutput()` applies; `WheelBoundary.cpp`: `toMotorTargets()` |
 | IMU fusion | `imu.cpp`: `processAccepted()`; `MahonyFilter.cpp` |
-| Leg servos | `OllieFOCdrive.ino`: `runControlTick()`; `ServoControl.cpp` |
+| Leg servos | `ControlTick.cpp`: `stepLegs()`; `OllieFOCdrive.ino`: `writeLegServos()`; `ServoControl.cpp` |
 
 ## The five states
 

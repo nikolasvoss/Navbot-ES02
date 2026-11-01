@@ -37,10 +37,6 @@ Measured so far: each AS5600 read is a 120 µs I²C burst at 400 kHz, so both en
 
 Step 3 changes the filter cutoffs and the control rate, so the balance gains may need retuning: do it with the robot supported and follow the [balance controller](../software/balance-controller.md) commissioning steps. See also the control-timing row in the [robust control plan](robust-control-system.md).
 
-## Driving stability at high speed
-
-At high speed the robot still tips over. Record the failure pattern in a safe, reproducible driving test, covering roll angle, target and actual wheel speed, effective speed setpoint, and the balance controller output. Check whether the existing tilt reduction takes effect in the observed case and engages early enough. Change thresholds and controller tuning only after this evaluation.
-
 ## Clean up the RC value conversion chain
 
 A remote value passes through several hidden conversions before a controller uses it: transmitter µs to raw SBUS, a per-channel `mapf()` range and sign in `applyRcChannels()`, a negation for turn, and for some channels a biquad filter. The resulting units (for example ±30 "speed" compared with wheel rad/s) are not physical, and the signs are spread across several functions. The [RC channel map](../software/rc-channel-map.md#from-transmitter-to-firmware-value) documents the current chain.
@@ -56,3 +52,11 @@ The diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) no longer streams a CSV. It is
 ## Switch the LiDAR off after a fall
 
 Route the LiDAR's `M−` pin (LiDAR enable) to the robot PCB, most likely, and drive it so that the LiDAR switches off when the robot falls.
+
+## Host simulation: open checks
+
+The [host simulation](../software/simulation.md) is validated against the robot ([lab note](../../../lab/robot/2026-11-01-simulation-validation.md)); its transients are 30 to 45 % off.
+
+- [ ] Check the backward drift the simulation predicts after arming (about 0.17 m in the first 10 s while the speed integral learns the standing lean).
+- [ ] Decide whether pushing against an obstacle should fault: on 2026-11-01 the robot pressed against a wall in Run for 14 s.
+- [ ] Find the source of the standing lean of 1.1° (IMU mounting or centre of mass) and of the extra wobble the model lacks.
