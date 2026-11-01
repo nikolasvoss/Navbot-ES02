@@ -114,7 +114,7 @@ def test_navigation_command_with_and_without_keepout_mask(monkeypatch):
     monkeypatch.setattr(navigation, "NAVIGATION_PARAMS", Path("/cfg/navigation.yaml"))
 
     assert navigation_command(None) == [
-        "ros2", "launch", "/cfg/navigation_launch.py", "params_file:=/cfg/navigation.yaml", "keepout_mask:=",
+        "ros2", "launch", "/cfg/navigation_launch.py", "params_file:=/cfg/navigation.yaml",
     ]
     assert navigation_command(Path("/data/map/keepout.yaml")) == [
         "ros2", "launch", "/cfg/navigation_launch.py", "params_file:=/cfg/navigation.yaml",

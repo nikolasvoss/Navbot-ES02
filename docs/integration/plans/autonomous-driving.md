@@ -391,7 +391,7 @@ Every route answers `{"ok": false, "error": "SLAM is not running on this service
 #### Launches and files
 
 - `navigation.py` holds `NAVIGATION_LAUNCH`, `NAVIGATION_PARAMS` and `BENCH_LAUNCH` (paths next to the module), `navigation_command(keepout_yaml: Path | None) -> list[str]`, and `bench_command(map_yaml: Path) -> list[str]`.
-- `navigation_command(k)` returns `["ros2", "launch", str(NAVIGATION_LAUNCH), f"params_file:={NAVIGATION_PARAMS}", f"keepout_mask:={k or ''}"]`.
+- `navigation_command(k)` returns `["ros2", "launch", str(NAVIGATION_LAUNCH), f"params_file:={NAVIGATION_PARAMS}"]`, plus `f"keepout_mask:={k}"` when `k` is not None. `ros2 launch` rejects an empty `keepout_mask:=` (found on the ros2_pc, 2026-11-01).
 - `bench_command(m)` returns `["ros2", "launch", str(BENCH_LAUNCH), f"map:={m}", f"params_file:={LOCALIZATION_PARAMS}"]`.
 - `navigation_launch.py` takes the arguments `params_file`, `keepout_mask` (empty means no mask servers) and `use_sim_time` (default `false`).
 - `bench_launch.py` takes `map`, `params_file`, `x`, `y` and `yaw` (the start pose, default 0).

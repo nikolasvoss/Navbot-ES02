@@ -12,11 +12,12 @@ BENCH_LAUNCH = Path(__file__).with_name("bench_launch.py")
 
 
 def navigation_command(keepout_yaml: Path | None) -> list[str]:
-    """The ros2 launch command of Nav2; an empty keepout_mask starts no mask servers."""
-    return [
-        "ros2", "launch", str(NAVIGATION_LAUNCH), f"params_file:={NAVIGATION_PARAMS}",
-        f"keepout_mask:={keepout_yaml or ''}",
-    ]
+    """The ros2 launch command of Nav2; without a keepout mask, no mask servers start."""
+    command = ["ros2", "launch", str(NAVIGATION_LAUNCH), f"params_file:={NAVIGATION_PARAMS}"]
+    # ros2 launch rejects an empty "name:=" value, so no mask means leaving the argument at its empty default.
+    if keepout_yaml is not None:
+        command.append(f"keepout_mask:={keepout_yaml}")
+    return command
 
 
 def bench_command(map_yaml: Path) -> list[str]:
