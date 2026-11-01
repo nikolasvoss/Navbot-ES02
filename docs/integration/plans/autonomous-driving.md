@@ -1,6 +1,6 @@
 # Plan: fully autonomous driving
 
-Status: **proposal, not implemented.** Branch `feat/autonomous-driving`, created on 2026-10-31 from `feat/simulation` at `c07ead0`. It moves onto `main` once `feat/agent-workflow` and `feat/simulation` are merged there ([P0](#put-the-pieces-on-one-branch-p0)). When a phase is done, its result moves into the `hardware/` and `software/` pages and its section here is deleted. The file goes with the last phase.
+Status: **in implementation.** Branch `feat/autonomous-driving`, created on 2026-10-31 from `feat/simulation` at `c07ead0`, with `main` merged in on 2026-11-01 after the agent workflow and the simulation landed there. The code of T0 to T7 is merged; the bench and robot phases are open. When a phase is done, its result moves into the `hardware/` and `software/` pages and its section here is deleted. The file goes with the last phase.
 
 The goal is that you pick a goal pose on the saved map in the web hub and the robot drives there by itself. It avoids what the LiDAR sees, and when something it can detect goes wrong, it stops in place and keeps balancing. The transmitter stays on as the emergency stop ([D1](#decisions-user-2026-11-01)).
 
@@ -10,17 +10,17 @@ This page lists the required and the useful features, then orders the required o
 
 | Piece | State | Evidence |
 | --- | --- | --- |
-| Link drive path | CH5 position 1 (link mode), the `balance` action, and `Command` with a 250 ms timeout are in the code on this branch and host-tested. Tier B of the agent workflow tests them on the robot, but it has not run yet. | `rc_mode.h`, `ControlTick.cpp:94-104`, `tests/rc_mode/`, `tests/control_tick/` |
+| Link drive path | CH5 position 1 (link mode), the `balance` action, and `Command` with a 250 ms timeout. Checked on the robot on 2026-10-31: `/cmd_vel` at 0.1 m/s through the bridge and the multiplexer, the stop after the timeout, the CH5 moves, and `balance` off and on. A drive with the transmitter switched off, or with a ros2_pc service stopped, is not tested. | [motor checks](../../../lab/integration/2026-10-31-link-autonomy-motor-checks.md), `rc_mode.h`, `ControlTick.cpp:94-104` |
 | ROS 2 bridge | Subscribes to `/cmd_vel`. Publishes `/odom`, the TF `odom` to `base_link`, `/imu/data`, `/diagnostics` and `/battery_state`. Runs as a service on the ros2_pc behind the link multiplexer. The boot service takes the heading from the wheels. The odometry covariances are zero. | [bridge page](../software/navbot-link-bridge.md), `systemctl` on the ros2_pc, 2026-10-31 |
 | Odometry | Forward sign and left/right mapping are checked. The wheel yaw reads 13.5 % high. The gyro read 1080.4° for three turns, but the bridge's gyro heading has run only on simulated samples. Wheel radius and twist signs are not checked. | [turn test](../../../lab/integration/2026-10-26-odometry-turn-test.md), [integration roadmap](roadmap.md) |
 | SLAM | `slam_toolbox` maps from `/scan_slam`, which drops tilted scans and floor hits. One map is saved. Mapping with the robot's wheel odometry is not verified. | [LiDAR software](../../ros2_pc/software/lds08rr-lidar.md), [ros2_pc roadmap](../../ros2_pc/plans/roadmap.md) |
-| Localization | AMCL on the saved map, a global search (**Locate**), and a switch between mapping and localization in the web hub. `/scan_slam` also drops scans above 0.8 rad/s or 0.3 m/s. This is on branch `feat/localization`, not merged here, and not verified on the robot. | `feat/localization:docs/ros2_pc/plans/localization.md`, `feat/localization:src/ros2_pc/ros2/src/lds08rr_lidar/lds08rr_lidar/motion_gate.py` |
+| Localization | AMCL on the saved map, a global search (**Locate**), a switch between mapping and localization, and the mapping undo in the web hub. `/scan_slam` also drops scans above 0.8 rad/s or 0.3 m/s. Merged into this branch from `feat/localization`, `feat/undo-backend` and `feat/undo-ui` on 2026-11-01. Not verified on the robot. | `feat/localization:docs/ros2_pc/plans/localization.md`, `src/ros2_pc/ros2/src/lds08rr_lidar/lds08rr_lidar/motion_gate.py` |
 | Nav2 | Navigation2 1.3.13 for Jazzy is installed on the ros2_pc. That includes the regulated pure pursuit, MPPI and graceful controllers, the velocity smoother, the collision monitor, the waypoint follower, docking and the simple commander. Nothing configures or starts it. `ros-jazzy-nav2-loopback-sim` is in apt but not installed. | `dpkg -l` and `apt-cache policy` on the ros2_pc, 2026-10-31 |
 | ros2_pc load | CM5 with 4 cores and 1.9 GiB RAM. With the LiDAR service, SLAM, the bridge and the multiplexer running, 1.29 GiB was available. The bridge used 28 % of one core, and a Claude Code process used 318 MB. | `free -m` and `ps` on the ros2_pc, 2026-10-31 |
 | LiDAR | 5 Hz, 1° bins, range capped at 4 m in SLAM and AMCL because a mirror made a phantom room. The scan plane is 0.122 m above the floor. | [LiDAR observations](../../../lab/ros2_pc/2026-10-13-lds08rr-observations.md), `mount.py` |
 | Robot limits | Speed cap 0.3 m/s, acceleration 0.5 m/s², braking 1.0 m/s², yaw rate 1.0 rad/s, all uncommissioned. The yaw demand is clamped but not ramped. The wheels are 38.3 mm in diameter. The robot has no bumper, cliff or distance sensor. Footprint, height and mass are not measured. | `RobotConfig.cpp:49-54`, `BalanceController.cpp:180-186`, [robot overview](../../robot/hardware/system-overview.md) |
-| Host simulation | Models pitch, axle position and yaw with the firmware's balance path. The live mode serves the link over TCP to one client and accepts `balance` and `Command`. It has no LiDAR, no walls, and placeholder masses. The same branch moved the firmware's balance path into `ControlTick.cpp`, which has not run on the robot yet. On `feat/simulation`, which goes into `main` soon. | [simulation](../../robot/software/simulation.md), [robot roadmap](../../robot/plans/roadmap.md#validate-the-host-simulation) |
-| Agent workflow | `scripts/task.py` gives each task a worktree and a `state.md`. `scripts/deploy.py` flashes behind a safety gate and runs tier A. `scripts/verify.py` runs the stages that the changed paths need, including `colcon build` and `colcon test` on the ros2_pc. Hooks block direct uploads and `git worktree add`, and create `agent-` worktrees for subagents. It does not deploy ros2_pc services. On `feat/agent-workflow`, which goes into `main` soon. | `feat/agent-workflow:docs/integration/software/agent-workflow.md` |
+| Host simulation | Models pitch, axle position and yaw with the firmware's balance path, with measured masses and fitted motor values, validated against the robot. The live mode serves the link over TCP to one client and accepts `balance` and `Command`. It has no LiDAR and no walls. On `main`. | [simulation](../../robot/software/simulation.md), [validation](../../../lab/robot/2026-11-01-simulation-validation.md) |
+| Agent workflow | `scripts/task.py` gives each task a worktree and a `state.md`. `scripts/deploy.py` flashes behind a safety gate and runs tier A. `scripts/verify.py` runs the stages that the changed paths need, including `colcon build` and `colcon test` on the ros2_pc. Hooks block direct uploads and `git worktree add`. It does not deploy ros2_pc services. On `main`. | [agent workflow](../software/agent-workflow.md) |
 
 ## How the robot stops today
 
@@ -78,7 +78,7 @@ These make the robot nicer to use or easier to debug. None of them blocks the go
 | U4 | Speed zones with the Nav2 speed filter | The robot slows down in narrow passages and at doors. | P5 |
 | U5 | Several named maps, already on the [ros2_pc roadmap](../../ros2_pc/plans/roadmap.md) | One map per room or floor. | P6 |
 | U6 | A battery rule that refuses goals below a voltage | The bridge publishes the voltage. The threshold needs a measured discharge curve under load. | P5 |
-| U7 | The host simulation in the loop: the bridge and the Nav2 controller against `navbot_sim --live` | It tests the drive chain with the firmware's balance path before the robot does. Its numbers count only after the [simulation is validated](../../robot/plans/roadmap.md#validate-the-host-simulation). | P4 |
+| U7 | The host simulation in the loop: the bridge and the Nav2 controller against `navbot_sim --live` | It tests the drive chain with the firmware's balance path before the robot does. Its open checks are in the [robot roadmap](../../robot/plans/roadmap.md#host-simulation-open-checks). | P4 |
 | U8 | Drawing keepout and speed zones in the hub | P5 uses an edited map image, which works but needs an image editor. | P6 |
 
 ### Later
@@ -94,32 +94,21 @@ These need new hardware or a new decision.
 
 ## Put the pieces on one branch (P0)
 
-P0 starts after the user has merged `feat/agent-workflow` and `feat/simulation` into `main`. From then on, the agent workflow's rules in `AGENTS.md` apply to this work.
+Step 1 is done (2026-11-01). Step 2 waits for the ros2_pc, and steps 3 and 4 wait for the robot phases.
 
-1. Rebase `feat/autonomous-driving` onto `main`. Its own commits change only this plan and the integration index.
-2. Run `python3 scripts/task.py start feat/autonomous-driving` and work in the worktree it prints. Copy the goal, the decisions and the done-when lists of this plan into the Contract and Plan sections of `state.md`.
-3. Merge `feat/localization`. Since `main` it changed only `lds08rr_lidar`, its tests, its docs and `AGENTS.md`. In `AGENTS.md`, keep the version from `main`, which already has the localization branch's two opening paragraphs.
-4. Decide whether the mapping undo goes in. `feat/undo-backend` and `feat/undo-ui` build on `feat/localization` and are merged nowhere. They change `slam.py`, `web.py`, `slam.html` and `test_slam.py`, which T5 and T6 change too. Merge them here before wave 1, or leave them out.
-5. Do task T8 of [link-autonomy.md](link-autonomy.md). Its status line says "not implemented", and [signal-table.md](../software/signal-table.md) and the [integration roadmap](roadmap.md) still say that the firmware ignores `Command`.
-6. Flash the firmware of `main` with `python3 scripts/deploy.py`, with the transmitter off. The deploy also runs tier A.
-7. On the ros2_pc, install `navbot-lidar.service` from this branch's worktree with `scripts/install_lidar_service.py`, so that the robot runs the localization code. Check for an unsaved map first ([rule 3](#rules-for-every-agent)).
-
-Done when:
-
-- `python3 scripts/verify.py` reports `done` for the merge. Its stages are `host` and `ros2_pc`, because only docs and `src/ros2_pc/` changed since `main`.
-- The deploy passed the boot check and tier A.
-- The hub on port 8081 shows the localization mode switch.
+1. Merged `feat/localization`, `feat/undo-backend` and `feat/undo-ui` into this branch, then `main` with the agent workflow and the simulation. `main` had already done task T8 of the link autonomy plan.
+2. Install `ros-jazzy-nav2-loopback-sim` on the ros2_pc (P4 step 1).
+3. Before the first robot phase, flash the firmware of `main` with `python3 scripts/deploy.py`, with the transmitter off. The deploy also runs tier A.
+4. Before P3, install `navbot-lidar.service` on the ros2_pc from this branch, so that the robot runs the localization and navigation code. Check for an unsaved map first ([rule 3](#rules-for-every-agent)).
 
 ## Prove the link drive path on the robot (P1)
 
-You are at the robot with the transmitter on. This is also the first robot run of the control tick that the simulation branch moved into `ControlTick.cpp`.
+You are at the robot with the transmitter on. The normal drive path passed on 2026-10-31 ([motor checks](../../../lab/integration/2026-10-31-link-autonomy-motor-checks.md)); P1 adds the failure cases.
 
-1. Run tier B with `python3 -m pytest tests/hil/test_tier_b.py --robot --guided`. It checks the CH5 positions, balance in position 1, `balance` off and on through the link, and the stop after the `Command` timeout.
-2. Drive at 0.1 m/s with `teleop_twist_keyboard` in position 1, then stop the publisher. The robot stops and keeps balancing. This checks `/cmd_vel` through the bridge, which tier B does not use.
-3. Start a capture over the USB port with `navlink capture --preset drive --port /dev/ttyUSB0`, so that it keeps running when a ros2_pc service stops.
-4. Drive at 0.1 m/s in position 1 and switch the transmitter off. The robot stops and keeps balancing.
-5. Drive again and stop `navbot-link-bridge.service`. The robot stops and keeps balancing. Start the service again.
-6. Drive again and stop `navbot-link-mux.service`. The robot stops and keeps balancing. Start the service again.
+1. Start a capture over the USB port with `navlink capture --preset drive --port /dev/ttyUSB0`, so that it keeps running when a ros2_pc service stops.
+2. Drive at 0.1 m/s in position 1 and switch the transmitter off. The robot stops and keeps balancing.
+3. Drive again and stop `navbot-link-bridge.service`. The robot stops and keeps balancing. Start the service again.
+4. Drive again and stop `navbot-link-mux.service`. The robot stops and keeps balancing. Start the service again.
 
 Done when a lab note in `lab/integration/` records each check with its capture, and the robot stopped in place in every failure test.
 
@@ -131,7 +120,7 @@ You are at the robot with the transmitter on and CH5 in position 1.
 2. Run speed steps of 0.05, 0.1, 0.2 and 0.3 m/s for 3 s each, each followed by zero.
 3. Run yaw-rate steps of 0.3, 0.6 and 1.0 rad/s the same way.
 4. Read the report. For each step it gives the time to 90 % of the commanded value, the steady error, the stop distance, the rollback after the stop, the peak tilt, and the smallest speed that moves the robot.
-5. Measure the outline seen from above with the wheels, the height, and the mass. Record them in the [robot hardware overview](../../robot/hardware/system-overview.md). The mass also replaces a placeholder in the host simulation.
+5. Measure the outline seen from above with the wheels, and the height. Record them in the [robot hardware overview](../../robot/hardware/system-overview.md). The total mass (680 g) and the centre-of-mass height are measured already ([simulation parameters](../../robot/software/simulation.md)).
 6. Choose the Nav2 limits from the results. Keep the peak pitch below the 0.06 rad tilt gate while the robot speeds up and brakes.
 
 Done when a lab note holds the step table and the chosen limits, and the dimensions are in the hardware overview.
