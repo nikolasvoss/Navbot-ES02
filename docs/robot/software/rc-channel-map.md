@@ -8,7 +8,7 @@ The remote control is connected to the NavBot through the receiver over **SBUS**
 | CH2 | Unused; leg length and pitch were removed |
 | CH3 | Speed request: forward stick is forward, scaled to plus and minus 0.3 m/s (`speedCapMps`) |
 | CH4 | Yaw-rate request: left stick is a left turn, scaled to plus and minus 1.0 rad/s |
-| CH5 | Enable: 3-position switch; raw below 592 is off, the two upper positions are on |
+| CH5 | Enable: 3-position switch. 0 (below 592) is off; 1 (592 to 1401) is link mode, where the ros2_pc switches balance and drives; 2 (1402 and above) is RC balance |
 | CH6 | Save request for the trim: 2-position latching switch, on at raw 992 or above; works only in Commissioning |
 | CH7 | Commissioning: 2-position latching switch, on at raw 992 or above |
 | CH8 | Unused; the attitude modes were removed |

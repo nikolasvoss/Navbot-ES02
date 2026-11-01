@@ -16,15 +16,17 @@ The catalog is the same table as the normal image. In this image the loop update
 
 | Live | Source |
 | --- | --- |
-| `ch5_mode` | the CH5 switch, from each S.BUS frame |
+| `ch5_position`, `rc_valid` | the CH5 switch and the RC state, from each S.BUS frame |
 | `voltage_min_raw_v`, `voltage_filtered_v`, `battery_raw_instant_v` | the battery, read every 10 ms (not every control tick) |
 | `roll_deg`, `pitch_deg`, `gyro_z_rad_s`, and all `imu_*` signals | the IMU, when it initialized |
-| every parameter | its value, readable; `mahony_kp`, `mahony_ki` and `gyro_cutoff_hz` change the IMU filters. The balance and servo-trim values are stored, but nothing in this image reads them |
+| `link_tx_drop_*`, `link_rx_bad_*`, `link_req_dropped`, `link_undecodable` | the link counters |
+| `uptime_s`, `heap_*`, `stack_free_*` | the system health, refreshed once a second |
+| every parameter | its value, readable; `mahony_kp`, `mahony_ki` and `gyro_cutoff_hz` change the IMU filters. The balance and servo-trim values are stored, but nothing in this image reads them. `log_level` filters the text lines as in the other image |
 | `motor_stop`, `motor_reset` | accepted; they change no output |
 
-Read as 0 in this image: `ch3_target`, `body_turn_command`, `servo1_cmd_deg` to `servo4_cmd_deg`, `leg_pose_min_deg`, `leg_pose_max_deg`, the `motor1_*` and `motor2_*` signals, `control_start_us`, `control_execution_us`, `tick_dt_s` and `loop_interval_max_us`.
+Read as 0 in this image: `ch3_target`, `body_turn_command`, `servo1_cmd_deg` to `servo4_cmd_deg`, `leg_pose_min_deg`, `leg_pose_max_deg`, the `motor1_*` and `motor2_*` signals, `control_start_us`, `control_execution_us`, `tick_dt_s` and `loop_interval_max_us`. The balance and link-control signals stay at their start values: `balance_state`, `balance_fault`, `overspeed_tripped`, `motor_test_active` and `link_balance` are 0, and `cmd_age_ms` is `4294967295` until a `Command` arrives (which this image refuses).
 
-The actions `motor_current`, `motor_voltage` and `calibrate` are refused with a reason in the `Ack`, because this image runs no motor loop and no calibration step. Starting a motor test would enable the drivers.
+The actions `motor_current`, `motor_voltage`, `calibrate` and `balance` are refused with a reason in the `Ack`, because this image runs no motor loop and no calibration step. Starting a motor test would enable the drivers. `reboot` is accepted when CH5 is at 0, and restarts this image too.
 
 ### Subscriptions in this image
 

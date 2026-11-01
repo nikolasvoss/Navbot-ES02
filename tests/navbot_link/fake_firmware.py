@@ -111,6 +111,7 @@ class FakeFirmware:
     batch_rows: int = 1  # rows per SignalBatch
     balancing: bool = False  # SetParam follows the live-step rule
     link_position: bool = False  # CH5 in the link position: Command is accepted
+    position_change_pending: bool = False  # CH5 moved on the last RC frame: Command is refused
     reset_reason: int = 1  # ESP-IDF value: 1 power-on; a `reboot` call sets 3 (software)
     boot_monotonic: float = field(default_factory=time.monotonic)  # uptime_s counts from here
 
@@ -252,6 +253,8 @@ class FakeFirmware:
         elif body == "command":
             if not self.link_position:
                 return ack(error="CH5 not in link position (1)")
+            if self.position_change_pending:
+                return ack(error="CH5 position change pending")
             self.commands.append((req.speed_mps, req.turn_rad_s))
             ack()
         elif body == "call":

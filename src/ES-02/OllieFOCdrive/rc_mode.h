@@ -3,7 +3,7 @@
 #include <cstdint>
 
 // CH5 positions and the link Command age, without Arduino so that the host tests can run them. The rules are in
-// docs/integration/plans/link-autonomy.md (CH5 positions).
+// docs/integration/software/ros2-uart-protocol.md#command (CH5 positions).
 namespace RcMode {
 
 // Raw S.BUS values at which CH5 reaches position 1 (the link) and position 2 (RC).
