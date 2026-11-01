@@ -82,8 +82,11 @@ def test_balance_call_starts_the_controller(live_port):
 
 def test_command_reaches_the_controller(live_port):
     with Link(f"tcp:127.0.0.1:{live_port}", 0) as link:
+        link.call("balance", on=1)
+        assert wait_until(lambda: link.get("balance_state") == 2, 5.0)
         end = time.monotonic() + 2.0
         while time.monotonic() < end:
             link.command(0.1, 0.0)
             time.sleep(0.1)
             assert link.get("cmd_speed_mps") == pytest.approx(0.1)
+        assert link.get("ch3_target") == pytest.approx(0.1)

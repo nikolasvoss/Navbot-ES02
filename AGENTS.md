@@ -11,9 +11,10 @@ The folder list below is closed. Never create a top-level folder, and never crea
 | Path | Contains | Never contains |
 | --- | --- | --- |
 | Repository root | `README.md` (intro, quick start, links into docs), `AGENTS.md`, `CLAUDE.md`, `.gitignore`, `firmware-build-environment.json` (written by the build script) | Other files |
+| `.claude/` | `settings.json` (tracked); `worktrees/` and `settings.local.json` (ignored) | Other files |
 | `src/<target>/` | Code and files built for or installed on that target: `ES-02/` (robot firmware), `ros2_pc/`, `navbot_link/` (shared by both), `sim/` (host simulation of the robot), `libraries/` (vendored archives) | Docs, tests |
 | `scripts/` | Host tools | Tests, test fixtures, docs |
-| `tests/<area>/` | Tests, fixtures, and stubs of one area. `tests/scripts/` tests the host tools. ROS 2 package tests stay in their package. | Tools |
+| `tests/<area>/` | Tests, fixtures, and stubs of one area. `tests/scripts/` tests the host tools. ROS 2 package tests stay in their package. `tests/conftest.py` and `tests/requirements.txt` serve every area. | Tools |
 | `cad/<system>/` | Files opened in a CAD or EDA tool, a slicer, or a geometry generator. Flat; a part made of several files gets one folder named after the part. | Markdown |
 | `docs/<system>/README.md` | Index of the system's pages; links every page below it | Content |
 | `docs/<system>/hardware/` | Facts that stay true with different firmware: components, pins, wiring, power, dimensions | Procedures, behavior, plans |
@@ -22,7 +23,7 @@ The folder list below is closed. Never create a top-level folder, and never crea
 | `docs/<system>/assets/` | Every non-Markdown file the docs show or link: images, PDFs, drawings, spreadsheets, vendor documents | Markdown |
 | `lab/<system>/` | Dated notes `YYYY-MM-DD-topic.md` with observation, evidence, practical consequence, and a `Status: open` or `Status: concluded` line | Current-state documentation |
 | `lab/<system>/captures/` | Raw captures that a lab note or docs page cites | Uncited captures |
-| `work/` | Local task files: scope, todo, handoff, uncited captures. Ignored by git. | Anything others need |
+| `work/` | One folder per task, `work/<branch-slug>/`, written by `scripts/task.py`; deleted when the branch is merged. Ignored by git. | Anything others need |
 
 `<system>` is one of:
 
@@ -39,19 +40,12 @@ Rules:
 - Name files in lowercase kebab-case without spaces. ROS 2 packages and Python modules keep snake_case.
 - `AGENTS.md` holds instructions for agents. Facts about the system belong in `docs/`, and this file links to them.
 
-## Build and flash
+## Tasks, build and verification
 
-Before changing USB, serial, telemetry, or flashing behavior, read the [USB/serial documentation](docs/robot/software/usb-serial-flashing.md). Recheck device names and board settings before each flash.
-
-This machine (the CM5) has no ESP32 toolchain. To build remotely and flash:
-
-1. Commit your changes and run `git push`.
-2. Run `scripts/build_remote.sh [ssh-target]` (default `desktop`). It builds the pushed branch on the desktop PC and delivers the binaries to `build/flash`.
-3. Flash the absolute path of `build/flash` with `flash_firmware`. Where that MCP tool is not configured, run `python3 scripts/upload_firmware.py <absolute path of build/flash>` instead.
-
-Do not check the desktop for `arduino-cli` or the repo yourself: both are installed there, but only in a login shell, which the script uses.
-
-On a machine with the toolchain, build the default firmware from the project root with `python3 scripts/build_firmware.py`. The script writes Arduino CLI output to `build/flash`; pass `--help` for sketch, board, output, and build-property options. To flash a compiled build, use the configured `navbot_flash` MCP tool `flash_firmware` and pass the absolute build directory from the active worktree. Do not infer that the board is disconnected from an empty sandbox `/dev` or Arduino CLI `operation not permitted`; check the serial MCP `list_ports` before reporting it as disconnected. Close the serial MCP connection before flashing. Keep balance disabled and motor outputs safe.
+- Start or resume a task with `python3 scripts/task.py start <branch>`. Work in the worktree it prints and keep its `state.md` current.
+- Put firmware on the robot only with `python3 scripts/deploy.py`.
+- A task is done when `python3 scripts/verify.py` passes. Only the user can skip a hardware test; copy their words into `state.md`.
+- Before changing USB, serial, telemetry or flashing behavior, read the [USB/serial documentation](docs/robot/software/usb-serial-flashing.md).
 
 ## How to use the hardware documentation
 

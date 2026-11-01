@@ -2,32 +2,26 @@
 
 ## Verify sensor data and filters
 
-The ESP32 captures IMU data with monotonic timestamps. In the safe diagnostic mode, the motor drivers stay disabled; the firmware sends IMU, battery, and SBUS values as CSV lines over the existing CH340 UART connection. SerialPlot provides the live display and can save CSV snapshots. Its ASCII reader reads unprefixed, comma-separated numeric values; the prefix filter stays disabled. The saved CSV data can then be evaluated with an FFT tool; according to its feature list, SerialPlot itself offers no FFT plots. The diagnostic mode computes no controller outputs. Filtering and resonances are assessed from the captured time series; the control cycle and behavior under motor load must be measured separately.
+The ESP32 captures IMU data with monotonic timestamps. The sensor diagnostic build keeps the motor drivers disabled and computes no controller outputs. Its signals are read with navlink captures, described in [trace capture](../software/trace-capture.md). Filtering and resonances are assessed from the captured time series; the control cycle and behavior under motor load must be measured separately.
 
-Filtering runs digitally on the ESP32 and partly in the ICM42688. Gyro and accelerometer filters, as well as complementary filtering or sensor fusion, are evaluated from the recordings. The specific filter values and acceptance criteria will be set later. For high data rates, transmission is buffered. Binary frames will be used if measurements show that CSV over the available serial port does not reliably reach the target rate. A DAC is normally not needed for this.
+Filtering runs digitally on the ESP32 and partly in the ICM42688. Gyro and accelerometer filters, as well as complementary filtering or sensor fusion, are evaluated from the captures. The specific filter values and acceptance criteria will be set later.
 
 ## Next steps
 
 1. Define limits for target rate, timing deviation, data loss, and permissible delay of the control cycle. Before measurements in control operation, determine a safe test procedure. The current diagnostic mode keeps the motor drivers disabled and computes no controller outputs.
-2. Using longer CSV recordings, check the actual rate, time intervals, and data gaps against these limits. Measure the influence on the control cycle only with the defined test procedure.
-3. Decide whether controller outputs must be recorded. This requires a method that keeps the motor drivers disabled or explicitly allows a safe test in control operation.
-4. Compare unfiltered and filtered IMU values, as well as sensor fusion, using repeatable recordings and offline FFT. Then set filter values and acceptance criteria.
-6. Introduce buffering or binary frames only when measurements show that CSV does not reliably reach the defined data rate.
-7. Later, check a tool that shows the FFT of a selected measurement channel from CSV recordings. A live FFT would need its own serial client, since SerialPlot does not provide FFT plots.
-8. Clean up logging commands. Clearly document the selection of measured values, output formats, and behavior in diagnostic and normal mode.
-
-## Clean up controller start values and diagnostic switches
-
+2. Using longer navlink captures, check the actual rate, time intervals, and data gaps (`# lost` lines) against these limits. Measure the influence on the control cycle only with the defined test procedure.
+3. Compare unfiltered and filtered IMU values, as well as sensor fusion, using repeatable captures and offline FFT. Then set filter values and acceptance criteria.
+4. Later, add a tool that shows the FFT of a selected navlink channel. A live FFT would need its own link client.
 
 ## IMU diagnostic measurements
 
-- Measure after decoupling IMU processing from the 100 Hz CSV output: `IMUtime_dt` distribution in normal and sensor diagnostic mode; timestamp intervals, sequence gaps, and logger drop/write errors in the diagnostic CSV; and filter response at stationary and controlled known frequencies. For frequency measurements, use a capture rate matched to the target bandwidth and anti-alias filtering. The current diagnostic remains motor-free and does not establish behavior under motor load.
+- Measure the IMU timing and the filter response, in normal and sensor diagnostic mode: the distribution of `imu_dt_s`, gaps in `imu_sequence`, and `imu_long_gap_count` and `imu_max_interval_us`; and the filter response at stationary and controlled known frequencies. For frequency measurements, use a capture rate matched to the target bandwidth and anti-alias filtering. The current diagnostic remains motor-free and does not establish behavior under motor load.
 
-These measurements matter because different update rates and filter settings can change smoothing, latency, and fusion values. The 100 Hz CSV output can alias raw signals above 50 Hz, so fast vibrations appear wrong or remain invisible. Without this comparison, diagnostic recordings establish neither normal IMU processing nor behavior under motor load.
+These measurements matter because different update rates and filter settings can change smoothing, latency, and fusion values. A capture rate below twice the signal frequency aliases the signal, so fast vibrations appear wrong or remain invisible. Without this comparison, diagnostic captures establish neither normal IMU processing nor behavior under motor load.
 
-### Software IMU cutoff frequency (50 Hz)
+### Software IMU cutoff frequency (25 Hz)
 
-Measure the actual IMU update rate in normal control operation and compare the current software cutoff frequency of 50 Hz with suitable alternatives. Record raw and filtered gyro and acceleration data at controlled frequencies, and evaluate attenuation and delay of the attitude fusion. Set the cutoff frequency based on the measured motion and noise spectrum, not on the nominal sensor sampling rate alone.
+Measure the actual IMU update rate in normal control operation and compare the current software cutoff frequency of 25 Hz (the start value in `imu::Settings`) with suitable alternatives. Record raw and filtered gyro and acceleration data at controlled frequencies, and evaluate attenuation and delay of the attitude fusion. Set the cutoff frequency based on the measured motion and noise spectrum, not on the nominal sensor sampling rate alone.
 
 ## Speed up the main loop pass
 
@@ -59,12 +53,10 @@ The diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) no longer streams a CSV. It is
 
 Route the LiDAR's `M−` pin (LiDAR enable) to the robot PCB, most likely, and drive it so that the LiDAR switches off when the robot falls.
 
-## Validate the host simulation
+## Host simulation: open checks
 
-The [host simulation](../software/simulation.md) runs with placeholder physical parameters. Before its results count for the real robot:
+The [host simulation](../software/simulation.md) is validated against the robot ([lab note](../../../lab/robot/2026-11-01-simulation-validation.md)); its transients are 30 to 45 % off.
 
-- [ ] Measure total mass, wheel mass, the body's centre-of-mass height (balance it on an edge) and the swing period of the robot hanging from its axle; fit the placeholders.
-- [ ] Motor model: replay the voltage steps and sweeps of 2026-10-22 (`lab/robot/captures/2026-10-22-package1-t5` to `t9`, wheels free) and compare wheel speed. With the fitted values, `kWheelKvSafetyFactor` 1.0 must run away and 1.8 must slow down, as in the [bench test](../../../lab/robot/2026-10-24-balance-controller-first-bench-test.md).
-- [ ] Closed loop: `navlink capture --preset drive` with the current controller: 30 s standing, a forward step, a stop, a turn. Compare the standstill oscillation, the step rise time and overshoot, and the stop distance; proposed tolerance 30 %.
-- [ ] Record the result in a lab note, then set the scenario limits from the robot and decide on `test_drive_step` (expected failure: the model rolls back after a stop).
-- [ ] Run the moved control tick (`ControlTick.cpp`, 2026-10-31) on the robot once: stand, drive, CH5 off.
+- [ ] Check the backward drift the simulation predicts after arming (about 0.17 m in the first 10 s while the speed integral learns the standing lean).
+- [ ] Decide whether pushing against an obstacle should fault: on 2026-11-01 the robot pressed against a wall in Run for 14 s.
+- [ ] Find the source of the standing lean of 1.1° (IMU mounting or centre of mass) and of the extra wobble the model lacks.

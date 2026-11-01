@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {"matcher": "startup|compact|resume",
+       "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/scripts/claude_hooks.py session-start"}]}
+    ],
+    "WorktreeCreate": [
+      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/scripts/claude_hooks.py worktree-create"}]}
+    ],
+    "PreToolUse": [
+      {"matcher": "Bash",
+       "hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/scripts/claude_hooks.py pre-bash"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/scripts/claude_hooks.py stop"}]}
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python3 scripts/task.py:*)",
+      "Bash(python3 scripts/deploy.py:*)",
+      "Bash(python3 scripts/verify.py:*)",
+      "Bash(python3 scripts/navlink.py info:*)",
+      "Bash(python3 scripts/navlink.py list:*)",
+      "Bash(python3 scripts/navlink.py get:*)",
+      "Bash(python3 scripts/navlink.py log:*)",
+      "Bash(python3 scripts/navlink.py capture:*)",
+      "Bash(python3 -m pytest:*)"
+    ],
+    "deny": ["mcp__serial"]
+  }
+}

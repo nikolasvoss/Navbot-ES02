@@ -21,17 +21,18 @@ namespace sim {
 
 // ----- Plant (plant.cpp)
 
-// Values marked placeholder are estimates until the user measures them (plan, section Physical parameters).
+// Measured and fitted values carry their date; values marked placeholder are still estimates (docs/robot/software/simulation.md).
 struct PlantParams {
-  double bodyMassKg = 0.55;                       // placeholder: everything above the axle
-  double wheelMassKg = 0.06;                      // placeholder: one wheel with its motor rotor
-  double wheelInertiaKgM2 = 2.0e-5;               // placeholder: spin inertia of one wheel with its rotor
-  double comHeightM = 0.06;                       // placeholder: body centre of mass above the axle
-  double bodyPitchInertiaKgM2 = 7.0e-4;           // placeholder: about the body centre of mass
+  double bodyMassKg = 0.594;                      // measured 2026-11-01: 680 g total minus both wheels
+  double wheelMassKg = 0.043;                     // 2208 gimbal motor (about 39 g, listings) plus 10 % for the tyre
+  double wheelInertiaKgM2 = 4.1e-6;               // estimate: rotor bell about 20 g at 12 mm, tyre about 4 g at 17 mm
+  double comHeightM = 0.0572;                     // measured 2026-11-01: robot CoM 5 cm above the axle, body share
+  double bodyPitchInertiaKgM2 = 3.39e-4;          // measured 2026-11-01: swing period 0.52 s hanging from the axle
   double bodyYawInertiaKgM2 = 1.5e-3;             // placeholder: body about the vertical axis through the axle centre
   double wheelRadiusM = 0.01915;                  // measured 2026-10-24
   double trackWidthM = 0.113;                     // measured 2026-10-26
-  double bearingFrictionNmPerRadPerSec = 1.0e-5;  // placeholder: per wheel, on the wheel speed relative to the body
+  double bearingFrictionNmPerRadPerSec = 1.0e-5;  // fitted 2026-11-01 (no measurable effect above this)
+  double yawFrictionNmPerRadPerSec = 0.04;       // fitted 2026-11-01: floor scrub when the robot turns, on the yaw rate
   double groundContactPitchRad = 1.2;             // the body touches the ground beyond this |pitch|
   double gravityMps2 = 9.81;
 };
@@ -71,8 +72,8 @@ void applyPush(PlantState &state, const PlantParams &params, double impulseNs);
 // The real motor, as opposed to the values SimpleFOC is configured with.
 struct MotorPhysics {
   double phaseResistanceOhm = 5.75;
-  double kvRpmPerV = 79.5;          // real back-EMF: Ke = 1 / (KV * sqrt(3) * RPM_TO_RADS) V per rad/s, on voltage.q
-  double torquePerKe = 1.5;         // torque = torquePerKe * Ke * current.q
+  double kvRpmPerV = 105.0;         // fitted 2026-11-01 (low-speed KV of the 2026-10-22 sweeps); real back-EMF: Ke = 1 / (KV * sqrt(3) * RPM_TO_RADS) V per rad/s, on voltage.q
+  double torquePerKe = 1.0;         // fitted 2026-11-01; torque = torquePerKe * Ke * current.q
 };
 
 struct DqVoltage {
@@ -130,9 +131,10 @@ MotorOutput motorOutput(const MotorPhysics &physics, double appliedVq, double re
 
 struct SensorParams {
   double imuHeightM = 0.03;                    // placeholder: IMU above the axle
-  double gyroNoiseRadPerSec = 0.003;           // standard deviation per sample
+  double gyroNoiseRadPerSec = 0.008;           // fitted 2026-11-01, standard deviation per sample
   double gyroBiasRadPerSec[3] = {0.0, 0.0, 0.0};
-  double accelNoiseG = 0.003;
+  double accelNoiseG = 0.008;                  // fitted 2026-11-01
+  double imuPitchOffsetRad = 0.0192;           // fitted 2026-11-01: the robot stands at 1.1 deg measured forward lean
   uint32_t imuPeriodUs = 1000;                 // ODR 1 kHz
   int encoderCountsPerTurn = 4096;             // AS5600
   double batteryAdcNoiseCounts = 1.0;
@@ -185,7 +187,7 @@ struct BatteryParams {
 };
 
 struct TimingParams {
-  uint32_t passUs = 1400;            // measured 2026-10-26: one loop() pass
+  uint32_t passUs = 1770;            // measured 2026-11-01: median control tick 1.84 ms
   uint32_t passJitterUs = 200;       // uniform +-
   uint32_t physicsStepUs = 50;
 };
@@ -202,8 +204,8 @@ RcInput defaultRc();
 
 struct Params {
   PlantParams plant;
-  MotorPhysics leftMotor;            // kvRpmPerV 79.5
-  MotorPhysics rightMotor{5.75, 76.7, 1.5};
+  MotorPhysics leftMotor;
+  MotorPhysics rightMotor;
   SensorParams sensors;
   BatteryParams battery;
   TimingParams timing;

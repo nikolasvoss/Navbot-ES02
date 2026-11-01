@@ -11,7 +11,7 @@ Run these steps only on a supported robot. Support the body so that a fall canno
 - Balance is off: CH5 at position 0. The firmware refuses `motor_current` and `motor_voltage` while balance is enabled, and it latches a fault if balance is enabled during a request.
 - Calibration is inactive (no `calibrate` step is running).
 - Both wheels are below the overspeed limit (60 rad/s shaft velocity, wheel-clear runs; see the caps table). A request is refused otherwise.
-- The robot is connected to navlink on the ros2_pc UART (`/dev/ttyAMA3`, with the bridge stopped) or on the USB port (`/dev/ttyUSB0`). A started action is logged on both ports, so either port records it. [Trace capture](trace-capture.md) describes the logs.
+- The robot is connected to navlink on the ros2_pc UART, through the link multiplexer at `tcp:127.0.0.1:7650` (which owns `/dev/ttyAMA3`; the ROS bridge may keep running), or on the USB port (`/dev/ttyUSB0`). A started action is logged on both ports, so either port records it. [Trace capture](trace-capture.md) describes the logs.
 
 ## Actions
 

@@ -120,3 +120,33 @@ def test_header_without_git_executable_says_nogit(monkeypatch, tmp_path):
     monkeypatch.setattr(BUILD.subprocess, "run", missing_git)
 
     assert BUILD.write_build_id_header(tmp_path, NOW) == "nogit 2026-10-30 14:05"
+
+
+def test_revision_option_writes_literal_id_without_git_or_dirty_check(monkeypatch, tmp_path):
+    fake = FakeGit({"rev-parse": "ffffffff\n", "status": " M OllieFOCdrive.ino\n"})
+    monkeypatch.setattr(BUILD.subprocess, "run", fake)
+
+    text = BUILD.write_build_id_header(tmp_path, NOW, "d9802212ab34cd56ef78901234567890abcdef12")
+
+    assert text == "d9802212 2026-10-30 14:05"
+    assert (tmp_path / "build_id.h").read_text(encoding="utf-8") == (
+        "// Written by scripts/build_firmware.py before each build. Not in git.\n"
+        '#define NAVBOT_BUILD_ID "d9802212 2026-10-30 14:05"\n'
+    )
+    assert fake.calls == []
+
+
+def test_revision_option_works_without_git_executable(monkeypatch, tmp_path):
+    def missing_git(command, **kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(BUILD.subprocess, "run", missing_git)
+
+    assert BUILD.write_build_id_header(tmp_path, NOW, "d9802212") == "d9802212 2026-10-30 14:05"
+
+
+def test_revision_option_parses_into_request():
+    args = BUILD._parser().parse_args(["--revision", "d9802212ab34cd56"])
+
+    assert BUILD._request(args).revision == "d9802212ab34cd56"
+    assert BUILD._request(BUILD._parser().parse_args([])).revision is None

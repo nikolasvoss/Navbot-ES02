@@ -8,7 +8,7 @@ The remote control is connected to the NavBot through the receiver over **SBUS**
 | CH2 | Unused; leg length and pitch were removed |
 | CH3 | Speed request: forward stick is forward, scaled to plus and minus 0.3 m/s (`speedCapMps`) |
 | CH4 | Yaw-rate request: left stick is a left turn, scaled to plus and minus 1.0 rad/s |
-| CH5 | Enable: 3-position switch; raw below 592 is off, the two upper positions are on |
+| CH5 | Enable: 3-position switch. 0 (below 592) is off; 1 (592 to 1401) is link mode, where the ros2_pc switches balance and drives; 2 (1402 and above) is RC balance |
 | CH6 | Save request for the trim: 2-position latching switch, on at raw 992 or above; works only in Commissioning |
 | CH7 | Commissioning: 2-position latching switch, on at raw 992 or above |
 | CH8 | Unused; the attitude modes were removed |
@@ -24,8 +24,8 @@ The states, thresholds, and pickup rules behind CH5 to CH9 are in [Balance contr
 Each proportional channel passes through three conversions before a controller uses it.
 
 1. **Transmitter to SBUS.** The transmitter shows 1000-2000 µs, with 1500 µs as default. The receiver sends these as raw SBUS values `raw = (µs - 880) * 1.6`.
-2. **SBUS range in the firmware.** `SBUS_CHANNEL_MIN = 192` and `SBUS_CHANNEL_MAX = 1792` bound the mapping; centre is 992.
-3. **Scaling to controller units in `balanceRequest()`.** `rcStickFraction()` turns a raw value into -1 to 1 around 992 (divided by 800, clamped to plus and minus 1), so raw values outside the range are clipped there. The request multiplies the fraction by the speed cap, the yaw-rate cap, or the trim envelope.
+2. **SBUS range in the firmware.** `kSbusChannelMin = 192` and `kSbusChannelMax = 1792` in `ControlTick.cpp` bound the mapping; centre is 992.
+3. **Scaling to controller units in `buildRequest()` (`ControlTick.cpp`).** `rcStickFraction()` turns a raw value into -1 to 1 around 992 (divided by 800, clamped to plus and minus 1), so raw values outside the range are clipped there. The request multiplies the fraction by the speed cap, the yaw-rate cap, or the trim envelope.
 
 | Transmitter | Raw SBUS | Measured |
 | --- | --- | --- |
@@ -35,7 +35,7 @@ Each proportional channel passes through three conversions before a controller u
 
 Direction on the HT-10A as configured on 2026-10-22: CH3 stick forward gives 1792, CH4 stick left gives 192. CH5 is a 3-position switch (positions 0/1/2, raw about 192/992/1792). CH6 and CH7 are latching 2-position switches (0/1, raw about 192/1792); CH6 does not spring back. CH8 was only seen at 192. See the [lab note](../../../lab/robot/2026-10-22-rc-transmitter-raw-values.md).
 
-Current conversion of the proportional channels in `balanceRequest()`:
+Current conversion of the proportional channels in `buildRequest()`:
 
 | Channel | Conversion | Controller use |
 | --- | --- | --- |

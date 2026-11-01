@@ -69,7 +69,8 @@ Vec derivative(const Vec &s, const PlantParams &p, WheelTorques t, bool lifted) 
   const double r2 = p.bodyMassKg * p.gravityMps2 * p.comHeightM * std::sin(pitch) - nSum;
   const double axleAccel = (mm.m22 * r1 - mm.m12 * r2) / mm.det;
   const double pitchAccel = (mm.m11 * r2 - mm.m12 * r1) / mm.det;
-  const double yawAccel = (p.trackWidthM / (2.0 * p.wheelRadiusM)) * (nR - nL) / yawInertia(p);
+  const double yawAccel =
+      ((p.trackWidthM / (2.0 * p.wheelRadiusM)) * (nR - nL) - p.yawFrictionNmPerRadPerSec * yawRate) / yawInertia(p);
 
   k[kX] = v;
   k[kV] = axleAccel;
@@ -129,7 +130,7 @@ void stepPlant(PlantState &state, const PlantParams &params, WheelTorques torque
 
   Vec s = pack(state);
   if (state.lifted) {
-    // The body is held upright at its start position; only the wheels turn.
+    // The body is held upright at x = 0 and yaw 0; only the wheels turn.
     s[kX] = s[kV] = s[kPitch] = s[kPitchRate] = s[kYaw] = s[kYawRate] = 0.0;
   }
 
