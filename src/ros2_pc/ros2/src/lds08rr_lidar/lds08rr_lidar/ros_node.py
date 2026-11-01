@@ -103,13 +103,17 @@ def reduce_plan(points: list[list[float]], limit: int = PLAN_MAX_POINTS) -> list
     return reduced
 
 
-def nav_outcome(status: int, error_msg: str) -> tuple[str, str]:
-    """The outcome of a finished NavigateToPose goal from its action status and Nav2's error text."""
+def nav_outcome(status: int, error_code: int, error_msg: str) -> tuple[str, str]:
+    """The outcome of a finished NavigateToPose goal. A failed goal gets Nav2's error text, else its error code."""
     if status == GoalStatus.STATUS_SUCCEEDED:
         return "reached", ""
     if status == GoalStatus.STATUS_CANCELED:
         return "canceled", ""
-    return "failed", error_msg
+    if error_msg:
+        return "failed", error_msg
+    if error_code:
+        return "failed", f"Nav2 error code {error_code}"
+    return "failed", "Nav2 aborted the goal"
 
 
 class _ActiveGoal:
@@ -310,7 +314,7 @@ class LidarNode(Node):
                 finish("failed", str(future.exception()))
                 return
             result = future.result()
-            finish(*nav_outcome(result.status, result.result.error_msg))
+            finish(*nav_outcome(result.status, result.result.error_code, result.result.error_msg))
 
         def on_goal_response(future) -> None:
             if future.exception() is not None:

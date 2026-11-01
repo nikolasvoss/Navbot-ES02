@@ -108,9 +108,20 @@ def test_reduce_plan_of_1000_points_has_168_points_ending_on_the_last_pose():
 
 
 def test_nav_outcome_maps_each_result_status():
-    assert nav_outcome(4, "") == ("reached", "")
-    assert nav_outcome(5, "") == ("canceled", "")
-    assert nav_outcome(6, "Failed to find a valid path") == ("failed", "Failed to find a valid path")
+    assert nav_outcome(4, 0, "") == ("reached", "")
+    assert nav_outcome(5, 0, "") == ("canceled", "")
+
+
+def test_nav_outcome_failed_uses_nav2_error_msg_when_present():
+    assert nav_outcome(6, 204, "Failed to find a valid path") == ("failed", "Failed to find a valid path")
+
+
+def test_nav_outcome_failed_without_msg_uses_nav2_error_code():
+    assert nav_outcome(6, 204, "") == ("failed", "Nav2 error code 204")
+
+
+def test_nav_outcome_failed_without_msg_or_code_says_aborted():
+    assert nav_outcome(6, 0, "") == ("failed", "Nav2 aborted the goal")
 
 
 class FakeNavClient:
