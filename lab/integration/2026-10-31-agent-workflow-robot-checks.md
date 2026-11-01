@@ -22,3 +22,12 @@ On 2026-10-31 `scripts/deploy.py` ran from the desktop (`niko-desktop`, Arduino 
 - Tier A limits: `HEAP_MIN_FREE_B` 235000 and `STACK_MIN_FREE_B` 2400, about 80 % of the idle values. Values while balancing are not measured.
 
 Open: deploy started on the ros2_pc, deploy with the USB cable on the desktop, the transmitter-off reading after a power cycle, the guided tier B run, and the user's confirmation of the limits.
+
+## 2026-11-01
+
+- Commit `73139e8`: `python3 scripts/verify.py --guided` run by the user at the robot. Tier B: 7 of 7 passed; verify result `done`.
+- `python3 scripts/deploy.py --json` started on the ros2_pc, from a worktree of `feat/agent-workflow` in `~/Navbot-ES02/.claude/worktrees/`, with the USB cable on the ros2_pc: built on the desktop, flashed, all 7 tier A tests passed, exit 0.
+- The ros2_pc services moved from `~/Navbot-wt/main` to `~/Navbot-ES02/.claude/worktrees/main` (workspace rebuilt, both installers rerun). Afterwards all three services were active, `navlink info` answered and `/odom` published.
+- The user skipped the transmitter-off reading after a power cycle.
+
+Open: deploy with the USB cable on the desktop, and the health values while balancing.
