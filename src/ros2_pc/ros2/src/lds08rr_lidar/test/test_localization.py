@@ -269,6 +269,22 @@ def test_global_localizer_retries_missing_service_then_reinitializes_once(fast_r
         localizer.stop()
 
 
+def test_bench_localizer_skips_reinitialize_and_searches_from_the_start_pose(fast_retry):
+    service = FakeService()
+    tracker = LocalizationTracker()
+    localizer = GlobalLocalizer(
+        service, tracker, service_timeout=5.0, nomotion_period=0.01, reinitialize=False,
+    )
+
+    localizer.start()
+    try:
+        wait_until(lambda: len(service.names("/request_nomotion_update")) >= 3)
+        assert tracker.snapshot()["state"] == "searching"
+        assert [name for name, _ in service.calls if name != "/request_nomotion_update"] == []
+    finally:
+        localizer.stop()
+
+
 def test_global_localizer_forces_nomotion_updates_until_localized(fast_retry):
     service = FakeService()
     tracker = LocalizationTracker()

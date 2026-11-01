@@ -81,7 +81,7 @@ def build_slam_control(node, localization, supervisor, bench: bool = False):
         store,
         process,
         node.serialize_map,
-        localizer=GlobalLocalizer(node.call_service, localization),
+        localizer=GlobalLocalizer(node.call_service, localization, reinitialize=not bench),
         tracker=localization,
         slam_state=node.slam,
         mapping_command=lambda restore: slam_command(store.params_file(base, restore)),
