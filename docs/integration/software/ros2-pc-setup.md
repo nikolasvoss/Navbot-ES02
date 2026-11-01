@@ -17,6 +17,14 @@ sudo apt install python3-serial python3-protobuf
 
 `python3-protobuf` must be version 3.21 (the Ubuntu 24.04 package). The generated `navbot_link_pb2.py` needs that runtime; a newer protobuf from pip breaks it.
 
+Autonomous driving needs Navigation2 and the Nav2 bench simulator (version 1.3.13 for Jazzy on the ros2_pc):
+
+```bash
+sudo apt install ros-jazzy-navigation2 ros-jazzy-nav2-bringup ros-jazzy-nav2-loopback-sim
+```
+
+`ros-jazzy-nav2-loopback-sim` is used only by the `--bench` hub, which moves a simulated robot from `/cmd_vel`. It was installed on 2026-11-01.
+
 Only a development machine that regenerates the schema needs `protobuf-compiler` (3.21.x) and `pip install nanopb==0.4.9.1`. The ros2_pc does not.
 
 ## 3. Link UART in the boot configuration
