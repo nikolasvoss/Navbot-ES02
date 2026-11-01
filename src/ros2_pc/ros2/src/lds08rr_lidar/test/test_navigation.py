@@ -154,3 +154,23 @@ def test_bench_launch_builds():
     from lds08rr_lidar import bench_launch
 
     assert bench_launch.generate_launch_description() is not None
+
+
+def test_bench_robot_finds_the_package_without_an_install(monkeypatch):
+    pytest.importorskip("launch")
+    pytest.importorskip("launch_ros")
+    from launch import LaunchContext
+    from launch.actions import ExecuteProcess
+
+    from lds08rr_lidar import bench_launch
+
+    monkeypatch.setenv("PYTHONPATH", "/opt/other")
+    process = next(a for a in bench_launch.generate_launch_description().entities if type(a) is ExecuteProcess)
+
+    context = LaunchContext()
+    env = {
+        "".join(s.perform(context) for s in key): "".join(s.perform(context) for s in value)
+        for key, value in process.additional_env
+    }
+    assert env == {"PYTHONPATH": f"{bench_launch.PACKAGE_ROOT}:/opt/other"}
+    assert (Path(bench_launch.PACKAGE_ROOT) / "lds08rr_lidar" / "bench_robot.py").is_file()

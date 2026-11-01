@@ -12,6 +12,9 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 def generate_launch_description():
     localization = os.path.join(os.path.dirname(os.path.abspath(__file__)), "localization_launch.py")
     return LaunchDescription([
@@ -50,6 +53,7 @@ def generate_launch_description():
                 "-p", ["y:=", LaunchConfiguration("y")],
                 "-p", ["yaw:=", LaunchConfiguration("yaw")],
             ],
+            additional_env={"PYTHONPATH": os.pathsep.join(filter(None, [PACKAGE_ROOT, os.environ.get("PYTHONPATH")]))},
             output="screen",
         ),
     ])
