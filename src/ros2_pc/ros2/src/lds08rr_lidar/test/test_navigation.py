@@ -40,7 +40,7 @@ def test_controller_follows_the_path_with_rotate_to_heading():
 def test_goal_checker_tolerances():
     goal = params("controller_server")["general_goal_checker"]
 
-    assert (goal["xy_goal_tolerance"], goal["yaw_goal_tolerance"]) == (0.10, 0.17)
+    assert (goal["xy_goal_tolerance"], goal["yaw_goal_tolerance"]) == (0.06, 0.12)
 
 
 def test_planner_uses_navfn_with_known_space_only():
