@@ -13,6 +13,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from pathlib import Path
@@ -260,6 +261,15 @@ def _attempt(stage_fn, *args) -> dict:
         return _stage("fail", str(err))
 
 
+def _report(name: str, run) -> dict:
+    """Print a start and an end line on stderr around one stage, so a long run shows that it is alive."""
+    start = time.monotonic()
+    print(f"verify: {name} ...", file=sys.stderr, flush=True)
+    stage = run()
+    print(f"verify: {name} {stage['status']} after {time.monotonic() - start:.0f} s", file=sys.stderr, flush=True)
+    return stage
+
+
 def _dirty(root: Path) -> bool:
     """Uncommitted changes to tracked files, by deploy.py's own rule: deploy refuses exactly these."""
     try:
@@ -338,17 +348,17 @@ def _verify(args: argparse.Namespace) -> int:
 
     fresh: dict[str, dict] = {}
     if "host" in required:
-        fresh["host"] = _attempt(_host_tests, worktree)
+        fresh["host"] = _report("host", lambda: _attempt(_host_tests, worktree))
     if runs("sim"):
-        fresh["sim"] = _attempt(_sim, worktree, sha)
+        fresh["sim"] = _report("sim", lambda: _attempt(_sim, worktree, sha))
     if runs("firmware_build"):
-        fresh["firmware_build"] = _firmware_build(worktree)
+        fresh["firmware_build"] = _report("firmware_build", lambda: _firmware_build(worktree))
     if runs("deploy"):
         fresh.update(_deploy_stages(worktree))
     if runs("ros2_pc"):
-        fresh["ros2_pc"] = _attempt(_ros2, sha, probes)
+        fresh["ros2_pc"] = _report("ros2_pc", lambda: _attempt(_ros2, sha, probes))
     if args.guided and "tier_b" not in skipped:
-        fresh["tier_b"] = _attempt(_guided, sha, probes)
+        fresh["tier_b"] = _report("tier_b", lambda: _attempt(_guided, sha, probes))
     if runs("tier_b") and "tier_b" not in fresh:
         earlier = prior.get("tier_b")
         fresh["tier_b"] = earlier if earlier and earlier["status"] in ("pass", "fail") else _stage("blocked", GUIDED_PENDING)
