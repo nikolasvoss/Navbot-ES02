@@ -1,6 +1,6 @@
 # Agent workflow: first robot checks
 
-Status: open
+Status: concluded
 
 ## Observation
 
@@ -29,5 +29,5 @@ Open: deploy started on the ros2_pc, deploy with the USB cable on the desktop, t
 - `python3 scripts/deploy.py --json` started on the ros2_pc, from a worktree of `feat/agent-workflow` in `~/Navbot-ES02/.claude/worktrees/`, with the USB cable on the ros2_pc: built on the desktop, flashed, all 7 tier A tests passed, exit 0.
 - The ros2_pc services moved from `~/Navbot-wt/main` to `~/Navbot-ES02/.claude/worktrees/main` (workspace rebuilt, both installers rerun). Afterwards all three services were active, `navlink info` answered and `/odom` published.
 - The user skipped the transmitter-off reading after a power cycle.
-
-Open: deploy with the USB cable on the desktop, and the health values while balancing.
+- Commit `7ac895e`: `python3 scripts/deploy.py --json` started on the desktop with the USB cable on the desktop (`/dev/ttyUSB0`, CH340 `1a86:7523`): exit 0, all 7 tier A tests passed.
+- The user skipped measuring the health values while balancing; the tier A limits stay at the idle-based 235000 B and 2400 B.

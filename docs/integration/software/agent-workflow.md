@@ -144,10 +144,11 @@ Permissions allow `task.py`, `deploy.py`, `verify.py`, the read-only `navlink.py
 
 `tests/requirements.txt` lists `pytest`, `PyYAML`, `protobuf`, `pyserial` and `lds2d[viz]` (the LiDAR service tests need it). They are installed in the default `python3` of each host; the scripts run `python3`, and there is no virtual environment. The host tests run with `python3 -m pytest tests -q`.
 
-## Robot verification (2026-10-31)
+## Robot verification (2026-10-31 to 2026-11-01)
 
-- `deploy.py` from the desktop, with the robot's USB cable on the ros2_pc, at commit `595bb80`: exit 0, passed the gate, flashed, passed the boot check (build ID of HEAD, `reset_reason` 1 after the flash) and all 7 tier A tests.
-- Tier A limits, from the idle baseline: `heap_min_free_b` 294392 B, `stack_free_loop_b` 4668 B, `stack_free_link_b` 2992 B. The limits are set to 235000 B and 2400 B, about 80 % of those values.
-- Transmitter off after `navlink call reboot`: `rc_valid` 0 and `ch5_position` 0.
+- `deploy.py` passes in all three setups (exit 0: gate, flash, boot check with build ID of HEAD and `reset_reason` 1, all 7 tier A tests): started on the desktop with the robot's USB cable on the ros2_pc (`595bb80`), started on the ros2_pc with the cable there (`73139e8`), and started on the desktop with the cable on the desktop (`7ac895e`).
+- `verify.py --guided` with the user at the robot: all 7 tier B tests passed (`73139e8`).
+- Tier A limits, from the idle baseline: `heap_min_free_b` 294392 B, `stack_free_loop_b` 4668 B, `stack_free_link_b` 2992 B. The limits are set to 235000 B and 2400 B, about 80 % of those values. They were not measured while balancing.
+- Transmitter off after `navlink call reboot`: `rc_valid` 0 and `ch5_position` 0. After a power cycle this was not checked.
 
-Open checks are listed in the [integration roadmap](../plans/roadmap.md#agent-workflow-on-the-robot).
+Evidence: [lab note](../../../lab/integration/2026-10-31-agent-workflow-robot-checks.md).
