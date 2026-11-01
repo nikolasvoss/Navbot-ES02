@@ -247,8 +247,12 @@ def test_second_service_fails_before_starting_a_duplicate_reader():
 
 
 @needs_service_deps
-def test_ros_subscriber_receives_demo_and_ctrl_c_exits_cleanly():
+def test_ros_subscriber_receives_demo_and_ctrl_c_exits_cleanly(monkeypatch):
     rclpy = pytest.importorskip("rclpy")
+    # The live LiDAR service publishes /scan on this machine. The demo service and the observer get their own
+    # DDS domain and stay on the loopback interface, so demo scans never reach the live SLAM.
+    monkeypatch.setenv("ROS_DOMAIN_ID", "78")
+    monkeypatch.setenv("ROS_LOCALHOST_ONLY", "1")
     from diagnostic_msgs.msg import DiagnosticArray
     from rclpy.executors import SingleThreadedExecutor
     from rclpy.qos import qos_profile_sensor_data
