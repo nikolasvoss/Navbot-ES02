@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 import socket
 import sys
 import threading
@@ -13,7 +12,6 @@ def build_parser(include_ssh: bool = False):
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--demo", action="store_true", help="show a synthetic scan without hardware")
     source.add_argument("--device", help="serial device, for example /dev/ttyAMA0")
-    source.add_argument("--bench", action="store_true", help="navigation bench: fake robot and loopback Nav2, no map changes")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--host", default="127.0.0.1", help="HTTP bind address; use 0.0.0.0 for LAN access")
     parser.add_argument("--port", type=int, default=8081)
@@ -29,8 +27,6 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if args.baud <= 0:
         parser.error("--baud must be positive")
-    if args.bench and args.ros == "off":
-        parser.error("--bench needs ROS 2")
     return args
 
 
@@ -45,25 +41,11 @@ def page_host(bind_host: str) -> str:
         return "127.0.0.1"
 
 
-BENCH_SLAM_DIR = Path.home() / ".cache/navbot-bench/slam"
-
-
-def copy_saved_map(source: Path, target: Path) -> Path:
-    """A fresh copy of the saved map and keepout mask, so a bench never writes to the live service's map folder."""
-    shutil.rmtree(target, ignore_errors=True)
-    target.mkdir(parents=True)
-    if source.is_dir():
-        for path in sorted(source.iterdir()):
-            if path.is_file() and path.name.startswith(("map.", "keepout.")):
-                shutil.copy2(path, target / path.name)
-    return target
-
-
-def build_slam_control(node, localization, supervisor, bench: bool = False):
+def build_slam_control(node, localization, supervisor):
     from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 
     from .localization import GlobalLocalizer, localization_command
-    from .navigation import bench_command, navigation_command
+    from .navigation import navigation_command
     from .slam import BASE_PARAMS, DEFAULT_SLAM_DIR, MapStore, SlamControl, SlamProcess, slam_command
 
     try:
@@ -71,7 +53,7 @@ def build_slam_control(node, localization, supervisor, bench: bool = False):
     except PackageNotFoundError:
         print("slam_toolbox not installed; SLAM disabled", file=sys.stderr)
         return None
-    directory = copy_saved_map(DEFAULT_SLAM_DIR, BENCH_SLAM_DIR) if bench else DEFAULT_SLAM_DIR
+    directory = DEFAULT_SLAM_DIR
     store = MapStore(directory)
     base = BASE_PARAMS.read_text(encoding="utf-8")
     # The processes build their command on every start and restart, so they ask the control which launch to run.
@@ -81,15 +63,14 @@ def build_slam_control(node, localization, supervisor, bench: bool = False):
         store,
         process,
         node.serialize_map,
-        localizer=GlobalLocalizer(node.call_service, localization, reinitialize=not bench),
+        localizer=GlobalLocalizer(node.call_service, localization),
         tracker=localization,
         slam_state=node.slam,
         mapping_command=lambda restore: slam_command(store.params_file(base, restore)),
         supervisor=supervisor,
         nav=node,
         nav_process=nav_process,
-        localization_command=bench_command if bench else localization_command,
-        map_changes=not bench,
+        localization_command=localization_command,
     )
     return control
 
@@ -104,8 +85,8 @@ def run(argv=None) -> int:
     from .web import make_lidar_app
 
     config = SourceConfig(
-        mode="demo" if args.demo or args.bench else "serial",
-        device=None if args.demo or args.bench else Path(args.device),
+        mode="demo" if args.demo else "serial",
+        device=None if args.demo else Path(args.device),
         baud=args.baud,
     )
     runtime = None
@@ -113,7 +94,7 @@ def run(argv=None) -> int:
     control = None
     rclpy = None
     shutdown_exceptions = (KeyboardInterrupt,)
-    ros_requested = args.ros == "on" or args.bench
+    ros_requested = args.ros == "on"
     if args.ros != "off":
         try:
             import rclpy as ros_client
@@ -131,9 +112,9 @@ def run(argv=None) -> int:
             rclpy.init()
             localization = LocalizationTracker()
             supervisor = None if args.demo else NavSupervisor()
-            node = LidarNode(config, localization, supervisor=supervisor, publish_scans=not args.bench)
+            node = LidarNode(config, localization, supervisor=supervisor)
             runtime = node.runtime
-            control = None if args.demo else build_slam_control(node, localization, supervisor, bench=args.bench)
+            control = None if args.demo else build_slam_control(node, localization, supervisor)
     if runtime is None:
         from .runtime import LidarRuntime
 

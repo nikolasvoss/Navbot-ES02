@@ -60,8 +60,6 @@ def main(argv=None) -> int:
     options = parser.parse_args(values)
     if options.demo:
         service_args = ["--demo"]
-    elif options.bench:
-        service_args = ["--bench"]
     else:
         service_args = ["--device", options.device]
     service_args.extend([

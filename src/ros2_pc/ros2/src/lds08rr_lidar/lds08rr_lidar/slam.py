@@ -21,7 +21,6 @@ MAPPING = "mapping"
 LOCALIZATION = "localization"
 NAVIGATION = "navigation"
 MODES = (MAPPING, LOCALIZATION, NAVIGATION)
-MAP_CHANGES_REFUSAL = "Map changes are not available on the bench"
 
 SNAPSHOT_PERIOD_SEC = 60.0
 UNDO_SLOTS = 3
@@ -536,7 +535,6 @@ class SlamControl:
         nav=None,
         nav_process: SlamProcess | None = None,
         localization_command: Callable[[Path], list[str]] = localization_command,
-        map_changes: bool = True,
     ) -> None:
         self._store = store
         self._process = process
@@ -553,7 +551,6 @@ class SlamControl:
         self._nav = nav
         self._nav_process = nav_process
         self._localization_command = localization_command
-        self._map_changes = map_changes
         self._goal_count = 0
         self._goal: dict | None = None  # the newest goal; its Nav2 callbacks write into this dict
         self._lock = Lock()
@@ -588,8 +585,6 @@ class SlamControl:
         with self._lock:
             if mode not in MODES:
                 return f"unknown mode {mode!r}; use mapping, localization or navigation"
-            if mode == MAPPING and not self._map_changes:
-                return MAP_CHANGES_REFUSAL
             if mode == self._mode:
                 return None
             if mode == NAVIGATION:
@@ -634,8 +629,6 @@ class SlamControl:
 
     def save_refusal(self) -> str | None:
         """Why save() would refuse right now, or None when it may run."""
-        if not self._map_changes:
-            return MAP_CHANGES_REFUSAL
         if self._mode != MAPPING:
             return "Save needs mapping mode; switch to mapping first"
         return None
@@ -666,8 +659,6 @@ class SlamControl:
 
     def delete(self) -> str | None:
         with self._lock:
-            if not self._map_changes:
-                return MAP_CHANGES_REFUSAL
             self._halt()
             self._undo.clear()
             try:
@@ -679,8 +670,6 @@ class SlamControl:
     def reload(self) -> str | None:
         """Drops the current map and restarts the active launch on the saved one; navigation falls back to localization."""
         with self._lock:
-            if not self._map_changes:
-                return MAP_CHANGES_REFUSAL
             if not self._store.exists():
                 return "No saved map to load"
             mode = LOCALIZATION if self._mode == NAVIGATION else self._mode

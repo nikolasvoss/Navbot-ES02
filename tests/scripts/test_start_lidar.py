@@ -33,13 +33,6 @@ def test_help_is_available_without_ros_or_sensor():
     assert "--remote-path" in result.stdout
 
 
-def test_bench_flag_reaches_the_service(monkeypatch):
-    received = []
-    monkeypatch.setattr(START_LIDAR, "run", lambda service_args: received.append(service_args) or 0)
-    assert START_LIDAR.main(["--bench", "--port", "8082"]) == 0
-    assert received == [["--bench", "--baud", "115200", "--host", "127.0.0.1", "--port", "8082", "--ros", "auto"]]
-
-
 def test_ssh_command_quotes_remote_path_and_forwards_port():
     command, url = START_LIDAR.ssh_invocation(
         "niko@cm5", "/home/niko/Navbot with spaces", ["--demo", "--port", "8181"]

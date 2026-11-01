@@ -123,7 +123,7 @@ class LocalizationTracker:
 
 
 class GlobalLocalizer:
-    """Search on each localization start: reinitialize AMCL (unless `reinitialize` is False, when AMCL keeps its pose), then force scan updates until localized."""
+    """Global search on each localization start: reinitialize AMCL, then force scan updates until localized."""
 
     def __init__(
         self,
@@ -131,13 +131,11 @@ class GlobalLocalizer:
         tracker: LocalizationTracker,
         service_timeout: float = 60.0,
         nomotion_period: float = 0.2,
-        reinitialize: bool = True,
     ) -> None:
         self._call_service = call_service
         self._tracker = tracker
         self._service_timeout = service_timeout
         self._nomotion_period = nomotion_period
-        self._reinitialize = reinitialize
         self._lock = Lock()
         self._cancel: Event | None = None
         self._thread: Thread | None = None
@@ -165,18 +163,17 @@ class GlobalLocalizer:
             thread.join()
 
     def _run(self, cancel: Event) -> None:
-        if self._reinitialize:
-            deadline = time.monotonic() + self._service_timeout
-            while True:
-                error = self._call_service(REINITIALIZE_SERVICE, SERVICE_CALL_TIMEOUT_SEC)
-                if error is None:
-                    break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    self._fail(cancel, f"{REINITIALIZE_SERVICE}: {error}")
-                    return
-                if cancel.wait(min(SERVICE_RETRY_SEC, remaining)):
-                    return
+        deadline = time.monotonic() + self._service_timeout
+        while True:
+            error = self._call_service(REINITIALIZE_SERVICE, SERVICE_CALL_TIMEOUT_SEC)
+            if error is None:
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                self._fail(cancel, f"{REINITIALIZE_SERVICE}: {error}")
+                return
+            if cancel.wait(min(SERVICE_RETRY_SEC, remaining)):
+                return
         with self._lock:
             if cancel.is_set():
                 return

@@ -4,7 +4,7 @@ import pytest
 import yaml
 
 from lds08rr_lidar import navigation
-from lds08rr_lidar.navigation import NAVIGATION_PARAMS, bench_command, navigation_command
+from lds08rr_lidar.navigation import NAVIGATION_PARAMS, navigation_command
 
 NAV_YAML = yaml.safe_load(NAVIGATION_PARAMS.read_text())
 COSTMAPS = {"local_costmap", "global_costmap"}  # started inside controller_server and planner_server
@@ -122,20 +122,9 @@ def test_navigation_command_with_and_without_keepout_mask(monkeypatch):
     ]
 
 
-def test_bench_command_uses_the_bench_launch_and_localization_params(monkeypatch):
-    monkeypatch.setattr(navigation, "BENCH_LAUNCH", Path("/cfg/bench_launch.py"))
-    monkeypatch.setattr(navigation, "LOCALIZATION_PARAMS", Path("/cfg/localization.yaml"))
-
-    assert bench_command(Path("/data/map/map.yaml")) == [
-        "ros2", "launch", "/cfg/bench_launch.py", "map:=/data/map/map.yaml", "params_file:=/cfg/localization.yaml",
-    ]
-
-
-def test_launch_files_sit_next_to_the_module():
+def test_launch_file_sits_next_to_the_module():
     assert navigation.NAVIGATION_LAUNCH == Path(navigation.__file__).with_name("navigation_launch.py")
-    assert navigation.BENCH_LAUNCH == Path(navigation.__file__).with_name("bench_launch.py")
     assert navigation.NAVIGATION_LAUNCH.is_file()
-    assert navigation.BENCH_LAUNCH.is_file()
 
 
 def test_navigation_launch_node_names_match_the_yaml():
@@ -148,46 +137,3 @@ def test_navigation_launch_node_names_match_the_yaml():
     assert navigation_launch.generate_launch_description() is not None
 
 
-def test_bench_launch_builds():
-    pytest.importorskip("launch")
-    pytest.importorskip("launch_ros")
-    from lds08rr_lidar import bench_launch
-
-    assert bench_launch.generate_launch_description() is not None
-
-
-def test_bench_robot_finds_the_package_without_an_install(monkeypatch):
-    pytest.importorskip("launch")
-    pytest.importorskip("launch_ros")
-    from launch import LaunchContext
-    from launch.actions import ExecuteProcess
-
-    from lds08rr_lidar import bench_launch
-
-    monkeypatch.setenv("PYTHONPATH", "/opt/other")
-    process = next(a for a in bench_launch.generate_launch_description().entities if type(a) is ExecuteProcess)
-
-    context = LaunchContext()
-    env = {
-        "".join(s.perform(context) for s in key): "".join(s.perform(context) for s in value)
-        for key, value in process.additional_env
-    }
-    assert env == {"PYTHONPATH": f"{bench_launch.PACKAGE_ROOT}:/opt/other"}
-    assert (Path(bench_launch.PACKAGE_ROOT) / "lds08rr_lidar" / "bench_robot.py").is_file()
-
-
-def test_bench_start_pose_defaults_are_doubles():
-    pytest.importorskip("launch")
-    pytest.importorskip("launch_ros")
-    from launch import LaunchContext
-    from launch.actions import DeclareLaunchArgument
-
-    from lds08rr_lidar import bench_launch
-
-    context = LaunchContext()
-    defaults = {
-        a.name: "".join(s.perform(context) for s in a.default_value)
-        for a in bench_launch.generate_launch_description().entities
-        if isinstance(a, DeclareLaunchArgument) and a.default_value is not None
-    }
-    assert defaults == {"x": "0.0", "y": "0.0", "yaw": "0.0"}

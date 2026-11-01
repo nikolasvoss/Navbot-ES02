@@ -130,7 +130,6 @@ class LidarNode(Node):
         config: SourceConfig,
         localization: LocalizationTracker,
         supervisor=None,
-        publish_scans: bool = True,
     ) -> None:
         super().__init__("lds08rr_lidar")
         scan_qos = QoSProfile(
@@ -139,11 +138,9 @@ class LidarNode(Node):
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
         )
-        self.publish_scans = publish_scans
-        if publish_scans:
-            self.scan_publisher = self.create_publisher(LaserScan, "/scan", scan_qos)
-            # /scan stays raw; slam_toolbox reads the tilt-gated copy.
-            self.slam_scan_publisher = self.create_publisher(LaserScan, "/scan_slam", scan_qos)
+        self.scan_publisher = self.create_publisher(LaserScan, "/scan", scan_qos)
+        # /scan stays raw; slam_toolbox reads the tilt-gated copy.
+        self.slam_scan_publisher = self.create_publisher(LaserScan, "/scan_slam", scan_qos)
         self.tilt_gate = TiltGate(config_from_mount())
         self.motion_gate = MotionGate()
         self._logged_gate_state: str | None = None
@@ -369,8 +366,6 @@ class LidarNode(Node):
         return None
 
     def publish_scan(self, scan, completed_at: float) -> None:
-        if not self.publish_scans:
-            return
         stamp = self.get_clock().now()
         if scan.scan_freq_hz > 0:
             scan_start = stamp.nanoseconds - int(1e9 / scan.scan_freq_hz)

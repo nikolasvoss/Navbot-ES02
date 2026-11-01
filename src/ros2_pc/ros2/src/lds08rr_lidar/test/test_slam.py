@@ -614,7 +614,7 @@ class RecordingNavProcess:
         return {"state": "running", "pid": 2, "exit_code": None, "restarts": 0, "error": None}
 
 
-def nav_control(tmp_path, events, map_changes=True, supervisor=None, nav=None, bench=False):
+def nav_control(tmp_path, events, supervisor=None, nav=None):
     store = MapStore(tmp_path)
     process = RecordingProcess(events)
     control = SlamControl(
@@ -624,8 +624,7 @@ def nav_control(tmp_path, events, map_changes=True, supervisor=None, nav=None, b
         supervisor=FakeSupervisor(events) if supervisor is None else supervisor,
         nav=FakeNav(events) if nav is None else nav,
         nav_process=RecordingNavProcess(events),
-        localization_command=(lambda yaml: ["bench-launch"]) if bench else (lambda yaml: ["localization-launch"]),
-        map_changes=map_changes,
+        localization_command=lambda yaml: ["localization-launch"],
     )
     process.command = control.command
     return control, store
@@ -828,29 +827,6 @@ def test_keepout_yaml_is_found_only_when_the_file_exists(tmp_path):
     assert store.keepout_yaml() is None
     Path(tmp_path, "keepout.yaml").write_text("image: keepout.pgm\n", encoding="utf-8")
     assert store.keepout_yaml() == tmp_path / "keepout.yaml"
-
-
-def test_bench_refuses_every_map_change_and_still_navigates(tmp_path):
-    events = []
-    control, store = nav_control(tmp_path, events, map_changes=False, bench=True)
-    write_serialized_map(tmp_path / "map")
-    write_occupancy(tmp_path / "map")
-    control.start()
-    assert control.mode == "localization"
-    control._tracker.state = "localized"
-    events.clear()
-
-    text = "Map changes are not available on the bench"
-    assert control.set_mode("mapping") == text
-    assert control.save_refusal() == text
-    assert control.save() == text
-    assert control.delete() == text
-    assert control.reload() == text
-    assert events == []
-    assert store.has_occupancy()
-
-    assert control.set_mode("navigation") is None
-    assert control.command() == ["bench-launch"]
 
 
 FAKE_ROS2_HEAD = (

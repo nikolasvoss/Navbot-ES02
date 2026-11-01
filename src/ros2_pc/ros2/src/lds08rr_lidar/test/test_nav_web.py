@@ -116,13 +116,3 @@ def test_hub_page_has_the_mode_buttons_the_navigation_panel_and_the_map_actions(
     assert 'id="switchMode"' not in html
 
 
-class RefusingDeleteControl(FakeNavControl):
-    def delete(self):
-        return "Map changes are not available on the bench"
-
-
-def test_delete_refusal_is_a_409(tmp_path):
-    client = make_client(tmp_path, RefusingDeleteControl())
-    response = client.post("/slam/delete")
-    assert response.status_code == 409
-    assert response.get_json() == {"ok": False, "error": "Map changes are not available on the bench"}
