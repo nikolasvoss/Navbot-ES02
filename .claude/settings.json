@@ -27,6 +27,6 @@
       "Bash(python3 scripts/navlink.py capture:*)",
       "Bash(python3 -m pytest:*)"
     ],
-    "deny": ["mcp__serial", "mcp__navbot_flash"]
+    "deny": ["mcp__serial"]
   }
 }

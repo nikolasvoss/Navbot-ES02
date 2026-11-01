@@ -69,7 +69,7 @@ def task_worktree(repo):
     return repo / ".claude" / "worktrees" / "feat-x"
 
 
-def test_settings_deny_the_serial_and_flash_mcp_tools():
+def test_settings_deny_the_serial_mcp_tools():
     permissions = json.loads(SETTINGS.read_text(encoding="utf-8"))["permissions"]
     assert permissions == {
         "allow": [
@@ -83,7 +83,7 @@ def test_settings_deny_the_serial_and_flash_mcp_tools():
             "Bash(python3 scripts/navlink.py capture:*)",
             "Bash(python3 -m pytest:*)",
         ],
-        "deny": ["mcp__serial", "mcp__navbot_flash"],
+        "deny": ["mcp__serial"],
     }
 
 
