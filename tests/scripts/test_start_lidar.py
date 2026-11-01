@@ -18,6 +18,11 @@ SPEC = importlib.util.spec_from_file_location("start_lidar", SCRIPT)
 START_LIDAR = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(START_LIDAR)
 
+# The service tests start scripts/start_lidar.py with this interpreter; flask comes with lds2d[viz].
+needs_service_deps = pytest.mark.skipif(
+    importlib.util.find_spec("flask") is None, reason="flask (lds2d[viz]) is not installed for this interpreter"
+)
+
 
 def test_help_is_available_without_ros_or_sensor():
     result = subprocess.run([sys.executable, str(SCRIPT), "--help"], text=True, capture_output=True, check=False)
@@ -123,6 +128,7 @@ def wait_for_state(url, expected, timeout=5.0):
     raise AssertionError(f"expected LiDAR state {expected}, got {status}")
 
 
+@needs_service_deps
 def test_demo_browser_hides_stale_plot_and_reports_server_loss():
     playwright = pytest.importorskip("playwright.sync_api")
     port = free_port()
@@ -212,6 +218,7 @@ def test_demo_browser_hides_stale_plot_and_reports_server_loss():
             process.wait(timeout=3)
 
 
+@needs_service_deps
 def test_missing_serial_device_keeps_status_page_available():
     port = free_port()
     base = f"http://127.0.0.1:{port}"
@@ -231,6 +238,7 @@ def test_missing_serial_device_keeps_status_page_available():
         process.wait(timeout=3)
 
 
+@needs_service_deps
 def test_second_service_fails_before_starting_a_duplicate_reader():
     port = free_port()
     command = [sys.executable, str(SCRIPT), "--demo", "--ros", "off", "--port", str(port)]
@@ -245,6 +253,7 @@ def test_second_service_fails_before_starting_a_duplicate_reader():
         first.wait(timeout=3)
 
 
+@needs_service_deps
 def test_ros_subscriber_receives_demo_and_ctrl_c_exits_cleanly():
     rclpy = pytest.importorskip("rclpy")
     from diagnostic_msgs.msg import DiagnosticArray
