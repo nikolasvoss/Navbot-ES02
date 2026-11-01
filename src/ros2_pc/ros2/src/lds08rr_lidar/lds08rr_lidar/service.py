@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import socket
 import sys
 import threading
@@ -44,6 +45,20 @@ def page_host(bind_host: str) -> str:
         return "127.0.0.1"
 
 
+BENCH_SLAM_DIR = Path.home() / ".cache/navbot-bench/slam"
+
+
+def copy_saved_map(source: Path, target: Path) -> Path:
+    """A fresh copy of the saved map and keepout mask, so a bench never writes to the live service's map folder."""
+    shutil.rmtree(target, ignore_errors=True)
+    target.mkdir(parents=True)
+    if source.is_dir():
+        for path in sorted(source.iterdir()):
+            if path.is_file() and path.name.startswith(("map.", "keepout.")):
+                shutil.copy2(path, target / path.name)
+    return target
+
+
 def build_slam_control(node, localization, supervisor, bench: bool = False):
     from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 
@@ -56,11 +71,12 @@ def build_slam_control(node, localization, supervisor, bench: bool = False):
     except PackageNotFoundError:
         print("slam_toolbox not installed; SLAM disabled", file=sys.stderr)
         return None
-    store = MapStore(DEFAULT_SLAM_DIR)
+    directory = copy_saved_map(DEFAULT_SLAM_DIR, BENCH_SLAM_DIR) if bench else DEFAULT_SLAM_DIR
+    store = MapStore(directory)
     base = BASE_PARAMS.read_text(encoding="utf-8")
     # The processes build their command on every start and restart, so they ask the control which launch to run.
-    process = SlamProcess(lambda: control.command(), DEFAULT_SLAM_DIR / "slam.log")
-    nav_process = SlamProcess(lambda: navigation_command(store.keepout_yaml()), DEFAULT_SLAM_DIR / "nav.log")
+    process = SlamProcess(lambda: control.command(), directory / "slam.log")
+    nav_process = SlamProcess(lambda: navigation_command(store.keepout_yaml()), directory / "nav.log")
     control = SlamControl(
         store,
         process,
@@ -83,7 +99,6 @@ def run(argv=None) -> int:
     from werkzeug.serving import make_server
 
     from .localization import LocalizationTracker
-    from .slam import DEFAULT_SLAM_DIR
     from .source import SourceConfig
     from .supervisor import NavSupervisor
     from .web import make_lidar_app
@@ -137,7 +152,7 @@ def run(argv=None) -> int:
     runtime.start()
     if control is not None:
         control.start()
-        print(f"SLAM: {control.mode} started, map dir {DEFAULT_SLAM_DIR}", flush=True)
+        print(f"SLAM: {control.mode} started, map dir {control.status()['directory']}", flush=True)
     thread = threading.Thread(target=server.serve_forever, name="lds08rr-http", daemon=True)
     thread.start()
     url_host = page_host(args.host)
