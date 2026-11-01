@@ -26,7 +26,7 @@ The EasyEDA project contains **MAIN** (control, power, motor drivers, connectors
 | Task | Relevant hardware | Read next |
 | --- | --- | --- |
 | Wheel motor does not turn / FOC | MP6536 `U6/U7`, three motor phases per wheel, AS5600 `H5/H6` | [Motors and encoders](electronics-reference.md#motors-and-encoders) |
-| Check attitude, balance, or driving behavior | ICM-42688P `U5` on SPI, battery ADC `GPIO17` | [Control flow](../software/control-flow.md#not-yet-resolved), [Sensors](electronics-reference.md#sensors-and-signals) |
+| Check attitude, balance, or driving behavior | ICM-42688P `U5` on SPI, battery ADC `GPIO17` | [Signal flow](../software/balance-controller.md#signal-flow), [Sensors](electronics-reference.md#sensors-and-signals) |
 | Servo, supply dip | Four servo outputs `H9/H10`, supply selection `H11`, `VIN` from 2S battery | [Power supply](electronics-reference.md#power-supply) and [Connectors](electronics-reference.md#connectors) |
 | Remote control | `H4`: GND, +5 V, SBUS; inverter `Q1`; ESP32 `GPIO1` | [Connectors](electronics-reference.md#connectors) |
 | ros2_pc link or UART | `H2`/`CN4`: UART1 (ros2_pc link); `H3`: UART2; `H1`: UART0 | [Serial interfaces](electronics-reference.md#serial-interfaces) |

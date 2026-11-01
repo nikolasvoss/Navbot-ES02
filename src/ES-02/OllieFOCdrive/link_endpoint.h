@@ -32,8 +32,8 @@ class LinkEndpoint : private LinkRowSink {
   void SetCommandHandler(LinkCommandHandler handler) { commandHandler_ = handler; }
 
   // Applies one request that arrived on port and sends the reply to the same port. nowUs is the micros() value at the
-  // start of the tick, and stamps lease renewals. balanceRequested is CH5 on or the balance controller running; the
-  // caller reads it at the same time as nowUs, so the endpoint never looks at robot state itself.
+  // start of the tick, and stamps lease renewals. balanceRequested is CH5 in position 1 or 2, or the balance controller
+  // running; the caller reads it at the same time as nowUs, so the endpoint never looks at robot state itself.
   void Handle(uint8_t port, const uint8_t* payload, size_t len, uint32_t nowUs, bool balanceRequested);
 
   // End of a tick: sends the due rows of every subscription as SignalBatch frames to the port that owns them.

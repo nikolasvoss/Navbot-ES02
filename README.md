@@ -72,7 +72,7 @@ cd Navbot-ES02
 python3 scripts/build_firmware.py
 ```
 
-The command builds the NavBot sketch into `build/flash`. Run `python3 scripts/build_firmware.py --help` to choose another sketch, board, output directory, or build properties. To flash a compiled build, use the configured `navbot_flash` MCP tool `flash_firmware` with the absolute build directory from the active worktree. Check the serial MCP `list_ports` before reporting that the board is disconnected, close the serial MCP connection before flashing, and keep balance disabled with motor outputs safe. See the [canonical USB/serial documentation](docs/robot/software/usb-serial-flashing.md) for board settings and verified connection details.
+To build the committed firmware, check that the robot is safe, flash it and check the boot, run `python3 scripts/deploy.py`; the [development hosts](docs/integration/software/dev-hosts.md) page says which machine does each part.
 
 ### Sensor diagnostics, trace capture, and live tuning
 

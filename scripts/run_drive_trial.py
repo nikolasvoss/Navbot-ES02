@@ -16,7 +16,7 @@ def main():
                         help="new CSV path (default: drive-YYYYMMDD-HHMMSS.csv)")
     parser.add_argument("--seconds", type=float, default=25)
     parser.add_argument("--port", required=True,
-                        help="/dev/ttyAMA3 (stop the bridge first) or /dev/ttyUSB0")
+                        help="tcp:127.0.0.1:7650 (the link multiplexer, which owns /dev/ttyAMA3) or /dev/ttyUSB0")
     parser.add_argument("--baud", type=int, help="default: navlink's baud rate for the port")
     args = parser.parse_args()
     if args.seconds <= 0:
@@ -29,7 +29,7 @@ def main():
         parser.error(f"Verzeichnis fehlt: {log_path.parent}")
 
     print("Drive-Versuch: CH3/CH4 zunächst neutral, CH9/CH10 mittig; ",
-          "CH5 und Startlage prüfen. Nach Aufnahmebeginn CH5 aktivieren, ",
+          "CH5 und Startlage prüfen. Nach Aufnahmebeginn CH5 auf Position 2 (das ferne Ende, RC-Balance) schalten, ",
           "CH3-Impuls geben und auf neutral zurückstellen.", sep="", flush=True)
     print(f"Log: {log_path}; Bericht: {report_path}", flush=True)
     capture = ["capture", "--port", args.port, "--preset", "drive",

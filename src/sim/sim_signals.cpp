@@ -25,6 +25,7 @@ struct SystemHealth {
   uint32_t stackFreeLoopB;
   uint32_t stackFreeLinkB;
 } systemHealth{};
+uint8_t resetReason = 1;  // esp_reset_reason_t power-on: the simulation always starts fresh
 
 MotorDiagnostic::State motorDiagnosticState{};
 ServoTrimsDegrees servoTrims{};

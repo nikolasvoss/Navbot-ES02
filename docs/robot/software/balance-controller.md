@@ -4,9 +4,56 @@ As of 2026-10-24 · firmware commit `776684b` · code in [BalanceController.h](.
 
 ## What it does today
 
-The controller is a state machine plus the control math. The sketch gives it measurements and the remote request on every control tick, and applies its output. Since 2026-10-24 the robot stands on its own on the ground. Gains in `balanceConfig()` (all uncommissioned starting values found by hand): tilt `tiltP` 8 A/rad, `gyroDamping` 0.4 A/(rad/s), yaw hold `yawP` 0.6 A/(rad/s), speed loop `speedKp` 0.25 rad per m/s and `speedKi` 0.08 rad per m, integral on. The leg servos are fixed at 20 degrees. After boot the commanded angle ramps from the assumed sag angle (10 degrees) to 20 degrees at 30 degrees per second (`stepLegPoseToward` in `LegPoseRamp.h`) after the motor calibration; Arming is not gated on the ramp. The wheel drivers are on in Run and Commissioning. The estimated back-EMF handed to SimpleFOC is the measured KV times `kWheelKvSafetyFactor` (1.8, a compile-time constant); without that margin an enabled wheel at 0 A runs away, see the [bench test note](../../../lab/robot/2026-10-24-balance-controller-first-bench-test.md). Disabled, Arming and Fault keep the drivers off and the wheels free.
+The controller is a state machine plus the control math. The sketch gives it measurements and the remote request on every control tick, and applies its output. Since 2026-10-24 the robot stands on its own on the ground. Gains in `balanceSettings` in `OllieFOCdrive.ino` (all uncommissioned starting values found by hand): tilt `tiltP` 8 A/rad, `gyroDamping` 0.4 A/(rad/s), yaw hold `yawP` 0.6 A/(rad/s), speed loop `speedKp` 0.25 rad per m/s and `speedKi` 0.08 rad per m, integral on. The leg servos are fixed at 20 degrees. After boot the commanded angle ramps from the assumed sag angle (10 degrees) to 20 degrees at 30 degrees per second (`stepLegPoseToward` in `LegPoseRamp.h`) after the motor calibration; Arming is not gated on the ramp. The wheel drivers are on in Run and Commissioning. The estimated back-EMF handed to SimpleFOC is the measured KV times `kWheelKvSafetyFactor` (1.8, a compile-time constant); without that margin an enabled wheel at 0 A runs away, see the [bench test note](../../../lab/robot/2026-10-24-balance-controller-first-bench-test.md). Disabled, Arming and Fault keep the drivers off and the wheels free.
 
 What works and is tested on the robot: arming, run, fall detection, fault latching, remote loss, and the commissioning state with the trim knob and the save request.
+
+## Signal flow
+
+The sketch calls the controller once per control tick. It passes the measurements and the remote request, and it gets back two wheel currents, a drive enable and the state. The tick runs when at least 1 ms has passed since the previous tick (`kControlTimestepMinSec`). That is a minimum, not a fixed rate. The measured loop rate is in the roadmap item [Speed up the main loop pass](../plans/roadmap.md#speed-up-the-main-loop-pass).
+
+```mermaid
+flowchart LR
+    RC[SBUS remote control<br/>CH3 speed · CH4 turn<br/>CH5 enable] --> REQ[Request: speed, yaw rate, switches]
+    IMU[ICM-42688P<br/>acceleration + angular rate] --> MAH[Filters + Mahony<br/>corrected roll, gyro rates]
+    ENC[2 × AS5600<br/>wheel angle] --> VEL[Wheel speed estimate]
+    BAT[Battery ADC<br/>GPIO17] --> BC[BalanceController]
+    REQ --> BC
+    MAH --> BC
+    VEL --> BC
+    BC -->|2 current targets, A| FOC[2 × SimpleFOC<br/>torque mode, estimated current]
+    ENC --> FOC
+    FOC --> DRV[2 × MP6536<br/>wheel motors]
+    SERVO[4 × servo PWM<br/>fixed pose]
+    DRV --> ROBOT[Mechanics and motion]
+    SERVO --> ROBOT
+    ROBOT -. measurement .-> IMU
+    ROBOT -. measurement .-> ENC
+```
+
+- **Attitude.** The IMU is read on every loop pass over SPI. Acceleration and gyro pass a low-pass filter, and Mahony fuses the filtered values with the measured sample interval. The controller uses the corrected roll angle. It uses the unfiltered gyro rates: x for the tilt rate and z for the yaw rate. A forward lean is positive. The IMU design rate is 1000 Hz (`imu::kSampleRateHz`), and the filter cutoffs start at 25 Hz.
+- **Wheels.** Each wheel angle comes from its AS5600. The speed estimate divides the angle change by the measured time between two reads. The controller uses this value without smoothing. The sketch also computes a low-pass copy, but nothing reads it.
+- **Battery.** GPIO17 is read on every control tick, and a 50 Hz low-pass filter designed for 1000 Hz smooths it. Below 7.4 V (`kLowBatteryVolts`) the status LED blinks faster, and a warning is logged at most once per second. Nothing shuts down.
+- **Remote control.** Every loop pass reads the newest S.BUS frame. CH1, CH2, CH8 and CH10 are not read. A frame older than 100 ms, or a receiver failsafe, makes the request invalid. The request then counts as zero speed and zero yaw, and the demand ramps down at the brake cap.
+- **Demand.** CH3 sets the speed request, up to 0.3 m/s. CH4 sets the yaw-rate request, up to 1.0 rad/s, left positive. Acceleration and braking are limited. The speed loop turns the speed error into a tilt reference, limited to plus and minus 5 degrees and slewed at 0.5 rad/s.
+- **Current.** The common current is the tilt gain times the tilt error, plus the damping gain times the tilt rate. The yaw difference is the yaw gain times the yaw-rate error. The left wheel gets the common current minus the difference, and the right wheel gets the common current plus it. Each wheel is clipped to a current envelope that follows its speed and the bus voltage. Balance has priority. When the envelope leaves no room, the yaw difference is reduced.
+- **Motor output.** Both wheels run SimpleFOC in `torque` mode with `estimated_current`. The target current becomes a voltage, `voltage.q = I × R + back-EMF`, limited to 4.2 V (`kWheelVoltageLimitV`). The current is an estimate, not a sensed value. The `current_limit` value, about 0.73 A, is the stall current at the voltage ceiling. It is not a measured limit. The motor sign is applied in `WheelBoundary::toMotorTargets()`.
+- **Drive off.** When the controller does not drive (CH5 off, Arming, Disabled or Fault), both targets are zero and both drivers are disabled. The loop keeps running.
+- **Legs.** The four servos get 50 Hz PWM and move to one fixed angle, 20 degrees. After boot the commanded angle ramps from 10 degrees to 20 degrees at 30 degrees per second. The servo trims do not apply to this pose, and no inverse kinematics run.
+- **Gyro calibration.** The `calibrate` action with step 1 measures the gyro bias. It is refused while balance is requested. Once started, it blocks the control loop for several seconds.
+
+Where to look in the code:
+
+| Question | Location |
+| --- | --- |
+| Gains and limits | `OllieFOCdrive.ino`: `balanceSettings` |
+| Loop order and control tick | `OllieFOCdrive.ino`: `loop()`, `runControlTick()` |
+| Remote frame and request | `OllieFOCdrive.ino`: `readSbus()`, `balanceRequest()` |
+| Measurements for the controller | `OllieFOCdrive.ino`: `balanceMeasurements()` |
+| State machine and current allocation | `BalanceController.cpp`: `update()`, `checkRunning()`, `computeEffort()` |
+| Wheel outputs | `OllieFOCdrive.ino`: `applyBalanceOutput()`; `WheelBoundary.cpp`: `toMotorTargets()` |
+| IMU fusion | `imu.cpp`: `processAccepted()`; `MahonyFilter.cpp` |
+| Leg servos | `OllieFOCdrive.ino`: `runControlTick()`; `ServoControl.cpp` |
 
 ## The five states
 
@@ -61,7 +108,7 @@ Disabled, Arming and Fault keep the drivers off. Run and Commissioning run the c
 | --- | --- | --- |
 | CH3 | Drive request | Forward stick = forward, up to the speed cap. Raw 992 is centre. |
 | CH4 | Turn request | Left stick = left turn (positive yaw rate). |
-| CH5 | Enable | Raw below 592 = off. 592 or above = on (positions 1 and 2 are both on). Only the change from off to on starts Arming. A position that is already on at boot, or when the remote reconnects, is ignored: flip CH5 off and on again. |
+| CH5 | Enable | Three positions. 0 (raw below 592) = off. 1 (592 to 1401) = link mode: balance follows the link's `balance` action (signal `link_balance`), and the link drives with `Command`; see [Command](../../integration/software/ros2-uart-protocol.md#command). 2 (1402 and above) = RC balance on. Only the change from off to on in position 2 starts Arming. Position 2 that is already on at boot, or when the remote reconnects, is ignored: flip CH5 off and on again. |
 | CH6 | Save trim | Raw 992 or above = on. Only the change from off to on counts, and only in Commissioning. |
 | CH7 | Commissioning | Raw 992 or above = on. Switch it on in Run to enter Commissioning, off to leave. |
 | CH9 | Trim knob | Works only in Commissioning, with pickup (below). Raw 992 = trim 0, the end stops are plus and minus 3 degrees. |

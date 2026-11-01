@@ -13,7 +13,6 @@ The robot is the ESP32-S3 controller board and everything attached to it: wheel 
 ## Software
 
 - [Balance controller](software/balance-controller.md): states, remote switches, faults, commissioning and trim, as implemented.
-- [Control flow](software/control-flow.md): how the balance and drive control works (older overview, predates the balance controller page).
 - [RC channel map](software/rc-channel-map.md): SBUS channel assignment in the firmware.
 - [Trace capture and live tuning](software/trace-capture.md): `navlink` captures of signals, the drive trial script and live parameter changes.
 - [Motor commissioning](software/motor-commissioning.md): bounded per-wheel current and voltage identification, manual resistance method, KV fit, and the pending commissioning record.
