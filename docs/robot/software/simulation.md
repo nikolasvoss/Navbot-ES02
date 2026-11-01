@@ -142,6 +142,8 @@ The model matches the robot's cruise speed, turn rate and standing lean within 8
 python3 -m pytest -q tests/simulation
 ```
 
+`verify.py` and `deploy.py` run these tests before a deploy when the simulator's inputs changed; see the [simulation gate](../../integration/software/agent-workflow.md#simulation-gate).
+
 `tests/simulation/test_scenarios.py` runs these closed-loop scenarios with the firmware's boot settings:
 
 | Test | Checks |

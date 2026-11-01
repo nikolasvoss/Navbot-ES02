@@ -57,6 +57,8 @@ class Fleet:
         self.calls: list[tuple[str | None, str]] = []
         self.shipped: list[tuple[str | None, str]] = []
         self.copies: list[tuple] = []
+        self.sim_calls: list[tuple[Path, str]] = []
+        self.sim_result = (True, "inputs unchanged, passed before (key abc)")
         sha8 = sha[:8]
         self.replies = [
             ("-m pytest", (0, "", "")),
@@ -94,6 +96,10 @@ class Fleet:
     def copy(self, src_host, src, dst_host, dst):
         self.copies.append((src_host, src, dst_host, dst))
 
+    def sim_check(self, root, sha):
+        self.sim_calls.append((root, sha))
+        return self.sim_result
+
 
 def commands(fleet: Fleet, needle: str) -> list[str]:
     return [command for _, command in fleet.calls if needle in command]
@@ -119,6 +125,7 @@ def fleet(monkeypatch, repo):
     monkeypatch.setattr(devtools, "peer", lambda: "cm5")
     monkeypatch.setattr(devtools, "ship_tree", fake.ship)
     monkeypatch.setattr(deploy, "copy_output", fake.copy)
+    monkeypatch.setattr(devtools, "sim_check", fake.sim_check, raising=False)
     return fake
 
 
@@ -182,7 +189,7 @@ def test_full_run_builds_gates_flashes_and_passes_tier_a(repo, fleet, capsys):
     assert code == 0
     assert (result["build_host"], result["usb_host"], result["link_host"]) == ("niko-desktop", "cm5", "cm5")
     assert {name: data["status"] for name, data in result["stages"].items()} == {
-        "firmware_build": "pass", "deploy": "pass", "tier_a": "pass",
+        "sim": "pass", "firmware_build": "pass", "deploy": "pass", "tier_a": "pass",
     }
     assert result["stages"]["tier_a"]["tests"] == {"tests/hil/test_tier_a.py::test_reboot": "passed"}
     assert commands(fleet, "build_firmware.py") == [
@@ -298,7 +305,7 @@ def test_diagnostic_image_builds_both_and_flashes_its_own_output(repo, fleet, ca
     code, result = run_main(capsys, repo, "--image", "diagnostic")
     sha8 = fleet.sha[:8]
     assert code == 0
-    assert set(result["stages"]) == {"firmware_build", "deploy"}
+    assert set(result["stages"]) == {"sim", "firmware_build", "deploy"}
     assert commands(fleet, "build_firmware.py") == [
         f"python3 scripts/build_firmware.py --revision {fleet.sha} --output-dir /shipped/local/{sha8}/build/flash",
         f"python3 scripts/build_firmware.py --revision {fleet.sha} --output-dir /shipped/local/{sha8}/build/flash-diagnostic"
@@ -363,7 +370,7 @@ def test_no_toolchain_is_exit_3_at_the_build_stage(repo, fleet, capsys):
     fleet.probes[None]["toolchain"] = None
     code, result = run_main(capsys, repo)
     assert code == 3
-    assert set(result["stages"]) == {"firmware_build"}
+    assert set(result["stages"]) == {"sim", "firmware_build"}
     assert result["stages"]["firmware_build"]["status"] == "blocked"
     assert result["stages"]["firmware_build"]["detail"] == "no toolchain on either host"
     assert commands(fleet, "build_firmware.py") == []
@@ -377,6 +384,34 @@ def test_robot_not_connected_is_exit_3_at_the_deploy_stage(repo, fleet, capsys):
     assert result["stages"]["deploy"]["detail"] == "robot not connected"
     assert "firmware_build" not in result["stages"]
     assert commands(fleet, "build_firmware.py") == []
+
+
+def test_failing_simulation_stops_before_any_build_or_ship(repo, fleet, capsys):
+    fleet.sim_result = (False, "2 failed in tests/simulation")
+    code, result = run_main(capsys, repo)
+    assert code == 10
+    assert result["stages"]["sim"]["status"] == "fail"
+    assert result["stages"]["sim"]["detail"] == "simulation failed: 2 failed in tests/simulation"
+    assert set(result["stages"]) == {"sim"}
+    assert commands(fleet, "build_firmware.py") == []
+    assert commands(fleet, "upload_firmware.py") == []
+    assert fleet.shipped == []
+
+
+def test_passing_simulation_is_recorded_before_the_build(repo, fleet, capsys):
+    code, result = run_main(capsys, repo)
+    assert code == 0
+    assert list(result["stages"]) == ["sim", "firmware_build", "deploy", "tier_a"]
+    assert result["stages"]["sim"]["status"] == "pass"
+    assert result["stages"]["sim"]["detail"] == "inputs unchanged, passed before (key abc)"
+    assert fleet.sim_calls == [(repo, fleet.sha)]
+
+
+def test_build_only_does_not_run_the_simulation(repo, fleet, capsys):
+    code, result = run_main(capsys, repo, "--build-only")
+    assert code == 0
+    assert fleet.sim_calls == []
+    assert "sim" not in result["stages"]
 
 
 def test_evidence_records_the_stages_for_the_branch(repo, fleet, capsys):

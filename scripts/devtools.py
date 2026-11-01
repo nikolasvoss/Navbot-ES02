@@ -8,6 +8,7 @@ task state uses PyYAML. Plan: docs/integration/software/agent-workflow.md
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -28,6 +29,25 @@ ROBOT_USB_IDS = ("1a86", "7523")
 SHIP_PATHS = ["src", "scripts", "tests", "firmware-build-environment.json"]
 SHIPPED_TREES = 5
 SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+SIM_SKETCH = "src/ES-02/OllieFOCdrive"
+SIM_SKETCH_FILES = (
+    "BalanceController.cpp", "BalanceController.h", "BoardConfig.h", "Calibration.h", "ControlTick.cpp",
+    "ControlTick.h", "filter.cpp", "filter.h", "ICM42688.h", "imu.cpp", "imu.h", "LegPoseRamp.h",
+    "link_endpoint.cpp", "link_endpoint.h", "link_frame.cpp", "link_frame.h", "link_log.cpp", "link_log.h",
+    "link_schedule.h", "link_subscriptions.cpp", "link_subscriptions.h", "link_tx.cpp", "link_tx.h",
+    "link_uart.h", "Logging.cpp", "Logging.h", "MahonyFilter.cpp", "MahonyFilter.h", "MathConstants.h",
+    "MotorDiagnostic.h", "OverspeedGuard.cpp", "OverspeedGuard.h", "rc_mode.h", "RobotConfig.cpp",
+    "RobotConfig.h", "ServoLimits.h", "settings_groups.h", "signals.def.h", "signal_table_expand.h",
+    "signal_table.h", "WheelBoundary.cpp", "WheelBoundary.h",
+)
+SIM_INPUTS = (
+    "src/sim",
+    "tests/simulation",
+    f"{SIM_SKETCH}/src/navbot_link",
+    *(f"{SIM_SKETCH}/{name}" for name in SIM_SKETCH_FILES),
+)
+SIM_CACHE = Path.home() / ".cache" / "navbot-sim" / "passed"
+SIM_TIMEOUT = 900
 
 
 @dataclass
@@ -237,6 +257,39 @@ def _mux_up() -> bool:
     except OSError:
         return False
     return True
+
+
+def is_sim_input(path: str) -> bool:
+    """A repo-relative path is a simulator input: equal to an entry of SIM_INPUTS or inside a directory entry."""
+    return any(path == entry or path.startswith(entry + "/") for entry in SIM_INPUTS)
+
+
+def sim_key(sha: str, cwd: Path | None = None) -> str:
+    """sha256 hex digest of `git ls-tree -r <sha> -- *SIM_INPUTS`: the same input contents give the same key."""
+    listing = git(["ls-tree", "-r", sha, "--", *SIM_INPUTS], cwd)
+    return hashlib.sha256(listing.encode()).hexdigest()
+
+
+def _last_line(text: str | None) -> str:
+    lines = [line for line in (text or "").splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
+def sim_check(root: Path, sha: str) -> tuple[bool, str]:
+    """(passed, detail). A key recorded by an earlier pass skips the run; a failure records nothing."""
+    key = sim_key(sha, cwd=root)
+    marker = SIM_CACHE / key
+    if marker.exists():
+        return True, f"inputs unchanged, passed before (key {key[:12]})"
+    try:
+        proc = run(None, ["python3", "-m", "pytest", "tests/simulation", "-q"], cwd=str(root), timeout=SIM_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return False, f"timed out after {SIM_TIMEOUT} s"
+    if proc.returncode:
+        return False, _last_line(proc.stdout) or _last_line(proc.stderr)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+    return True, _last_line(proc.stdout)
 
 
 def gate_ok(values: dict) -> str | None:

@@ -19,7 +19,7 @@ from pathlib import Path
 import deploy
 import devtools
 
-STAGE_NAMES = ("host", "firmware_build", "deploy", "tier_a", "tier_b", "tier_c", "ros2_pc")
+STAGE_NAMES = ("host", "sim", "firmware_build", "deploy", "tier_a", "tier_b", "tier_c", "ros2_pc")
 STAGE_TIER = {"tier_b": "guided"}
 TIER_B_FILES = (
     "BalanceController.*",
@@ -77,6 +77,8 @@ def required_stages(changed: list[str]) -> list[str]:
     """The stages a change to these paths needs, in STAGE_NAMES order."""
     needed = {"host"}
     for path in changed:
+        if devtools.is_sim_input(path):
+            needed.add("sim")
         if path.startswith("src/ES-02/"):
             needed |= {"firmware_build", "deploy", "tier_a", "tier_c"}
             if any(fnmatch.fnmatchcase(Path(path).name, pattern) for pattern in TIER_B_FILES):
@@ -136,8 +138,13 @@ def _deploy_run(worktree: Path, extra: list[str]) -> tuple[int, dict | None, str
 
 
 def _host_tests(worktree: Path) -> dict:
-    proc = devtools.run(None, ["python3", "-m", "pytest", "tests", "-q"], cwd=str(worktree), timeout=PYTEST_TIMEOUT)
+    proc = devtools.run(None, ["python3", "-m", "pytest", "tests", "-q", "--ignore", "tests/simulation"], cwd=str(worktree), timeout=PYTEST_TIMEOUT)
     return _stage("pass" if proc.returncode == 0 else "fail", _last_line(proc.stdout) or _last_line(proc.stderr))
+
+
+def _sim(worktree: Path, sha: str) -> dict:
+    passed, detail = devtools.sim_check(worktree, sha)
+    return _stage("pass" if passed else "fail", detail)
 
 
 def _firmware_build(worktree: Path) -> dict:
@@ -329,6 +336,8 @@ def _verify(args: argparse.Namespace) -> int:
     fresh: dict[str, dict] = {}
     if "host" in required:
         fresh["host"] = _attempt(_host_tests, worktree)
+    if runs("sim"):
+        fresh["sim"] = _attempt(_sim, worktree, sha)
     if runs("firmware_build"):
         fresh["firmware_build"] = _firmware_build(worktree)
     if runs("deploy"):

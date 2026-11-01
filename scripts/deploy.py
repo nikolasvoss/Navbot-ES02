@@ -30,9 +30,9 @@ FLASH_TIMEOUT = 900
 TIER_A_TIMEOUT = 900
 EXIT_CODES = """exit codes: 0 done, 1 other error, 2 uncommitted changes, 3 blocked (no toolchain, robot not connected),
 4 gate refused, 5 build failed, 6 flash failed, 7 boot check failed, 8 tier A failed,
-9 port held by another process"""
+9 port held by another process, 10 simulation failed"""
 
-EXIT_DONE, EXIT_OTHER, EXIT_DIRTY, EXIT_BLOCKED, EXIT_GATE, EXIT_BUILD, EXIT_FLASH, EXIT_BOOT, EXIT_TIER_A, EXIT_HOLDER = range(10)
+EXIT_DONE, EXIT_OTHER, EXIT_DIRTY, EXIT_BLOCKED, EXIT_GATE, EXIT_BUILD, EXIT_FLASH, EXIT_BOOT, EXIT_TIER_A, EXIT_HOLDER, EXIT_SIM = range(11)
 
 
 class Host:
@@ -258,6 +258,12 @@ def tier_a(link: Host, tree: str, run: Run) -> None:
 def deploy(args: argparse.Namespace, run: Run, root: Path) -> None:
     check_clean(root)
     run.sha = devtools.git(["rev-parse", "HEAD"], cwd=root)
+    if not args.build_only:
+        run.begin("sim")
+        passed, detail = devtools.sim_check(root, run.sha)
+        if not passed:
+            raise Stop(EXIT_SIM, f"simulation failed: {detail}")
+        run.pass_stage(detail)
     build, usb, link = select_hosts(probe_hosts(), args.build_only)
     run.hosts = {
         "build_host": build.name,
