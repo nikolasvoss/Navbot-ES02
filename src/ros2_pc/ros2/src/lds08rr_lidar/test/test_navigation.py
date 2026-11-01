@@ -174,3 +174,20 @@ def test_bench_robot_finds_the_package_without_an_install(monkeypatch):
     }
     assert env == {"PYTHONPATH": f"{bench_launch.PACKAGE_ROOT}:/opt/other"}
     assert (Path(bench_launch.PACKAGE_ROOT) / "lds08rr_lidar" / "bench_robot.py").is_file()
+
+
+def test_bench_start_pose_defaults_are_doubles():
+    pytest.importorskip("launch")
+    pytest.importorskip("launch_ros")
+    from launch import LaunchContext
+    from launch.actions import DeclareLaunchArgument
+
+    from lds08rr_lidar import bench_launch
+
+    context = LaunchContext()
+    defaults = {
+        a.name: "".join(s.perform(context) for s in a.default_value)
+        for a in bench_launch.generate_launch_description().entities
+        if isinstance(a, DeclareLaunchArgument) and a.default_value is not None
+    }
+    assert defaults == {"x": "0.0", "y": "0.0", "yaw": "0.0"}

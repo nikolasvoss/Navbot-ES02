@@ -20,9 +20,9 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("map"),
         DeclareLaunchArgument("params_file"),
-        DeclareLaunchArgument("x", default_value="0"),
-        DeclareLaunchArgument("y", default_value="0"),
-        DeclareLaunchArgument("yaw", default_value="0"),
+        DeclareLaunchArgument("x", default_value="0.0"),
+        DeclareLaunchArgument("y", default_value="0.0"),
+        DeclareLaunchArgument("yaw", default_value="0.0"),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(localization),
             launch_arguments={
