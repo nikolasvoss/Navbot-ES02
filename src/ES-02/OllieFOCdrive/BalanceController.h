@@ -98,7 +98,7 @@ struct Output {
 
 struct Config {
   // Arming: all values uncommissioned.
-  uint32_t armingTimeoutUs = 0;          // uncommissioned
+  uint32_t armingTimeoutUs = 0;          // 0 holds Arming until the start conditions hold or the switch goes off
   float armingTiltWindowRad = 0.0f;      // uncommissioned
   float armingTiltRateRadPerSec = 0.0f;  // uncommissioned
   float armingRequestSpeedMps = 0.0f;    // uncommissioned
@@ -116,6 +116,9 @@ struct Config {
   // Fall: tilt beyond fallAngleRad for longer than fallDurationUs. Uncommissioned.
   float fallAngleRad = 0.0f;     // uncommissioned
   uint32_t fallDurationUs = 0;   // uncommissioned
+  // After a Fall fault with the switch still on, the tilt must stay inside armingTiltWindowRad for this long before
+  // the controller re-enters Arming. Zero keeps the Fall fault latched until the switch is cycled.
+  uint32_t fallRecoveryDelayUs = 0;  // uncommissioned
 
   // Overspeed: either wheel beyond wheelOverspeedRadPerSec for longer than overspeedDurationUs. Uncommissioned.
   float wheelOverspeedRadPerSec = 0.0f;  // uncommissioned
@@ -249,6 +252,8 @@ class BalanceController {
                    bool lost) const;
   void stepKnob(const Request &request, const Config &config);
   void latchFault(FaultReason reason);
+  void recoverFromFall(const Measurements &measurements, const Config &config, uint32_t nowUs,
+                       bool lost);
   void checkEnvelopes(const Measurements &measurements, const Config &config);
   void computeEffort(const Measurements &measurements, const Config &config, uint32_t nowUs, bool newImuSample);
 
@@ -289,6 +294,8 @@ class BalanceController {
   // Shaped demand of the last processed IMU sample; zero outside Run and on entering Run.
   Demand shapedDemand_;
 
+  bool fallRecoveryInside_ = false;
+  uint32_t fallRecoveryStartUs_ = 0;
   bool fallBeyond_ = false;
   uint32_t fallStartUs_ = 0;
   bool overspeedActive_ = false;

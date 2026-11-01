@@ -289,7 +289,8 @@ Output BalanceController::update(const Measurements &measurements, const Request
         if (ready && state_ == State::Arming && containsZero) {
           state_ = State::Run;
           resetRunTracking(config, nowUs);
-        } else if (state_ == State::Arming && elapsedLongerThan(nowUs, armingStartUs_, config.armingTimeoutUs)) {
+        } else if (state_ == State::Arming && config.armingTimeoutUs > 0 &&
+                   elapsedLongerThan(nowUs, armingStartUs_, config.armingTimeoutUs)) {
           state_ = State::Disabled;
         }
         break;
@@ -307,7 +308,8 @@ Output BalanceController::update(const Measurements &measurements, const Request
         }
         checkRunning(measurements, request, config, nowUs);
         break;
-      case State::Fault:  // Only the switch leaves Fault, and it leads to Disabled, never to Run.
+      case State::Fault:  // The switch leaves Fault to Disabled; a Fall also recovers to Arming, never straight to Run.
+        if (fault_ == FaultReason::Fall) recoverFromFall(measurements, config, nowUs, lost);
         break;
     }
   }
@@ -389,9 +391,33 @@ void BalanceController::resetRunTracking(const Config &config, uint32_t nowUs) {
   knobEngaged_ = false;
 }
 
+// A Fall fault clears itself once the robot is held back inside the arming tilt window for the recovery delay with
+// fresh measurements. It then re-enters Arming, which still checks every arming condition before Run.
+void BalanceController::recoverFromFall(const Measurements &measurements, const Config &config,
+                                        uint32_t nowUs, bool lost) {
+  const float trimRad = config.storedTrimDeg * kDegreesToRadiansF;
+  const bool inside = config.fallRecoveryDelayUs > 0 && !lost && config.trimValidated && config.fixedPoseReachable &&
+                      measurements.imuValid && !isStale(nowUs, measurements.imuReadTimeUs, config.imuMaxAgeUs) &&
+                      std::fabs(measurements.tiltRad - trimRad) <= config.armingTiltWindowRad;
+  if (!inside) {
+    fallRecoveryInside_ = false;
+    return;
+  }
+  if (!fallRecoveryInside_) {
+    fallRecoveryInside_ = true;
+    fallRecoveryStartUs_ = nowUs;
+  } else if (elapsedLongerThan(nowUs, fallRecoveryStartUs_, config.fallRecoveryDelayUs)) {
+    fallRecoveryInside_ = false;
+    fault_ = FaultReason::None;
+    state_ = State::Arming;
+    armingStartUs_ = nowUs;
+  }
+}
+
 void BalanceController::latchFault(FaultReason reason) {
   state_ = State::Fault;
   fault_ = reason;
+  fallRecoveryInside_ = false;
   leftMinA_ = leftMaxA_ = rightMinA_ = rightMaxA_ = 0.0f;
 }
 

@@ -507,6 +507,19 @@ int main() {
     assert(tick(bc, unstable, liveSwitch(start + kTimeoutUs + 1, true), config, start + kTimeoutUs + 1).state == State::Disabled);
   }
 
+  // A zero timeout keeps Arming indefinitely, and the controller starts once the conditions hold.
+  {
+    Config noTimeout = config;
+    noTimeout.armingTimeoutUs = 0;
+    Measurements unstable = good;
+    unstable.tiltRateRadPerSec = 1.0f;
+    BalanceController bc;
+    tick(bc, unstable, liveSwitch(1000, false), noTimeout, 1000);
+    assert(tick(bc, unstable, liveSwitch(2000, true), noTimeout, 2000).state == State::Arming);
+    assert(tick(bc, unstable, liveSwitch(2000 + 60000000u, true), noTimeout, 2000 + 60000000u).state == State::Arming);
+    assert(tick(bc, good, liveSwitch(2000 + 60001000u, true), noTimeout, 2000 + 60001000u).state == State::Run);
+  }
+
   // After a timeout, the switch held on cannot re-arm; a fresh edge is needed.
   {
     Measurements unstable = good;
@@ -769,6 +782,53 @@ int main() {
     for (uint32_t j = 42; j <= 92; ++j) assert(sample(bc, beyond, config, base + 10000u * j, seq++).state == State::Run);
     const Output out = sample(bc, beyond, config, base + 10000u * 93, seq++);
     assert(out.state == State::Fault && out.fault == FaultReason::Fall);
+  }
+
+  // Fall recovery: with the switch still on, a Fall fault clears after the tilt stays inside the arming window for
+  // the recovery delay, goes through Arming and runs again. Disabled by default.
+  {
+    auto live = [](BalanceController &c, const Measurements &m, const Config &cfg, uint32_t t, uint32_t seq) {
+      Measurements s = atTime(m, t);
+      s.imuSequence = seq;
+      return c.update(s, liveSwitch(t, true), cfg, t);
+    };
+    Config rc = config;
+    rc.fallRecoveryDelayUs = 500000;
+    Measurements beyond = good;
+    beyond.tiltRad = 0.7f;
+    Measurements level = good;
+    level.tiltRad = kTrimTiltRad;
+    for (bool enabled : {false, true}) {
+      BalanceController bc;
+      const Config &cfg = enabled ? rc : config;
+      enterRun(bc, cfg, 100000);
+      uint32_t seq = 2;
+      uint32_t t = 110000;
+      Output out;
+      for (int j = 0; j < 60; ++j, t += 10000) out = live(bc, beyond, cfg, t, seq++);
+      assert(out.state == State::Fault && out.fault == FaultReason::Fall);
+      // Inside the window, but not for long enough yet.
+      for (int j = 0; j < 40; ++j, t += 10000) out = live(bc, level, cfg, t, seq++);
+      assert(out.state == State::Fault);
+      for (int j = 0; j < 30; ++j, t += 10000) out = live(bc, level, cfg, t, seq++);
+      if (enabled) {
+        assert(out.state == State::Run && out.fault == FaultReason::None);
+      } else {
+        assert(out.state == State::Fault && out.fault == FaultReason::Fall);
+      }
+    }
+    // A tilt excursion restarts the delay.
+    BalanceController bc;
+    enterRun(bc, rc, 100000);
+    uint32_t seq = 2;
+    uint32_t t = 110000;
+    Output out;
+    for (int j = 0; j < 60; ++j, t += 10000) out = live(bc, beyond, rc, t, seq++);
+    for (int j = 0; j < 40; ++j, t += 10000) out = live(bc, level, rc, t, seq++);
+    out = live(bc, beyond, rc, t, seq++);
+    t += 10000;
+    for (int j = 0; j < 40; ++j, t += 10000) out = live(bc, level, rc, t, seq++);
+    assert(out.state == State::Fault);
   }
 
   // Overspeed: a wheel beyond the limit for longer than the duration faults.
