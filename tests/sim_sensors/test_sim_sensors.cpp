@@ -20,6 +20,7 @@ namespace {
 sim::SensorParams quietSensors(double imuHeightM = 0.0) {
   sim::SensorParams sensors;
   sensors.imuHeightM = imuHeightM;
+  sensors.imuPitchOffsetRad = 0.0;
   sensors.gyroNoiseRadPerSec = 0.0;
   sensors.accelNoiseG = 0.0;
   sensors.batteryAdcNoiseCounts = 0.0;

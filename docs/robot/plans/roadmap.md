@@ -53,12 +53,10 @@ The diagnostic build (`SENSOR_DIAGNOSTIC_MODE 1`) no longer streams a CSV. It is
 
 Route the LiDAR's `M−` pin (LiDAR enable) to the robot PCB, most likely, and drive it so that the LiDAR switches off when the robot falls.
 
-## Validate the host simulation
+## Host simulation: open checks
 
-The [host simulation](../software/simulation.md) runs with placeholder physical parameters. Before its results count for the real robot:
+The [host simulation](../software/simulation.md) is validated against the robot ([lab note](../../../lab/robot/2026-11-01-simulation-validation.md)); its transients are 30 to 45 % off.
 
-- [ ] Measure total mass, wheel mass, the body's centre-of-mass height (balance it on an edge) and the swing period of the robot hanging from its axle; fit the placeholders.
-- [ ] Motor model: replay the voltage steps and sweeps of 2026-10-22 (`lab/robot/captures/2026-10-22-package1-t5` to `t9`, wheels free) and compare wheel speed. With the fitted values, `kWheelKvSafetyFactor` 1.0 must run away and 1.8 must slow down, as in the [bench test](../../../lab/robot/2026-10-24-balance-controller-first-bench-test.md).
-- [ ] Closed loop: `navlink capture --preset drive` with the current controller: 30 s standing, a forward step, a stop, a turn. Compare the standstill oscillation, the step rise time and overshoot, and the stop distance; proposed tolerance 30 %.
-- [ ] Record the result in a lab note, then set the scenario limits from the robot and decide on `test_drive_step` (expected failure: the model rolls back after a stop).
-- [ ] Run the moved control tick (`ControlTick.cpp`, 2026-10-31) on the robot once: stand, drive, CH5 off.
+- [ ] Check the backward drift the simulation predicts after arming (about 0.17 m in the first 10 s while the speed integral learns the standing lean).
+- [ ] Decide whether pushing against an obstacle should fault: on 2026-11-01 the robot pressed against a wall in Run for 14 s.
+- [ ] Find the source of the standing lean of 1.1° (IMU mounting or centre of mass) and of the extra wobble the model lacks.

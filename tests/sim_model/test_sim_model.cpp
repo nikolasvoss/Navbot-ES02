@@ -31,8 +31,25 @@ double plantEnergy(const sim::PlantState &s, const sim::PlantParams &p) {
   return kinetic + potential;
 }
 
+// The parameters the expected values below were computed for (the placeholders of 2026-10-31), so the equations are
+// checked independently of the fitted defaults in sim.h.
+sim::PlantParams testPlant() {
+  sim::PlantParams p;
+  p.bodyMassKg = 0.55;
+  p.wheelMassKg = 0.06;
+  p.wheelInertiaKgM2 = 2.0e-5;
+  p.comHeightM = 0.06;
+  p.bodyPitchInertiaKgM2 = 7.0e-4;
+  p.bodyYawInertiaKgM2 = 1.5e-3;
+  p.wheelRadiusM = 0.01915;
+  p.trackWidthM = 0.113;
+  p.bearingFrictionNmPerRadPerSec = 1.0e-5;
+  p.yawFrictionNmPerRadPerSec = 0.0;
+  return p;
+}
+
 void testLinearization() {
-  const sim::PlantParams p;
+  const sim::PlantParams p = testPlant();
   // Default parameters: A = mb g h / D = 252.48 per s^2 and B = (1 + mb h / (r M)) / D = 2505.0 per (N m) (plan T2).
   sim::PlantState s;
   s.pitchRad = 0.001;
@@ -46,7 +63,7 @@ void testLinearization() {
 
 void testEnergy() {
   const sim::PlantParams p = [] {
-    sim::PlantParams params;
+    sim::PlantParams params = testPlant();
     params.bearingFrictionNmPerRadPerSec = 0.0;
     return params;
   }();
@@ -60,7 +77,7 @@ void testEnergy() {
 }
 
 void testFall() {
-  const sim::PlantParams p;
+  const sim::PlantParams p = testPlant();
   sim::PlantState s;
   s.pitchRad = 0.1;
   int steps = 0;
@@ -78,7 +95,7 @@ void testFall() {
 }
 
 void testYaw() {
-  const sim::PlantParams p;
+  const sim::PlantParams p = testPlant();
   sim::PlantState s;
   // Equal and opposite torques: psi'' = (d / (2 r)) * 0.02 / Jpsi = 26.446 per s^2.
   sim::stepPlant(s, p, sim::WheelTorques{-0.01, 0.01}, 1e-3);
@@ -88,7 +105,7 @@ void testYaw() {
 }
 
 void testLifted() {
-  const sim::PlantParams p;
+  const sim::PlantParams p = testPlant();
   sim::PlantState s;
   s.lifted = true;
   // Wheel inertia 2e-5 kg m^2: 0.001 N m gives 50 rad/s^2; the friction term is negligible over 50 us.
@@ -98,7 +115,7 @@ void testLifted() {
 }
 
 void testPush() {
-  const sim::PlantParams p;
+  const sim::PlantParams p = testPlant();
   sim::PlantState s;
   // Impulse 0.01 N s at rest, theta 0: solution of [[M, c], [c, J]] [dv; dw] = [P; P h] with c = mb h.
   sim::applyPush(s, p, 0.01);
@@ -144,7 +161,7 @@ void testApplied() {
 }
 
 void testMotorOutput() {
-  const sim::MotorPhysics physics;  // KV 79.5, R 5.75
+  const sim::MotorPhysics physics{5.75, 79.5, 1.5};
   // Ke = 1 / (79.5 * sqrt(3) * 0.10472) = 0.069350 V per rad/s; i = -100 Ke / 5.75 = -1.20608 A.
   const sim::MotorOutput out = sim::motorOutput(physics, 0.0, 100.0);
   expectNear("motor output: current at 0 V, 100 rad/s", out.currentA, -1.20608, 1e-5);

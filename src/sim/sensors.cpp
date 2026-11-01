@@ -42,8 +42,13 @@ ICM42688RawSample imuSample(const PlantState &state, const PlantParams &plant, c
   const double ax = state.accelMps2 + h * (cosPitch * pitchAccel - sinPitch * pitchRate * pitchRate);
   const double az = h * (-sinPitch * pitchAccel - cosPitch * pitchRate * pitchRate);
   const double fx = -(state.vMps * state.yawRateRadPerSec) / g;
-  const double fy = (ax * cosPitch - (az + g) * sinPitch) / g;
-  const double fz = (ax * sinPitch + (az + g) * cosPitch) / g;
+  const double fyBody = (ax * cosPitch - (az + g) * sinPitch) / g;
+  const double fzBody = (ax * sinPitch + (az + g) * cosPitch) / g;
+  // The IMU is mounted tilted forward by imuPitchOffsetRad relative to the body.
+  const double cosOffset = std::cos(sensors.imuPitchOffsetRad);
+  const double sinOffset = std::sin(sensors.imuPitchOffsetRad);
+  const double fy = fyBody * cosOffset - fzBody * sinOffset;
+  const double fz = fyBody * sinOffset + fzBody * cosOffset;
 
   // Body rates in rad/s.
   const double gx = (sensors.flipGyroX ? 1.0 : -1.0) * pitchRate;
