@@ -124,7 +124,7 @@ class FakeRobotRun:
 def test_required_stages_follow_the_changed_paths():
     assert verify.required_stages(["README.md"]) == ["host"]
     assert verify.required_stages(["src/ES-02/OllieFOCdrive/x.cpp"]) == ["host", "firmware_build", "deploy", "tier_a", "tier_c"]
-    assert verify.required_stages(["src/navbot_link/link.py"]) == ["host", "deploy", "tier_a"]
+    assert verify.required_stages(["src/navbot_link/link.py"]) == ["host", "sim", "deploy", "tier_a"]
     assert verify.required_stages(["src/ros2_pc/ros2/src/node.py"]) == ["host", "ros2_pc"]
 
 
@@ -243,6 +243,14 @@ def test_host_stage_leaves_the_simulation_to_the_sim_stage(tmp_path, monkeypatch
     monkeypatch.setattr(devtools, "run", fake)
     assert verify.main([]) == 0
     assert ["python3", "-m", "pytest", "tests", "-q", "--ignore", "tests/simulation"] in fake.calls
+
+
+def test_sim_without_a_compiler_is_blocked(tmp_path, monkeypatch, capsys):
+    make_repo(tmp_path, monkeypatch, {"src/sim/plant.cpp": "x\n"}, [])
+    monkeypatch.setattr(devtools, "run", FakeRobotRun())
+    monkeypatch.setattr(verify.shutil, "which", lambda name: None)
+    assert verify.main([]) == 3
+    assert "| sim | blocked | no C++ compiler for the simulation on this host |" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(
@@ -391,6 +399,7 @@ def test_skipped_deploy_ends_done_with_its_reason(tmp_path, monkeypatch, capsys)
         "| Stage | Status | Detail |\n"
         "| --- | --- | --- |\n"
         "| host | pass | 1 passed in 0.1s |\n"
+        "| sim | pass | 3 passed |\n"
         "| deploy | skipped | transmitter off (2026-10-31) |\n"
         "| tier_a | skipped | deploy skipped: transmitter off (2026-10-31) |\n"
         "\n"

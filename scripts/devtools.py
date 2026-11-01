@@ -43,6 +43,9 @@ SIM_SKETCH_FILES = (
 SIM_INPUTS = (
     "src/sim",
     "tests/simulation",
+    "tests/conftest.py",
+    "src/navbot_link",
+    "scripts/signals_catalog.py",
     f"{SIM_SKETCH}/src/navbot_link",
     *(f"{SIM_SKETCH}/{name}" for name in SIM_SKETCH_FILES),
 )
@@ -276,7 +279,16 @@ def _last_line(text: str | None) -> str:
 
 
 def sim_check(root: Path, sha: str) -> tuple[bool, str]:
-    """(passed, detail). A key recorded by an earlier pass skips the run; a failure records nothing."""
+    """(passed, detail). A key recorded by an earlier pass skips the run; a failure records nothing.
+
+    The tests run in root, so root must be at sha with no uncommitted or untracked change to an input:
+    otherwise a pass would be recorded for content that was not tested.
+    """
+    if git(["rev-parse", "HEAD"], root) != sha:
+        return False, f"{root} is not at {sha[:8]}"
+    changed = git(["status", "--porcelain", "--untracked-files=all", "--", *SIM_INPUTS], root)
+    if changed:
+        return False, "uncommitted changes to simulator inputs: " + " ".join(line.split(maxsplit=1)[1] for line in changed.splitlines())
     key = sim_key(sha, cwd=root)
     marker = SIM_CACHE / key
     if marker.exists():

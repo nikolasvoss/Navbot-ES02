@@ -69,9 +69,9 @@ Exit codes: 0 done, 1 other error, 2 uncommitted changes, 3 blocked (no toolchai
 
 ### Simulation gate
 
-`SIM_INPUTS` in `scripts/devtools.py` lists every file `navbot_sim` is built from: `src/sim/`, `tests/simulation/`, nanopb, and the sketch files that `src/sim/build.sh` compiles with every header they include (`ControlTick`, `RobotConfig`, `BalanceController`, `imu`, `signals.def.h` and others; not `OllieFOCdrive.ino`). A test in `tests/scripts/test_devtools.py` asks the compiler for the include tree of every source `build.sh` compiles and fails when a dependency is missing from the list.
+`SIM_INPUTS` in `scripts/devtools.py` lists every file the simulation tests depend on: `src/sim/`, `tests/simulation/`, `tests/conftest.py`, the PC link library `src/navbot_link/` and `scripts/signals_catalog.py` (the live tests), nanopb, and the sketch files that `src/sim/build.sh` compiles with every header they include (`ControlTick`, `RobotConfig`, `BalanceController`, `imu`, `signals.def.h` and others; not `OllieFOCdrive.ino`). A test in `tests/scripts/test_devtools.py` asks the compiler for the include tree of every source `build.sh` compiles and fails when a dependency is missing from the list.
 
-The key is the SHA-256 of `git ls-tree -r <sha> -- <SIM_INPUTS>`, so it depends only on the content of those files. A pass writes `~/.cache/navbot-sim/passed/<key>`; a known key skips the run with `inputs unchanged, passed before`. A failure records nothing. The run takes about 10 s.
+The key is the SHA-256 of `git ls-tree -r <sha> -- <SIM_INPUTS>`, so it depends only on the content of those files. A pass writes `~/.cache/navbot-sim/passed/<key>`; a known key skips the run with `inputs unchanged, passed before`. A failure records nothing. The run takes about 10 s. The tests run in the checkout, so the check fails when the checkout is not at the SHA or has an uncommitted or untracked change to an input. A host without `c++` is blocked (`deploy.py` exit 3).
 
 ## Device tests
 

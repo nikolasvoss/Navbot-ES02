@@ -407,6 +407,14 @@ def test_passing_simulation_is_recorded_before_the_build(repo, fleet, capsys):
     assert fleet.sim_calls == [(repo, fleet.sha)]
 
 
+def test_missing_compiler_blocks_the_simulation(repo, fleet, capsys, monkeypatch):
+    monkeypatch.setattr(deploy.shutil, "which", lambda name: None)
+    code, result = run_main(capsys, repo)
+    assert code == 3
+    assert result["stages"] == {"sim": {**result["stages"]["sim"], "status": "blocked", "detail": "no C++ compiler for the simulation on this host"}}
+    assert fleet.sim_calls == []
+
+
 def test_build_only_does_not_run_the_simulation(repo, fleet, capsys):
     code, result = run_main(capsys, repo, "--build-only")
     assert code == 0

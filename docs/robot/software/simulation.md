@@ -19,7 +19,7 @@ The simulation replaces the hardware below them:
 | `micros()`, `millis()`, `delay()` | the simulation clock in `hal.cpp` |
 | UART1 | a TCP socket (`link_server.cpp`) |
 
-`robot.cpp` is the sketch's `setup()` and `loop()` for the balance path: one pass every 1.4 ms (±0.2 ms), a control tick once 1 ms has passed, and the physics in 50 µs steps between passes.
+`robot.cpp` is the sketch's `setup()` and `loop()` for the balance path: one pass every 1.77 ms (±0.2 ms), a control tick once 1 ms has passed, and the physics in 50 µs steps between passes.
 
 ## Build and run
 

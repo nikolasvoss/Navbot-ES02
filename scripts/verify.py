@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -143,6 +144,8 @@ def _host_tests(worktree: Path) -> dict:
 
 
 def _sim(worktree: Path, sha: str) -> dict:
+    if shutil.which("c++") is None:
+        return _stage("blocked", "no C++ compiler for the simulation on this host")
     passed, detail = devtools.sim_check(worktree, sha)
     return _stage("pass" if passed else "fail", detail)
 

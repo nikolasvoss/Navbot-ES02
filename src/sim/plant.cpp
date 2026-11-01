@@ -130,7 +130,7 @@ void stepPlant(PlantState &state, const PlantParams &params, WheelTorques torque
 
   Vec s = pack(state);
   if (state.lifted) {
-    // The body is held upright at its start position; only the wheels turn.
+    // The body is held upright at x = 0 and yaw 0; only the wheels turn.
     s[kX] = s[kV] = s[kPitch] = s[kPitchRate] = s[kYaw] = s[kYawRate] = 0.0;
   }
 

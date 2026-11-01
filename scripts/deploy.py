@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -260,6 +261,8 @@ def deploy(args: argparse.Namespace, run: Run, root: Path) -> None:
     run.sha = devtools.git(["rev-parse", "HEAD"], cwd=root)
     if not args.build_only:
         run.begin("sim")
+        if shutil.which("c++") is None:
+            raise Stop(EXIT_BLOCKED, "no C++ compiler for the simulation on this host")
         passed, detail = devtools.sim_check(root, run.sha)
         if not passed:
             raise Stop(EXIT_SIM, f"simulation failed: {detail}")

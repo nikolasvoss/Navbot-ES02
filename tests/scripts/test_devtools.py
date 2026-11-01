@@ -353,6 +353,27 @@ def test_sim_check_runs_once_per_input_key_and_records_only_passes(repo, tmp_pat
     assert len(calls) == 3
 
 
+def test_sim_check_refuses_a_checkout_that_is_not_the_committed_sha(repo, tmp_path, monkeypatch):
+    monkeypatch.setattr(devtools, "SIM_CACHE", tmp_path / "cache")
+    (repo / "src" / "sim").mkdir()
+    (repo / "src" / "sim" / "a.cpp").write_text("int a;\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "sim")
+    head = git(repo, "rev-parse", "HEAD")
+    calls = []
+    monkeypatch.setattr(devtools, "run", lambda *args, **kwargs: calls.append(args))
+
+    (repo / "src" / "sim" / "a.cpp").write_text("int fixed;\n")
+    assert devtools.sim_check(repo, head) == (False, "uncommitted changes to simulator inputs: src/sim/a.cpp")
+    git(repo, "checkout", "-q", "--", "src/sim/a.cpp")
+    (repo / "tests" / "simulation").mkdir(parents=True)
+    (repo / "tests" / "simulation" / "test_new.py").write_text("")
+    assert devtools.sim_check(repo, head) == (False, "uncommitted changes to simulator inputs: tests/simulation/test_new.py")
+    assert devtools.sim_check(repo, "0" * 40) == (False, f"{repo} is not at 00000000")
+    assert calls == []
+    assert not (tmp_path / "cache").exists()
+
+
 def test_sim_inputs_cover_every_source_build_sh_compiles():
     if shutil.which("c++") is None:
         pytest.skip("c++ is not on PATH")

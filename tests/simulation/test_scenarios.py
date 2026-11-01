@@ -69,7 +69,7 @@ def test_turn(sim_binary):
     rows, _ = run_sim(sim_binary, ARM + "2 rc 4 192\n5 rc 4 992\n6 end\n")
     window = [row["yaw_rate_rad_s"] for row in rows if 3.5 <= seconds(row) <= 5.0]
     mean_yaw_rate = sum(window) / len(window)
-    # The robot turned at 79 % of the commanded 0.8 rad/s on 2026-11-01 (floor scrub); within 15 % of that.
+    # The robot turned at 79 % of the commanded rate on 2026-11-01; here CH4 commands the 1 rad/s cap (floor scrub); within 15 % of that.
     assert abs(mean_yaw_rate - 0.79) <= 0.15 * 0.79
     assert all(abs(row["pitch_rad"]) < 0.09 for row in rows)
 
@@ -124,9 +124,11 @@ def test_low_battery(sim_binary):
 
 def test_flipped_motor_sign_falls(sim_binary):
     rows, _ = run_sim(sim_binary, ARM + "4 end\n", "flipMotorSign=1")
-    assert rows[-1]["fallen"] == 1.0 or rows[-1]["balance_state"] == STATE_FAULT
+    last = rows[-1]
+    assert last["fallen"] == 1.0 or last["balance_fault"] == FAULT_FALL or last["overspeed_tripped"] == 1.0
 
 
 def test_flipped_gyro_sign_falls(sim_binary):
     rows, _ = run_sim(sim_binary, ARM + "4 end\n", "sensors.flipGyroX=1")
-    assert rows[-1]["fallen"] == 1.0 or rows[-1]["balance_state"] == STATE_FAULT
+    last = rows[-1]
+    assert last["fallen"] == 1.0 or last["balance_fault"] == FAULT_FALL or last["overspeed_tripped"] == 1.0
