@@ -95,17 +95,23 @@ class RecordingLocalizer:
         self.events.append(("localizer stop",))
 
 
-def mapping_control(tmp_path, events, clock, slam, period=0.01):
+def mapping_control(tmp_path, events, clock, slam, period=0.01, tracker=None):
     store = MapStore(tmp_path)
     process = RecordingProcess(events)
     control = SlamControl(
         store, process, write_serialized, write_occupancy,
-        localizer=RecordingLocalizer(events), tracker=LocalizationTracker(), slam_state=slam,
+        localizer=RecordingLocalizer(events), tracker=tracker or LocalizationTracker(), slam_state=slam,
         mapping_command=lambda restore: slam_command(store.params_file(BASE_YAML, restore)),
         snapshot_period=period, clock=clock,
     )
     process.command = control.command
     return control, store
+
+
+def localize(tracker):
+    tracker.start_search()
+    for _ in range(5):
+        tracker.add_pose(1.0, 0.0, 0.0, 0.0001, 0.0001, 0.0001)
 
 
 def params_of(command):
@@ -294,10 +300,13 @@ def test_saving_the_map_deletes_the_snapshots_and_keeps_the_saved_files(tmp_path
 def test_switching_to_localization_deletes_the_snapshots(tmp_path):
     clock = FakeClock(100.0)
     slam = fresh_slam(clock)
-    control, store = mapping_control(tmp_path, [], clock, slam)
+    tracker = LocalizationTracker()
+    control, store = mapping_control(tmp_path, [], clock, slam, tracker=tracker)
     assert control.save() is None
     control.start()
     assert control.mode == "localization"
+    feed(slam, (1.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    localize(tracker)
     assert control.set_mode("mapping") is None
     feed(slam, (1.0, 0.0, 0.0), (0.0, 0.0, 0.0))
     wait_until(lambda: snapshot_count(control) == 1)
@@ -341,3 +350,42 @@ def test_delete_stop_reload_and_start_clear_the_snapshots(tmp_path):
     assert not leftover.exists()
     control.stop()
 
+
+
+def test_mapping_on_the_saved_map_is_refused_until_localized(tmp_path):
+    clock = FakeClock(100.0)
+    events = []
+    slam = fresh_slam(clock)
+    tracker = LocalizationTracker()
+    control, _ = mapping_control(tmp_path, events, clock, slam, tracker=tracker)
+    assert control.save() is None
+    control.start()
+    feed(slam, (1.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+    tracker.start_search()
+    events.clear()
+
+    assert control.set_mode("mapping") == "Not localized on the saved map; wait for 'localized' or press Locate again"
+    assert control.mode == "localization"
+    assert events == []
+    control.stop()
+
+
+def test_mapping_continues_the_saved_map_from_the_localized_pose(tmp_path):
+    clock = FakeClock(100.0)
+    events = []
+    slam = fresh_slam(clock)
+    tracker = LocalizationTracker()
+    control, _ = mapping_control(tmp_path, events, clock, slam, tracker=tracker)
+    assert control.save() is None
+    control.start()
+    feed(slam, (2.5, -1.0, 0.5), (0.0, 0.0, 0.0))
+    localize(tracker)
+
+    assert control.set_mode("mapping") is None
+
+    text = params_of(events[-1][1])
+    assert f'map_file_name: "{tmp_path / "map"}"' in text
+    assert "map_start_at_dock" not in text
+    match = re.search(r"map_start_pose: \[(.+), (.+), (.+)\]", text)
+    assert [float(value) for value in match.groups()] == pytest.approx([2.5, -1.0, 0.5])
+    control.stop()

@@ -595,8 +595,16 @@ class SlamControl:
                 self._leave_navigation()  # the localization launch keeps running
                 self._mode = LOCALIZATION
                 return None
+            restore = None
+            if mode == MAPPING and self._store.exists():
+                # Mapping continues the saved map from the localized pose; a wrong start pose would break the map.
+                pose = self._localized_pose()
+                if pose is None:
+                    return "Not localized on the saved map; wait for 'localized' or press Locate again"
+                restore = (self._store.base, pose)
             self._halt()
             self._undo.clear()
+            self._pending_restore = restore
             self._enter(mode)
             return None
 
@@ -777,6 +785,15 @@ class SlamControl:
         if odom is None or not odom["fresh"]:
             return None
         return {k: odom[k] for k in ("x", "y", "yaw")}
+
+    def _localized_pose(self) -> dict | None:
+        """The current map -> base_link pose while AMCL reports 'localized', else None."""
+        if self._tracker is None or self._slam_state is None:
+            return None
+        if self._tracker.snapshot()["state"] != "localized":
+            return None
+        pose = self._slam_state.snapshot()["pose"]
+        return None if pose is None else {k: pose[k] for k in ("x", "y", "yaw")}
 
     def _halt(self) -> None:
         self._undo.stop_timer()

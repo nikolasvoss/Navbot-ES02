@@ -357,8 +357,12 @@ class RecordingLocalizer:
 
 
 class RecordingSlamState:
-    def __init__(self):
+    def __init__(self, pose=None):
         self.calls = []
+        self.pose = pose or {"x": 0.0, "y": 0.0, "yaw": 0.0}
+
+    def snapshot(self):
+        return {"pose": self.pose}
 
     def clear(self):
         self.calls.append(("clear",))
@@ -372,7 +376,7 @@ def mode_control(tmp_path, events, tracker=None, slam_state=None):
     process = RecordingProcess(events)
     control = SlamControl(
         store, process, write_serialized_map, write_occupancy,
-        localizer=RecordingLocalizer(events), tracker=tracker, slam_state=slam_state,
+        localizer=RecordingLocalizer(events), tracker=tracker, slam_state=slam_state or RecordingSlamState(),
         mapping_command=lambda restore: ["mapping-launch"],
     )
     process.command = control.command
@@ -416,9 +420,10 @@ def test_start_boots_into_localization_on_the_saved_occupancy_map(tmp_path):
 
 def test_set_mode_stops_the_running_launch_and_starts_the_other(tmp_path):
     events = []
-    control, store = mode_control(tmp_path, events)
+    control, store = mode_control(tmp_path, events, tracker=FakeTracker())
     control.save()
     control.start()
+    control._tracker.state = "localized"
     events.clear()
 
     assert control.set_mode("mapping") is None
@@ -446,13 +451,12 @@ def test_set_mode_stops_the_running_launch_and_starts_the_other(tmp_path):
 
 def test_switching_mode_clears_the_view_and_the_pose(tmp_path):
     slam_state = RecordingSlamState()
-    tracker = LocalizationTracker()
+    tracker = FakeTracker()
     control, _ = mode_control(tmp_path, [], tracker=tracker, slam_state=slam_state)
     control.save()
     control.start()
     assert slam_state.calls == [("clear",), ("latched", True)]
-    tracker.start_search()
-    assert tracker.snapshot()["state"] == "searching"
+    tracker.state = "localized"
 
     slam_state.calls.clear()
     assert control.set_mode("mapping") is None
@@ -474,9 +478,10 @@ def test_set_mode_refuses_localization_without_an_occupancy_map_and_unknown_mode
 
 def test_save_refusal_reports_the_mode_without_saving(tmp_path):
     events = []
-    control, _ = mode_control(tmp_path, events, tracker=LocalizationTracker())
+    control, _ = mode_control(tmp_path, events, tracker=FakeTracker())
     control.save()
     control.start()
+    control._tracker.state = "localized"
     assert control.save_refusal() == "Save needs mapping mode; switch to mapping first"
     assert control.save() == "Save needs mapping mode; switch to mapping first"
     assert control.set_mode("mapping") is None
@@ -485,9 +490,10 @@ def test_save_refusal_reports_the_mode_without_saving(tmp_path):
 
 def test_save_and_locate_are_refused_in_the_wrong_mode(tmp_path):
     events = []
-    control, store = mode_control(tmp_path, events, tracker=LocalizationTracker())
+    control, store = mode_control(tmp_path, events, tracker=FakeTracker())
     assert control.save() is None
     control.start()
+    control._tracker.state = "localized"
     before = store.occupancy_yaml().read_text(encoding="utf-8")
     events.clear()
 
@@ -619,7 +625,7 @@ def nav_control(tmp_path, events, supervisor=None, nav=None):
     process = RecordingProcess(events)
     control = SlamControl(
         store, process, write_serialized_map, write_occupancy,
-        localizer=RecordingLocalizer(events), tracker=FakeTracker(), slam_state=None,
+        localizer=RecordingLocalizer(events), tracker=FakeTracker(), slam_state=RecordingSlamState(),
         mapping_command=lambda restore: ["mapping-launch"],
         supervisor=FakeSupervisor(events) if supervisor is None else supervisor,
         nav=FakeNav(events) if nav is None else nav,
