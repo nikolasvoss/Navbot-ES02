@@ -33,14 +33,14 @@ def test_controller_follows_the_path_with_rotate_to_heading():
     assert (follow["lookahead_dist"], follow["min_lookahead_dist"], follow["max_lookahead_dist"]) == (0.3, 0.2, 0.6)
     assert follow["use_rotate_to_heading"] is True
     assert follow["rotate_to_heading_angular_vel"] == 1.0
-    assert follow["max_angular_accel"] == 1.5
+    assert follow["max_angular_accel"] == 5.0
     assert follow["allow_reversing"] is False
 
 
 def test_goal_checker_tolerances():
     goal = params("controller_server")["general_goal_checker"]
 
-    assert (goal["xy_goal_tolerance"], goal["yaw_goal_tolerance"]) == (0.06, 0.12)
+    assert (goal["xy_goal_tolerance"], goal["yaw_goal_tolerance"]) == (0.10, 0.12)
 
 
 def test_planner_uses_navfn_with_known_space_only():
@@ -58,8 +58,8 @@ def test_velocity_smoother_limits_and_mode():
     assert smoother["smoothing_frequency"] == 20.0
     assert smoother["max_velocity"] == [0.3, 0.0, 1.0]
     assert smoother["min_velocity"] == [-0.15, 0.0, -1.0]
-    assert smoother["max_accel"] == [0.3, 0.0, 1.5]
-    assert smoother["max_decel"] == [-0.5, 0.0, -1.5]
+    assert smoother["max_accel"] == [0.3, 0.0, 5.0]
+    assert smoother["max_decel"] == [-0.5, 0.0, -5.0]
 
 
 def test_collision_monitor_zones_and_source():
@@ -138,3 +138,11 @@ def test_navigation_launch_node_names_match_the_yaml():
     assert navigation_launch.generate_launch_description() is not None
 
 
+
+
+def test_progress_checker_counts_a_turn_in_place():
+    checker = params("controller_server")["progress_checker"]
+
+    assert checker["plugin"] == "nav2_controller::PoseProgressChecker"
+    assert (checker["required_movement_radius"], checker["required_movement_angle"]) == (0.5, 0.5)
+    assert checker["movement_time_allowance"] == 10.0

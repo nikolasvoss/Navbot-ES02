@@ -65,6 +65,9 @@ def generate_launch_description():
             ComposableNodeContainer(
                 name="nav2_container", namespace="", package="rclcpp_components",
                 executable="component_container_isolated", output="screen",
+                # The params file on the container reaches the nodes that the servers create themselves, such as
+                # local_costmap and global_costmap; parameters on a ComposableNode only reach that node.
+                parameters=[params],
                 composable_node_descriptions=nav_nodes,
             ),
             GroupAction(condition=with_mask, actions=[
