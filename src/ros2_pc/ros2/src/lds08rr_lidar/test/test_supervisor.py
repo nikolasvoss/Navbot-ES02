@@ -21,7 +21,6 @@ def make(now=0.0):
 
 def healthy(sup, health=GOOD_HEALTH):
     sup.set_health(health)
-    sup.set_voltage(7.62)
     sup.set_localization("localized")
     sup.scan_seen()
     sup.set_nav_ready(True)
@@ -45,7 +44,6 @@ def test_before_any_input_every_check_fails_with_its_first_detail():
         "health": "no robot health yet",
         "localization": "localization is unknown",
         "scan": "no LiDAR scan for 1 s",
-        "battery": "no battery voltage yet",
         "nav2": "Nav2 is not ready",
     }
 
@@ -63,7 +61,6 @@ def test_all_checks_passing_gives_ready_with_shown_values():
         "health": "0.0 s",
         "localization": "localized",
         "scan": "0.0 s",
-        "battery": "7.62 V",
         "nav2": "ready",
     }
 
@@ -75,7 +72,6 @@ def test_all_checks_passing_gives_ready_with_shown_values():
         (lambda s, c: s.set_health({**GOOD_HEALTH, "ch5_position": "2"}), "CH5 is in position 2, not 1"),
         (lambda s, c: s.set_health({**GOOD_HEALTH, "rc_valid": "0"}), "no remote signal"),
         (lambda s, c: s.set_localization("searching"), "localization is searching"),
-        (lambda s, c: s.set_voltage(6.5), "battery at 6.50 V, below 6.8 V"),
         (lambda s, c: s.set_nav_ready(False), "Nav2 is not ready"),
     ],
 )
@@ -109,14 +105,6 @@ def test_scan_older_than_one_second_fails():
     clock.now = 1.1
     sup.set_health(GOOD_HEALTH)
     assert sup.snapshot()["reason"] == "no LiDAR scan for 1 s"
-
-
-def test_battery_at_exactly_6_8_volts_passes():
-    sup, _ = make()
-    healthy(sup)
-    sup.set_voltage(6.8)
-    assert details(sup)["battery"] == "6.80 V"
-    assert sup.snapshot()["state"] == "ready"
 
 
 @pytest.mark.parametrize("remote_value", ["1", "True", True])
@@ -172,10 +160,10 @@ def test_goal_ended_with_a_failing_check_is_not_ready():
     sup, _ = make()
     healthy(sup)
     sup.request_goal()
-    sup.set_voltage(6.0)
+    sup.set_nav_ready(False)
     sup.goal_ended()
     assert sup.snapshot()["state"] == "not_ready"
-    assert sup.snapshot()["reason"] == "battery at 6.00 V, below 6.8 V"
+    assert sup.snapshot()["reason"] == "Nav2 is not ready"
 
 
 def test_check_is_quiet_while_all_checks_pass():

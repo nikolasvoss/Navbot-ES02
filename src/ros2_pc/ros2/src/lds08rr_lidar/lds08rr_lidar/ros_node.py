@@ -15,7 +15,7 @@ from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.action import ActionClient
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.node import Node
-from sensor_msgs.msg import BatteryState, Imu, LaserScan
+from sensor_msgs.msg import Imu, LaserScan
 from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
 
 from .localization import LocalizationTracker
@@ -201,7 +201,6 @@ class LidarNode(Node):
         self._nav_client = ActionClient(self, NavigateToPose, "navigate_to_pose")
         if supervisor is not None:
             self.create_subscription(DiagnosticArray, "/diagnostics", self.on_diagnostics, 10)
-            self.create_subscription(BatteryState, "/battery_state", self.on_battery, 10)
             self.create_subscription(LaserScan, "/scan_nav", self.on_scan_nav, qos_profile_sensor_data)
             self.create_subscription(Path, "plan", self.on_plan, 10)
             self.create_timer(SUPERVISOR_TICK_SEC, self.on_supervisor_tick)
@@ -210,9 +209,6 @@ class LidarNode(Node):
         values = firmware_values(message.status)
         if values is not None:
             self.supervisor.set_health(values)
-
-    def on_battery(self, message: BatteryState) -> None:
-        self.supervisor.set_voltage(message.voltage)
 
     def on_scan_nav(self, message: LaserScan) -> None:
         self.supervisor.scan_seen()

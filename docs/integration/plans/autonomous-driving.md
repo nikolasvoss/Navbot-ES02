@@ -77,7 +77,7 @@ These make the robot nicer to use or easier to debug. None of them blocks the go
 | U3 | Automatic relocalization. When AMCL reports `lost`, the supervisor cancels the goal, runs the existing global search, and offers to resume. | Today a lost pose needs a click on **Locate**. | P5 |
 | U4 | Speed zones with the Nav2 speed filter | The robot slows down in narrow passages and at doors. | P5 |
 | U5 | Several named maps, already on the [ros2_pc roadmap](../../ros2_pc/plans/roadmap.md) | One map per room or floor. | P6 |
-| U6 | A battery rule that refuses goals below a voltage | The bridge publishes the voltage. The threshold needs a measured discharge curve under load. | P5 |
+| U6 | A battery rule that refuses goals below a voltage. The supervisor had a placeholder 6.8 V check; it was removed on the user's request on 2026-11-02. | The bridge publishes the voltage. The threshold needs a measured discharge curve under load. | P5 |
 | U7 | The host simulation in the loop: the bridge and the Nav2 controller against `navbot_sim --live` | It tests the drive chain with the firmware's balance path before the robot does. Its open checks are in the [robot roadmap](../../robot/plans/roadmap.md#host-simulation-open-checks). | P4 |
 | U8 | Drawing keepout and speed zones in the hub | P5 uses an edited map image, which works but needs an image editor. | P6 |
 
@@ -175,7 +175,7 @@ The firmware is the fast stop. It already stops the motion at once on RC loss, C
 
 1. Configure the collision monitor between the velocity smoother and the bridge, as the stock launch does, with the polygons from P4. Its source is `/scan_nav` with a `source_timeout` of 0.7 s. Scan stamps mark the start of the 0.2 s sweep, so two missing scans stop the robot.
 2. Add the keepout filter. Its mask `keepout.yaml` is a copy of the exported map image with the keepout zones painted black, in the map folder `~/.local/share/navbot/slam/`. A second `map_server` and the `costmap_filter_info_server` serve it. Without the file, the filter has no mask and blocks nothing.
-3. The supervisor (T3) is a ROS-free class next to `LocalizationTracker`, fed by the LiDAR service's ROS node (T4). It reads `balance_state`, `ch5_position` and `rc_valid` from `/diagnostics`, the localization state, the scan age, the voltage from `/battery_state`, and whether the Nav2 action server answers. Its states are `not_ready`, `ready`, `driving` and `stopped`, each with a reason.
+3. The supervisor (T3) is a ROS-free class next to `LocalizationTracker`, fed by the LiDAR service's ROS node (T4). It reads `balance_state`, `ch5_position` and `rc_valid` from `/diagnostics`, the localization state, the scan age, and whether the Nav2 action server answers. Its states are `not_ready`, `ready`, `driving` and `stopped`, each with a reason.
 4. While driving, the supervisor cancels the goal and enters `stopped` when one of the checks in [Supervisor](#supervisor-supervisorpy) fails.
 5. In `stopped`, the supervisor refuses new goals until the reason has cleared and you press **Resume**.
 6. Test the supervisor on the host with literal input sequences and literal expected states.
@@ -304,15 +304,13 @@ The methods are `nav_goal(x: float, y: float, yaw: float) -> str | None`, `nav_c
 #### Supervisor (`supervisor.py`)
 
 ```python
-VOLTAGE_MIN_V = 6.8        # placeholder until U6 measures the discharge curve
 HEALTH_MAX_AGE_SEC = 3.0
 SCAN_MAX_AGE_SEC = 1.0
-CHECKS = ("balance", "ch5", "remote", "health", "localization", "scan", "battery", "nav2")
+CHECKS = ("balance", "ch5", "remote", "health", "localization", "scan", "nav2")
 
 class NavSupervisor:
 	def __init__(self, clock: Callable[[], float] = time.monotonic) -> None: ...
 	def set_health(self, values: Mapping[str, str]) -> None: ...   # KeyValues of the navbot_firmware status
-	def set_voltage(self, volts: float) -> None: ...
 	def set_localization(self, state: str) -> None: ...             # LocalizationTracker state
 	def scan_seen(self) -> None: ...
 	def set_nav_ready(self, ready: bool) -> None: ...
@@ -332,10 +330,9 @@ class NavSupervisor:
 | `health` | `set_health` came at most 3.0 s ago | `no robot health yet` or `no robot health for <s> s` (one decimal) |
 | `localization` | the state is `localized` | `localization is <state>` |
 | `scan` | `scan_seen` came at most 1.0 s ago | `no LiDAR scan for 1 s` |
-| `battery` | the voltage is at least 6.8 V | `no battery voltage yet` or `battery at <v> V, below 6.8 V` (two decimals) |
 | `nav2` | `set_nav_ready(True)` was the last call | `Nav2 is not ready` |
 
-A passing check has the shown value as its `detail`, for example `Run`, `1`, `localized` or `7.62 V`. Before its first input, a check fails.
+A passing check has the shown value as its `detail`, for example `Run`, `1` or `localized`. Before its first input, a check fails.
 
 States and transitions:
 
@@ -354,7 +351,7 @@ States and transitions:
 #### ROS node (`ros_node.py`)
 
 - `LidarNode.__init__(self, config, localization, supervisor: NavSupervisor | None = None, publish_scans: bool = True)`. With `publish_scans` false, the node publishes neither `/scan` nor `/scan_slam`.
-- With a supervisor, the node subscribes to `/diagnostics` (the status named `navbot_firmware`), `/battery_state`, `/scan_nav` (best effort) and `plan` (`nav_msgs/msg/Path`). It feeds the supervisor and keeps the newest plan.
+- With a supervisor, the node subscribes to `/diagnostics` (the status named `navbot_firmware`), `/scan_nav` (best effort) and `plan` (`nav_msgs/msg/Path`). It feeds the supervisor and keeps the newest plan.
 - A 5 Hz timer calls `supervisor.set_localization(<tracker state>)` and `supervisor.set_nav_ready(self.nav_server_ready())`, then cancels the goal when `supervisor.check()` returns True.
 - `nav_server_ready() -> bool`.
 - `send_nav_goal(x, y, yaw, on_feedback: Callable[[float], None], on_done: Callable[[str, str], None]) -> str | None` sends `nav2_msgs/action/NavigateToPose` to `navigate_to_pose` in the `map` frame. It returns `Nav2 is not ready` when the server does not answer. `on_feedback` gets `distance_remaining`. `on_done` gets `("reached", "")`, `("canceled", "")`, `("failed", <error_msg>)`, or `("failed", "goal rejected by Nav2")`.
@@ -466,7 +463,7 @@ Files: `PKG/web.py`, `PKG/templates/slam.html`, `TEST/test_nav_web.py` (new).
    - Review every `currentMode === 'localization'`. Navigation keeps **Save map**, **Reset map**, **Delete map** and **Locate again** disabled.
 3. In navigation mode, show `#navPanel` with:
    - `#navState`: the state and the reason.
-   - `#navChecks`: one row per check, with the labels Balance running, CH5 in link position, Remote signal, Robot health, Localized, LiDAR scans, Battery and Nav2 running, and with its detail.
+   - `#navChecks`: one row per check, with the labels Balance running, CH5 in link position, Remote signal, Robot health, Localized, LiDAR scans and Nav2 running, and with its detail.
    - The distance remaining, and the outcome with the error.
    - The buttons `#setGoal`, `#cancelGoal`, `#stopNav` (styled as danger) and `#resumeNav`.
 4. **Set goal** arms the goal placement. While it is armed, the map does not pan. A pointer press sets the position and the drag sets the yaw, as `atan2` of the drag in map coordinates. The release posts `/nav/goal`. Escape or a second press on **Set goal** disarms it. Draw the goal arrow while dragging.

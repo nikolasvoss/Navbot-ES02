@@ -9,10 +9,9 @@ from __future__ import annotations
 import time
 from typing import Callable, Mapping
 
-VOLTAGE_MIN_V = 6.8  # placeholder until U6 measures the discharge curve
 HEALTH_MAX_AGE_SEC = 3.0
 SCAN_MAX_AGE_SEC = 1.0  # five missed scans at 5 Hz; the collision monitor stops the robot after two
-CHECKS = ("balance", "ch5", "remote", "health", "localization", "scan", "battery", "nav2")
+CHECKS = ("balance", "ch5", "remote", "health", "localization", "scan", "nav2")
 
 NOT_READY = "not_ready"
 READY = "ready"
@@ -29,7 +28,6 @@ class NavSupervisor:
         self._clock = clock
         self._health: Mapping[str, str] | None = None
         self._health_at = 0.0
-        self._volts: float | None = None
         self._localization: str | None = None
         self._scan_at: float | None = None
         self._nav_ready = False
@@ -41,10 +39,6 @@ class NavSupervisor:
         """The KeyValues of the bridge's navbot_firmware diagnostic status."""
         self._health = dict(values)
         self._health_at = self._clock()
-        self._settle()
-
-    def set_voltage(self, volts: float) -> None:
-        self._volts = volts
         self._settle()
 
     def set_localization(self, state: str) -> None:
@@ -176,14 +170,7 @@ class NavSupervisor:
             else:
                 scan = (False, f"no LiDAR scan for {SCAN_MAX_AGE_SEC:g} s")
 
-        if self._volts is None:
-            battery = (False, "no battery voltage yet")
-        elif self._volts >= VOLTAGE_MIN_V:
-            battery = (True, f"{self._volts:.2f} V")
-        else:
-            battery = (False, f"battery at {self._volts:.2f} V, below {VOLTAGE_MIN_V:g} V")
-
         nav2 = (True, "ready") if self._nav_ready else (False, "Nav2 is not ready")
 
-        ordered = (balance, ch5, remote, health_check, localization, scan, battery, nav2)
+        ordered = (balance, ch5, remote, health_check, localization, scan, nav2)
         return [(name, ok, detail) for name, (ok, detail) in zip(CHECKS, ordered)]

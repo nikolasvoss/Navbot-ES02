@@ -91,7 +91,7 @@ class FakeHub:
                     hub.goal_id += 1
                     hub.goal = body
                     if hub.stop_on_goal:
-                        hub.supervisor_state, hub.supervisor_reason = "stopped", "battery at 6.5 V, below 6.8 V"
+                        hub.supervisor_state, hub.supervisor_reason = "stopped", "no LiDAR scan for 1 s"
                 self._send(code, answer)
 
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -203,7 +203,7 @@ def test_supervisor_stop_fails_the_goal_with_exit_1(hub, tmp_path):
     assert result.returncode == 1
     assert result.stdout == (
         "preflight: ok\n"
-        "desk: FAIL stopped: battery at 6.5 V, below 6.8 V, 0.00 m, 0.0 deg\n"
+        "desk: FAIL stopped: no LiDAR scan for 1 s, 0.00 m, 0.0 deg\n"
         "passed 0/1\n"
     )
 
@@ -235,10 +235,10 @@ def test_preflight_fails_outside_navigation_mode_with_exit_4(hub, tmp_path):
 
 def test_preflight_fails_when_the_supervisor_is_not_ready_with_exit_4(hub, tmp_path):
     hub.supervisor_state = "not_ready"
-    hub.supervisor_reason = "battery at 6.5 V, below 6.8 V"
+    hub.supervisor_reason = "no LiDAR scan for 1 s"
     result = run_course(hub, write_course(tmp_path, DESK))
     assert result.returncode == 4
-    assert result.stdout == "preflight: supervisor is not_ready: battery at 6.5 V, below 6.8 V\n"
+    assert result.stdout == "preflight: supervisor is not_ready: no LiDAR scan for 1 s\n"
     assert hub.posts == []
 
 
