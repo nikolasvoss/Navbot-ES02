@@ -66,10 +66,10 @@ def test_collision_monitor_zones_and_source():
     monitor = params("collision_monitor")
 
     assert (monitor["cmd_vel_in_topic"], monitor["cmd_vel_out_topic"]) == ("cmd_vel_smoothed", "cmd_vel")
-    assert monitor["source_timeout"] == 0.5
+    assert monitor["source_timeout"] == 0.7
     assert monitor["polygons"] == ["stop_ahead", "slow_ahead"]
     assert monitor["observation_sources"] == ["scan"]
-    assert monitor["scan"]["topic"] == "/scan_slam"
+    assert monitor["scan"]["topic"] == "/scan_nav"
     assert monitor["stop_ahead"]["action_type"] == "stop"
     assert monitor["stop_ahead"]["points"] == "[[0.0, -0.12], [0.30, -0.12], [0.30, 0.12], [0.0, 0.12]]"
     assert monitor["slow_ahead"]["action_type"] == "limit"
@@ -86,7 +86,8 @@ def test_local_costmap_is_a_rolling_three_metre_window_on_odom():
     assert local["resolution"] == 0.05
     assert local["robot_radius"] == 0.10
     assert local["plugins"] == ["obstacle_layer", "inflation_layer"]
-    assert local["obstacle_layer"]["scan"]["topic"] == "/scan_slam"
+    assert local["obstacle_layer"]["scan"]["topic"] == "/scan_nav"
+    assert local["obstacle_layer"]["scan"]["obstacle_max_range"] == 1.5
     assert local["inflation_layer"]["inflation_radius"] == 0.25
 
 

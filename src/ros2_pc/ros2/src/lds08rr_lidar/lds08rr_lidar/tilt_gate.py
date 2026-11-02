@@ -75,10 +75,10 @@ def window_pitch_range(times, pitches, start: float, end: float, stale_sec: floa
     return min(window), max(window)
 
 
-def gate_ranges(ranges, angle_min: float, angle_increment: float, pitch_range, config: TiltConfig):
-    """Gated ranges and the number of beams set to +inf; (None, 0) when the whole scan is too tilted."""
+def gate_ranges(ranges, angle_min: float, angle_increment: float, pitch_range, config: TiltConfig, drop_tilted: bool = True):
+    """Gated ranges and the number of beams set to +inf; (None, 0) when the whole scan is too tilted and drop_tilted is set."""
     low, high = pitch_range
-    if max(abs(low), abs(high)) > config.max_pitch_rad:
+    if drop_tilted and max(abs(low), abs(high)) > config.max_pitch_rad:
         return None, 0
     gated, dropped = list(ranges), 0
     for index, distance in enumerate(gated):
@@ -117,6 +117,16 @@ class TiltGate:
 
     def apply(self, ranges, angle_min: float, angle_increment: float, start_sec: float, scan_time: float):
         """Ranges to publish for SLAM, or None to drop the scan. Unconfigured or without IMU: unchanged."""
+        return self._apply(ranges, angle_min, angle_increment, start_sec, scan_time, drop_tilted=True)
+
+    def apply_floor_only(self, ranges, angle_min: float, angle_increment: float, start_sec: float, scan_time: float):
+        """Ranges for obstacle avoidance: beams that reach the floor become +inf, but no scan is dropped for its tilt.
+
+        Not counted in the web status, which reports the SLAM copy.
+        """
+        return self._apply(ranges, angle_min, angle_increment, start_sec, scan_time, drop_tilted=False)
+
+    def _apply(self, ranges, angle_min: float, angle_increment: float, start_sec: float, scan_time: float, drop_tilted: bool):
         if self._config is None:
             return list(ranges)
         with self._lock:
@@ -124,13 +134,15 @@ class TiltGate:
             pitches = [self._config.pitch(roll) for _, roll in self._samples]
         pitch_range = window_pitch_range(times, pitches, start_sec, start_sec + scan_time, self._stale_sec)
         if pitch_range is None:
-            self.state = "no_imu"
+            if drop_tilted:
+                self.state = "no_imu"
             return list(ranges)
-        self.state = "active"
-        gated, dropped = gate_ranges(ranges, angle_min, angle_increment, pitch_range, self._config)
-        if gated is None:
-            self.scans_dropped += 1
-        self.beams_dropped += dropped
+        gated, dropped = gate_ranges(ranges, angle_min, angle_increment, pitch_range, self._config, drop_tilted)
+        if drop_tilted:
+            self.state = "active"
+            if gated is None:
+                self.scans_dropped += 1
+            self.beams_dropped += dropped
         return gated
 
     def snapshot(self) -> dict:

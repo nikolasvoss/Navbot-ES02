@@ -238,7 +238,7 @@ The one Playwright failure listed above is pre-existing and must not get worse.
 | YAML `image:` points to a renamed file | Localization launch fails after the first save | Export into a temp directory with base name `map`; unit test checks the YAML | Medium, covered |
 | Sparse 5 Hz scans, 8 m provisional range | Slow convergence while standing | Timeout hint to drive or turn; nomotion updates | Low |
 | CPU during global search | Scan drops, slow web hub | Measure CPU with `top` during search on the ros2_pc; lower `max_particles` if needed | Low |
-| Tilt gate not configured | Tilted scans corrupt localization | Same dependency as SLAM; AMCL reads `/scan_slam` | Low |
+| Tilt gate not configured | Tilted scans corrupt localization | Same dependency as SLAM; AMCL reads `/scan_nav`, which removes floor hits with the same tilt estimate | Low |
 
 Security: the new POST endpoints only change the localization mode on the robot's own
 service and use the existing cross-site guard. Risk is medium, so `/security-review` is not

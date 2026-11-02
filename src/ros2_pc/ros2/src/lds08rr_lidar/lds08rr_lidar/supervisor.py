@@ -11,7 +11,7 @@ from typing import Callable, Mapping
 
 VOLTAGE_MIN_V = 6.8  # placeholder until U6 measures the discharge curve
 HEALTH_MAX_AGE_SEC = 3.0
-SCAN_MAX_AGE_SEC = 0.5
+SCAN_MAX_AGE_SEC = 1.0  # five missed scans at 5 Hz; the collision monitor stops the robot after two
 CHECKS = ("balance", "ch5", "remote", "health", "localization", "scan", "battery", "nav2")
 
 NOT_READY = "not_ready"

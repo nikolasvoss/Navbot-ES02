@@ -14,7 +14,7 @@ This page lists the required and the useful features, then orders the required o
 | ROS 2 bridge | Subscribes to `/cmd_vel`. Publishes `/odom`, the TF `odom` to `base_link`, `/imu/data`, `/diagnostics` and `/battery_state`. Runs as a service on the ros2_pc behind the link multiplexer. The boot service takes the heading from the wheels. The odometry covariances are zero. | [bridge page](../software/navbot-link-bridge.md), `systemctl` on the ros2_pc, 2026-10-31 |
 | Odometry | Forward sign and left/right mapping are checked. The wheel yaw reads 13.5 % high. The gyro read 1080.4° for three turns, but the bridge's gyro heading has run only on simulated samples. Wheel radius and twist signs are not checked. | [turn test](../../../lab/integration/2026-10-26-odometry-turn-test.md), [integration roadmap](roadmap.md) |
 | SLAM | `slam_toolbox` maps from `/scan_slam`, which drops tilted scans and floor hits. One map is saved. Mapping with the robot's wheel odometry is not verified. | [LiDAR software](../../ros2_pc/software/lds08rr-lidar.md), [ros2_pc roadmap](../../ros2_pc/plans/roadmap.md) |
-| Localization | AMCL on the saved map, a global search (**Locate**), a switch between mapping and localization, and the mapping undo in the web hub. `/scan_slam` also drops scans above 0.8 rad/s or 0.3 m/s. Merged into this branch from `feat/localization`, `feat/undo-backend` and `feat/undo-ui` on 2026-11-01. Not verified on the robot. | `feat/localization:docs/ros2_pc/plans/localization.md`, `src/ros2_pc/ros2/src/lds08rr_lidar/lds08rr_lidar/motion_gate.py` |
+| Localization | AMCL on the saved map, a global search (**Locate**), a switch between mapping and localization, and the mapping undo in the web hub. `/scan_slam` also drops scans above 0.8 rad/s or 0.3 m/s; AMCL therefore reads `/scan_nav`, which keeps every scan and only loses floor hits. Merged into this branch from `feat/localization`, `feat/undo-backend` and `feat/undo-ui` on 2026-11-01. Not verified on the robot. | `feat/localization:docs/ros2_pc/plans/localization.md`, `src/ros2_pc/ros2/src/lds08rr_lidar/lds08rr_lidar/motion_gate.py` |
 | Nav2 | Navigation2 1.3.13 for Jazzy is installed on the ros2_pc. That includes the regulated pure pursuit, MPPI and graceful controllers, the velocity smoother, the collision monitor, the waypoint follower, docking and the simple commander. Nothing configures or starts it.  | `dpkg -l` and `apt-cache policy` on the ros2_pc, 2026-10-31 |
 | ros2_pc load | CM5 with 4 cores and 1.9 GiB RAM. With the LiDAR service, SLAM, the bridge and the multiplexer running, 1.29 GiB was available. The bridge used 28 % of one core, and a Claude Code process used 318 MB. | `free -m` and `ps` on the ros2_pc, 2026-10-31 |
 | LiDAR | 5 Hz, 1° bins, range capped at 4 m in SLAM and AMCL because a mirror made a phantom room. The scan plane is 0.122 m above the floor. | [LiDAR observations](../../../lab/ros2_pc/2026-10-13-lds08rr-observations.md), `mount.py` |
@@ -158,7 +158,7 @@ The navigation files go next to `localization.yaml` and `localization_launch.py`
 | Yaw rate | 1.0 rad/s maximum, also for turning on the spot | The remote's top yaw rate (D3). A 5 Hz sweep then turns 11.5°. P3 checks that AMCL keeps the pose at this rate. |
 | Acceleration and braking | 0.3 m/s² and 0.5 m/s² | A steady lean of atan(a/g) gives 0.031 rad and 0.051 rad, below the 0.06 rad tilt gate. |
 | Local costmap | 3 m × 3 m rolling window, 0.05 m cells | The map has 0.025 m cells. Coarser cells mean a quarter of the cells to update. |
-| Obstacle source | `/scan_slam` | Floor hits are already removed there. |
+| Obstacle source | `/scan_nav` | Floor hits are removed there; unlike `/scan_slam`, no scan is dropped for tilt or motion. |
 | Footprint | A circle with the radius from P2, 0.10 m until then | The outline is not measured. |
 | Collision monitor | A stop polygon 0.20 m in front of the footprint, and a slowdown polygon to 0.45 m at 50 % speed | At 0.3 m/s, about 0.3 s from scan to wheels is 0.09 m, plus 0.09 m to brake at 0.5 m/s². The 0.3 s is a guess. |
 | Goal tolerance | 0.10 m and 10° | The simulation rolls back after a stop. |
@@ -173,7 +173,7 @@ Done when:
 
 The firmware is the fast stop. It already stops the motion at once on RC loss, CH5 changes and faults. The supervisor makes Nav2 give up the goal, so the robot does not drive on by itself when the condition clears.
 
-1. Configure the collision monitor between the velocity smoother and the bridge, as the stock launch does, with the polygons from P4. Its source is `/scan_slam` with a `source_timeout` of 0.5 s, so two missing scans stop the robot.
+1. Configure the collision monitor between the velocity smoother and the bridge, as the stock launch does, with the polygons from P4. Its source is `/scan_nav` with a `source_timeout` of 0.7 s. Scan stamps mark the start of the 0.2 s sweep, so two missing scans stop the robot.
 2. Add the keepout filter. Its mask `keepout.yaml` is a copy of the exported map image with the keepout zones painted black, in the map folder `~/.local/share/navbot/slam/`. A second `map_server` and the `costmap_filter_info_server` serve it. Without the file, the filter has no mask and blocks nothing.
 3. The supervisor (T3) is a ROS-free class next to `LocalizationTracker`, fed by the LiDAR service's ROS node (T4). It reads `balance_state`, `ch5_position` and `rc_valid` from `/diagnostics`, the localization state, the scan age, the voltage from `/battery_state`, and whether the Nav2 action server answers. Its states are `not_ready`, `ready`, `driving` and `stopped`, each with a reason.
 4. While driving, the supervisor cancels the goal and enters `stopped` when one of the checks in [Supervisor](#supervisor-supervisorpy) fails.
@@ -306,7 +306,7 @@ The methods are `nav_goal(x: float, y: float, yaw: float) -> str | None`, `nav_c
 ```python
 VOLTAGE_MIN_V = 6.8        # placeholder until U6 measures the discharge curve
 HEALTH_MAX_AGE_SEC = 3.0
-SCAN_MAX_AGE_SEC = 0.5
+SCAN_MAX_AGE_SEC = 1.0
 CHECKS = ("balance", "ch5", "remote", "health", "localization", "scan", "battery", "nav2")
 
 class NavSupervisor:
@@ -331,7 +331,7 @@ class NavSupervisor:
 | `remote` | `rc_valid` is `1` or `True` | `no remote signal` |
 | `health` | `set_health` came at most 3.0 s ago | `no robot health yet` or `no robot health for <s> s` (one decimal) |
 | `localization` | the state is `localized` | `localization is <state>` |
-| `scan` | `scan_seen` came at most 0.5 s ago | `no LiDAR scan for 0.5 s` |
+| `scan` | `scan_seen` came at most 1.0 s ago | `no LiDAR scan for 1 s` |
 | `battery` | the voltage is at least 6.8 V | `no battery voltage yet` or `battery at <v> V, below 6.8 V` (two decimals) |
 | `nav2` | `set_nav_ready(True)` was the last call | `Nav2 is not ready` |
 
@@ -354,7 +354,7 @@ States and transitions:
 #### ROS node (`ros_node.py`)
 
 - `LidarNode.__init__(self, config, localization, supervisor: NavSupervisor | None = None, publish_scans: bool = True)`. With `publish_scans` false, the node publishes neither `/scan` nor `/scan_slam`.
-- With a supervisor, the node subscribes to `/diagnostics` (the status named `navbot_firmware`), `/battery_state`, `/scan_slam` (best effort) and `plan` (`nav_msgs/msg/Path`). It feeds the supervisor and keeps the newest plan.
+- With a supervisor, the node subscribes to `/diagnostics` (the status named `navbot_firmware`), `/battery_state`, `/scan_nav` (best effort) and `plan` (`nav_msgs/msg/Path`). It feeds the supervisor and keeps the newest plan.
 - A 5 Hz timer calls `supervisor.set_localization(<tracker state>)` and `supervisor.set_nav_ready(self.nav_server_ready())`, then cancels the goal when `supervisor.check()` returns True.
 - `nav_server_ready() -> bool`.
 - `send_nav_goal(x, y, yaw, on_feedback: Callable[[float], None], on_done: Callable[[str, str], None]) -> str | None` sends `nav2_msgs/action/NavigateToPose` to `navigate_to_pose` in the `map` frame. It returns `Nav2 is not ready` when the server does not answer. `on_feedback` gets `distance_remaining`. `on_done` gets `("reached", "")`, `("canceled", "")`, `("failed", <error_msg>)`, or `("failed", "goal rejected by Nav2")`.
@@ -418,9 +418,9 @@ Files: `PKG/navigation.py` (bodies), `PKG/navigation.yaml` (new), `PKG/navigatio
    - `controller_server`: `FollowPath` is `nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController` with `desired_linear_vel` 0.3, `lookahead_dist` 0.3 (0.2 to 0.6), `use_rotate_to_heading` true, `rotate_to_heading_angular_vel` 1.0, `max_angular_accel` 1.5 and `allow_reversing` false. The goal checker has `xy_goal_tolerance` 0.10 and `yaw_goal_tolerance` 0.17.
    - `planner_server`: `nav2_navfn_planner::NavfnPlanner` with `tolerance` 0.10 and `allow_unknown` false.
    - `velocity_smoother`: `OPEN_LOOP` at 20 Hz, `max_velocity` [0.3, 0.0, 1.0], `min_velocity` [-0.15, 0.0, -1.0], `max_accel` [0.3, 0.0, 1.5] and `max_decel` [-0.5, 0.0, -1.5].
-   - `collision_monitor`: input `cmd_vel_smoothed`, output `cmd_vel`, and `source_timeout` 0.5. The source is the scan on `/scan_slam`. Polygon `stop_ahead` (stop) spans x 0.0 to 0.30 and y -0.12 to 0.12. Polygon `slow_ahead` (slowdown, ratio 0.5) spans x 0.0 to 0.55 and y -0.15 to 0.15.
-   - The local costmap is a 3 m × 3 m rolling window with 0.05 m cells, with an obstacle layer on `/scan_slam` and an inflation layer with radius 0.25.
-   - The global costmap has a static layer, an obstacle layer on `/scan_slam`, an inflation layer, and the filter `keepout_filter` (`nav2_costmap_2d::KeepoutFilter`, `filter_info_topic` `/costmap_filter_info`).
+   - `collision_monitor`: input `cmd_vel_smoothed`, output `cmd_vel`, and `source_timeout` 0.7. The source is the scan on `/scan_nav`. Polygon `stop_ahead` (stop) spans x 0.0 to 0.30 and y -0.12 to 0.12. Polygon `slow_ahead` (slowdown, ratio 0.5) spans x 0.0 to 0.55 and y -0.15 to 0.15.
+   - The local costmap is a 3 m × 3 m rolling window with 0.05 m cells, with an obstacle layer on `/scan_nav` that marks obstacles up to 1.5 m (a floor hit beyond needs only 0.05 rad pitch at 2.5 m; the scan plane is 0.122 m high) and an inflation layer with radius 0.25.
+   - The global costmap has a static layer, an obstacle layer on `/scan_nav` with the same 1.5 m limit, an inflation layer, and the filter `keepout_filter` (`nav2_costmap_2d::KeepoutFilter`, `filter_info_topic` `/costmap_filter_info`).
    - `behavior_server` has the plugins spin, backup and wait.
    - `bt_navigator` keeps its stock behavior tree.
 2. `navigation_launch.py`: model it on the Jazzy [navigation_launch.py](https://raw.githubusercontent.com/ros-navigation/navigation2/jazzy/nav2_bringup/launch/navigation_launch.py), composed only. Start a `ComposableNodeContainer` `nav2_container` (`rclcpp_components`, `component_container_isolated`). Load `controller_server`, `smoother_server`, `planner_server`, `behavior_server`, `velocity_smoother`, `collision_monitor` and `bt_navigator` into it, with the stock plugin names and the stock `cmd_vel` to `cmd_vel_nav` remappings. Add `lifecycle_manager_navigation` with these node names. Leave out the route server, the waypoint follower and the docking server.
@@ -440,7 +440,7 @@ Files: `PKG/supervisor.py` (bodies), `TEST/test_supervisor.py` (new).
    - every transition of the table;
    - `check()` returning True exactly once per stop;
    - `request_goal` and `resume` refusals with their exact texts;
-   - health and scan ageing out at 3.0 s and 0.5 s;
+   - health and scan ageing out at 3.0 s and 1.0 s;
    - `rc_valid` as `1` and as `True`.
 
 Tests: `PYTHONPATH=src/ros2_pc/ros2/src/lds08rr_lidar python3 -m pytest -q src/ros2_pc/ros2/src/lds08rr_lidar/test/test_supervisor.py`.
@@ -531,7 +531,7 @@ Tests: `python3 -m pytest -q tests/scripts/test_nav_course.py`.
 
 ## Risks
 
-- **Lean during a hard stop.** The firmware brakes at up to 1.0 m/s², a steady lean of about 0.10 rad. That is above the 0.06 rad tilt gate, so `/scan_slam` drops those scans and the collision monitor has no data for that time. The number is derived from atan(a/g). P2 measures the real lean.
+- **Lean during a hard stop.** The firmware brakes at up to 1.0 m/s², a steady lean of about 0.10 rad. That is above the 0.06 rad tilt gate, so `/scan_slam` drops those scans; the collision monitor reads `/scan_nav`, which keeps them. The number is derived from atan(a/g). P2 measures the real lean.
 - **Rollback at the goal.** The simulation rolls back at up to 0.076 m/s after a stop, and there is no robot drive trace with this controller yet. The controller may hunt around the goal. P2 measures the rollback, and the goal tolerance absorbs some of it.
 - **Obstacles the LiDAR cannot see.** These are drops, everything below 12 cm, glass, mirrors and black surfaces. Keepout zones cover the known ones. L3 covers the rest.
 - **RAM.** 1.29 GiB was free with no Nav2, and a Claude Code process alone took 318 MB. The navigation launch already leaves out the route server, the waypoint follower and the docking server. If P4 still misses the budget, stop agent sessions on the CM5 during drives.

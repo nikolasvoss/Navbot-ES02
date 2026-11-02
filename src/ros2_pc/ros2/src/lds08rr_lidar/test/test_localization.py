@@ -72,7 +72,7 @@ def test_params_file_sets_amcl_and_map_server_keys():
     assert amcl["base_frame_id"] == "base_link"
     assert amcl["odom_frame_id"] == "odom"
     assert amcl["global_frame_id"] == "map"
-    assert amcl["scan_topic"] == "/scan_slam"
+    assert amcl["scan_topic"] == "/scan_nav"
     assert amcl["robot_model_type"] == "nav2_amcl::DifferentialMotionModel"
     assert amcl["laser_model_type"] == "likelihood_field"
     assert amcl["laser_max_range"] == 4.0

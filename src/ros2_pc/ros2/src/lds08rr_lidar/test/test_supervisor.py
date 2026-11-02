@@ -44,7 +44,7 @@ def test_before_any_input_every_check_fails_with_its_first_detail():
         "remote": "no robot health yet",
         "health": "no robot health yet",
         "localization": "localization is unknown",
-        "scan": "no LiDAR scan for 0.5 s",
+        "scan": "no LiDAR scan for 1 s",
         "battery": "no battery voltage yet",
         "nav2": "Nav2 is not ready",
     }
@@ -99,16 +99,16 @@ def test_health_older_than_3_seconds_fails_with_its_age():
     assert sup.snapshot()["reason"] == "no robot health for 3.1 s"
 
 
-def test_scan_older_than_half_a_second_fails():
+def test_scan_older_than_one_second_fails():
     sup, clock = make()
     healthy(sup)
-    clock.now = 0.5
+    clock.now = 1.0
     sup.set_health(GOOD_HEALTH)
     assert sup.snapshot()["state"] == "ready"
-    assert details(sup)["scan"] == "0.5 s"
-    clock.now = 0.6
+    assert details(sup)["scan"] == "1.0 s"
+    clock.now = 1.1
     sup.set_health(GOOD_HEALTH)
-    assert sup.snapshot()["reason"] == "no LiDAR scan for 0.5 s"
+    assert sup.snapshot()["reason"] == "no LiDAR scan for 1 s"
 
 
 def test_battery_at_exactly_6_8_volts_passes():

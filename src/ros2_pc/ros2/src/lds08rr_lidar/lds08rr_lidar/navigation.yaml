@@ -1,5 +1,5 @@
 # Nav2 for the NavBot: only the nodes navigation_launch.py starts. Stock Jazzy defaults, changed where the plan says so.
-# Frames: map (global), odom (local, from wheel odometry), base_link (robot). Scans come from /scan_slam.
+# Frames: map (global), odom (local, from wheel odometry), base_link (robot). Scans come from /scan_nav.
 bt_navigator:
   ros__parameters:
     use_sim_time: false
@@ -109,7 +109,7 @@ collision_monitor:
     cmd_vel_out_topic: "cmd_vel"
     state_topic: "collision_monitor_state"
     transform_tolerance: 0.2
-    source_timeout: 0.5
+    source_timeout: 0.7  # scan stamps mark the start of the 0.2 s sweep: 0.7 s tolerates one missed scan, not two
     base_shift_correction: true
     stop_pub_timeout: 2.0
     polygons: ["stop_ahead", "slow_ahead"]
@@ -133,7 +133,7 @@ collision_monitor:
       angular_limit: 1.0
     scan:
       type: "scan"
-      topic: "/scan_slam"
+      topic: "/scan_nav"
       min_height: 0.0
       max_height: 1.0
       enabled: true
@@ -157,14 +157,14 @@ local_costmap:
         enabled: true
         observation_sources: scan
         scan:
-          topic: /scan_slam
+          topic: /scan_nav
           max_obstacle_height: 2.0
           clearing: true
           marking: true
           data_type: "LaserScan"
           raytrace_max_range: 3.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
+          obstacle_max_range: 1.5  # a floor hit that the tilt estimate misses needs 0.08 rad pitch at 1.5 m, 0.05 rad at 2.5 m
           obstacle_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -191,14 +191,14 @@ global_costmap:
         enabled: true
         observation_sources: scan
         scan:
-          topic: /scan_slam
+          topic: /scan_nav
           max_obstacle_height: 2.0
           clearing: true
           marking: true
           data_type: "LaserScan"
           raytrace_max_range: 3.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
+          obstacle_max_range: 1.5  # a floor hit that the tilt estimate misses needs 0.08 rad pitch at 1.5 m, 0.05 rad at 2.5 m
           obstacle_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"

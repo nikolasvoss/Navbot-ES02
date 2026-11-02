@@ -397,9 +397,11 @@
       ctx.restore();
     }
 
-    // Nav2 plan and goal, in the map frame. The arrow being placed replaces the stored goal.
+    // Nav2 plan and goal, in the map frame, while a goal runs: a finished, failed or canceled goal leaves no marker behind.
+    // The arrow being placed replaces the running goal.
     function drawNavigation(v) {
-      const plan = currentNav.plan;
+      const running = currentNav.goal_id > 0 && currentNav.outcome === null;
+      const plan = running ? currentNav.plan : [];
       if (plan.length > 1) {
         ctx.save();
         ctx.strokeStyle = '#a3e635';
@@ -413,7 +415,7 @@
         ctx.restore();
       }
       if (goalPlace) drawArrow(v, goalPlace, '#f59e0b');
-      else if (currentNav.goal) drawArrow(v, currentNav.goal, '#a3e635');
+      else if (running && currentNav.goal) drawArrow(v, currentNav.goal, '#a3e635');
     }
 
     // Map coordinates (metres) of a canvas point, the inverse of view().sx and view().sy.

@@ -43,6 +43,18 @@ def yaw_from_quaternion(q) -> float:
     return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 
+def with_ranges(message: LaserScan, ranges) -> LaserScan:
+    """A copy of the scan with other ranges."""
+    gated = LaserScan()
+    gated.header = message.header
+    gated.angle_min, gated.angle_max, gated.angle_increment = message.angle_min, message.angle_max, message.angle_increment
+    gated.time_increment, gated.scan_time = message.time_increment, message.scan_time
+    gated.range_min, gated.range_max = message.range_min, message.range_max
+    gated.ranges = ranges
+    gated.intensities = message.intensities
+    return gated
+
+
 def to_laserscan(scan, stamp) -> LaserScan:
     ranges = [math.inf] * BIN_COUNT
     intensities = [0.0] * BIN_COUNT
@@ -122,6 +134,7 @@ class _ActiveGoal:
     def __init__(self) -> None:
         self.handle = None
         self.cancel_requested = False
+        self.finish = None  # finish(outcome, error), set by send_nav_goal
 
 
 class LidarNode(Node):
@@ -139,8 +152,11 @@ class LidarNode(Node):
             durability=DurabilityPolicy.VOLATILE,
         )
         self.scan_publisher = self.create_publisher(LaserScan, "/scan", scan_qos)
-        # /scan stays raw; slam_toolbox reads the tilt-gated copy.
+        # /scan stays raw; slam_toolbox reads the tilt- and motion-gated /scan_slam, because mapping keeps every scan for good.
+        # AMCL and Nav2 read /scan_nav, which only loses floor hits: the gates drop whole scans in exactly the moves Nav2
+        # commands, and AMCL's map -> odom would expire and the collision monitor and supervisor stop for want of scans.
         self.slam_scan_publisher = self.create_publisher(LaserScan, "/scan_slam", scan_qos)
+        self.nav_scan_publisher = self.create_publisher(LaserScan, "/scan_nav", scan_qos)
         self.tilt_gate = TiltGate(config_from_mount())
         self.motion_gate = MotionGate()
         self._logged_gate_state: str | None = None
@@ -186,7 +202,7 @@ class LidarNode(Node):
         if supervisor is not None:
             self.create_subscription(DiagnosticArray, "/diagnostics", self.on_diagnostics, 10)
             self.create_subscription(BatteryState, "/battery_state", self.on_battery, 10)
-            self.create_subscription(LaserScan, "/scan_slam", self.on_scan_slam, qos_profile_sensor_data)
+            self.create_subscription(LaserScan, "/scan_nav", self.on_scan_nav, qos_profile_sensor_data)
             self.create_subscription(Path, "plan", self.on_plan, 10)
             self.create_timer(SUPERVISOR_TICK_SEC, self.on_supervisor_tick)
 
@@ -198,7 +214,7 @@ class LidarNode(Node):
     def on_battery(self, message: BatteryState) -> None:
         self.supervisor.set_voltage(message.voltage)
 
-    def on_scan_slam(self, message: LaserScan) -> None:
+    def on_scan_nav(self, message: LaserScan) -> None:
         self.supervisor.scan_seen()
 
     def on_plan(self, message: Path) -> None:
@@ -302,6 +318,8 @@ class LidarNode(Node):
                 self._nav_goal = None
                 on_done(outcome, error)
 
+        goal.finish = finish
+
         def on_feedback_message(message) -> None:
             if self._nav_goal is goal:
                 on_feedback(message.feedback.distance_remaining)
@@ -334,6 +352,10 @@ class LidarNode(Node):
         if goal is None:
             return
         goal.cancel_requested = True
+        if not self._nav_client.server_is_ready():
+            # A Nav2 that died or restarted never reports this goal again; end it here so it does not stay running.
+            goal.finish("canceled", "Nav2 is not running")
+            return
         if goal.handle is not None:
             goal.handle.cancel_goal_async()
 
@@ -407,16 +429,11 @@ class LidarNode(Node):
                 "active": "tilt gating active on /scan_slam",
             }[self._logged_gate_state]
             self.get_logger().info(text)
+        nav_ranges = self.tilt_gate.apply_floor_only(message.ranges, message.angle_min, message.angle_increment, start, message.scan_time)
+        self.nav_scan_publisher.publish(with_ranges(message, nav_ranges))
         if ranges is None or not keep_for_motion:
             return
-        gated = LaserScan()
-        gated.header = message.header
-        gated.angle_min, gated.angle_max, gated.angle_increment = message.angle_min, message.angle_max, message.angle_increment
-        gated.time_increment, gated.scan_time = message.time_increment, message.scan_time
-        gated.range_min, gated.range_max = message.range_min, message.range_max
-        gated.ranges = ranges
-        gated.intensities = message.intensities
-        self.slam_scan_publisher.publish(gated)
+        self.slam_scan_publisher.publish(with_ranges(message, ranges))
 
     def publish_status(self) -> None:
         status = self.runtime.snapshot()

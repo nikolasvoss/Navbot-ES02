@@ -8,7 +8,7 @@ pytest.importorskip("std_srvs.srv")
 pytest.importorskip("tf2_ros")
 pytest.importorskip("nav2_msgs.action")
 
-from lds08rr_lidar.ros_node import LidarNode, firmware_values, nav_outcome, reduce_plan
+from lds08rr_lidar.ros_node import LidarNode, _ActiveGoal, firmware_values, nav_outcome, reduce_plan
 
 
 class FakeFuture:
@@ -136,6 +136,17 @@ def test_send_nav_goal_is_refused_while_nav2_is_not_ready():
     node = FakeNode(None)
     node._nav_client = FakeNavClient(ready=False)
     assert LidarNode.send_nav_goal(node, 1.2, -0.4, 1.571, None, None) == "Nav2 is not ready"
+
+
+def test_cancel_ends_the_goal_locally_when_nav2_is_gone():
+    node = FakeNode(None)
+    node._nav_client = FakeNavClient(ready=False)
+    ended = []
+    goal = _ActiveGoal()
+    goal.finish = lambda outcome, error: ended.append((outcome, error))
+    node._nav_goal = goal
+    LidarNode.cancel_nav_goal(node)
+    assert ended == [("canceled", "Nav2 is not running")]
 
 
 class FakeSupervisor:

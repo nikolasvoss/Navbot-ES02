@@ -70,6 +70,20 @@ def test_over_limit_scan_is_dropped():
     assert gate.snapshot() == {"state": "active", "scans_dropped": 1, "beams_dropped": 0}
 
 
+def test_floor_only_keeps_an_over_limit_scan_and_removes_floor_hits():
+    gate = TiltGate(config())
+    steady_imu(gate, 0.07)
+    # The SLAM copy drops this scan; the navigation copy keeps it, without the beam that reaches the floor.
+    assert gate.apply_floor_only(scan(b120=1.0, b121=4.0, b300=4.0), 0.0, STEP, 0.0, 0.2) == scan(b120=1.0, b300=4.0)
+    assert gate.snapshot() == {"state": "no_imu", "scans_dropped": 0, "beams_dropped": 0}
+
+
+def test_floor_only_without_imu_or_config_passes_through():
+    ranges = scan(b120=4.0)
+    assert TiltGate(config()).apply_floor_only(ranges, 0.0, STEP, 0.0, 0.2) == ranges
+    assert TiltGate(None).apply_floor_only(ranges, 0.0, STEP, 0.0, 0.2) == ranges
+
+
 def test_mount_yaw_maps_bins_to_robot_bearing():
     rotated, unrotated = TiltGate(config()), TiltGate(config(yaw=0.0))
     steady_imu(rotated, 0.05)
