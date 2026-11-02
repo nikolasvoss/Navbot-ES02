@@ -12,9 +12,19 @@ slam_toolbox:
     max_laser_range: 4.0          # default 25; capped at 4 m so mirror reflections and far noise stay out of the map
     map_update_interval: 2.0
     minimum_time_interval: 0.1              # jeden Scan verarbeiten (5 Hz, Stempel streuen um 0,2 s)
-    correlation_search_space_dimension: 1.0 # ±0,5 m Suchfenster
-    coarse_search_angle_offset: 0.698       # ±40°
-    loop_search_maximum_distance: 6.0
+
+    # Scan matching stays close to the wheel odometry: the motion gate already drops smeared scans from turns,
+    # so the default search window (±0.25 m, ±20°) suffices and a mismatch cannot pull the pose far away.
+    correlation_search_space_dimension: 0.5
+    coarse_search_angle_offset: 0.349
+    distance_variance_penalty: 0.3          # default 0.5; smaller punishes deviation from odometry harder
+    angle_variance_penalty: 0.5             # default 1.0
+
+    # Strict loop closure: a false match optimizes the whole graph and makes the robot jump by meters.
+    loop_search_maximum_distance: 3.0
+    loop_match_minimum_response_fine: 0.6   # default 0.45
+    loop_match_minimum_chain_size: 20       # default 10
+    loop_match_maximum_variance_coarse: 2.0 # default 3.0
 
     # A scan is processed only after the odometry moved this far. A standing robot adds no scans.
     minimum_travel_distance: 0.05
