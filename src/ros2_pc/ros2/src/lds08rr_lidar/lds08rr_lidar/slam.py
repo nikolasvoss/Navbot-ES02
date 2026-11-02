@@ -36,6 +36,8 @@ DEFAULT_SLAM_DIR = Path.home() / ".local/share/navbot/slam"
 BASE_PARAMS = Path(__file__).with_name("slam_toolbox.yaml")
 # slam_toolbox writes .posegraph + .data; map_saver_cli writes .pgm + .yaml for the AMCL localizer.
 MAP_SUFFIXES = (".data", ".posegraph", ".pgm", ".yaml")
+ROBOT_RADIUS_M = 0.10  # robot_radius in navigation.yaml
+OCCUPIED_THRESH = 65  # 100 * occupied_thresh of the map_server
 
 
 def grid_to_dict(width: int, height: int, resolution: float, origin_x: float, origin_y: float, data) -> dict:
@@ -48,6 +50,31 @@ def grid_to_dict(width: int, height: int, resolution: float, origin_x: float, or
         "origin_y": origin_y,
         "data": base64.b64encode(array("b", data).tobytes()).decode("ascii"),
     }
+
+
+def goal_refusal(grid: dict | None, x: float, y: float, radius: float = ROBOT_RADIUS_M) -> str | None:
+    """Why a goal at (x, y) in the map frame cannot be reached on this grid, or None. Ignores the grid's yaw (0 for saved maps)."""
+    if grid is None:
+        return "No map yet"
+    width, height, resolution = grid["width"], grid["height"], grid["resolution"]
+    column, row = math.floor((x - grid["origin_x"]) / resolution), math.floor((y - grid["origin_y"]) / resolution)
+    if not (0 <= column < width and 0 <= row < height):
+        return "Goal is outside the map"
+    cells = array("b")
+    cells.frombytes(base64.b64decode(grid["data"]))
+    reach = math.ceil(radius / resolution)
+    values = [
+        cells[r * width + c]
+        for r in range(max(row - reach, 0), min(row + reach + 1, height))
+        for c in range(max(column - reach, 0), min(column + reach + 1, width))
+        if (r, c) == (row, column)
+        or math.hypot((c + 0.5) * resolution + grid["origin_x"] - x, (r + 0.5) * resolution + grid["origin_y"] - y) <= radius
+    ]
+    if any(value >= OCCUPIED_THRESH for value in values):
+        return "Goal is in or too close to a wall"
+    if any(value < 0 for value in values):
+        return "Goal is in unexplored area"
+    return None
 
 
 class SlamState:
@@ -693,6 +720,10 @@ class SlamControl:
                 return "Goals need navigation mode"
             if not all(math.isfinite(value) for value in (x, y, yaw)):
                 return "x, y and yaw must be finite numbers"
+            map_grid = None if self._slam_state is None else self._slam_state.snapshot()["map"]
+            refusal = goal_refusal(map_grid, x, y)
+            if refusal is not None:
+                return refusal
             refusal = self._supervisor.request_goal()
             if refusal is not None:
                 return refusal

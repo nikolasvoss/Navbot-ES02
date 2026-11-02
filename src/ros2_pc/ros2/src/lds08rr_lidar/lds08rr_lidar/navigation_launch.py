@@ -2,12 +2,13 @@
 
 Ends the whole launch when any of its processes exits, like localization_launch.py.
 """
+from pathlib import Path
+
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, EmitEvent, GroupAction, RegisterEventHandler
-from launch.conditions import IfCondition
+from launch.actions import DeclareLaunchArgument, EmitEvent, GroupAction, OpaqueFunction, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import ComposableNodeContainer, LoadComposableNodes, SetParameter
 from launch_ros.descriptions import ComposableNode, ParameterFile
 
@@ -17,13 +18,17 @@ NAV_NODES = [
     "velocity_smoother", "collision_monitor", "bt_navigator",
 ]
 MASK_NODES = ["filter_mask_server", "costmap_filter_info_server"]
+KEEPOUT_PARAMS = Path(__file__).with_name("navigation_keepout.yaml")
 
 
-def generate_launch_description():
-    params_file = LaunchConfiguration("params_file")
-    keepout_mask = LaunchConfiguration("keepout_mask")
+def launch_setup(context):
+    """The container, plus the keepout filter and its mask servers when keepout_mask is not empty."""
+    keepout_mask = LaunchConfiguration("keepout_mask").perform(context)
     use_sim_time = LaunchConfiguration("use_sim_time")
-    params = ParameterFile(params_file, allow_substs=True)
+    params = ParameterFile(LaunchConfiguration("params_file"), allow_substs=True)
+    container_params = [params]
+    if keepout_mask:
+        container_params.append(ParameterFile(str(KEEPOUT_PARAMS)))
     cmd_vel_nav = [("cmd_vel", "cmd_vel_nav")]
 
     nav_nodes = [
@@ -47,32 +52,34 @@ def generate_launch_description():
     ]
     mask_nodes = [
         ComposableNode(package="nav2_map_server", plugin="nav2_map_server::MapServer",
-                       name="filter_mask_server", parameters=[params, {"yaml_filename": keepout_mask}]),
+                       name="filter_mask_server", parameters=[ParameterFile(str(KEEPOUT_PARAMS)), {"yaml_filename": keepout_mask}]),
         ComposableNode(package="nav2_map_server", plugin="nav2_map_server::CostmapFilterInfoServer",
-                       name="costmap_filter_info_server", parameters=[params]),
+                       name="costmap_filter_info_server", parameters=[ParameterFile(str(KEEPOUT_PARAMS))]),
         ComposableNode(package="nav2_lifecycle_manager", plugin="nav2_lifecycle_manager::LifecycleManager",
                        name="lifecycle_manager_costmap_filters",
                        parameters=[{"autostart": True, "node_names": MASK_NODES}]),
     ]
-    with_mask = IfCondition(PythonExpression(["'", keepout_mask, "' != ''"]))
+    actions = [
+        SetParameter("use_sim_time", use_sim_time),
+        ComposableNodeContainer(
+            name="nav2_container", namespace="", package="rclcpp_components",
+            executable="component_container_isolated", output="screen",
+            # The params file on the container reaches the nodes that the servers create themselves, such as
+            # local_costmap and global_costmap; parameters on a ComposableNode only reach that node.
+            parameters=container_params,
+            composable_node_descriptions=nav_nodes,
+        ),
+    ]
+    if keepout_mask:
+        actions.append(LoadComposableNodes(target_container=CONTAINER, composable_node_descriptions=mask_nodes))
+    return [GroupAction(actions)]
 
+
+def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("params_file"),
         DeclareLaunchArgument("keepout_mask", default_value=""),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
-        GroupAction([
-            SetParameter("use_sim_time", use_sim_time),
-            ComposableNodeContainer(
-                name="nav2_container", namespace="", package="rclcpp_components",
-                executable="component_container_isolated", output="screen",
-                # The params file on the container reaches the nodes that the servers create themselves, such as
-                # local_costmap and global_costmap; parameters on a ComposableNode only reach that node.
-                parameters=[params],
-                composable_node_descriptions=nav_nodes,
-            ),
-            GroupAction(condition=with_mask, actions=[
-                LoadComposableNodes(target_container=CONTAINER, composable_node_descriptions=mask_nodes),
-            ]),
-        ]),
+        OpaqueFunction(function=launch_setup),
         RegisterEventHandler(OnProcessExit(on_exit=[EmitEvent(event=Shutdown(reason="a navigation process exited"))])),
     ])

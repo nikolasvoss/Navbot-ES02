@@ -7,6 +7,7 @@ from lds08rr_lidar import navigation
 from lds08rr_lidar.navigation import NAVIGATION_PARAMS, navigation_command
 
 NAV_YAML = yaml.safe_load(NAVIGATION_PARAMS.read_text())
+KEEPOUT_YAML = yaml.safe_load(NAVIGATION_PARAMS.with_name("navigation_keepout.yaml").read_text())
 COSTMAPS = {"local_costmap", "global_costmap"}  # started inside controller_server and planner_server
 NAV_NODES = {
     "controller_server", "smoother_server", "planner_server", "behavior_server",
@@ -20,7 +21,8 @@ def params(node):
 
 
 def test_yaml_holds_only_the_nodes_the_launch_starts():
-    assert set(NAV_YAML) == NAV_NODES | COSTMAPS | MASK_NODES
+    assert set(NAV_YAML) == NAV_NODES | COSTMAPS
+    assert set(KEEPOUT_YAML) == {"global_costmap"} | MASK_NODES
     assert not {"docking_server", "route_server", "waypoint_follower"} & set(NAV_YAML)
 
 
@@ -91,12 +93,19 @@ def test_local_costmap_is_a_rolling_three_metre_window_on_odom():
     assert local["inflation_layer"]["inflation_radius"] == 0.25
 
 
-def test_global_costmap_on_map_with_the_keepout_filter():
+def test_global_costmap_on_map_without_the_keepout_filter():
     glob = NAV_YAML["global_costmap"]["global_costmap"]["ros__parameters"]
 
     assert glob["global_frame"] == "map"
     assert glob["robot_radius"] == 0.10
     assert glob["resolution"] == 0.05
+    assert glob["plugins"] == ["static_layer", "obstacle_layer", "inflation_layer"]
+    assert "keepout_filter" not in glob
+
+
+def test_keepout_overlay_appends_the_filter_to_the_global_costmap():
+    glob = KEEPOUT_YAML["global_costmap"]["global_costmap"]["ros__parameters"]
+
     assert glob["plugins"] == ["static_layer", "obstacle_layer", "inflation_layer", "keepout_filter"]
     assert glob["keepout_filter"]["plugin"] == "nav2_costmap_2d::KeepoutFilter"
     assert glob["keepout_filter"]["filter_info_topic"] == "/costmap_filter_info"
@@ -138,6 +147,24 @@ def test_navigation_launch_node_names_match_the_yaml():
     assert navigation_launch.generate_launch_description() is not None
 
 
+def mask_load_count(mask):
+    from launch import LaunchContext
+    from launch_ros.actions import LoadComposableNodes
+
+    from lds08rr_lidar import navigation_launch
+
+    context = LaunchContext()
+    context.launch_configurations.update(params_file=str(NAVIGATION_PARAMS), keepout_mask=mask, use_sim_time="false")
+    (group,) = navigation_launch.launch_setup(context)
+    return sum(isinstance(action, LoadComposableNodes) for action in group.get_sub_entities())
+
+
+def test_mask_servers_load_only_with_a_mask():
+    pytest.importorskip("launch")
+    pytest.importorskip("launch_ros")
+
+    assert mask_load_count("") == 0
+    assert mask_load_count("/data/keepout.yaml") == 1
 
 
 def test_progress_checker_counts_a_turn_in_place():

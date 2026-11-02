@@ -10,7 +10,7 @@ pytest.importorskip("flask")
 
 from lds08rr_lidar.localization import LocalizationTracker, localization_command
 from lds08rr_lidar.runtime import LidarRuntime
-from lds08rr_lidar.slam import MapStore, SlamControl, SlamProcess, SlamState, export_occupancy, grid_to_dict
+from lds08rr_lidar.slam import MapStore, SlamControl, SlamProcess, SlamState, export_occupancy, goal_refusal, grid_to_dict
 from lds08rr_lidar.source import SourceConfig
 from lds08rr_lidar.web import make_lidar_app
 
@@ -356,13 +356,22 @@ class RecordingLocalizer:
         self.events.append(("localizer stop",))
 
 
+def free_map(cells=None):
+    """A 80 x 80 grid of 0.05 m cells from (-2, -2), free except for the {(column, row): value} cells."""
+    data = [0] * 6400
+    for (column, row), value in (cells or {}).items():
+        data[row * 80 + column] = value
+    return grid_to_dict(80, 80, 0.05, -2.0, -2.0, data)
+
+
 class RecordingSlamState:
-    def __init__(self, pose=None):
+    def __init__(self, pose=None, grid=None):
         self.calls = []
         self.pose = pose or {"x": 0.0, "y": 0.0, "yaw": 0.0}
+        self.grid = free_map() if grid is None else grid
 
     def snapshot(self):
-        return {"pose": self.pose}
+        return {"pose": self.pose, "map": self.grid}
 
     def clear(self):
         self.calls.append(("clear",))
@@ -763,6 +772,35 @@ def test_goal_refusals_pass_on_the_supervisor_and_nav2_texts(tmp_path):
     assert control.nav_goal(float("nan"), 0.0, 0.0) == "x, y and yaw must be finite numbers"
     assert control.nav_goal(0.0, 0.0, float("inf")) == "x, y and yaw must be finite numbers"
     assert events == []
+
+
+def test_goal_refusal_checks_the_map_around_the_goal():
+    assert goal_refusal(None, 0.0, 0.0) == "No map yet"
+    assert goal_refusal(free_map(), 0.0, 0.0) is None
+    assert goal_refusal(free_map(), 2.5, 0.0) == "Goal is outside the map"
+    assert goal_refusal(free_map(), 0.0, -2.01) == "Goal is outside the map"
+    wall = free_map({(40, 40): 100})  # the cell spanning x, y 0.0 to 0.05
+    assert goal_refusal(wall, 0.02, 0.02) == "Goal is in or too close to a wall"
+    assert goal_refusal(wall, 0.12, 0.02) == "Goal is in or too close to a wall"  # 0.10 m from the cell centre
+    assert goal_refusal(wall, 0.30, 0.02) is None
+    assert goal_refusal(free_map({(40, 40): 64}), 0.02, 0.02) is None  # below the occupied threshold
+    unknown = free_map({(40, 40): -1})
+    assert goal_refusal(unknown, 0.02, 0.02) == "Goal is in unexplored area"
+    assert goal_refusal(free_map({(40, 40): -1, (41, 40): 100}), 0.02, 0.02) == "Goal is in or too close to a wall"
+
+
+def test_a_goal_the_map_rules_out_is_refused_before_the_supervisor(tmp_path):
+    events = []
+    control, _ = localized_navigation(tmp_path, events)
+    control.set_mode("navigation")
+    events.clear()
+    control._slam_state.grid = None
+    assert control.nav_goal(1.0, 0.0, 0.0) == "No map yet"
+    control._slam_state.grid = free_map({(60, 40): 100})
+    assert control.nav_goal(1.0, 0.0, 0.0) == "Goal is in or too close to a wall"
+    assert control.nav_goal(5.0, 0.0, 0.0) == "Goal is outside the map"
+    assert events == []
+    assert control.status()["nav"]["goal_id"] == 0
 
 
 def test_supervisor_refusal_is_passed_on_without_sending_a_goal(tmp_path):

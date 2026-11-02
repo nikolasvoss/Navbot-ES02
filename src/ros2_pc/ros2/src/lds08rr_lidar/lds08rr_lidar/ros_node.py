@@ -115,8 +115,25 @@ def reduce_plan(points: list[list[float]], limit: int = PLAN_MAX_POINTS) -> list
     return reduced
 
 
+# error_code values of the Nav2 actions that NavigateToPose passes through (nav2_msgs/action/*.action, Jazzy)
+NAV2_ERRORS = {
+    100: "controller failed", 101: "controller plugin not found", 102: "transform error in the controller",
+    103: "the controller got an invalid path", 104: "the robot got stuck on the path",
+    105: "the robot made no progress", 106: "no valid velocity command", 107: "the controller timed out",
+    200: "path planning failed", 201: "planner plugin not found", 202: "transform error in the planner",
+    203: "the robot is outside the map", 204: "the goal is outside the map", 205: "the robot is in an obstacle",
+    206: "the goal is in an obstacle", 207: "path planning timed out", 208: "no valid path to the goal",
+    500: "path smoothing failed", 501: "smoother plugin not found", 502: "path smoothing timed out",
+    503: "the smoothed path is in collision", 504: "the path could not be smoothed", 505: "the smoother got an invalid path",
+    700: "spin recovery failed", 701: "spin recovery timed out", 702: "transform error in the spin recovery",
+    703: "obstacle ahead during the spin recovery",
+    710: "backup recovery failed", 711: "backup recovery timed out", 712: "transform error in the backup recovery",
+    713: "invalid input to the backup recovery", 714: "obstacle behind the robot during the backup recovery",
+}
+
+
 def nav_outcome(status: int, error_code: int, error_msg: str) -> tuple[str, str]:
-    """The outcome of a finished NavigateToPose goal. A failed goal gets Nav2's error text, else its error code."""
+    """The outcome of a finished NavigateToPose goal. A failed goal gets Nav2's error text, else a text for its error code."""
     if status == GoalStatus.STATUS_SUCCEEDED:
         return "reached", ""
     if status == GoalStatus.STATUS_CANCELED:
@@ -124,7 +141,7 @@ def nav_outcome(status: int, error_code: int, error_msg: str) -> tuple[str, str]
     if error_msg:
         return "failed", error_msg
     if error_code:
-        return "failed", f"Nav2 error code {error_code}"
+        return "failed", NAV2_ERRORS.get(error_code, f"Nav2 error code {error_code}")
     return "failed", "Nav2 aborted the goal"
 
 

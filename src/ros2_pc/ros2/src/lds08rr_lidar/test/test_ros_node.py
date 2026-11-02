@@ -116,8 +116,14 @@ def test_nav_outcome_failed_uses_nav2_error_msg_when_present():
     assert nav_outcome(6, 204, "Failed to find a valid path") == ("failed", "Failed to find a valid path")
 
 
-def test_nav_outcome_failed_without_msg_uses_nav2_error_code():
-    assert nav_outcome(6, 204, "") == ("failed", "Nav2 error code 204")
+def test_nav_outcome_failed_without_msg_names_the_nav2_error_code():
+    assert nav_outcome(6, 208, "") == ("failed", "no valid path to the goal")
+    assert nav_outcome(6, 105, "") == ("failed", "the robot made no progress")
+    assert nav_outcome(6, 714, "") == ("failed", "obstacle behind the robot during the backup recovery")
+
+
+def test_nav_outcome_failed_with_an_unknown_error_code_shows_the_code():
+    assert nav_outcome(6, 999, "") == ("failed", "Nav2 error code 999")
 
 
 def test_nav_outcome_failed_without_msg_or_code_says_aborted():
